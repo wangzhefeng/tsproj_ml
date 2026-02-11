@@ -22,6 +22,61 @@ import pandas as pd
 from typing import List, Dict, Optional
 from utils.log_util import logger
 
+class FeatureScaler:
+    """统一的特征缩放器"""
+    
+    def __init__(self, scaler, encode_categorical: bool = False):
+        self.scaler = scaler
+        self.encode_categorical = encode_categorical
+        self.category_encoders = {}
+    
+    def fit_transform(self, X: pd.DataFrame, categorical_features: List[str]):
+        """训练并转换"""
+        X_scaled = X.copy()
+        
+        # 分离数值和类别特征
+        numeric_features = [col for col in X.columns if col not in categorical_features]
+        
+        # 缩放数值特征
+        if numeric_features and self.scaler is not None:
+            X_scaled[numeric_features] = self.scaler.fit_transform(X[numeric_features])
+        
+        # 编码类别特征
+        if self.encode_categorical:
+            for col in categorical_features:
+                if col in X.columns:
+                    X_scaled[col] = X[col].astype('category')
+                    self.category_encoders[col] = {
+                        'categories': X_scaled[col].cat.categories.tolist()
+                    }
+                    X_scaled[col] = X_scaled[col].cat.codes
+        
+        return X_scaled
+    
+    def transform(self, X: pd.DataFrame, categorical_features: List[str]):
+        """仅转换"""
+        X_scaled = X.copy()
+        
+        # 分离数值和类别特征
+        numeric_features = [col for col in X.columns if col not in categorical_features]
+        
+        # 缩放数值特征
+        if numeric_features and self.scaler is not None:
+            X_scaled[numeric_features] = self.scaler.transform(X[numeric_features])
+        
+        # 编码类别特征
+        if self.encode_categorical:
+            for col in categorical_features:
+                if col in X.columns and col in self.category_encoders:
+                    encoder_info = self.category_encoders[col]
+                    X_scaled[col] = pd.Categorical(
+                        X[col],
+                        categories=encoder_info['categories']
+                    )
+                    X_scaled[col] = X_scaled[col].cat.codes
+        
+        return X_scaled
+
 
 class AdvancedFeatureEngineer:
     """
@@ -204,9 +259,13 @@ class AdvancedFeatureEngineer:
                 continue
             
             for period in periods:
-                feature_name = f'{col}_diff_{period}'
-                df_enhanced[feature_name] = df[col].diff(period)
-                self.generated_features.append(feature_name)
+                diff_feature_name = f'{col}_diff_{period}'
+                pct_change_feature_name = f'{col}_pct_change_{period}'
+                df_enhanced[diff_feature_name] = df[col].diff(period)
+                df[pct_change_feature_name] = df[col].pct_change(period)
+                
+                self.generated_features.append(diff_feature_name)
+                self.generated_features.append(pct_change_feature_name)
         
         return df_enhanced
     

@@ -1,15 +1,17 @@
 # -*- coding: utf-8 -*-
 
 # ***************************************************
-# * File        : load_config.py
+# * File        : data_loader_xgb.py
 # * Author      : Zhefeng Wang
 # * Email       : zfwang7@gmail.com
-# * Date        : 2026-02-11
-# * Version     : 1.0.021111
+# * Date        : 2024-09-19
+# * Version     : 1.0.091900
 # * Description : description
 # * Link        : link
 # * Requirement : 相关模块版本需求(例如: numpy >= 2.1.0)
 # ***************************************************
+
+__all__ = []
 
 # python libraries
 import os
@@ -19,19 +21,11 @@ ROOT = str(Path.cwd())
 if ROOT not in sys.path:
     sys.path.append(ROOT)
 
-import yaml
-
-from utils.log_util import logger
-
 # global variable
 LOGGING_LABEL = Path(__file__).name[:-3]
 
 
-with open('config.yaml', 'r') as f:
-    config = yaml.safe_load(f)
 
-model_type = config['model']['type']
-model_params = config['model']['params']
 
 
 

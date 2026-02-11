@@ -8,45 +8,47 @@
 # * Version     : 1.0.021110
 # * Description : description
 # * Link        : 特征工程：
-# *               基本特征：
-# *                 - 内生变量特征
-# *                     - 日期时间特征(小时、星期、月份、季度等)、周期性编码(sin/cos)
-# *                     - 天气特征(天气数据集成)
-# *                     - 节假日 标记特征(日期类型数据集成)
-# *                 - 内生变量特征：
-# *                     - 滞后特征：单变量(目标变量)滞后特征、多变量(目标变量、其他内生变量)滞后特征
-# *               高级特征：
-# *                 - 内生变量特征
-# *                     - 滑动窗口统计特征 (Rolling Window Statistics)
+# *               - 一、基本特征：
+# *                 - 1.外生变量特征
+# *                     - 1.1 日期时间特征(小时、星期、月份、季度等)、周期性编码(sin/cos)
+# *                     - 1.2 天气特征(天气数据集成)
+# *                     - 1.3 节假日 标记特征(日期类型数据集成)
+# *                 - 2.内生变量特征：
+# *                     - 2.1 滞后特征：单变量(目标变量)滞后特征、多变量(目标变量、其他内生变量)滞后特征
+# *               - 二、高级特征：
+# *                 - 1.内生变量特征
+# *                     - 1.1 滑动窗口统计特征 (Rolling Window Statistics)
 # *                         - load_rolling_mean_3   # 最近3步平均值
 # *                         - load_rolling_std_7    # 最近7步标准差
 # *                         - load_rolling_min_12   # 最近12步最小值
 # *                         - load_rolling_max_12   # 最近12步最大值
-# *                     - 扩展窗口统计特征 (Expanding Window Statistics)
+# *                     - 1.2 扩展窗口统计特征 (Expanding Window Statistics)
 # *                         - load_expanding_mean   # 累积平均值
 # *                         - load_expanding_std    # 累积标准差
-# *                     - 差分特征 (Difference Features)
+# *                     - 1.3 差分特征 (Difference Features)
 # *                         - load_diff_1          # 一阶差分
 # *                         - load_diff_seasonal   # 季节性差分
-# *                     - 时间距离特征 (Time-based Features)
+# *                     - 1.4 百分比变化特征 (Percentage Change Features)
+# *                     - 1.5 距离关键事件的时间特征 (Time-based Features)
 # *                         - time_since_peak      # 距离峰值的时间
 # *                         - time_since_low      # 距离谷值的时间
-# *                 - 交叉特征
+# *                     - 1.6 周期性特征（正弦余弦编码）(cyclical encoding)
+# *                 - 2.交叉(交互)特征 (interaction features)
 # *                     - hour_x_load_lag_1 = hour * load_lag_1     # 时间 × 滞后值
 # *                     - temp_x_humidity = temperature * humidity  # 温度 × 湿度
 # *                     - load_lag_1_squared = load_lag_1 ** 2      # 多项式特征
-# *               目标编码
+# *                 - 3.多项式特征 (polynomial features)
+# *               - 三、目标编码
 # * Requirement : 相关模块版本需求(例如: numpy >= 2.1.0)
 # ***************************************************
 
 # python libraries
-import os
 import sys
 from pathlib import Path
 ROOT = str(Path.cwd())
 if ROOT not in sys.path:
     sys.path.append(ROOT)
-from typing import Dict, List, Tuple, Union, Any
+from typing import Dict, List, Tuple
 import warnings
 warnings.filterwarnings("ignore")
 
@@ -54,10 +56,10 @@ import numpy as np
 import pandas as pd
 from sklearn.preprocessing import MinMaxScaler, StandardScaler
 
+from utils.log_util import logger
+
 # global variable
 LOGGING_LABEL = Path(__file__).name[:-3]
-os.environ['LOG_NAME'] = LOGGING_LABEL
-from utils.log_util import logger
 
 
 class FeaturePreprocessor:
@@ -345,31 +347,29 @@ class AdvancedFeatureEngineer:
     高级特征工程器
     
     新增特征类型:
-    1. 滑窗统计特征（rolling statistics）
-    2. 差分特征（differencing）
-    3. 周期性特征（cyclical encoding）
-    4. 交叉特征（interaction features）
+    1. 滑动窗口统计特征 (rolling window statistics)
+    2. 滚动(扩展)窗口统计特征 (expanding window statistics)
+    3. 差分特征 (difference features）
+    4. 百分比变化特征 (percentage change features)
+    5. 距离关键事件的时间特征 (Time-based Features)
+    6. 周期性特征 (cyclical encoding)
+    7. 交叉(交互)特征 (interaction features)
+    8. 多项式特征 (polynomial features)
     """
     
-    def __init__(self, log_prefix: str = "[FeatureEng]"):
+    def __init__(self, log_prefix: str = "[FeatureEngineer]"):
         self.log_prefix = log_prefix
         self.generated_features = []
     
-    def add_rolling_statistics(
-        self,
-        df: pd.DataFrame,
-        columns: List[str],
-        windows: List[int],
-        stats: List[str] = ['mean', 'std', 'min', 'max', 'median']
-    ) -> pd.DataFrame:
+    def add_rolling_statistics(self, df: pd.DataFrame, columns: List[str], windows: List[int], stats: List[str] = ["mean", "std", "min", "max", "median", "skew", "kurt"]) -> pd.DataFrame:
         """
-        添加滞后统计特征 (滑动窗口统计)
+        添加滑动窗口统计特征
         
         Args:
             df: 数据框
             columns: 需要计算统计特征的列
             windows: 窗口大小列表，如 [3, 7, 14, 30]
-            stats: 统计量列表 ['mean', 'std', 'min', 'max', 'median', 'skew', 'kurt']
+            stats: 统计量列表 ["mean", "std", "min", "max", "median", "skew", "kurt"]
         
         Returns:
             增强后的数据框
@@ -379,12 +379,12 @@ class AdvancedFeatureEngineer:
             >>> df = fe.add_lag_statistics(df, ['load'], [3, 7], ['mean', 'std'])
             # 生成: load_rolling_mean_3, load_rolling_std_3, load_rolling_mean_7, load_rolling_std_7
         """
-        logger.info(f"{self.log_prefix} 添加滞后统计特征...")
+        logger.info(f"{self.log_prefix} 添加滑动窗口统计特征...")
         df_enhanced = df.copy()
         
         for col in columns:
             if col not in df.columns:
-                logger.warning(f"{self.log_prefix} 列 {col} 不存在，跳过")
+                logger.warning(f"{self.log_prefix} 列 {col} 不存在，跳过。")
                 continue
             
             for window in windows:
@@ -444,15 +444,10 @@ class AdvancedFeatureEngineer:
                     ).kurt()
                     self.generated_features.append(feature_name)
         
-        logger.info(f"{self.log_prefix} 生成 {len(self.generated_features)} 个滞后统计特征")
+        logger.info(f"{self.log_prefix} 生成 {len(self.generated_features)} 个滑动窗口统计特征。")
         return df_enhanced
 
-    def add_expanding_statistics(
-        self,
-        df: pd.DataFrame,
-        columns: List[str],
-        stats: List[str] = ['mean', 'std', 'min', 'max']
-    ) -> pd.DataFrame:
+    def add_expanding_statistics(self, df: pd.DataFrame, columns: List[str], stats: List[str] = ["mean", "std", "min", "max", "median", "skew", "kurt"]) -> pd.DataFrame:
         """
         添加扩展窗口统计特征
         
@@ -460,8 +455,8 @@ class AdvancedFeatureEngineer:
         
         Args:
             df: 数据框
-            columns: 列名列表
-            stats: 统计量列表
+            columns: 需要计算统计特征的列
+            stats: 统计量列表 ["mean", "std", "min", "max", "median", "skew", "kurt"]
         
         Returns:
             增强后的数据框
@@ -471,6 +466,7 @@ class AdvancedFeatureEngineer:
         
         for col in columns:
             if col not in df.columns:
+                logger.warning(f"{self.log_prefix} 列 {col} 不存在，跳过。")
                 continue
             
             if 'mean' in stats:
@@ -492,15 +488,26 @@ class AdvancedFeatureEngineer:
                 feature_name = f'{col}_expanding_max'
                 df_enhanced[feature_name] = df[col].expanding(min_periods=1).max()
                 self.generated_features.append(feature_name)
-        
+
+            if 'median' in stats:
+                feature_name = f'{col}_expanding_median'
+                df_enhanced[feature_name] = df[col].expanding(min_periods=1).median()
+                self.generated_features.append(feature_name)
+            
+            if 'skew' in stats:
+                feature_name = f'{col}_expanding_skew'
+                df_enhanced[feature_name] = df[col].expanding(min_periods=1).skew()
+                self.generated_features.append(feature_name)       
+            
+            if 'kurt' in stats:
+                feature_name = f'{col}_expanding_kurt'
+                df_enhanced[feature_name] = df[col].expanding(min_periods=1).kurt()
+                self.generated_features.append(feature_name)
+            
+        logger.info(f"{self.log_prefix} 生成 {len(self.generated_features)} 个扩展窗口统计特征。")
         return df_enhanced
   
-    def add_diff_features(
-        self,
-        df: pd.DataFrame,
-        columns: List[str],
-        periods: List[int] = [1, 7, 24]
-    ) -> pd.DataFrame:
+    def add_diff_features(self, df: pd.DataFrame, columns: List[str], periods: List[int] = [1, 7, 24]) -> pd.DataFrame:
         """
         添加差分特征
         
@@ -522,29 +529,22 @@ class AdvancedFeatureEngineer:
         
         for col in columns:
             if col not in df.columns:
+                logger.warning(f"{self.log_prefix} 列 {col} 不存在，跳过。")
                 continue
             
             for period in periods:
-                diff_feature_name = f'{col}_diff_{period}'
-                pct_change_feature_name = f'{col}_pct_change_{period}'
-                df_enhanced[diff_feature_name] = df[col].diff(period)
-                # df[pct_change_feature_name] = df[col].pct_change(period)
-                
-                self.generated_features.append(diff_feature_name)
-                # self.generated_features.append(pct_change_feature_name)
+                feature_name = f'{col}_diff_{period}'
+                df_enhanced[feature_name] = df[col].diff(period)
+                self.generated_features.append(feature_name)
         
+        logger.info(f"{self.log_prefix} 生成 {len(self.generated_features)} 个差分特征。")
         return df_enhanced
     
-    def add_pct_change_features(
-        self,
-        df: pd.DataFrame,
-        columns: List[str],
-        periods: List[int] = [1, 7]
-    ) -> pd.DataFrame:
+    def add_pct_change_features(self, df: pd.DataFrame, columns: List[str], periods: List[int] = [1, 7]) -> pd.DataFrame:
         """
         添加百分比变化特征
         
-        计算相对于前N期的百分比变化
+        计算相对于前 N 期的百分比变化
         
         Args:
             df: 数据框
@@ -559,6 +559,7 @@ class AdvancedFeatureEngineer:
         
         for col in columns:
             if col not in df.columns:
+                logger.warning(f"{self.log_prefix} 列 {col} 不存在，跳过。")
                 continue
             
             for period in periods:
@@ -566,14 +567,10 @@ class AdvancedFeatureEngineer:
                 df_enhanced[feature_name] = df[col].pct_change(period)
                 self.generated_features.append(feature_name)
         
+        logger.info(f"{self.log_prefix} 生成 {len(self.generated_features)} 个百分比变化特征。")
         return df_enhanced
     
-    def add_time_since_features(
-        self,
-        df: pd.DataFrame,
-        column: str,
-        events: List[str] = ['peak', 'trough']
-    ) -> pd.DataFrame:
+    def add_time_since_features(self, df: pd.DataFrame, column: str, events: List[str] = ['peak', 'trough']) -> pd.DataFrame:
         """
         添加距离关键事件的时间特征
         
@@ -591,8 +588,10 @@ class AdvancedFeatureEngineer:
         df_enhanced = df.copy()
         
         if column not in df.columns:
+            logger.warning(f"{self.log_prefix} 列 {column} 不存在。")
             return df_enhanced
         
+        # 距离最近峰值的时间
         if 'peak' in events:
             # 找到最近的峰值位置
             peaks = (df[column].shift(1) < df[column]) & (df[column] > df[column].shift(-1))
@@ -612,6 +611,7 @@ class AdvancedFeatureEngineer:
                         df_enhanced.loc[i, feature_name] = i
             self.generated_features.append(feature_name)
         
+        # 距离最近谷值的时间
         if 'trough' in events:
             # 找到最近的谷值位置
             troughs = (df[column].shift(1) > df[column]) & (df[column] < df[column].shift(-1))
@@ -631,71 +631,76 @@ class AdvancedFeatureEngineer:
                         df_enhanced.loc[i, feature_name] = i
             self.generated_features.append(feature_name)
         
+        logger.info(f"{self.log_prefix} 生成 {len(self.generated_features)} 个距离关键事件的时间特征。")
         return df_enhanced
     
-    def add_cyclical_features(self, df, col, period):
+    def add_cyclical_features(self, df: pd.DataFrame, column: str, period: int) -> pd.DataFrame:
         """
         添加周期性特征（正弦余弦编码）
         
         避免周期性特征的边界问题
-        例如: 23点和0点在数值上差距大，但实际很接近
+        例如: 23 点和 0 点在数值上差距大，但实际很接近
+
+        Args:
+            df (pd.DataFrame): 数据框
+            column (str): 列名
+            period (int): 周期内的样本数量
+
+        Returns:
+            增强后的数据框
         """
-        df[f'{col}_sin'] = np.sin(2 * np.pi * df[col] / period)
-        df[f'{col}_cos'] = np.cos(2 * np.pi * df[col] / period)
+        df[f'{column}_sin'] = np.sin(2 * np.pi * df[column] / period)
+        df[f'{column}_cos'] = np.cos(2 * np.pi * df[column] / period)
+        self.generated_features.append(f"{column}_sin")
+        self.generated_features.append(f"{column}_cos")
+        
+        logger.info(f"{self.log_prefix} 生成 {len(self.generated_features)} 个交互(交叉)特征。")
         return df
     
-    def add_interaction_features(
-        self,
-        df: pd.DataFrame,
-        column_pairs: List[tuple],
-        operations: List[str] = ['multiply', 'divide', 'add', 'subtract']
-    ) -> pd.DataFrame:
+    def add_interaction_features(self, df: pd.DataFrame, column_pairs: List[tuple], operations: List[str] = ["add", "subtract", "multiply", "divide"]) -> pd.DataFrame:
         """
-        添加交互特征
+        添加交互(交叉)特征
         
         Args:
             df: 数据框
             column_pairs: 列对列表 [('col1', 'col2'), ...]
-            operations: 操作列表 ['multiply', 'divide', 'add', 'subtract']
+            operations: 操作列表 ["add", "subtract", "multiply", "divide"]
         
         Returns:
             增强后的数据框
         """
-        logger.info(f"{self.log_prefix} 添加交互特征...")
+        logger.info(f"{self.log_prefix} 添加交互(交叉)特征...")
         df_enhanced = df.copy()
         
         for col1, col2 in column_pairs:
             if col1 not in df.columns or col2 not in df.columns:
+                logger.warning(f"{self.log_prefix} 列 {col1} 或者 {col2} 不存在，跳过。")
                 continue
-            
-            if 'multiply' in operations:
-                feature_name = f'{col1}_x_{col2}'
-                df_enhanced[feature_name] = df[col1] * df[col2]
-                self.generated_features.append(feature_name)
-            
-            if 'divide' in operations:
-                feature_name = f'{col1}_div_{col2}'
-                df_enhanced[feature_name] = df[col1] / (df[col2] + 1e-8)  # 避免除零
-                self.generated_features.append(feature_name)
-            
+
             if 'add' in operations:
                 feature_name = f'{col1}_add_{col2}'
                 df_enhanced[feature_name] = df[col1] + df[col2]
                 self.generated_features.append(feature_name)
             
             if 'subtract' in operations:
-                feature_name = f'{col1}_sub_{col2}'
+                feature_name = f'{col1}_substract_{col2}'
                 df_enhanced[feature_name] = df[col1] - df[col2]
                 self.generated_features.append(feature_name)
+            
+            if 'multiply' in operations:
+                feature_name = f'{col1}_multiply_{col2}'
+                df_enhanced[feature_name] = df[col1] * df[col2]
+                self.generated_features.append(feature_name)
+            
+            if 'divide' in operations:
+                feature_name = f'{col1}_divide_{col2}'
+                df_enhanced[feature_name] = df[col1] / (df[col2] + 1e-8)  # 避免除零
+                self.generated_features.append(feature_name)
         
+        logger.info(f"{self.log_prefix} 生成 {len(self.generated_features)} 个交互(交叉)特征。")
         return df_enhanced
     
-    def add_polynomial_features(
-        self,
-        df: pd.DataFrame,
-        columns: List[str],
-        degree: int = 2
-    ) -> pd.DataFrame:
+    def add_polynomial_features(self, df: pd.DataFrame, columns: List[str], degree: int = 2) -> pd.DataFrame:
         """
         添加多项式特征
         
@@ -712,6 +717,7 @@ class AdvancedFeatureEngineer:
         
         for col in columns:
             if col not in df.columns:
+                logger.warning(f"{self.log_prefix} 列 {col} 不存在，跳过。")
                 continue
             
             for d in range(2, degree + 1):
@@ -719,34 +725,47 @@ class AdvancedFeatureEngineer:
                 df_enhanced[feature_name] = df[col] ** d
                 self.generated_features.append(feature_name)
         
+        logger.info(f"{self.log_prefix} 生成 {len(self.generated_features)} 个多项式特征。")
         return df_enhanced
     
     def get_generated_features(self) -> List[str]:
-        """获取所有生成的特征列表"""
+        """
+        获取所有生成的特征列表
+        """
         return self.generated_features
     
     def reset(self):
-        """重置生成的特征列表"""
+        """
+        重置生成的特征列表
+        """
         self.generated_features = []
 
 
 
 # 测试代码 main 函数
 def main():
+    # ------------------------------
     # 创建示例时间序列数据
+    # ------------------------------
     np.random.seed(42)
-    dates = pd.date_range('2024-01-01', periods=1000, freq='H')
     df = pd.DataFrame({
-        'time': dates,
+        'time': pd.date_range('2024-01-01', periods=1000, freq='H'),
         'load': np.random.randn(1000).cumsum() + 100,
         'temperature': 20 + 10 * np.sin(np.arange(1000) * 2 * np.pi / 24) + np.random.randn(1000),
     })
-    
+    print(df)
+
+    # ------------------------------
     # 创建特征工程器
+    # ------------------------------
     fe = AdvancedFeatureEngineer()
-    
+    # ------------------------------
     # 添加各种特征
-    df = fe.add_lag_statistics(df, ['load'], windows=[3, 7, 24], stats=['mean', 'std'])
+    # ------------------------------
+    df = fe.add_rolling_statistics(df, ["load", "temperature"], windows=[3, 7, 24], stats=['mean', 'std', 'min', 'max', 'median', "skew", "kurt"])
+    fe.reset()
+    df = fe.add_expanding_statistics(df, ["load", "temperature"], stats=['mean', 'std', 'min', 'max', 'median', "skew", "kurt"])
+    fe.reset()
     df = fe.add_diff_features(df, ['load'], periods=[1, 24])
     df = fe.add_interaction_features(df, [('load', 'temperature')], operations=['multiply'])
     
@@ -754,8 +773,10 @@ def main():
     print(f"生成特征数: {len(fe.get_generated_features())}")
     print(f"总特征数: {len(df.columns)}")
     print(f"\n生成的特征列表:")
-    for feat in fe.get_generated_features()[:10]:
+    for feat in fe.get_generated_features():#[:10]:
         print(f"  - {feat}")
+
+    print(df)
 
 if __name__ == "__main__":
     main()

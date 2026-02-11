@@ -25,10 +25,10 @@ warnings.filterwarnings("ignore")
 import numpy as np
 import pandas as pd
 
+from utils.log_util import logger
+
 # global variable
 LOGGING_LABEL = Path(__file__).name[:-3]
-os.environ['LOG_NAME'] = LOGGING_LABEL
-from utils.log_util import logger
 
 
 # ------------------------------

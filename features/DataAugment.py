@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 
 # ***************************************************
-# * File        : data_augment.py
+# * File        : DataAugment.py
 # * Author      : Zhefeng Wang
 # * Email       : zfwang7@gmail.com
 # * Date        : 2026-02-11
@@ -26,14 +26,14 @@ import numpy as np
 LOGGING_LABEL = Path(__file__).name[:-3]
 
 
-def augment_time_series(df, noise_level=0.01):
+def augment_time_series(df, target_feature, noise_level=0.01):
     """
     时间序列数据增强
-    添加噪声增强
+    - 添加噪声增强
     """
     df_augmented = df.copy()
     noise = np.random.normal(0, noise_level, len(df))
-    df_augmented['target'] = df['target'] + df['target'] * noise
+    df_augmented[target_feature] = df[target_feature] + df[target_feature] * noise
 
     return df_augmented
 

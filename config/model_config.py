@@ -12,21 +12,9 @@
 # ***************************************************
 
 # python libraries
-import os
-import sys
 from pathlib import Path
-ROOT = str(Path.cwd())
-if ROOT not in sys.path:
-    sys.path.append(ROOT)
 import datetime
 from dataclasses import dataclass
-import warnings
-warnings.filterwarnings("ignore")
-
-# global variable
-LOGGING_LABEL = Path(__file__).name[:-3]
-os.environ['LOG_NAME'] = LOGGING_LABEL
-from utils.log_util import logger
 
 
 @dataclass
@@ -139,10 +127,10 @@ class ModelConfig_univariate:
     # ------------------------------
     # 模型配置
     # ------------------------------
-    model_type = "ensemble"
+    model_type = "lightgbm"
+    model_params = {}
     ensemble_models = ["lgb", "xgb", "cat"]
     ensemble_method = "stacking"
-    model_name = "LightGBM"
     # 可选预测方法:
     # - 单变量预测单变量
     pred_method = "univariate-single-multistep-direct-output"       # USMDO [单变量(包含目标变量的所有内生变量)->单变量(目标内生变量)]多步直接输出预测
@@ -276,7 +264,10 @@ class ModelConfig_multivariate:
     # ------------------------------
     # 模型配置
     # ------------------------------
-    model_name = "LightGBM"
+    model_type = "lightgbm"
+    model_params = {}
+    ensemble_models = ["lgb", "xgb", "cat"]
+    ensemble_method = "stacking"
     # 可选预测方法:
     # - 单变量预测单变量
     # pred_method = "univariate-single-multistep-direct-output"       # USMDO [单变量(包含目标变量的所有内生变量)->单变量(目标内生变量)]多步直接输出预测
@@ -287,12 +278,6 @@ class ModelConfig_multivariate:
     pred_method = "multivariate-single-multistep-direct"            # MSMD [多变量(包含目标变量的所有内生变量)->单变量(目标内生变量)]多步直接预测
     # pred_method = "multivariate-single-multistep-recursive"         # MSMR [多变量(包含目标变量的所有内生变量)->单变量(目标内生变量)]多步递归预测
     # pred_method = "multivariate-single-multistep-direct-recursive"  # MSMDR [多变量(包含目标变量的所有内生变量)->单变量(目标内生变量)]多步直接递归预测
-    # 训练目标
-    objective = "regression_l1"
-    # 训练损失函数
-    loss = "mae"
-    # 模型学习率
-    learning_rate = 0.05
     # 早停步数
     patience = 100
     # ------------------------------

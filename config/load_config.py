@@ -18,16 +18,14 @@ from pathlib import Path
 ROOT = str(Path.cwd())
 if ROOT not in sys.path:
     sys.path.append(ROOT)
-import warnings
-warnings.filterwarnings("ignore")
+
+import yaml
+
+from utils.log_util import logger
 
 # global variable
 LOGGING_LABEL = Path(__file__).name[:-3]
-os.environ['LOG_NAME'] = LOGGING_LABEL
-from utils.log_util import logger
 
-
-import yaml
 
 with open('config.yaml', 'r') as f:
     config = yaml.safe_load(f)

@@ -27,7 +27,7 @@ if ROOT not in sys.path:
     sys.path.append(ROOT)
 import copy
 import datetime
-from typing import Dict, List, Tuple, Union, Any
+from typing import Dict, List
 import warnings
 warnings.filterwarnings("ignore")
 
@@ -36,10 +36,6 @@ import pandas as pd
 import matplotlib.pyplot as plt
 
 # model
-import xgboost as xgb
-import lightgbm as lgb
-import catboost as cab
-from sklearn.ensemble import RandomForestRegressor, ExtraTreesRegressor
 from sklearn.multioutput import MultiOutputRegressor, RegressorChain
 # model evaluation
 from sklearn.metrics import (
@@ -50,507 +46,16 @@ from sklearn.metrics import (
     mean_absolute_percentage_error,  # MAPE
 )
 # data processing
-from sklearn.preprocessing import MinMaxScaler, StandardScaler
 from sklearn.model_selection import TimeSeriesSplit, GridSearchCV, RandomizedSearchCV
+
+from config.model_config import ModelConfig_univariate, ModelConfig_multivariate
+from features.AdvancedFeatures import FeaturePreprocessor
+from models.ModelFactory import ModelFactory
 
 # global variable
 LOGGING_LABEL = Path(__file__).name[:-3]
 os.environ['LOG_NAME'] = LOGGING_LABEL
 from utils.log_util import logger
-
-
-class FeaturePreprocessor:
-    """
-    统一的特征预处理器
-    处理归一化和类别特征编码
-    """
-    
-    def __init__(self, args, log_prefix="[FeaturePreprocessor]"):
-        """
-        初始化
-        
-        Args:
-            args: 模型配置对象
-            log_prefix: 日志前缀
-        """
-        self.args = args
-        self.log_prefix = log_prefix
-        # 归一化器
-        self.scaler = None
-        self.feature_scalers = {}  # 分组归一化器
-        # 类别特征信息
-        self.category_mappings = {}  # 类别到编码的映射
-        self.category_info = {}       # 类别特征的元信息
-        # 特征分组信息
-        self.feature_groups = {}
-    
-    def identify_feature_groups(self, X: pd.DataFrame, categorical_features: List[str]) -> Dict[str, List[str]]:
-        """
-        识别特征分组
-        
-        Args:
-            X: 输入特征DataFrame
-            categorical_features: 类别特征列表
-        
-        Returns:
-            特征分组字典
-        """
-        groups = {
-            'lag_features': [col for col in X.columns if '_lag_' in col],
-            'datetime_features': [col for col in X.columns if 'datetime_' in col or col.startswith('hour') or col.startswith('day')],
-            'weather_features': [],
-            'categorical_features': [col for col in categorical_features if col in X.columns],
-            'other_numeric': []
-        }
-        # 识别天气特征
-        weather_keywords = ['temp', 'humidity', 'wind', 'rain', 'pressure', 'weather', 'rt_', 'cal_']
-        for col in X.columns:
-            if any(keyword in col.lower() for keyword in weather_keywords):
-                groups['weather_features'].append(col)
-        # 其余数值特征
-        all_special = (
-            groups['lag_features'] + 
-            groups['datetime_features'] + 
-            groups['weather_features'] + 
-            groups['categorical_features']
-        )
-        groups['other_numeric'] = [col for col in X.columns if col not in all_special]
-        logger.info(f"{self.log_prefix} === Feature groups identified:===")
-        for group_name, features in groups.items():
-            logger.info(f"{self.log_prefix} {group_name}: {len(features)} features")
-        self.feature_groups = groups
-    
-    def fit_transform(self, X: pd.DataFrame, categorical_features: List[str]) -> Tuple[pd.DataFrame, List[str]]:
-        """
-        训练模式：拟合并转换特征
-        
-        Args:
-            X: 输入特征DataFrame
-            categorical_features: 类别特征列表
-        
-        Returns:
-            转换后的特征DataFrame, 实际使用的类别特征列表
-        """
-        logger.info(f"{self.log_prefix} === Fitting and transforming features (training) ===")
-        X_processed = X.copy()
-        # 1. 识别特征分组
-        self.identify_feature_groups(X_processed, categorical_features)
-        # 2. 确定实际存在的类别特征
-        actual_categorical = [f for f in categorical_features if f in X_processed.columns]
-        # 3. 处理类别特征
-        if self.args.encode_categorical_features and actual_categorical:
-            logger.info(f"{self.log_prefix} Encoding categorical features...")
-            X_processed = self._fit_transform_categorical(X_processed, actual_categorical)
-        else:
-            # 即使不编码，也转换为 category 类型（LightGBM 原生支持）
-            if actual_categorical:
-                logger.info(f"{self.log_prefix} Transfomer categorical features...")
-                for col in actual_categorical:
-                    X_processed[col] = X_processed[col].astype('category')
-                    self.category_info[col] = X_processed[col].cat.categories.tolist()
-        # 4. 数值特征归一化
-        if self.args.scale:
-            logger.info(f"{self.log_prefix} Scaling numeric features...")
-            X_processed = self._fit_transform_numeric(X_processed, actual_categorical)
-        logger.info(f"{self.log_prefix} Feature preprocessing completed.")
-        logger.info(f"{self.log_prefix} Processed shape: {X_processed.shape}")
-        
-        return X_processed, actual_categorical
-    
-    def transform(self, X: pd.DataFrame, categorical_features: List[str]) -> pd.DataFrame:
-        """
-        预测模式：仅转换特征（使用已拟合的参数）
-        
-        Args:
-            X: 输入特征DataFrame
-            categorical_features: 类别特征列表
-        
-        Returns:
-            转换后的特征DataFrame
-        """
-        logger.info(f"{self.log_prefix} === Transforming features (prediction mode) ===")
-        X_processed = X.copy()
-        # 确定实际存在的类别特征
-        actual_categorical = [f for f in categorical_features if f in X_processed.columns]
-        # 1. 处理类别特征
-        if self.args.encode_categorical_features and actual_categorical:
-            X_processed = self._transform_categorical(X_processed, actual_categorical)
-        else:
-            # 转换为 category 类型（使用训练时的类别）
-            for col in actual_categorical:
-                if col in self.category_info:
-                    X_processed[col] = pd.Categorical(X_processed[col], categories=self.category_info[col])
-                else:
-                    logger.warning(f"{self.log_prefix} No category info for {col}, using as is.")
-                    X_processed[col] = X_processed[col].astype('category')
-        # 2. 数值特征归一化
-        if self.args.scale:
-            X_processed = self._transform_numeric(X_processed, actual_categorical)
-        
-        return X_processed
-    
-    def _fit_transform_categorical(self, X: pd.DataFrame, categorical_features: List[str]) -> pd.DataFrame:
-        """
-        训练模式：拟合并转换类别特征
-        """
-        X_processed = X.copy()
-        for col in categorical_features:
-            if col not in X_processed.columns:
-                continue
-            # 转换为 category 类型
-            X_processed[col] = X_processed[col].astype('category')
-            # 保存类别信息
-            categories = X_processed[col].cat.categories.tolist()
-            codes = X_processed[col].cat.codes.values
-            self.category_mappings[col] = {
-                'categories': categories,
-                'cat_to_code': {cat: code for code, cat in enumerate(categories)},
-                'code_to_cat': {code: cat for code, cat in enumerate(categories)}
-            }
-            # 编码为整数
-            X_processed[col] = codes
-            logger.info(f"{self.log_prefix} {col}: {len(categories)} categories -> [0, {len(categories)-1}]")
-        
-        return X_processed
-    
-    def _transform_categorical(self, X: pd.DataFrame, categorical_features: List[str]) -> pd.DataFrame:
-        """
-        预测模式：转换类别特征（使用已保存的映射）
-        """
-        X_processed = X.copy()
-        for col in categorical_features:
-            if col not in X_processed.columns:
-                continue
-            if col not in self.category_mappings:
-                logger.warning(f"{self.log_prefix} No mapping for {col}, skipping encoding.")
-                continue
-            mapping = self.category_mappings[col]
-            cat_to_code = mapping['cat_to_code']
-            # 应用映射（处理未知类别）
-            def encode_value(val):
-                if val in cat_to_code:
-                    return cat_to_code[val]
-                else:
-                    # 未知类别：映射到最常见的类别（索引0）
-                    logger.warning(f"{self.log_prefix} Unknown category '{val}' in {col}, mapping to 0")
-                    return 0
-            X_processed[col] = X_processed[col].apply(encode_value)
-        
-        return X_processed
-    
-    def _fit_transform_numeric(self, X: pd.DataFrame, categorical_features: List[str]) -> pd.DataFrame:
-        """
-        训练模式：拟合并转换数值特征
-        """
-        X_processed = X.copy()
-        # 选择归一化器类型
-        scaler_class = StandardScaler if self.args.scaler_type == "standard" else MinMaxScaler
-        if self.args.use_grouped_scaling:
-            # 分组归一化
-            logger.info(f"{self.log_prefix} Using grouped scaling strategy...")
-            for group_name, features in self.feature_groups.items():
-                if group_name == 'categorical_features':
-                    continue
-                
-                if not features:
-                    continue
-                
-                # 过滤掉不存在的特征
-                existing_features = [f for f in features if f in X_processed.columns]
-                if not existing_features:
-                    continue
-                # 为每组创建独立的归一化器
-                self.feature_scalers[group_name] = scaler_class()
-                X_processed.loc[:, existing_features] = self.feature_scalers[group_name].fit_transform(X_processed[existing_features])
-                logger.info(f"{self.log_prefix} Scaled {group_name}: {len(existing_features)} features")
-        else:
-            # 统一归一化所有数值特征
-            logger.info(f"{self.log_prefix} Using unified scaling strategy...")
-            numeric_features = [col for col in X_processed.columns if col not in categorical_features]
-            if numeric_features:
-                self.scaler = scaler_class()
-                X_processed.loc[:, numeric_features] = self.scaler.fit_transform(X_processed[numeric_features])
-                logger.info(f"{self.log_prefix} Scaled {len(numeric_features)} numeric features")
-        
-        return X_processed
-    
-    def _transform_numeric(self, X: pd.DataFrame, categorical_features: List[str]) -> pd.DataFrame:
-        """
-        预测模式：转换数值特征（使用已拟合的参数）
-        """
-        X_processed = X.copy()
-        if self.args.use_grouped_scaling:
-            # 分组归一化
-            for group_name, features in self.feature_groups.items():
-                if group_name == 'categorical_features':
-                    continue
-                if group_name not in self.feature_scalers:
-                    continue
-                # 过滤掉不存在的特征
-                existing_features = [f for f in features if f in X_processed.columns]
-                if not existing_features:
-                    continue
-                X_processed.loc[:, existing_features] = self.feature_scalers[group_name].transform(X_processed[existing_features])
-        else:
-            # 统一归一化
-            if self.scaler is not None:
-                numeric_features = [col for col in X_processed.columns if col not in categorical_features]
-                if numeric_features:
-                    X_processed.loc[:, numeric_features] = self.scaler.transform(X_processed[numeric_features])
-        
-        return X_processed
-    
-    def validate_features(self, X: pd.DataFrame, stage: str = "unknown"):
-        """
-        验证特征质量
-        
-        Args:
-            X: 特征DataFrame
-            stage: 阶段名称（用于日志）
-        """
-        logger.info(f"{self.log_prefix} === Feature Validation ({stage}) ===")
-        logger.info(f"{self.log_prefix} Shape: {X.shape}")
-        # 检查缺失值
-        missing = X.isnull().sum()
-        if missing.sum() > 0:
-            logger.warning(f"{self.log_prefix} Missing values detected:")
-            for col, count in missing[missing > 0].items():
-                logger.warning(f"{self.log_prefix} {col}: {count} ({count/len(X)*100:.2f}%)")
-        else:
-            logger.info(f"{self.log_prefix} No missing values.")
-        # 检查无穷值
-        numeric_cols = X.select_dtypes(include=[np.number]).columns
-        for col in numeric_cols:
-            inf_count = np.isinf(X[col]).sum()
-            if inf_count > 0:
-                logger.error(f"{self.log_prefix} Infinite values in {col}: {inf_count}")
-        # 数值特征统计
-        if len(numeric_cols) > 0:
-            logger.info(f"{self.log_prefix} Numeric features range:")
-            for col in numeric_cols[:5]:  # 只显示前5个
-                min_val, max_val = X[col].min(), X[col].max()
-                logger.info(f"{self.log_prefix} {col}: [{min_val:.4f}, {max_val:.4f}]")
-        # 类别特征统计
-        categorical_cols = X.select_dtypes(include=['category', 'object']).columns
-        if len(categorical_cols) > 0:
-            logger.info(f"{self.log_prefix} Categorical features:")
-            for col in categorical_cols:
-                n_unique = X[col].nunique()
-                logger.info(f"{self.log_prefix} {col}: {n_unique} unique values")
-
-
-class AdvancedFeatureEngine:
-    """
-    高级特征工程器
-    
-    新增特征类型:
-    1. 滑窗统计特征（rolling statistics）
-    2. 差分特征（differencing）
-    3. 周期性特征（cyclical encoding）
-    4. 交叉特征（interaction features）
-    """
-    
-    def add_rolling_features(self, df, columns, windows=[3, 7, 14]):
-        """
-        添加滑窗统计特征
-        
-        为每个指定列和窗口大小计算:
-        - rolling_mean: 滑窗均值
-        - rolling_std: 滑窗标准差
-        - rolling_min: 滑窗最小值
-        - rolling_max: 滑窗最大值
-        - rolling_median: 滑窗中位数
-        """
-        for col in columns:
-            for window in windows:
-                df[f'{col}_roll_mean_{window}'] = df[col].rolling(window).mean()
-                df[f'{col}_roll_std_{window}'] = df[col].rolling(window).std()
-                df[f'{col}_roll_min_{window}'] = df[col].rolling(window).min()
-                df[f'{col}_roll_max_{window}'] = df[col].rolling(window).max()
-                df[f'{col}_roll_median_{window}'] = df[col].rolling(window).median()
-        
-        return df
-    
-    def add_diff_features(self, df, columns, periods=[1, 7]):
-        """
-        添加差分特征
-        
-        计算:
-        - diff: 差分值
-        - pct_change: 百分比变化
-        """
-        for col in columns:
-            for period in periods:
-                df[f'{col}_diff_{period}'] = df[col].diff(period)
-                df[f'{col}_pct_change_{period}'] = df[col].pct_change(period)
-        
-        return df
-    
-    def add_cyclical_features(self, df, col, period):
-        """
-        添加周期性特征（正弦余弦编码）
-        
-        避免周期性特征的边界问题
-        例如: 23点和0点在数值上差距大，但实际很接近
-        """
-        df[f'{col}_sin'] = np.sin(2 * np.pi * df[col] / period)
-        df[f'{col}_cos'] = np.cos(2 * np.pi * df[col] / period)
-        return df
-    
-    def add_interaction_features(self, df, pairs):
-        """
-        添加交叉特征
-        
-        创建特征对的乘积，捕捉特征间的交互作用
-        """
-        for col1, col2 in pairs:
-            df[f'{col1}_x_{col2}'] = df[col1] * df[col2]
-        return df
-
-
-class ModelFactory:
-    """
-    模型工厂类 - 统一接口创建不同类型的机器学习模型
-    
-    支持模型:
-    - LightGBM (lgb)
-    - XGBoost (xgb) 
-    - CatBoost (cat)
-    - RandomForest (rf)
-    - ExtraTrees (et)
-    """
-    
-    @staticmethod
-    def create_model(model_type: str, **params):
-        """
-        创建指定类型的模型实例
-        
-        参数:
-            model_type: 模型类型标识符
-            **params: 模型超参数
-        
-        返回:
-            模型实例
-        """
-        models = {
-            "lgb": lgb.LGBMRegressor,
-            "xgb": xgb.XGBRegressor,
-            "cat": cab.CatBoostRegressor,
-            "rf": RandomForestRegressor,
-            "et": ExtraTreesRegressor,
-        }
-        
-        if model_type not in models:
-            raise ValueError(f"不支持的模型类型: {model_type}")
-        
-        return models[model_type](**params)
-
-
-class ModelEnsemble:
-    """
-    模型融合类
-    
-    支持三种融合策略:
-    1. average: 简单平均
-    2. weighted: 加权平均（权重可优化）
-    3. stacking: 堆叠集成（两层模型）
-    """
-    
-    def __init__(self, models: List[Tuple[str, Any]], method='average'):
-        """
-        参数:
-            models: 模型列表 [(name, model), ...]
-            method: 融合方法
-        """
-        self.models = models
-        self.method = method
-        self.weights = None
-        self.meta_model = None
-    
-    def fit(self, X_train, y_train, X_val=None, y_val=None):
-        """训练所有基模型和元模型"""
-        # 训练基模型
-        for name, model in self.models:
-            logger.info(f"训练模型: {name}")
-            model.fit(X_train, y_train)
-        
-        # 如果是stacking，训练元模型
-        if self.method == 'stacking' and X_val is not None:
-            self._train_meta_model(X_val, y_val)
-        
-        # 如果是加权平均，优化权重
-        if self.method == 'weighted' and X_val is not None:
-            self.optimize_weights(X_val, y_val)
-    
-    def predict(self, X):
-        """融合预测"""
-        if self.method == 'average':
-            return self._average_predict(X)
-        elif self.method == 'weighted':
-            return self._weighted_predict(X)
-        else:  # stacking
-            return self._stacking_predict(X)
-    
-    def optimize_weights(self, X_val, y_val):
-        """优化加权平均的权重"""
-        from scipy.optimize import minimize
-        
-        def objective(weights):
-            preds = [model.predict(X_val) for _, model in self.models]
-            ensemble_pred = np.average(preds, axis=0, weights=weights)
-            return mean_squared_error(y_val, ensemble_pred)
-        
-        n_models = len(self.models)
-        constraints = {'type': 'eq', 'fun': lambda w: np.sum(w) - 1}
-        bounds = [(0, 1)] * n_models
-        initial = np.ones(n_models) / n_models
-        
-        result = minimize(objective, initial, 
-                         method='SLSQP',
-                         bounds=bounds,
-                         constraints=constraints)
-        
-        self.weights = result.x
-
-
-class PredictionHelper:
-    """预测辅助类 - 所有预测方法的公共逻辑"""
-    
-    @staticmethod
-    def prepare_features(X, preprocessor, categorical_features):
-        """
-        统一的特征预处理
-        
-        所有7种预测方法共用此方法，避免重复代码
-        """
-        return preprocessor.transform(X, categorical_features)
-    
-    @staticmethod
-    def build_lag_features(df, features, lags):
-        """
-        统一的滞后特征构建
-        
-        适用于单变量和多变量方法
-        """
-        for feat in features:
-            for lag in lags:
-                df[f'{feat}_lag_{lag}'] = df[feat].shift(lag)
-        return df
-    
-    @staticmethod
-    def recursive_predict_step(model, current_features, history, target, step):
-        """
-        递归预测的单步逻辑
-        
-        USMR和MSMR共用此方法
-        """
-        # 预测
-        prediction = model.predict(current_features)[0]
-        
-        # 更新历史
-        history.loc[len(history)] = prediction
-        
-        return prediction
 
 
 class Model:
@@ -590,23 +95,7 @@ class Model:
         # ------------------------------
         # 模型训练
         # ------------------------------
-        self.model_params = {
-            "boosting_type": "gbdt",
-            "objective": self.args.objective,  # "regression_l1": L1 loss or MAE, "regression": L2 loss or MSE
-            "metric": self.args.loss,  # if objective=="regression_l1": mae, if objective=="regression": rmse
-            "n_estimators": 1000,
-            "learning_rate": self.args.learning_rate,
-            "max_bin": 31,
-            "num_leaves": 31,
-            "feature_fraction": 0.8,
-            "bagging_fraction": 0.8,
-            "bagging_freq": 1,
-            "lambda_l1": 0.5,
-            "lambda_l2": 0.5,
-            "verbose": -1,
-            "n_jobs": -1,
-            "seed": 42,
-        }
+        self.model_factory = ModelFactory()
         # ------------------------------
         # 模型测试
         # ------------------------------ 
@@ -1711,7 +1200,7 @@ class Model:
         }
 
         # Base LightGBM estimator
-        lgbm_base = lgb.LGBMRegressor(**self.model_params)
+        lgbm_base = self.model_factory.create_model(self.args.model_type, self.args.model_params)
 
         # Wrap in MultiOutputRegressor if the method is multi-output
         if self.args.pred_method in ["univariate-multi-step-direct", "multivariate-multi-step-direct", "multivariate-multi-step-recursive"]:
@@ -1792,18 +1281,11 @@ class Model:
         # 模型训练
         # ------------------------------
         # model estimator
-        lgbm_estimator = lgb.LGBMRegressor(**self.model_params)
+        lgbm_estimator = self.model_factory.create_model(self.args.model_type, self.args.model_params)
         # model training
         if Y_train_df.shape[1] == 1:
             model = lgbm_estimator
-            model.fit(
-                X_train_df_processed,
-                Y_train_df,
-                categorical_feature=lgbm_categorical,
-                eval_set=[(X_train_df_processed, Y_train_df)],
-                eval_metric="mae",
-                callbacks=[lgb.early_stopping(self.args.patience, verbose=False)],
-            )
+            model.fit(X_train_df_processed, Y_train_df)
             logger.info(f"{self.log_prefix} Training single output LGBMRegressor")
         elif Y_train_df.shape[1] > 1:
             model = MultiOutputRegressor(estimator=lgbm_estimator)
@@ -2679,7 +2161,6 @@ def main():
     """
     主函数入口
     """
-    from models_ml.config.model_config import ModelConfig_univariate, ModelConfig_multivariate
     # 模型配置
     args = ModelConfig_univariate()
     # args = ModelConfig_multivariate()

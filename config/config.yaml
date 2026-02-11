@@ -1,0 +1,17 @@
+# config.yaml
+model:
+  type: lightgbm
+  params:
+    n_estimators: 1000
+    learning_rate: 0.05
+    max_depth: 7
+
+features:
+  lags: [1, 2, 7, 14, 21]
+  rolling_windows: [3, 7, 14]
+  diff_periods: [1, 7]
+
+training:
+  window_days: 30
+  predict_days: 1
+  test_windows: 5

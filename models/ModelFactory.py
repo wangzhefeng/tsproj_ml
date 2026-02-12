@@ -148,8 +148,9 @@ class LightGBMModel(BaseModel):
             'metric': 'rmse',
             'n_estimators': 1000,
             'learning_rate': 0.05,
-            'max_depth': -1,
+            "max_bin": 31,
             'num_leaves': 31,
+            'max_depth': -1,
             'feature_fraction': 0.8,
             'bagging_fraction': 0.8,
             'bagging_freq': 1,
@@ -204,6 +205,7 @@ class LightGBMModel(BaseModel):
             fit_params['eval_set'] = eval_set
             fit_params['eval_metric'] = eval_metric
             fit_params['callbacks'] = [lgb.early_stopping(early_stopping_rounds, verbose=verbose)]
+            fit_params['verbose'] = verbose
         
         if categorical_features is not None:
             fit_params['categorical_feature'] = categorical_features
@@ -215,7 +217,7 @@ class LightGBMModel(BaseModel):
     def predict(self, X: pd.DataFrame) -> np.ndarray:
         """预测"""
         if not self.is_fitted:
-            raise ValueError("模型尚未训练 (Model not fitted yet)")
+            raise ValueError("模型尚未训练(Model not fitted yet)")
         return self.model.predict(X)
 
 class XGBoostModel(BaseModel):
@@ -246,8 +248,11 @@ class XGBoostModel(BaseModel):
         self.params = default_params
         self.model = xgb.XGBRegressor(**self.params)
     
-    def fit(self, X: pd.DataFrame, y: pd.Series,
+    def fit(self, 
+            X: pd.DataFrame, 
+            y: pd.Series,
             eval_set: Optional[tuple] = None,
+            eval_metric: str = "mae",
             early_stopping_rounds: int = 50,
             verbose: bool = False):
         """
@@ -258,12 +263,13 @@ class XGBoostModel(BaseModel):
             y: 训练目标
             eval_set: 验证集 [(X_val, y_val)]
             early_stopping_rounds: 早停轮数
-            verbose: 是否显示训练过程
+            verbose: 是否显示训练过程s
         """
         fit_params = {}
         
         if eval_set is not None:
             fit_params['eval_set'] = eval_set
+            fit_params['eval_metric'] = eval_metric
             fit_params['early_stopping_rounds'] = early_stopping_rounds
             fit_params['verbose'] = verbose
         
@@ -274,7 +280,7 @@ class XGBoostModel(BaseModel):
     def predict(self, X: pd.DataFrame) -> np.ndarray:
         """预测"""
         if not self.is_fitted:
-            raise ValueError("模型尚未训练")
+            raise ValueError("模型尚未训练(Model not fitted yet)")
         return self.model.predict(X)
 
 class CatBoostModel(BaseModel):
@@ -303,9 +309,12 @@ class CatBoostModel(BaseModel):
         self.params = default_params
         self.model = cab.CatBoostRegressor(**self.params)
     
-    def fit(self, X: pd.DataFrame, y: pd.Series,
-            eval_set: Optional[tuple] = None,
+    def fit(self, 
+            X: pd.DataFrame, 
+            y: pd.Series,
             categorical_features: Optional[list] = None,
+            eval_set: Optional[tuple] = None,
+            eval_metric: str = "mae",
             early_stopping_rounds: int = 50):
         """
         训练CatBoost模型
@@ -321,6 +330,7 @@ class CatBoostModel(BaseModel):
         
         if eval_set is not None:
             fit_params['eval_set'] = eval_set
+            fit_params['eval_metric'] = eval_metric
             fit_params['early_stopping_rounds'] = early_stopping_rounds
         
         if categorical_features is not None:
@@ -395,7 +405,7 @@ class ModelFactory:
     }
     
     @staticmethod
-    def create_model(model_type: str, params: Dict[str, Any]) -> BaseModel:
+    def create_model(model_type: str, model_params: Dict[str, Any]) -> BaseModel:
         """
         创建模型实例
         
@@ -425,7 +435,7 @@ class ModelFactory:
             )
         
         model_class = ModelFactory._models[model_type]
-        return model_class(params)
+        return model_class(model_params)
     
     @staticmethod
     def list_models() -> list:

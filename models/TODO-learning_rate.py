@@ -12,7 +12,6 @@
 # ***************************************************
 
 # python libraries
-import os
 import sys
 from pathlib import Path
 ROOT = str(Path.cwd())
@@ -21,16 +20,18 @@ if ROOT not in sys.path:
 import warnings
 warnings.filterwarnings("ignore")
 
-# global variable
-LOGGING_LABEL = Path(__file__).name[:-3]
-os.environ['LOG_NAME'] = LOGGING_LABEL
-from utils.log_util import logger
-
-
 # 使用学习率调度器
 import optuna
+import lightgbm as lgb
+from sklearn.metrics import mean_absolute_error
 
-def objective(trial):
+from utils.log_util import logger
+
+# global variable
+LOGGING_LABEL = Path(__file__).name[:-3]
+
+
+def objective(trial, X_train, y_train, X_val, y_val):
     params = {
         'learning_rate': trial.suggest_float('learning_rate', 0.01, 0.3),
         'num_leaves': trial.suggest_int('num_leaves', 20, 100),
@@ -42,6 +43,7 @@ def objective(trial):
     
     y_pred = model.predict(X_val)
     return mean_absolute_error(y_val, y_pred)
+
 
 study = optuna.create_study(direction='minimize')
 study.optimize(objective, n_trials=100)

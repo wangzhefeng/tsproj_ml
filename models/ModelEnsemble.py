@@ -7,12 +7,25 @@
 # * Date        : 2026-02-11
 # * Version     : 1.0.021117
 # * Description : description
-# * Link        : link
+# * Link        : 模型融合模块 (Model Ensemble)
+# *               ============================
+# *               提供多种模型融合策略，提升预测精度
+# *               
+# *               支持的融合方法:
+# *               1. Voting - 投票法
+# *                   - Hard Voting（硬投票）
+# *                   - Soft Voting（软投票）
+# *               2. Averaging - 平均法
+# *                   - Simple Average（简单平均）
+# *                   - Weighted Average（加权平均）
+# *               4. Stacking - 堆叠法
+# *                   - 两层堆叠
+# *                   - 多层堆叠
+# *               5. Blending（混合）
 # * Requirement : 相关模块版本需求(例如: numpy >= 2.1.0)
 # ***************************************************
 
 # python libraries
-import os
 import sys
 from pathlib import Path
 ROOT = str(Path.cwd())
@@ -34,29 +47,10 @@ from sklearn.metrics import (
     mean_absolute_percentage_error,  # MAPE
 )
 
-# global variable
-LOGGING_LABEL = Path(__file__).name[:-3]
-os.environ['LOG_NAME'] = LOGGING_LABEL
 from utils.log_util import logger
 
-"""
-模型融合模块 (Model Ensemble)
-============================
-
-提供多种模型融合策略，提升预测精度
-
-支持的融合方法:
-1. Voting - 投票法
-    - Hard Voting（硬投票）
-    - Soft Voting（软投票）
-2. Averaging - 平均法
-    - Simple Average（简单平均）
-    - Weighted Average（加权平均）
-4. Stacking - 堆叠法
-    - 两层堆叠
-    - 多层堆叠
-5. Blending（混合）
-"""
+# global variable
+LOGGING_LABEL = Path(__file__).name[:-3]
 
 
 class ModelEnsemble:

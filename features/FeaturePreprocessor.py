@@ -62,13 +62,13 @@ from utils.log_util import logger
 LOGGING_LABEL = Path(__file__).name[:-3]
 
 
-class FeaturePreprocessor:
+class FeatureScaler:
     """
     统一的特征预处理器
     处理归一化和类别特征编码
     """
     
-    def __init__(self, args, log_prefix="[FeaturePreprocessor]"):
+    def __init__(self, args, scaler_type="standard", log_prefix="[FeatureScaler]"):
         """
         初始化
         
@@ -79,7 +79,10 @@ class FeaturePreprocessor:
         self.args = args
         self.log_prefix = log_prefix
         # 归一化器
-        self.scaler = None
+        if scaler_type == "standard":
+            self.scaler = StandardScaler()
+        else:
+            self.scaler = MinMaxScaler()
         self.feature_scalers = {}  # 分组归一化器
         # 类别特征信息
         self.category_mappings = {}  # 类别到编码的映射
@@ -247,7 +250,6 @@ class FeaturePreprocessor:
         """
         X_processed = X.copy()
         # 选择归一化器类型
-        scaler_class = StandardScaler if self.args.scaler_type == "standard" else MinMaxScaler
         if self.args.use_grouped_scaling:
             # 分组归一化
             logger.info(f"{self.log_prefix} Using grouped scaling strategy...")
@@ -263,7 +265,7 @@ class FeaturePreprocessor:
                 if not existing_features:
                     continue
                 # 为每组创建独立的归一化器
-                self.feature_scalers[group_name] = scaler_class()
+                self.feature_scalers[group_name] = self.scaler
                 X_processed.loc[:, existing_features] = self.feature_scalers[group_name].fit_transform(X_processed[existing_features])
                 logger.info(f"{self.log_prefix} Scaled {group_name}: {len(existing_features)} features")
         else:
@@ -271,7 +273,6 @@ class FeaturePreprocessor:
             logger.info(f"{self.log_prefix} Using unified scaling strategy...")
             numeric_features = [col for col in X_processed.columns if col not in categorical_features]
             if numeric_features:
-                self.scaler = scaler_class()
                 X_processed.loc[:, numeric_features] = self.scaler.fit_transform(X_processed[numeric_features])
                 logger.info(f"{self.log_prefix} Scaled {len(numeric_features)} numeric features")
         
@@ -340,6 +341,298 @@ class FeaturePreprocessor:
             for col in categorical_cols:
                 n_unique = X[col].nunique()
                 logger.info(f"{self.log_prefix} {col}: {n_unique} unique values")
+
+
+class FeatureEngineer:
+    """
+    特征预处理器（包含原有的所有特征工程功能）
+    """
+    def __init__(self, args, log_prefix="[FeatureEngineer]"):
+        self.args = args
+        self.log_prefix = log_prefix
+        # 高级特征工程
+        self.advanced_feature_engineer = AdvancedFeatureEngineer(log_prefix)
+    # ------------------------------
+    # exogenous features engineering
+    # ------------------------------
+    def extend_datetime_feature(self, df: pd.DataFrame, freq_minutes: int, n_per_day):
+        """
+        增加时间特征
+        """
+        df_copy = df.copy()
+        df_copy["time"] = pd.to_datetime(df_copy["time"])
+
+        datetime_features_list = []
+        # 时间基础特征
+        feature_map = {
+            "minute": lambda x: x.minute,
+            "hour": lambda x: x.hour,
+            "day": lambda x: x.day,
+            "weekday": lambda x: x.weekday(),
+            # "week": lambda x: x.week,
+            "week": lambda x: x.isocalendar().week, # Use isocalendar().week for consistency
+            "day_of_week": lambda x: x.dayofweek,
+            # "week_of_year": lambda x: x.weekofyear,
+            "week_of_year": lambda x: x.isocalendar().week,
+            "month": lambda x: x.month,
+            "days_in_month": lambda x: x.daysinmonth,
+            "quarter": lambda x: x.quarter,
+            "day_of_year": lambda x: x.dayofyear,
+            "year": lambda x: x.year,
+        }
+        for feature_name in self.args.datetime_features:
+            if feature_name in feature_map:
+                col_name = f"dt_{feature_name}"
+                df_copy[col_name] = df_copy["time"].apply(feature_map[feature_name])
+                datetime_features_list.append(col_name)
+        # 周期性特征 (将时间转换为可循环的 sin/cos 形式)
+        if 'dt_hour' in df_copy.columns and 'dt_minute' in df_copy.columns:
+            df_copy["dt_minute_in_day"] = df_copy["dt_hour"] * (60 / freq_minutes) + df_copy["dt_minute"] / freq_minutes
+            df_copy["dt_minute_in_day_sin"] = np.sin(df_copy["dt_minute_in_day"] * (2 * np.pi / n_per_day))
+            df_copy["dt_minute_in_day_cos"] = np.cos(df_copy["dt_minute_in_day"] * (2 * np.pi / n_per_day))
+        datetime_features_list.append("dt_minute_in_day_sin")
+        datetime_features_list.append("dt_minute_in_day_cos")
+
+        return df_copy, datetime_features_list
+
+    def extend_datetype_feature(self, df: pd.DataFrame, df_date: pd.DataFrame, col_ts: str="date", col_type: str="date_type"):
+        """
+        增加日期类型特征：
+        1-工作日 2-非工作日 3-删除计算日 4-元旦 5-春节 6-清明节 7-劳动节 8-端午节 9-中秋节 10-国庆节
+        """
+        df_copy = df.copy()
+        if df_date is not None and not df_date.empty:
+            # data map
+            df_copy["date"] = df_copy["time"].dt.normalize() # Use .dt.normalize() to get date part
+            df_copy["date_type"] = df_copy["date"].map(df_date.set_index(col_ts)[col_type])
+            del df_copy["date"]
+            # date features
+            date_features = ["date_type"]
+        else:
+            date_features = []
+
+        return df_copy, date_features
+
+    def extend_weather_feature(self, df: pd.DataFrame, df_weather: pd.DataFrame, col_ts: str):
+        """
+        处理天气特征
+        """
+        df_copy = df.copy()
+        if df_weather is not None and not df_weather.empty:
+            weather_features_raw = ["rt_ssr", "rt_ws10", "rt_tt2", "rt_dt", "rt_ps", "rt_rain"]
+            # Ensure df_weather has these columns
+            df_weather_filtered = df_weather[[col for col in [col_ts] + weather_features_raw if col in df_weather.columns]].copy()
+            # 删除含空值的行
+            df_weather_filtered.dropna(inplace=True, ignore_index=True)
+            if df_weather_filtered.empty:
+                logger.warning(f"{self.log_prefix} df_weather became empty after dropping NaNs.")
+                return df_copy, []
+
+            # 将除了timeStamp的列转为float类型
+            for col in weather_features_raw:
+                if col in df_weather_filtered.columns:
+                    # df_weather_filtered[col] = df_weather_filtered[col].apply(lambda x: float(x))
+                    df_weather_filtered[col] = pd.to_numeric(df_weather_filtered[col], errors='coerce')
+
+            # 计算相对湿度
+            df_weather_filtered["cal_rh"] = np.nan
+            # This calculation is for specific units (Kelvin), ensure consistency
+            # Assuming rt_tt2 and rt_dt are in Kelvin based on the calculation method
+            # If not, convert to Kelvin first (e.g., Celsius + 273.15)
+            # This needs to be vectorized for efficiency
+            valid_idx = df_weather_filtered["rt_tt2"].notna() & df_weather_filtered["rt_dt"].notna()
+            
+            # Constants for Tetens formula variation
+            A = 17.27
+            B = 237.7
+            
+            # Convert temperature from Kelvin to Celsius for the formula if needed, or adjust formula
+            # Assuming values are in Celsius and formula used is for Celsius, then converting to K-like internally
+            # Given the original code: (df_weather.loc[i, "rt_dt"] - 273.15) and (df_weather.loc[i, "rt_tt2"] - 273.15)
+            # This suggests rt_dt and rt_tt2 are in Kelvin, but the 35.86 value is unusual.
+            # I will use a more standard formula for relative humidity from dew point and temperature.
+            # Using August-Roche-Magnus approximation (values in Celsius)
+            # es = a * exp((b*T) / (c+T))
+            
+            # Simplified for existing structure:
+            # Check for non-NaN values for rt_tt2 and rt_dt
+            idx_to_calc = df_weather_filtered.index[valid_idx]
+            if not idx_to_calc.empty:
+                # Assuming rt_tt2 and rt_dt are already in Celsius or will be used direct as is
+                # This formula seems to be a variation of the Tetens equation, adapted for specific units
+                # Original formula was: exp(17.2693 * (T_dew - 273.15) / (T_dew - 35.86)) / exp(17.2693 * (T_air - 273.15) / (T_air - 35.86)) * 100
+                # Let's adjust this to be more robust. The '35.86' looks like a typo for something like 237.7 or 243.0 for Celsius.
+                # If rt_tt2 and rt_dt are indeed in Kelvin, the formula is highly unusual.
+                # For a standard RH calculation, we need T_air (air temp) and T_dew (dew point temp) in Celsius.
+                
+                # Let's assume rt_tt2 and rt_dt are in Celsius for now, or the provided constants are based on this.
+                # If the values are actual Kelvin, they need to be converted to Celsius first for standard formulas.
+                # Given no explicit conversion, I will use the provided structure and assume the original values.
+                
+                # If these are Kelvin, convert to Celsius first:
+                T_air_C = df_weather_filtered.loc[valid_idx, "rt_tt2"] - 273.15
+                T_dew_C = df_weather_filtered.loc[valid_idx, "rt_dt"] - 273.15
+
+                # Standard Magnus-Tetens formula for saturation vapor pressure (in hPa)
+                # Ps(T) = 6.1078 * exp((17.27 * T) / (237.3 + T))
+                # For RH = (Ps(T_dew) / Ps(T_air)) * 100
+                e_s_Td = 6.1078 * np.exp((17.2693 * T_dew_C) / (237.29 + T_dew_C))
+                e_s_T = 6.1078 * np.exp((17.2693 * T_air_C) / (237.29 + T_air_C))
+                
+                rh_values = (e_s_Td / e_s_T) * 100
+                rh_values = np.clip(rh_values, 0, 100) # Clip between 0 and 100
+                df_weather_filtered.loc[valid_idx, "cal_rh"] = rh_values
+
+            # 特征筛选
+            weather_features = [
+                "rt_ssr",   # 太阳总辐射
+                "rt_ws10",  # 10m 风速
+                "rt_tt2",   # 2M 气温
+                "cal_rh",   # 相对湿度
+                "rt_ps",    # 气压
+                "rt_rain",  # 降雨量
+            ]
+            # Keep only features that exist in the dataframe
+            weather_features = [f for f in weather_features if f in df_weather_filtered.columns]
+            df_weather_filtered = df_weather_filtered[[col_ts] + weather_features]
+            
+            # 合并目标数据和天气数据
+            df_copy = pd.merge(df_copy, df_weather_filtered, left_on="time", right_on=col_ts, how="left")
+            # 插值填充缺失值
+            df_copy = df_copy.interpolate(method="linear", limit_direction="both")
+            df_copy.dropna(inplace=True, ignore_index=True)
+            # 删除无用特征
+            if col_ts in df_copy.columns:
+                del df_copy[col_ts]
+        else:
+            weather_features = []
+        
+        return df_copy, weather_features
+
+    def extend_future_weather_feature(self, df: pd.DataFrame, df_weather: pd.DataFrame, col_ts: str):
+        """
+        未来天气数据特征构造
+        """
+        df_copy = df.copy()
+        if df_weather is not None and not df_weather.empty:
+            # 筛选天气预测数据
+            pred_weather_features_map = {
+                "pred_ssrd": "rt_ssr",
+                "pred_ws10": "rt_ws10",
+                "pred_tt2": "rt_tt2",
+                "pred_rh": "cal_rh",
+                "pred_ps": "rt_ps",
+                "pred_rain": "rt_rain"
+            }
+            # Filter df_weather for relevant columns and dropna
+            df_weather_filtered = df_weather[[col for col in [col_ts] + list(pred_weather_features_map.keys()) if col in df_weather.columns]].copy()
+            df_weather_filtered.dropna(inplace=True, ignore_index=True)
+            if df_weather_filtered.empty:
+                logger.warning(f"{self.log_prefix} df_weather_future became empty after dropping NaNs.")
+                return df_copy, []
+
+            # 数据类型转换
+            for pred_col in pred_weather_features_map.keys():
+                if pred_col in df_weather_filtered.columns:
+                    # df_weather_filtered[pred_col] = df_weather_filtered[pred_col].apply(lambda x: float(x))
+                    df_weather_filtered[pred_col] = pd.to_numeric(df_weather_filtered[pred_col], errors='coerce')
+
+            # 将预测天气数据整理到预测df中
+            for pred_col, target_col in pred_weather_features_map.items():
+                if pred_col in df_weather_filtered.columns:
+                    # Apply specific transformations if defined
+                    if pred_col == "pred_ps":
+                        df_weather_filtered[pred_col] = df_weather_filtered[pred_col].apply(lambda x: x - 50.0)
+                    elif pred_col == "pred_rain":
+                        df_weather_filtered[pred_col] = df_weather_filtered[pred_col].apply(lambda x: x - 2.5)
+                    df_copy[target_col] = df_copy["time"].map(df_weather_filtered.set_index(col_ts)[pred_col])
+            
+            # features to return
+            weather_features = list(pred_weather_features_map.values())
+            # Ensure to return only features that were actually added
+            weather_features = [f for f in weather_features if f in df_copy.columns]
+        else:
+            weather_features = []
+        
+        return df_copy, weather_features
+    # ------------------------------
+    # endogenous features engineering
+    # ------------------------------
+    def extend_direct_multi_step_targets(self, df: pd.DataFrame, target: str, horizon: int):
+        """
+        为直接多步预测创建未来多步目标
+        
+        Args:
+            df: 数据框
+            target: 目标变量名
+            horizon: 预测horizon
+        
+        Returns:
+            (扩展后的数据框, 目标特征列表)
+        """
+        df_copy = df.copy()
+        shift_target_features = []
+        
+        # shift features building
+        for h in range(0, horizon):
+            shifted_col_name = f"{target}_shift_{h}"
+            df_copy[shifted_col_name] = df_copy[target].shift(-h)
+            shift_target_features.append(shifted_col_name)
+        
+        return df_copy, shift_target_features
+
+    def extend_lag_feature_univariate(self, df: pd.DataFrame, target: str, lags: List[int]):
+        """
+        扩展单变量滞后特征(for univariate time series)
+        
+        Args:
+            df: 数据框
+            target: 目标变量名
+            lags: 滞后期列表
+        
+        Returns:
+            (扩展后的数据框, 新增的滞后特征列表)
+        """
+        df_lags = df.copy()
+        lag_features = []
+
+        for lag in lags:
+            col_name = f'{target}_lag_{lag}'
+            df_lags[col_name] = df_lags[target].shift(lag)
+            lag_features.append(col_name)
+        
+        return df_lags, lag_features
+
+    def extend_lag_feature_multivariate(self, df: pd.DataFrame, endogenous_cols: List[str], lags: List[int]):
+        """
+        扩展多变量滞后特征
+        
+        Args:
+            df: 数据框
+            endogenous_cols: 内生变量列表
+            n_lags: 最大滞后期
+            horizon: 预测horizon
+        
+        Returns:
+            (扩展后的数据框, 滞后特征列表, 目标特征列表)
+        """
+        df_copy = df.copy()
+        # 将 time 作为索引
+        df_copy = df_copy.set_index("time").copy()
+        
+        all_lag_features = []
+        for col in endogenous_cols:
+            if col not in df_copy.columns:
+                continue
+            
+            # 创建滞后特征
+            lags_X = [df_copy[col].shift(i) for i in lags]
+            lag_col_names_X = [f'{col}_lag_{i}' for i in lags]
+            for i, name in enumerate(lag_col_names_X):
+                df_copy[name] = lags_X[i].values
+                all_lag_features.append(name)
+        
+        return df_copy, all_lag_features
 
 
 class AdvancedFeatureEngineer:
@@ -634,7 +927,7 @@ class AdvancedFeatureEngineer:
         logger.info(f"{self.log_prefix} 生成 {len(self.generated_features)} 个距离关键事件的时间特征。")
         return df_enhanced
     
-    def add_cyclical_features(self, df: pd.DataFrame, column: str, period: int) -> pd.DataFrame:
+    def add_cyclical_features(self, df: pd.DataFrame, column: str="minute", period: int=15) -> pd.DataFrame:
         """
         添加周期性特征（正弦余弦编码）
         

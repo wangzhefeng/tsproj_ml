@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 
 # ***************************************************
-# * File        : feature_selection.py
+# * File        : FeatureSelection.py
 # * Author      : Zhefeng Wang
 # * Email       : zfwang7@gmail.com
 # * Date        : 2026-02-11
@@ -12,19 +12,9 @@
 # ***************************************************
 
 # python libraries
-import sys
-from pathlib import Path
-ROOT = str(Path.cwd())
-if ROOT not in sys.path:
-    sys.path.append(ROOT)
-import warnings
-warnings.filterwarnings("ignore")
-
 import pandas as pd
 from sklearn.feature_selection import SelectKBest, f_regression
 
-# global variable
-LOGGING_LABEL = Path(__file__).name[:-3]
 
 # ------------------------------
 # 特征选择

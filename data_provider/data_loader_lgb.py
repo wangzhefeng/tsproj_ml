@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 
 # ***************************************************
-# * File        : data_loader_lgb.py
+# * File        : data_loader.py
 # * Author      : Zhefeng Wang
 # * Email       : wangzhefengr@163.com
 # * Date        : 2024-10-17
@@ -11,10 +11,7 @@
 # * Requirement : 相关模块版本需求(例如: numpy >= 2.1.0)
 # ***************************************************
 
-__all__ = []
-
 # python libraries
-import os
 import sys
 from pathlib import Path
 ROOT = str(Path.cwd())
@@ -63,7 +60,17 @@ def get_lgb_train_test_data(train_path, test_path, weight_paths = []):
 
 # 测试代码 main 函数
 def main():
-    pass
+    series = pd.read_csv(
+        "https://raw.githubusercontent.com/jbrownlee/Datasets/master/shampoo.csv",
+        header = 0,
+        names = ["Month", "Sales"],
+        index_col = None,
+        parse_dates = False, 
+        date_format = None,
+    )
+    series["Month"] = series["Month"].apply(lambda x: pd.to_datetime("190" + x, format = "%Y-%m"))
+    print(series)
+    print(series.info())
 
 if __name__ == "__main__":
     main()

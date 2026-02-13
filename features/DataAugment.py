@@ -12,18 +12,7 @@
 # ***************************************************
 
 # python libraries
-import sys
-from pathlib import Path
-ROOT = str(Path.cwd())
-if ROOT not in sys.path:
-    sys.path.append(ROOT)
-import warnings
-warnings.filterwarnings("ignore")
-
 import numpy as np
-
-# global variable
-LOGGING_LABEL = Path(__file__).name[:-3]
 
 
 def augment_time_series(df, target_feature, noise_level=0.01):

@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 
 # ***************************************************
-# * File        : advanced_features.py
+# * File        : FeaturePreprocessor.py
 # * Author      : Zhefeng Wang
 # * Email       : zfwang7@gmail.com
 # * Date        : 2026-02-11
@@ -43,14 +43,8 @@
 # ***************************************************
 
 # python libraries
-import sys
 from pathlib import Path
-ROOT = str(Path.cwd())
-if ROOT not in sys.path:
-    sys.path.append(ROOT)
 from typing import Dict, List, Tuple
-import warnings
-warnings.filterwarnings("ignore")
 
 import numpy as np
 import pandas as pd
@@ -633,7 +627,220 @@ class FeatureEngineer:
                 all_lag_features.append(name)
         
         return df_copy, all_lag_features
+    # ------------------------------
+    # create features
+    # ------------------------------
+    def create_features(self, df_series: pd.DataFrame, endogenous_features_with_target: List[str], exogenous_features: List[str], target_feature: str, categorical_features: List[str]):
+        """
+        创建特征（集成高级特征工程）
+        
+        Args:
+            df_series: 时间序列数据
+            endogenous_features_with_target: 内生变量（含目标）
+            exogenous_features: 外生变量
+            target_feature: 目标变量
+            categorical_features: 类别特征
+        
+        Returns:
+            (特征化后的数据, 预测特征列表, 目标输出特征列表, 类别特征列表)
+        """
+        # df_series copy
+        df_series_copy = df_series.copy()
+        # For multi-output recursive, we need lags for ALL endogenous variables.
+        endogenous_for_lags = endogenous_features_with_target
+        # Clear and re-populate categorical_features for each run to avoid duplicates
+        categorical_features_copy = categorical_features.copy() 
+        # ------------------------------
+        # 特征工程：日期时间特征
+        # ------------------------------
+        df_series_copy, datetime_features = self.extend_datetime_feature(
+            df=df_series_copy,
+            freq_minutes=self.args.freq_minutes,
+            n_per_day=self.args.n_per_day,
+        )
+        logger.info(f"{self.log_prefix} after extend_datetime_feature df_series_copy: \n{df_series_copy.head()}")
+        logger.info(f"{self.log_prefix} after extend_datetime_feature datetime_features: {datetime_features}")
+        # 类别特征更新
+        categorical_features_copy.extend(self.args.datetime_categorical_features)
+        categorical_features_copy = sorted(set(categorical_features_copy), key=categorical_features_copy.index)
+        # ------------------------------
+        # 特征工程：滞后特征
+        # ------------------------------
+        lag_features = []
+        target_output_features = []
+        if self.args.pred_method == "univariate-single-multistep-direct-output":
+            target_output_features.append(target_feature)
+            logger.info(f"{self.log_prefix} after target_output_features: {target_output_features}")
+        elif self.args.pred_method == "univariate-single-multistep-direct":
+            # For univariate, only target lags are features
+            df_series_copy, uni_lag_features = self.extend_lag_feature_univariate(
+                df = df_series_copy,
+                target = target_feature,
+                lags = self.args.lags,
+            )
+            lag_features.extend(uni_lag_features)
+            logger.info(f"{self.log_prefix} after extend_lag_feature_univariate df_series_copy: \n{df_series_copy.head()}")
+            logger.info(f"{self.log_prefix} after extend_lag_feature_univariate lag_features: {lag_features}")
+            logger.info(f"{self.log_prefix} after extend_lag_feature_univariate target_output_features: {target_output_features}")
+            # Direct multi-step: create H target columns (Y_t+1, ..., Y_t+H)
+            df_series_copy, shift_target_features = self.extend_direct_multi_step_targets(
+                df = df_series_copy,
+                target = target_feature,
+                horizon = self.horizon,
+            )
+            target_output_features.extend(shift_target_features)
+            logger.info(f"{self.log_prefix} after extend_direct_multi_step_targets df_series_copy: \n{df_series_copy.head()}")
+            logger.info(f"{self.log_prefix} after extend_direct_multi_step_targets lag_features: {lag_features}")
+            logger.info(f"{self.log_prefix} after extend_direct_multi_step_targets target_output_features: {target_output_features}")
+        elif self.args.pred_method == "univariate-single-multistep-recursive":
+            # predictor features
+            df_series_copy, uni_lag_features = self.extend_lag_feature_univariate(
+                df = df_series_copy,
+                target = target_feature,
+                lags = self.args.lags,
+            )
+            lag_features.extend(uni_lag_features)
+            logger.info(f"{self.log_prefix} after extend_lag_feature_univariate df_series_copy: \n{df_series_copy.head()}")
+            logger.info(f"{self.log_prefix} after extend_lag_feature_univariate lag_features: {lag_features}")
+            logger.info(f"{self.log_prefix} after extend_lag_feature_univariate target_output_features: {target_output_features}")
+            # target features(For recursive, target is target_t+1)
+            df_series_copy, shift_target_features = self.extend_direct_multi_step_targets(
+                df = df_series_copy,
+                target = target_feature,
+                horizon = 1,
+            )
+            target_output_features.extend(shift_target_features)
+            logger.info(f"{self.log_prefix} after extend_direct_multi_step_targets df_series_copy: \n{df_series_copy.head()}")
+            logger.info(f"{self.log_prefix} after extend_direct_multi_step_targets lag_features: {lag_features}")
+            logger.info(f"{self.log_prefix} after extend_direct_multi_step_targets target_output_features: {target_output_features}")
+        elif self.args.pred_method == "univariate-single-multistep-direct-recursive":
+            # For univariate, only target lags are features
+            df_series_copy, uni_lag_features = self.extend_lag_feature_univariate(
+                df = df_series_copy,
+                target = target_feature,
+                lags = self.args.lags,
+            )
+            lag_features.extend(uni_lag_features)
+            logger.info(f"{self.log_prefix} after extend_lag_feature_univariate df_series_copy: \n{df_series_copy.head()}")
+            logger.info(f"{self.log_prefix} after extend_lag_feature_univariate lag_features: {lag_features}")
+            logger.info(f"{self.log_prefix} after extend_lag_feature_univariate target_output_features: {target_output_features}")
+            # Direct multi-step: create H target columns (Y_t+1, ..., Y_t+H)
+            df_series_copy, shift_target_features = self.extend_direct_multi_step_targets(
+                df = df_series_copy,
+                target = target_feature,
+                horizon = self.horizon,
+            )
+            target_output_features.extend(shift_target_features)
+            logger.info(f"{self.log_prefix} after extend_direct_multi_step_targets df_series_copy: \n{df_series_copy.head()}")
+            logger.info(f"{self.log_prefix} after extend_direct_multi_step_targets lag_features: {lag_features}")
+            logger.info(f"{self.log_prefix} after extend_direct_multi_step_targets target_output_features: {target_output_features}")
+        elif self.args.pred_method == "multivariate-single-multistep-direct":
+            # Direct multi-step: create H target columns (Y_t+1, ..., Y_t+H)
+            df_series_copy, shift_target_features = self.extend_direct_multi_step_targets(
+                df = df_series_copy,
+                target = target_feature,
+                horizon = self.horizon,
+            )
+            target_output_features.extend(shift_target_features)
+            logger.info(f"{self.log_prefix} after extend_direct_multi_step_targets df_series_copy: \n{df_series_copy.head()}")
+            logger.info(f"{self.log_prefix} after extend_direct_multi_step_targets lag_features: {lag_features}")
+            logger.info(f"{self.log_prefix} after extend_direct_multi_step_targets target_output_features: {target_output_features}")
+            # For multivariate, target and other endogenous lags are features
+            df_series_copy, multi_lag_features = self.extend_lag_feature_multivariate(
+                df = df_series_copy,
+                endogenous_features_with_target = endogenous_for_lags,
+                lags = self.args.lags,
+            )
+            lag_features.extend(multi_lag_features)
+            logger.info(f"{self.log_prefix} after extend_lag_feature_multivariate df_series_copy: \n{df_series_copy.head()}")
+            logger.info(f"{self.log_prefix} after extend_lag_feature_multivariate lag_features: {lag_features}")
+            logger.info(f"{self.log_prefix} after extend_lag_feature_multivariate target_output_features: {target_output_features}")
+        elif self.args.pred_method == "multivariate-single-multistep-recursive":
+            # For multivariate recursive, lags of target and other endogenous are features
+            df_series_copy, multi_lag_features = self.extend_lag_feature_multivariate(
+                df = df_series_copy,
+                endogenous_features_with_target = endogenous_for_lags,
+                lags = self.args.lags,
+            )
+            lag_features.extend(multi_lag_features)
+            logger.info(f"{self.log_prefix} after extend_lag_feature_multivariate df_series_copy: \n{df_series_copy.head()}")
+            logger.info(f"{self.log_prefix} after extend_lag_feature_multivariate lag_features: {lag_features}")
+            logger.info(f"{self.log_prefix} after extend_lag_feature_multivariate target_output_features: {target_output_features}")
+            # target features(For recursive, target is target_t+1)
+            df_series_copy, shift_target_features = self.extend_direct_multi_step_targets(
+                df = df_series_copy,
+                target = target_feature,
+                horizon = 1,
+            )
+            target_output_features.extend(shift_target_features)
+            logger.info(f"{self.log_prefix} after extend_direct_multi_step_targets df_series_copy: \n{df_series_copy.head()}")
+            logger.info(f"{self.log_prefix} after extend_direct_multi_step_targets lag_features: {lag_features}")
+            logger.info(f"{self.log_prefix} after extend_direct_multi_step_targets target_output_features: {target_output_features}")
+        elif self.args.pred_method == "multivariate-single-multistep-direct-recursive":
+            # For multivariate recursive, lags of target and other endogenous are features
+            df_series_copy, multi_lag_features = self.extend_lag_feature_multivariate(
+                df = df_series_copy,
+                endogenous_features_with_target = endogenous_for_lags,
+                lags = self.args.lags,
+            )
+            lag_features.extend(multi_lag_features)
+            logger.info(f"{self.log_prefix} after extend_lag_feature_multivariate df_series_copy: \n{df_series_copy.head()}")
+            logger.info(f"{self.log_prefix} after extend_lag_feature_multivariate lag_features: {lag_features}")
+            logger.info(f"{self.log_prefix} after extend_lag_feature_multivariate target_output_features: {target_output_features}")
+            # Direct multi-step: create H target columns (Y_t+1, ..., Y_t+H)
+            logger.info(f"{self.log_prefix} self.horizon: {self.horizon}")
+            df_series_copy, shift_target_features = self.extend_direct_multi_step_targets(
+                df = df_series_copy,
+                target = target_feature,
+                horizon = self.horizon,
+            )
+            target_output_features.extend(shift_target_features)
+            logger.info(f"{self.log_prefix} after extend_direct_multi_step_targets df_series_copy: \n{df_series_copy.head()}")
+            logger.info(f"{self.log_prefix} after extend_direct_multi_step_targets lag_features: {lag_features}")
+            logger.info(f"{self.log_prefix} after extend_direct_multi_step_targets target_output_features: {target_output_features}")
+        # ------------------------------
+        # 添加高级特征（新增）
+        # ------------------------------
+        if self.args.enable_advanced_features:
+            logger.info(f"{self.log_prefix} 添加高级特征...")
+            # 添加滞后统计特征
+            if target_feature in df_series_copy.columns:
+                df_series_copy = self.advanced_feature_engineer.add_lag_statistics(
+                    df_series_copy,
+                    columns=[target_feature],
+                    windows=self.args.rolling_windows,
+                    stats=self.args.rolling_stats
+                )
+            # 添加差分特征
+            if target_feature in df_series_copy.columns:
+                df_series_copy = self.advanced_feature_engineer.add_diff_features(
+                    df_series_copy,
+                    columns=[target_feature],
+                    periods=self.args.diff_periods
+                )
+            # 将生成的特征添加到特征列表
+            lag_features.extend(self.advanced_feature_engineer.get_generated_features())
+        # ------------------------------
+        # Feature ordering
+        # ------------------------------
+        # 内生变量特征 = 内生变量滞后特征
+        endgenous_features_all = lag_features
+        # 外生变量特征 = 外生变量特征 + 日期时间特征(特征工程)
+        exogenous_features_all = exogenous_features + datetime_features
+        # 预测特征 = 内生变量特征（滞后特征） + 外生变量特征
+        predictor_features = endgenous_features_all + exogenous_features_all
+        # 除内生变量特征(滞后特征)、内生变量特征(shift特征)、目标内生变量外的内生变量
+        current_endogenous_as_features = [
+            col for col in endogenous_features_with_target
+            if col not in target_output_features + lag_features + endogenous_for_lags
+        ]
+        predictor_features.extend(current_endogenous_as_features)
+        # Filter df_series_copy to only include necessary columns to avoid errors later
+        predictor_features = sorted(set(predictor_features), key=predictor_features.index)
+        all_cols_needed = ["time"] + predictor_features + target_output_features
+        df_series_copy = df_series_copy[[col for col in all_cols_needed if col in df_series_copy.columns]]
 
+        return df_series_copy, predictor_features, target_output_features, categorical_features_copy
 
 class AdvancedFeatureEngineer:
     """

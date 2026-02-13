@@ -47,6 +47,7 @@ class PredictionHelper:
                  feature_scaler,
                  log_prefix: str):
         self.args = args
+
         self.model = model
         self.df_history = df_history
         self.df_future = df_future
@@ -56,10 +57,13 @@ class PredictionHelper:
         self.target_output_features = target_output_features
         self.categorical_features = categorical_features
         self.feature_scaler = feature_scaler
+
         self.log_prefix = log_prefix
-        logger.info(f"{self.log_prefix} Endogenous features: {self.endogenous_features}")
-        logger.info(f"{self.log_prefix} Target feature: {self.target_feature}")
-        logger.info(f"{self.log_prefix} Forecast horizon: {self.args.horizon}")
+        logger.info(f"{self.log_prefix} endogenous_features: {self.endogenous_features}")
+        logger.info(f"{self.log_prefix} exogenous_features: {self.exogenous_features}")
+        logger.info(f"{self.log_prefix} target_feature: {self.target_feature}")
+        logger.info(f"{self.log_prefix} target_output_features: {self.target_output_features}")
+        logger.info(f"{self.log_prefix} categorical_features: {self.categorical_features}")
     
     def prepare_features(self):
         """
@@ -79,7 +83,7 @@ class PredictionHelper:
         self.block_size = min(self.args.lags) if self.args.lags else 1
         logger.info(f"{self.log_prefix} block_size: {self.block_size}")
         self.num_blocks = int(np.ceil(self.args.horizon / self.block_size))
-        logger.info(f"{self.log_prefix} Number of blocks: {self.num_blocks}")
+        logger.info(f"{self.log_prefix} num_blocks: {self.num_blocks}")
         
         # 1.获取足够的历史数据以构建滞后特征
         self.df_history_for_lags = self.df_history.iloc[-self.max_lag:].copy()
@@ -157,7 +161,7 @@ class PredictionHelper:
         
         logger.info(f"{self.log_prefix} USMDO forecast completed, predicted {len(Y_preds)} steps")
 
-        return Y_preds
+        return np.array(Y_preds)
 
     def univariate_single_multi_step_direct_forecast(self):
         """

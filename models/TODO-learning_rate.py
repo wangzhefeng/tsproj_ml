@@ -12,23 +12,9 @@
 # ***************************************************
 
 # python libraries
-import sys
-from pathlib import Path
-ROOT = str(Path.cwd())
-if ROOT not in sys.path:
-    sys.path.append(ROOT)
-import warnings
-warnings.filterwarnings("ignore")
-
-# 使用学习率调度器
-import optuna
+import optuna  # 使用学习率调度器
 import lightgbm as lgb
 from sklearn.metrics import mean_absolute_error
-
-from utils.log_util import logger
-
-# global variable
-LOGGING_LABEL = Path(__file__).name[:-3]
 
 
 def objective(trial, X_train, y_train, X_val, y_val):

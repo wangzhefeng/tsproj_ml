@@ -21,6 +21,8 @@ if ROOT not in sys.path:
 import warnings
 warnings.filterwarnings("ignore")
 
+import pandas as pd
+
 # global variable
 LOGGING_LABEL = Path(__file__).name[:-3]
 os.environ['LOG_NAME'] = LOGGING_LABEL

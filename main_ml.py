@@ -51,11 +51,11 @@ from sklearn.model_selection import (
 )
 
 from config.model_config import (
-    ModelConfig_univariate, ModelConfig_multivariate
+    ModelConfig_univariate, 
+    ModelConfig_multivariate
 )
-from features.FeaturePreprocessor import (
-    FeatureScaler, FeatureEngineer,
-)
+from features.FeatureEngineering import FeatureEngineer
+from features.FeatureScalering import FeatureScaler
 from models.ModelFactory import ModelFactory
 from strategies.PredictionStrategy import PredictionHelper
 
@@ -269,26 +269,18 @@ class Model:
             target_feature = None
         
         return df_template_copy, endogenous_features, target_feature
-    
+
     def process_history_data(self, input_data: Dict):
         """
         历史数据预处理
         """
-        # ------------------------------
-        # 类别特征收集器
-        # ------------------------------
-        categorical_features = []
-        # ------------------------------
         # 历史数据时间戳
-        # ------------------------------
-        df_history_template = pd.DataFrame({
-            "time": pd.date_range(self.train_start_time, self.train_end_time, freq=self.args.freq, inclusive="left"),
-        })
-        logger.info(f"{self.log_prefix} template df_history_template: \n{df_history_template.head()}")
-        # ------------------------------
+        df_history_template = pd.DataFrame({"time": pd.date_range(self.train_start_time, self.train_end_time, freq=self.args.freq, inclusive="left")})
+        logger.info(f"{self.log_prefix} template df_history_template: \n{df_history_template}")
         # 数据预处理：目标时间序列特征
-        # ------------------------------
         df_history_series = self.__process_df_timestamp(df=input_data["target_series"], col_ts=self.args.target_ts_feat)
+        logger.info(f"{self.log_prefix} after process_df_timestamp df_history: \n{df_history.head()}")
+        
         df_history, other_endogenous_features, target_feature = self.__process_target_series(
             df_template=df_history_template,
             df_series=df_history_series,
@@ -300,73 +292,32 @@ class Model:
         logger.info(f"{self.log_prefix} after process_target_series df_history: \n{df_history.head()}")
         # 所有内生变量(包含目标特征 y)
         endogenous_features_with_target = [target_feature] + other_endogenous_features if target_feature else other_endogenous_features
-        # ------------------------------
-        # 特征工程：日期类型(节假日、特殊事件)特征
-        # ------------------------------
-        df_date_history = self.__process_df_timestamp(df=input_data[f"date_history"], col_ts=self.args.date_ts_feat)
-        df_history, date_features = self.preprocessor.extend_datetype_feature(
-            df=df_history,
-            df_date=df_date_history,
-            col_ts=self.args.date_ts_feat,
-        )
-        if date_features:
-            categorical_features.extend(self.args.datetype_categorical_features)
-        logger.info(f"{self.log_prefix} after extend_datetype_feature df_history: \n{df_history.head()}")
-        logger.info(f"{self.log_prefix} after extend_datetype_feature date_features: {date_features}")
-        # ------------------------------
-        # 特征工程：天气特征
-        # ------------------------------
-        df_weather_history = self.__process_df_timestamp(df=input_data[f"weather_history"], col_ts=self.args.weather_ts_feat)
-        df_history, weather_features = self.preprocessor.extend_weather_feature(
-            df=df_history,
-            df_weather=df_weather_history,
-            col_ts=self.args.weather_ts_feat,
-        )
-        # Assuming weather features are numeric
-        if weather_features:
-            categorical_features.extend(self.args.weather_categorical_features)
-        logger.info(f"{self.log_prefix} after extend_weather_feature df_history: \n{df_history.head()}")
-        logger.info(f"{self.log_prefix} after extend_weather_feature weather_features: {weather_features}")
-        # ------------------------------
-        # 外生变量(包含：日期类型(节假日、特殊事件)特征、气象特征)
-        # ------------------------------
-        exogenous_features = date_features + weather_features
-        # ------------------------------
-        # 插值填充预测缺失值
-        # ------------------------------
-        # Interpolate existing data, then drop any remaining NaNs (e.g., at boundaries)
-        df_history = df_history.interpolate(method="linear", limit_direction="both")
-        df_history.dropna(inplace=True, ignore_index=True) # Drops rows where even interpolation couldn't help
-        logger.info(f"{self.log_prefix} after interpolate and dropna df_history: \n{df_history.head()}")
-        logger.info(f"{self.log_prefix} endogenous_features_with_target: {endogenous_features_with_target}")
-        logger.info(f"{self.log_prefix} exogenous_features: {exogenous_features}")
+        logger.info(f"{self.log_prefix} other_endogenous_features: {other_endogenous_features}")
         logger.info(f"{self.log_prefix} target_features: {target_feature}")
-        logger.info(f"{self.log_prefix} categorical_features: {categorical_features}")
-        
-        return (df_history, endogenous_features_with_target, exogenous_features, target_feature, categorical_features)
-    
+        logger.info(f"{self.log_prefix} endogenous_features_with_target: {endogenous_features_with_target}")
+        # 特征工程：日期类型(节假日、特殊事件)特征
+        df_date_history = self.__process_df_timestamp(df=input_data[f"date_history"], col_ts=self.args.date_ts_feat)
+        logger.info(f"{self.log_prefix} after process_df_timestamp df_date_history: \n{df_date_history.head()}")
+        # 特征工程：天气特征
+        df_weather_history = self.__process_df_timestamp(df=input_data[f"weather_history"], col_ts=self.args.weather_ts_feat)
+        logger.info(f"{self.log_prefix} after process_df_timestamp df_weather_history: \n{df_weather_history.head()}")
+
+        return (df_history, df_date_history, df_weather_history, endogenous_features_with_target, target_feature)
+
     def process_future_data(self, input_data: Dict):
         """
         处理未来数据
         """
-        # ------------------------------
         # 未来数据时间戳
-        # ------------------------------
-        df_future_template = pd.DataFrame({
-            "time": pd.date_range(self.forecast_start_time, self.forecast_end_time, freq=self.args.freq, inclusive="left")
-        })
-        logger.info(f"{self.log_prefix} template df_future_template: \n{df_future_template.head()}")
-        """
-        # ------------------------------
+        df_future_template = pd.DataFrame({"time": pd.date_range(self.forecast_start_time, self.forecast_end_time, freq=self.args.freq, inclusive="left")})
+        logger.info(f"{self.log_prefix} template df_future_template: \n{df_future_template}")
         # 数据预处理：目标时间序列特征
-        # ------------------------------
-        df_future_series = self.__process_df_timestamp(
-            df=input_data["df_future_series"],
-            col_ts=self.args.target_ts_feat
-        )
+        df_future_series = self.__process_df_timestamp(df=input_data["df_future_series"], col_ts=self.args.target_ts_feat)
+        logger.info(f"{self.log_prefix} after process_df_timestamp df_future_series: \n{df_future_series.head()}")
+
         df_future, other_endogenous_features, target_feature = self.__process_target_series(
             df_template=df_future_template,
-            df_series=df_future_series, # This will be None, so df_future_template is returned.
+            df_series=df_future_series,
             col_ts=self.args.target_ts_feat,
             col_numeric=self.args.target_series_numeric_features,
             col_categorical=self.args.target_series_categorical_features,
@@ -374,46 +325,15 @@ class Model:
         )
         logger.info(f"{self.log_prefix} after process_target_series df_future: \n{df_future.head()}")
         # 所有内生变量(没有目标特征 y及其衍生特征)
-        future_endogenous_cols_for_lag = other_endogenous_features
-        """
-        # ------------------------------
+        endogenous_features_for_lag = other_endogenous_features
         # 特征工程：日期类型(节假日、特殊事件)特征
-        # ------------------------------
         df_date_future = self.__process_df_timestamp(df=input_data[f"date_future"], col_ts=self.args.date_ts_feat)
-        df_future, date_features = self.preprocessor.extend_datetype_feature(
-            df=df_future_template,
-            df_date=df_date_future,
-            col_ts=self.args.date_ts_feat,
-        )
-        logger.info(f"{self.log_prefix} after extend_datetype_feature df_future: \n{df_future.head()}")
-        logger.info(f"{self.log_prefix} after extend_datetype_feature date_features: {date_features}")
-        # ------------------------------
+        logger.info(f"{self.log_prefix} after process_df_timestamp df_date_future: \n{df_date_future.head()}")
         # 特征工程：天气特征
-        # ------------------------------
         df_weather_future = self.__process_df_timestamp(df=input_data[f"weather_future"], col_ts=self.args.weather_ts_feat)
-        df_future, weather_features = self.preprocessor.extend_future_weather_feature(
-            df=df_future,
-            df_weather=df_weather_future,
-            col_ts=self.args.weather_ts_feat,
-        )
-        logger.info(f"{self.log_prefix} after extend_future_weather_feature df_future: \n{df_future.head()}")
-        logger.info(f"{self.log_prefix} after extend_future_weather_feature weather_features: {weather_features}")
-        # ------------------------------
-        # 外生变量(包含：日期类型(节假日、特殊事件)特征、气象特征)
-        # ------------------------------
-        future_exogenous_features = date_features + weather_features
-        # ------------------------------
-        # 插值填充预测缺失值
-        # ------------------------------
-        # Interpolate existing data, then drop any remaining NaNs (e.g., at boundaries)
-        df_future = df_future.interpolate(method="linear", limit_direction="both")
-        df_future.dropna(inplace=True, ignore_index=True) # Drops rows where even interpolation couldn't help
-        logger.info(f"{self.log_prefix} after interpolate and dropna df_future: \n{df_future.head()}")
-        # logger.info(f"{self.log_prefix} future_endogenous_cols_for_lag: {future_endogenous_cols_for_lag}")
-        logger.info(f"{self.log_prefix} future_exogenous_features: {future_exogenous_features}")
-        # logger.info(f"{self.log_prefix} target_feature: {target_feature}")
+        logger.info(f"{self.log_prefix} after process_df_timestamp df_weather_future: \n{df_weather_future.head()}")
 
-        return df_future#, future_endogenous_cols_for_lag, future_exogenous_features
+        return (df_future, df_date_future, df_weather_future)
     # ##############################
     # Model Testing
     # ##############################
@@ -1030,13 +950,11 @@ class Model:
         logger.info(f"{self.log_prefix} {80*'='}")
         logger.info(f"{self.log_prefix} Model history data preprocessing...")
         logger.info(f"{self.log_prefix} {80*'='}")
-        (
-            df_history, 
-            endogenous_features_with_target, 
-            exogenous_features, 
-            target_feature, 
-            categorical_features
-        ) = self.process_history_data(input_data = input_data)
+        (df_history, 
+         df_date_history, 
+         df_weather_history, 
+         endogenous_features_with_target, 
+         target_feature) = self.process_history_data(input_data = input_data)
         # ------------------------------
         # 特征工程
         # ------------------------------
@@ -1044,18 +962,20 @@ class Model:
         logger.info(f"{self.log_prefix} Model history data feature engineering...")
         logger.info(f"{self.log_prefix} {80*'='}")
         # 特征预处理器
-        preprocessor_history = FeatureEngineer(self.args, self.log_prefix)
+        feature_engineer_history = FeatureEngineer(self.args, self.log_prefix)
         (
             df_history_featured, 
             predictor_features, 
             target_output_features, 
             categorical_features
-        ) = preprocessor_history.create_features(
+        ) = feature_engineer_history.create_features(
             df_series = df_history,
+            df_date_history=df_date_history,
+            df_date_future=None,
+            df_weather_history=df_weather_history,
+            df_weather_future=None,
             endogenous_features_with_target = endogenous_features_with_target,
-            exogenous_features = exogenous_features,
             target_feature = target_feature,
-            categorical_features = categorical_features,
         )
         # Drop rows with NaNs after feature/target generation
         df_history_featured = df_history_featured.dropna()
@@ -1112,7 +1032,7 @@ class Model:
             logger.info(f"{self.log_prefix} {40*'-'}")
             logger.info(f"{self.log_prefix} Model Forecasting future data preprocessing...")
             logger.info(f"{self.log_prefix} {40*'-'}")
-            df_future = self.process_future_data(input_data = input_data)
+            (df_future, df_date_future, df_weather_future) = self.process_future_data(input_data = input_data)
             
             # 模型预测
             logger.info(f"{self.log_prefix} {40*'-'}")

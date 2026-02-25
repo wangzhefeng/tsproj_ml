@@ -54,8 +54,10 @@ from config.model_config import (
     ModelConfig_univariate, 
     ModelConfig_multivariate
 )
+from data_provider.data_loader import DataLoader
 from features.FeatureEngineering import FeatureEngineer
 from features.FeatureScalering import FeatureScaler
+from models.ModelTesting import ModelTesting
 from models.ModelFactory import ModelFactory
 from strategies.PredictionStrategy import PredictionHelper
 
@@ -74,8 +76,8 @@ class Model:
         初始化模型
         """
         self.args = args
-        self.setting = f"{self.args.model_name}-{self.args.data}-{self.args.pred_method}"
-        self.log_prefix = f"[{self.args.model_name}-{self.args.data}]"
+        self.setting = f"{self.args.model_type}-{self.args.data}-{self.args.pred_method}"
+        self.log_prefix = f"[{self.args.model_type}-{self.args.data}]"
         # ------------------------------
         # 数据参数
         # ------------------------------
@@ -133,488 +135,8 @@ class Model:
         logger.info(f"{self.log_prefix} 高级特征: {'启用' if self.args.enable_advanced_features else '禁用'}")
         logger.info(f"{self.log_prefix} 模型融合: {'启用' if self.args.enable_ensemble else '禁用'}")
     # ##############################
-    # Data load
-    # ##############################
-    def load_data(self) -> Dict:
-        """
-        加载所有必要的数据
-        
-        Returns:
-            包含目标序列、日期类型、天气等数据的字典
-        """
-        logger.info(f"{self.log_prefix} Loading data from {self.args.data_dir}")
-        
-        input_data = {}
-        
-        # 加载目标时间序列数据
-        target_data_path = self.args.data_dir / self.args.data_path
-        if target_data_path.exists():
-            df_target = pd.read_csv(target_data_path)
-            # df_target[self.args.target_ts_feat] = pd.to_datetime(df_target[self.args.target_ts_feat])
-            input_data["target_series"] = df_target
-            logger.info(f"{self.log_prefix} Target series loaded: {df_target.shape}")
-        else:
-            logger.error(f"{self.log_prefix} Target data not found at {target_data_path}")
-            raise FileNotFoundError(f"Target data not found at {target_data_path}")
-        
-        # 加载历史日期类型数据
-        if self.args.date_history_path:
-            date_history_path = self.args.data_dir / self.args.date_history_path
-            if date_history_path.exists():
-                df_date_history = pd.read_csv(date_history_path)
-                # df_date_history[self.args.date_ts_feat] = pd.to_datetime(df_date_history[self.args.date_ts_feat])
-                input_data["date_history"] = df_date_history
-                logger.info(f"{self.log_prefix} Date history loaded: {df_date_history.shape}")
-        
-        # 加载未来日期类型数据
-        if self.args.date_future_path:
-            date_future_path = self.args.data_dir / self.args.date_future_path
-            if date_future_path.exists():
-                df_date_future = pd.read_csv(date_future_path)
-                # df_date_future[self.args.date_ts_feat] = pd.to_datetime(df_date_future[self.args.date_ts_feat])
-                input_data["date_future"] = df_date_future
-                logger.info(f"{self.log_prefix} Date future loaded: {df_date_future.shape}")
-        
-        # 加载历史天气数据
-        if self.args.weather_history_path:
-            weather_history_path = self.args.data_dir / self.args.weather_history_path
-            if weather_history_path.exists():
-                df_weather_history = pd.read_csv(weather_history_path)
-                # df_weather_history[self.args.weather_ts_feat] = pd.to_datetime(df_weather_history[self.args.weather_ts_feat])
-                input_data["weather_history"] = df_weather_history
-                logger.info(f"{self.log_prefix} Weather history loaded: {df_weather_history.shape}")
-        
-        # 加载未来天气数据
-        if self.args.weather_future_path:
-            weather_future_path = self.args.data_dir / self.args.weather_future_path
-            if weather_future_path.exists():
-                df_weather_future = pd.read_csv(weather_future_path)
-                # df_weather_future[self.args.weather_ts_feat] = pd.to_datetime(df_weather_future[self.args.weather_ts_feat])
-                input_data["weather_future"] = df_weather_future
-                logger.info(f"{self.log_prefix} Weather future loaded: {df_weather_future.shape}")
-        # ------------------------------
-        # 数据合并
-        # ------------------------------
-        if self.args.date_history_path and self.args.date_future_path:
-            df_date_all = pd.concat([df_date_history.iloc[:-1,], df_date_future], axis=0)
-        else:
-            df_date_all = None
-        
-        if self.args.weather_history_path and self.args.weather_future_path:
-            df_weather_all = pd.concat([df_weather_history.iloc[:-1,], df_weather_future], axis=0)
-        else:
-            df_weather_all = None
-        input_data["date_history"] = df_date_all
-        input_data["date_future"] = df_date_all
-        input_data["weather_history"] = df_weather_all
-        input_data["weather_future"] = df_weather_all
-        
-        return input_data
-    # ##############################
-    # Data Preprocessing
-    # ##############################
-    def __process_df_timestamp(self, df: pd.DataFrame, col_ts: str):
-        """
-        时序数据时间特征预处理
-
-        Args:
-            df (pd.DataFrame): 时间序列数据
-            col_ts (str): 原时间戳列
-        """
-        if df is not None:
-            # 数据拷贝
-            df_processed = copy.deepcopy(df)
-            # 转换时间戳类型
-            df_processed[col_ts] = pd.to_datetime(df_processed[col_ts])
-            # del df_processed[ts_col]
-            # 去除重复时间戳
-            df_processed.drop_duplicates(subset=col_ts, keep="last", inplace=True, ignore_index=True)
-            return df_processed
-        else:
-            return df
-
-    def __process_target_series(self, df_template: pd.DataFrame, df_series: pd.DataFrame, col_ts: str, col_numeric: List, col_categorical: List, col_drop: List):
-        """
-        目标特征数据预处理
-        df_template: ["time"]
-        """
-        df_template_copy = df_template.copy()
-        if df_series is not None:
-            # 目标特征数据转换为浮点数
-            if self.args.target in df_series.columns:
-                df_series[self.args.target] = df_series[self.args.target].apply(lambda x: float(x))
-                df_template_copy["y"] = df_template_copy["time"].map(df_series.set_index(col_ts)[self.args.target])
-                target_feature = "y"
-            else:
-                target_feature = None
-            # 除目标特征外的其他数值类型的内生变量处理
-            filtered_col_numeric = [col for col in col_numeric if col not in [col_ts, self.args.target] + col_categorical + col_drop]
-            for col in filtered_col_numeric:
-                if col in df_series.columns:
-                    df_series[col] = df_series[col].apply(lambda x: float(x))
-                    df_template_copy[col] = df_template_copy["time"].map(df_series.set_index(col_ts)[col])
-            # TODO 类别类型的内生变量处理
-            filtered_col_categorical = [col for col in col_categorical if col not in [col_ts, self.args.target] + col_numeric + col_drop]
-            for col in filtered_col_categorical:
-                if col in df_series.columns:
-                    df_series[col] = df_series[col].apply(lambda x: str(x))
-                    df_template_copy[col] = df_template_copy["time"].map(df_series.set_index(col_ts)[col])
-            # 内生变量(Endogenous variable)
-            endogenous_features = [col for col in df_template_copy.columns if col not in ["time"]]
-            if target_feature and target_feature in endogenous_features:
-                 # Remove target from here for consistency, will be handled separately
-                 endogenous_features.remove(target_feature)
-        else:
-            endogenous_features = []
-            target_feature = None
-        
-        return df_template_copy, endogenous_features, target_feature
-
-    def process_history_data(self, input_data: Dict):
-        """
-        历史数据预处理
-        """
-        # 历史数据时间戳
-        df_history_template = pd.DataFrame({"time": pd.date_range(self.train_start_time, self.train_end_time, freq=self.args.freq, inclusive="left")})
-        logger.info(f"{self.log_prefix} template df_history_template: \n{df_history_template}")
-        # 数据预处理：目标时间序列特征
-        df_history_series = self.__process_df_timestamp(df=input_data["target_series"], col_ts=self.args.target_ts_feat)
-        logger.info(f"{self.log_prefix} after process_df_timestamp df_history: \n{df_history.head()}")
-        
-        df_history, other_endogenous_features, target_feature = self.__process_target_series(
-            df_template=df_history_template,
-            df_series=df_history_series,
-            col_ts=self.args.target_ts_feat,
-            col_numeric=self.args.target_series_numeric_features,
-            col_categorical=self.args.target_series_categorical_features,
-            col_drop=self.args.target_series_drop_features,
-        )
-        logger.info(f"{self.log_prefix} after process_target_series df_history: \n{df_history.head()}")
-        # 所有内生变量(包含目标特征 y)
-        endogenous_features_with_target = [target_feature] + other_endogenous_features if target_feature else other_endogenous_features
-        logger.info(f"{self.log_prefix} other_endogenous_features: {other_endogenous_features}")
-        logger.info(f"{self.log_prefix} target_features: {target_feature}")
-        logger.info(f"{self.log_prefix} endogenous_features_with_target: {endogenous_features_with_target}")
-        # 特征工程：日期类型(节假日、特殊事件)特征
-        df_date_history = self.__process_df_timestamp(df=input_data[f"date_history"], col_ts=self.args.date_ts_feat)
-        logger.info(f"{self.log_prefix} after process_df_timestamp df_date_history: \n{df_date_history.head()}")
-        # 特征工程：天气特征
-        df_weather_history = self.__process_df_timestamp(df=input_data[f"weather_history"], col_ts=self.args.weather_ts_feat)
-        logger.info(f"{self.log_prefix} after process_df_timestamp df_weather_history: \n{df_weather_history.head()}")
-
-        return (df_history, df_date_history, df_weather_history, endogenous_features_with_target, target_feature)
-
-    def process_future_data(self, input_data: Dict):
-        """
-        处理未来数据
-        """
-        # 未来数据时间戳
-        df_future_template = pd.DataFrame({"time": pd.date_range(self.forecast_start_time, self.forecast_end_time, freq=self.args.freq, inclusive="left")})
-        logger.info(f"{self.log_prefix} template df_future_template: \n{df_future_template}")
-        # 数据预处理：目标时间序列特征
-        df_future_series = self.__process_df_timestamp(df=input_data["df_future_series"], col_ts=self.args.target_ts_feat)
-        logger.info(f"{self.log_prefix} after process_df_timestamp df_future_series: \n{df_future_series.head()}")
-
-        df_future, other_endogenous_features, target_feature = self.__process_target_series(
-            df_template=df_future_template,
-            df_series=df_future_series,
-            col_ts=self.args.target_ts_feat,
-            col_numeric=self.args.target_series_numeric_features,
-            col_categorical=self.args.target_series_categorical_features,
-            col_drop=self.args.target_series_drop_features,
-        )
-        logger.info(f"{self.log_prefix} after process_target_series df_future: \n{df_future.head()}")
-        # 所有内生变量(没有目标特征 y及其衍生特征)
-        endogenous_features_for_lag = other_endogenous_features
-        # 特征工程：日期类型(节假日、特殊事件)特征
-        df_date_future = self.__process_df_timestamp(df=input_data[f"date_future"], col_ts=self.args.date_ts_feat)
-        logger.info(f"{self.log_prefix} after process_df_timestamp df_date_future: \n{df_date_future.head()}")
-        # 特征工程：天气特征
-        df_weather_future = self.__process_df_timestamp(df=input_data[f"weather_future"], col_ts=self.args.weather_ts_feat)
-        logger.info(f"{self.log_prefix} after process_df_timestamp df_weather_future: \n{df_weather_future.head()}")
-
-        return (df_future, df_date_future, df_weather_future)
-    # ##############################
     # Model Testing
     # ##############################
-    # ------------------------------
-    # Model sliding window testing
-    # ------------------------------
-    def _evaluate_split_index(self, window: int, total_data_points: int):
-        """
-        数据分割索引构建
-        Calculates train/test split indices for a sliding window.
-        Assumes total_data_points is the length of `df_history_featured` after dropna,
-        so `self.horizon` refers to the number of samples in the test set.
-        The window slides from the most recent data backwards.
-        """
-        # Calculate test start/end index
-        test_end = total_data_points - 1 - (self.horizon * (window - 1))
-        test_start = test_end - self.horizon + 1
-        # Calculate train start/end index
-        train_end = test_start
-        train_start = train_end - (self.window_len - self.horizon)
-        train_start = max(0, train_start)
-
-        return train_start, train_end, test_start, test_end
-
-    def _evaluate_split(self, data_X: pd.DataFrame, data_Y: pd.Series, df_history: pd.DataFrame, window: int):
-        """
-        训练、测试数据集分割
-        """
-        logger.info(f"{self.log_prefix} Model Testing sliding window...")
-        logger.info(f"{self.log_prefix} {30*'-'}")
-        # 数据分割指标
-        total_data_points = len(data_X)
-        train_start, train_end, test_start, test_end = self._evaluate_split_index(window, total_data_points)
-        logger.info(f"{self.log_prefix} split indexes:: [train_start:train_end]: [{train_start}:{train_end}]")
-        logger.info(f"{self.log_prefix} split indexes:: [test_start:test_end]: [{test_start}:{test_end+1}]")
-
-        # 数据分割(Data slicing, handle cases where indices might be out of bounds for the window)
-        if train_start >= train_end or test_start >= test_end + 1 or train_start < 0 or test_end >= total_data_points:
-            logger.warning(f"{self.log_prefix} Insufficient data for window {window} (train_start={train_start}, train_end={train_end}, test_start={test_start}, test_end={test_end}). Skipping this window.")
-            return None, None, None, None, None, None
-
-        X_train = data_X.iloc[train_start:train_end]
-        Y_train = data_Y.iloc[train_start:train_end]
-        X_test = data_X.iloc[test_start:test_end+1] # +1 to include test_end
-        Y_test = data_Y.iloc[test_start:test_end+1]
-        df_history_train = df_history.iloc[train_start:train_end]
-        df_history_test = df_history.iloc[test_start:test_end+1]
-        logger.info(f"{self.log_prefix} X_train.shape: {X_train.shape}, Y_train.shape: {Y_train.shape}")
-        logger.info(f"{self.log_prefix} X_test.shape: {X_test.shape}, Y_test.shape: {Y_test.shape}")
-        logger.info(f"{self.log_prefix} df_history_train.shape: {df_history_train.shape}, df_history_test.shape: {df_history_test.shape}")
-
-        if X_train.empty or Y_train.empty or X_test.empty or Y_test.empty:
-            logger.warning(f"{self.log_prefix} Empty dataframe in window {window} split. Skipping.")
-            return None, None, None, None, None, None
-        
-        return X_train, Y_train, X_test, Y_test, df_history_train, df_history_test
-
-    def _evaluate_score(self, y_test: np.ndarray, y_pred: np.ndarray, window: int, df_history_test: pd.DataFrame):
-        """
-        模型评估
-        计算模型的性能指标
-        """
-        # Ensure y_test and y_pred are 1D arrays for metrics
-        y_test = np.array(y_test).flatten()
-        y_pred = np.array(y_pred).flatten()
-        # Handle potential division by zero in MAPE if y_test contains zeros
-        y_test_mape = np.where(y_test == 0, 0.01, y_test) # Avoid division by zero, small epsilon
-        # Calculate the model's performance metrics
-        test_scores = {
-            "R2": r2_score(y_test, y_pred),
-            "MSE": mean_squared_error(y_test, y_pred),
-            "RMSE": root_mean_squared_error(y_test, y_pred),
-            "MAE": mean_absolute_error(y_test, y_pred),
-            "MAPE": mean_absolute_percentage_error(y_test_mape, y_pred),
-            "MAPE Accuracy": 1 - mean_absolute_percentage_error(y_test_mape, y_pred),
-        }
-        test_scores_df = pd.DataFrame(test_scores, index=[window])
-        test_scores_df["time_range"] = f"{df_history_test['time'].min()}~{df_history_test['time'].max()}"
-        test_scores_df = test_scores_df[["time_range"] + list(test_scores.keys())]
-        logger.info(f"{self.log_prefix} test_scores_df: \n{test_scores_df}")
-        
-        return test_scores_df
-
-    def _evaluate_result(self, y_test: np.ndarray, y_pred: np.ndarray, window: int, cv_timestamp_df: pd.DataFrame):
-        """
-        测试集预测数据
-        """
-        # Ensure y_test and y_pred are 1D arrays
-        y_test = np.array(y_test).flatten()
-        y_pred = np.array(y_pred).flatten()
-
-        # Data collection for plot
-        cv_plot_df_window = pd.DataFrame()
-        
-        total_data_points_ts_df = len(cv_timestamp_df)
-        _, _, test_start_ts_idx, test_end_ts_idx = self._evaluate_split_index(window, total_data_points_ts_df)
-        
-        # Ensure the slice is valid and matches the length of y_pred/y_test
-        time_slice = cv_timestamp_df["time"].iloc[test_start_ts_idx:test_end_ts_idx + 1]
-        if len(time_slice) != len(y_pred):
-            logger.warning(f"Length mismatch for plotting data: time_slice ({len(time_slice)}) vs y_pred ({len(y_pred)}). Adjusting to min length.")
-            min_len = min(len(time_slice), len(y_pred))
-            cv_plot_df_window["time"] = time_slice.iloc[:min_len].values
-            cv_plot_df_window["Y_trues"] = y_test[:min_len]
-            cv_plot_df_window["Y_preds"] = y_pred[:min_len]
-        else:
-            cv_plot_df_window["time"] = time_slice.values
-            cv_plot_df_window["Y_trues"] = y_test
-            cv_plot_df_window["Y_preds"] = y_pred
-        
-        return cv_plot_df_window
-
-    def _calc_features_corr(self, df: pd.DataFrame, train_features: List[str]):
-        """
-        分析预测特征与目标特征的相关性
-        """
-        # Ensure 'load' is target_feature for this function, assuming it's the target.
-        if self.args.target in df.columns:
-            features_corr = df[train_features + [self.args.target]].corr()
-        else:
-            logger.warning(f"{self.log_prefix} Target feature '{self.args.target}' not found in DataFrame for correlation calculation.")
-            features_corr = df[train_features].corr()
-        
-        return features_corr
-    # ------------------------------
-    # Model results save
-    # ------------------------------
-    def test_results_save(self, test_scores_df, cv_plot_df):
-        # 测试结果数据保存
-        test_scores_df.to_csv(self.args.test_results_dir.joinpath("test_scores_df.csv"), index=False, encoding="utf-8")
-        cv_plot_df.to_csv(self.args.test_results_dir.joinpath("cv_plot_df.csv"), index=False, encoding="utf-8")
-        # 测试结果数据可视化
-        if len(cv_plot_df["Y_preds"].values) == 0 or len(cv_plot_df["Y_trues"].values) == 0:
-            logger.warning(f"{self.log_prefix} No data to visualize for test prediction.")
-            return
-        # 画布
-        plt.figure(figsize=(25, 8))
-        # 创建折线图
-        plt.plot(cv_plot_df["Y_trues"].values, label='Trues', lw=1.7, )
-        plt.plot(cv_plot_df["Y_preds"].values, label='Preds', lw=1.7, ls="-.")
-        # 增强视觉效果
-        plt.legend()
-        plt.xlabel("Time")
-        plt.ylabel("Value")
-        plt.title('Trues and Preds Timeseries Plot')
-        plt.grid(True)
-        plt.tight_layout()
-        plt.savefig(self.args.test_results_dir.joinpath("test_prediction.png"), bbox_inches='tight', dpi=300)
-        # plt.show();
-    # ------------------------------
-    # Model testing
-    # ------------------------------
-    def predictor_target_split(self, df_history_featured, predictor_features, target_output_features):
-        """
-        历史数据预测特征、目标特征分离
-        """
-        X_train_history = df_history_featured[predictor_features]
-        Y_train_history = df_history_featured[target_output_features]
-        combined_xy = pd.concat([X_train_history, Y_train_history], axis=1)
-        combined_xy.dropna(inplace=True)
-        X_train_history = combined_xy[X_train_history.columns]
-        Y_train_history = combined_xy[Y_train_history.columns]
-        logger.info(f"{self.log_prefix} X_train_history shape after NaN drop: {X_train_history.shape}")
-        logger.info(f"{self.log_prefix} Y_train_history shape after NaN drop: {Y_train_history.shape}")
-        
-        return X_train_history, Y_train_history
-
-    def _window_test(self, 
-                     X_train, Y_train, 
-                     X_test, Y_test, 
-                     df_history_train, df_history_test, 
-                     endogenous_features, exogenous_features, 
-                     target_feature, target_output_features, 
-                     categorical_features):
-        """
-        模型滑窗测试
-        """
-        # ------------------------------
-        # 模型训练
-        # ------------------------------
-        logger.info(f"{self.log_prefix} Model Testing training start...")
-        logger.info(f"{self.log_prefix} {30*'-'}")
-        # 创建特征预处理器
-        self.scaler_testing = FeatureScaler(self.args, self.args.scaler_type, log_prefix=self.log_prefix)
-        model = self.train(X_train, Y_train, self.scaler_testing, categorical_features)
-        # ------------------------------
-        # 模型预测
-        # ------------------------------
-        logger.info(f"{self.log_prefix} Model Testing forecasting start...")
-        logger.info(f"{self.log_prefix} {30*'-'}")
-        Y_pred = None
-        if self.args.pred_method == "univariate-single-multistep-direct-output":
-            Y_pred = self.univariate_single_multi_step_direct_output_forecast(
-                model = model,
-                model = model, 
-                df_future = X_test.copy(), 
-                endogenous_features = endogenous_features, 
-                exogenous_features = exogenous_features, 
-                target_feature = target_feature, 
-                categorical_features = categorical_features,
-                feature_scaler = self.scaler_testing
-            )
-        elif self.args.pred_method == "univariate-single-multistep-direct":
-            Y_pred = self.univariate_single_multi_step_direct_forecast(
-                model = model,
-                df_history = df_history_train,
-                df_future = df_history_test,
-                endogenous_features = endogenous_features,
-                exogenous_features = exogenous_features,
-                target_feature = target_feature,
-                categorical_features = categorical_features,
-                # target_output_features = target_output_features,
-                feature_scaler = self.scaler_testing,
-            )
-        elif self.args.pred_method == "univariate-single-multistep-recursive":
-            Y_pred = self.univariate_single_multi_step_recursive_forecast(
-                model = model,
-                df_history = df_history_train,
-                df_future = df_history_test,
-                endogenous_features = endogenous_features,
-                exogenous_features = exogenous_features,
-                target_feature = target_feature,
-                # target_output_features = target_output_features,
-                categorical_features = categorical_features,
-                feature_scaler = self.scaler_testing,
-            )
-        elif self.args.pred_method == "univariate-single-multistep-direct-recursive":
-            Y_pred = self.univariate_single_multi_step_direct_recursive_forecast(
-                model = model,
-                df_history = df_history_train,
-                df_future = df_history_test,
-                endogenous_features = endogenous_features,
-                exogenous_features = exogenous_features,
-                target_feature = target_feature,
-                # target_output_features = target_output_features,
-                categorical_features = categorical_features,
-                feature_scaler = self.scaler_testing,
-            )
-        elif self.args.pred_method == "multivariate-single-multistep-direct":
-            Y_pred = self.multivariate_single_multi_step_direct_forecast(
-                model = model,
-                df_history = df_history_train,
-                df_future = df_history_test,
-                endogenous_features = endogenous_features,
-                exogenous_features = exogenous_features,
-                target_feature = target_feature,
-                # target_output_features = target_output_features,
-                categorical_features = categorical_features,
-                feature_scaler = self.scaler_testing,
-            )
-        elif self.args.pred_method == "multivariate-single-multistep-recursive":
-            Y_pred = self.multivariate_single_multi_step_recursive_forecast(
-                model = model,
-                df_history = df_history_train,
-                df_future = df_history_test,
-                endogenous_features = endogenous_features,
-                exogenous_features = exogenous_features,
-                target_feature = target_feature,
-                target_output_features = target_output_features,
-                categorical_features = categorical_features,
-                feature_scaler = self.scaler_testing,
-            )
-        elif self.args.pred_method == "multivariate-single-multistep-direct-recursive":
-            Y_pred = self.multivariate_single_multi_step_direct_recursive_forecast(
-                model = model,
-                df_history = df_history_train,
-                df_future = df_history_test,
-                endogenous_features = endogenous_features,
-                exogenous_features = exogenous_features,
-                target_feature = target_feature,
-                # target_output_features = target_output_features,
-                categorical_features = categorical_features,
-                feature_scaler = self.scaler_testing,
-            )
-        # Return empty array if prediction fails or is empty
-        if Y_pred is None or len(Y_pred) == 0:
-            logger.error(f"{self.log_prefix} Prediction failed or returned empty for method: {self.args.pred_method}. Returning empty array.")
-            return np.array([])
-
-        return Y_pred
-
     def test(self, df_history, X_train_history, Y_train_history, 
              endogenous_features_with_target, exogenous_features, 
              target_feature, target_output_features, categorical_features):
@@ -874,7 +396,7 @@ class Model:
         logger.info(f"{self.log_prefix} Model Training start...")
         logger.info(f"{self.log_prefix} {40*'-'}")
         # 创建特征预处理器
-        self.scaler_forecasting = FeatureScaler(self.args, log_prefix=self.log_prefix)
+        self.scaler_forecasting = FeatureScaler(self.args, scaler_type=self.args.scaler_type, log_prefix=self.log_prefix)
         # 模型训练
         model = self.train(X_train_history, Y_train_history, self.scaler_forecasting, categorical_features)
         # 模型保存
@@ -943,7 +465,15 @@ class Model:
         logger.info(f"{self.log_prefix} {80*'='}")
         logger.info(f"{self.log_prefix} Model history and future data loading...")
         logger.info(f"{self.log_prefix} {80*'='}")
-        input_data = self.load_data()
+        dataloader = DataLoader(
+            args=self.args, 
+            train_start_time=self.train_start_time,
+            train_end_time=self.train_end_time,
+            forecast_start_time=self.forecast_start_time,
+            forecast_end_time=self.forecast_end_time,
+            log_prefix=self.log_prefix,
+        )
+        input_data = dataloader.load_data()
         # ------------------------------
         # 历史数据处理
         # ------------------------------
@@ -954,7 +484,7 @@ class Model:
          df_date_history, 
          df_weather_history, 
          endogenous_features_with_target, 
-         target_feature) = self.process_history_data(input_data = input_data)
+         target_feature) = dataloader.process_history_data(input_data = input_data)
         # ------------------------------
         # 特征工程
         # ------------------------------
@@ -963,12 +493,10 @@ class Model:
         logger.info(f"{self.log_prefix} {80*'='}")
         # 特征预处理器
         feature_engineer_history = FeatureEngineer(self.args, self.log_prefix)
-        (
-            df_history_featured, 
-            predictor_features, 
-            target_output_features, 
-            categorical_features
-        ) = feature_engineer_history.create_features(
+        (df_history_featured, 
+         predictor_features, 
+         target_output_features, 
+         categorical_features) = feature_engineer_history.create_features(
             df_series = df_history,
             df_date_history=df_date_history,
             df_date_future=None,
@@ -976,13 +504,11 @@ class Model:
             df_weather_future=None,
             endogenous_features_with_target = endogenous_features_with_target,
             target_feature = target_feature,
+            horizon = self.horizon,
         )
-        # Drop rows with NaNs after feature/target generation
+        # 删除在构建滞后特征时产生的缺失值
         df_history_featured = df_history_featured.dropna()
-        logger.info(f"{self.log_prefix} df_history_featured: \n{df_history_featured.head()}")
-        logger.info(f"{self.log_prefix} predictor_features: {predictor_features}")
-        logger.info(f"{self.log_prefix} target_output_features: {target_output_features}")
-        logger.info(f"{self.log_prefix} categorical_features: {categorical_features}")
+        logger.info(f"{self.log_prefix} after dropna df_history_featured: \n{df_history_featured.head()}")
         # ------------------------------
         # 模型测试
         # ------------------------------
@@ -990,16 +516,17 @@ class Model:
             logger.info(f"{self.log_prefix} {80*'='}")
             logger.info(f"{self.log_prefix} Model Testing...")
             logger.info(f"{self.log_prefix} {80*'='}")
+            model_testing = ModelTesting(args=self.args, log_prefix=self.log_prefix)
             # 历史数据预测特征、目标特征分离
             logger.info(f"{self.log_prefix} {40*'-'}")
             logger.info(f"{self.log_prefix} Model history data feature split...")
-            logger.info(f"{self.log_prefix} {40*'='}")
-            X_train_history, Y_train_history = self.predictor_target_split(
+            logger.info(f"{self.log_prefix} {40*'-'}")
+            X_train_history, Y_train_history = model_testing.predictor_target_split(
                 df_history_featured = df_history_featured, 
                 predictor_features = predictor_features, 
                 target_output_features = target_output_features,
             )
-            
+            """
             # 模型滑窗测试
             logger.info(f"{self.log_prefix} {40*'-'}")
             logger.info(f"{self.log_prefix} Model Testing start...")
@@ -1021,6 +548,7 @@ class Model:
             logger.info(f"{self.log_prefix} {40*'-'}")
             self.test_results_save(test_scores_df, cv_plot_df)
             logger.info(f"{self.log_prefix} Model Testing result saved in: {self.args.test_results_dir}")
+            """
         # ------------------------------
         # 模型预测
         # ------------------------------
@@ -1032,8 +560,7 @@ class Model:
             logger.info(f"{self.log_prefix} {40*'-'}")
             logger.info(f"{self.log_prefix} Model Forecasting future data preprocessing...")
             logger.info(f"{self.log_prefix} {40*'-'}")
-            (df_future, df_date_future, df_weather_future) = self.process_future_data(input_data = input_data)
-            
+            (df_future, df_date_future, df_weather_future) = dataloader.process_future_data(input_data = input_data)
             # 模型预测
             logger.info(f"{self.log_prefix} {40*'-'}")
             logger.info(f"{self.log_prefix} Model Forecasting start...")

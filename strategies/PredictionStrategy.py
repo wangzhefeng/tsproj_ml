@@ -47,7 +47,6 @@ class PredictionHelper:
                  feature_scaler,
                  log_prefix: str):
         self.args = args
-
         self.model = model
         self.df_history = df_history
         self.df_future = df_future
@@ -57,25 +56,18 @@ class PredictionHelper:
         self.target_output_features = target_output_features
         self.categorical_features = categorical_features
         self.feature_scaler = feature_scaler
-
         self.log_prefix = log_prefix
         logger.info(f"{self.log_prefix} endogenous_features: {self.endogenous_features}")
         logger.info(f"{self.log_prefix} exogenous_features: {self.exogenous_features}")
         logger.info(f"{self.log_prefix} target_feature: {self.target_feature}")
         logger.info(f"{self.log_prefix} target_output_features: {self.target_output_features}")
         logger.info(f"{self.log_prefix} categorical_features: {self.categorical_features}")
-    
-    def prepare_features(self):
-        """
-        统一的特征预处理
-        
-        所有7种预测方法共用此方法，避免重复代码
-        """
-        # 确定实际可用的外生变量
+
+        # 确定实际可用的外生变量特征
         self.available_exogenous = [feat for feat in self.exogenous_features if feat in self.df_future.columns]
         logger.info(f"{self.log_prefix} available_exogenous: {self.available_exogenous}")
         
-        # history data length： Need enough history to form the maximum lag
+        # 最大滞后数量
         self.max_lag = max(self.args.lags) if self.args.lags else 1
         logger.info(f"{self.log_prefix} max_lag: {self.max_lag}")
 
@@ -85,12 +77,12 @@ class PredictionHelper:
         self.num_blocks = int(np.ceil(self.args.horizon / self.block_size))
         logger.info(f"{self.log_prefix} num_blocks: {self.num_blocks}")
         
-        # 1.获取足够的历史数据以构建滞后特征
+        # 获取足够的历史数据以构建滞后特征
         self.df_history_for_lags = self.df_history.iloc[-self.max_lag:].copy()
         logger.info(f"{self.log_prefix} df_history_for_lags shape: {self.df_history_for_lags.shape}")
         logger.info(f"{self.log_prefix} df_history_for_lags shape: {self.df_history_for_lags.shape}")
         logger.info(f"{self.log_prefix} df_history_for_lags columns: {self.df_history_for_lags.columns.tolist()}")
-    
+    '''
     @staticmethod
     def build_lag_features(df, features, lags):
         """
@@ -118,6 +110,7 @@ class PredictionHelper:
         history.loc[len(history)] = prediction
         
         return prediction
+    '''
     # ------------------------------
     # 单变量（目标变量滞后特征）预测单变量（目标变量）
     # ------------------------------
@@ -136,7 +129,7 @@ class PredictionHelper:
             df_future_featured, predictor_features, target_output_features, categorical_features_updated = self.create_features(
                 df_series = self.df_future, 
                 endogenous_features_with_target = self.endogenous_features,
-                exogenous_features = self.exogenous_features,
+                exogenous_features = self.available_exogenous,
                 target_feature = self.target_feature,
                 categorical_features = self.categorical_features,
             )

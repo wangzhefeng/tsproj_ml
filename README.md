@@ -637,4 +637,4 @@ for endo_feat in endogenous_features:
 
 # 时间序列平稳性
 
-![img](docs/ts_stationary.png)
+![img](docs/assets/ts_stationary.png)

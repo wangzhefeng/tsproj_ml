@@ -188,22 +188,7 @@ class ModelTesting:
         # plt.show();
     # ------------------------------
     # Model testing
-    # ------------------------------
-    def predictor_target_split(self, df_history_featured, predictor_features, target_output_features):
-        """
-        历史数据预测特征、目标特征分离
-        """
-        X_train_history = df_history_featured[predictor_features]
-        Y_train_history = df_history_featured[target_output_features]
-        combined_xy = pd.concat([X_train_history, Y_train_history], axis=1)
-        combined_xy.dropna(inplace=True)
-        X_train_history = combined_xy[X_train_history.columns]
-        Y_train_history = combined_xy[Y_train_history.columns]
-        logger.info(f"{self.log_prefix} X_train_history shape after NaN drop: {X_train_history.shape}")
-        logger.info(f"{self.log_prefix} Y_train_history shape after NaN drop: {Y_train_history.shape}")
-        
-        return X_train_history, Y_train_history
-    
+    # ------------------------------    
     def _window_test(self, 
                      X_train, Y_train, 
                      X_test, Y_test, 

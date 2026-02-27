@@ -27,25 +27,14 @@ if ROOT not in sys.path:
     sys.path.append(ROOT)
 import copy
 import datetime
-from typing import Dict, List
+from typing import List
 import warnings
 warnings.filterwarnings("ignore")
 
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
-
-# model
 from sklearn.multioutput import MultiOutputRegressor, RegressorChain
-# model evaluation
-from sklearn.metrics import (
-    r2_score,                        # R2
-    mean_squared_error,              # MSE
-    root_mean_squared_error,         # RMSE
-    mean_absolute_error,             # MAE
-    mean_absolute_percentage_error,  # MAPE
-)
-# model selection
 from sklearn.model_selection import (
     TimeSeriesSplit, GridSearchCV, RandomizedSearchCV
 )
@@ -137,9 +126,16 @@ class Model:
     # ##############################
     # Model Testing
     # ##############################
-    def test(self, df_history, X_train_history, Y_train_history, 
-             endogenous_features_with_target, exogenous_features, 
-             target_feature, target_output_features, categorical_features):
+    def test(self, 
+             df_history, 
+             X_train_history, 
+             Y_train_history, 
+             endogenous_features_with_target, 
+             exogenous_features, 
+             target_feature, 
+             predictor_features,
+             target_output_features, 
+             categorical_features):
         """
         模型滑窗测试
         """
@@ -211,7 +207,6 @@ class Model:
     # ##############################
     # Model Hyperparameters tuning and Model training
     # ##############################
-    # Model Hyperparameters tuning
     def _hyperparameters_tuning(self, X_train, Y_train):
         """
         模型超参数调优 (Grid Search / Randomized Search with TimeSeriesSplit)
@@ -264,8 +259,7 @@ class Model:
         logger.info(f"{self.log_prefix} Model parameters updated with best tuning results.")
         
         return search.best_estimator_ # Return the best model direct
-    
-    # Model train results save
+     
     def model_save(self, model):
         """
         模型保存
@@ -274,9 +268,7 @@ class Model:
         # model_deploy.save_model(model)
         # logger.info(f"{self.log_prefix} Model saved to {model_dir.joinpath('model.pkl')}")
         pass
-    # ------------------------------
-    # Model training
-    # ------------------------------
+    
     def train(self, X_train, Y_train, feature_scaler, categorical_features):
         """
         模型训练
@@ -349,9 +341,6 @@ class Model:
     # ##############################
     # Model Forecast(Model Inference)
     # ##############################
-    # ------------------------------
-    # Model Forecast results save
-    # ------------------------------
     def forecast_results_save(self, df_history, df_future):
         """
         输出结果处理
@@ -380,12 +369,20 @@ class Model:
         # plt.xticks(rotation=45)
         plt.savefig(self.args.pred_results_dir.joinpath('prediction.png'), dpi=300, bbox_inches='tight')
         # plt.show();
-    # ------------------------------
-    # Model forecasting
-    # ------------------------------
-    def forecast(self, df_history, X_train_history, Y_train_history, df_future, 
-                 endogenous_features, exogenous_features, 
-                 target_feature, target_output_features, categorical_features):
+    
+    def forecast(self, 
+                 df_history, 
+                 X_train_history, 
+                 Y_train_history, 
+                 df_future, 
+                 df_date_future,
+                 df_weather_future,
+                #  exogenous_features, 
+                 endogenous_features, 
+                 target_feature, 
+                 predictor_features,
+                 target_output_features, 
+                 categorical_features):
         """
         模型预测
         """
@@ -509,6 +506,15 @@ class Model:
         # 删除在构建滞后特征时产生的缺失值
         df_history_featured = df_history_featured.dropna()
         logger.info(f"{self.log_prefix} after dropna df_history_featured: \n{df_history_featured.head()}")
+        
+        # 预测特征、目标特征分离
+        X_train_history, Y_train_history = feature_engineer_history.predictor_target_split(
+            df_series_featured = df_history_featured, 
+            predictor_features = predictor_features, 
+            target_output_features = target_output_features,
+        )
+        logger.info(f"{self.log_prefix} after predictor_target_split X_train_history: \n{X_train_history.head()}")
+        logger.info(f"{self.log_prefix} after predictor_target_split Y_train_history: \n{Y_train_history.head()}")
         # ------------------------------
         # 模型测试
         # ------------------------------
@@ -521,12 +527,6 @@ class Model:
             logger.info(f"{self.log_prefix} {40*'-'}")
             logger.info(f"{self.log_prefix} Model history data feature split...")
             logger.info(f"{self.log_prefix} {40*'-'}")
-            X_train_history, Y_train_history = model_testing.predictor_target_split(
-                df_history_featured = df_history_featured, 
-                predictor_features = predictor_features, 
-                target_output_features = target_output_features,
-            )
-            """
             # 模型滑窗测试
             logger.info(f"{self.log_prefix} {40*'-'}")
             logger.info(f"{self.log_prefix} Model Testing start...")
@@ -536,8 +536,9 @@ class Model:
                 X_train_history = X_train_history,
                 Y_train_history = Y_train_history,
                 endogenous_features_with_target = endogenous_features_with_target,
-                exogenous_features = exogenous_features,
+                # exogenous_features = exogenous_features,
                 target_feature = target_feature,
+                predictor_features = predictor_features,
                 target_output_features = target_output_features,
                 categorical_features = categorical_features, 
             )
@@ -548,7 +549,6 @@ class Model:
             logger.info(f"{self.log_prefix} {40*'-'}")
             self.test_results_save(test_scores_df, cv_plot_df)
             logger.info(f"{self.log_prefix} Model Testing result saved in: {self.args.test_results_dir}")
-            """
         # ------------------------------
         # 模型预测
         # ------------------------------
@@ -570,9 +570,12 @@ class Model:
                 X_train_history = X_train_history,
                 Y_train_history = Y_train_history,
                 df_future = df_future,
+                df_date_future = df_date_future,
+                df_weather_future = df_weather_future,
+                # exogenous_features = exogenous_features,
                 endogenous_features = endogenous_features_with_target,
-                exogenous_features = exogenous_features,
                 target_feature = target_feature,
+                predictor_features = predictor_features,
                 target_output_features = target_output_features,
                 categorical_features = categorical_features, 
             )

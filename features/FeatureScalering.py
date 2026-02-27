@@ -46,10 +46,10 @@ class FeatureScaler:
             self.scaler = StandardScaler()
         else:
             self.scaler = MinMaxScaler()
-        self.feature_scalers = {}  # 分组归一化器
+        self.feature_scalers = {}    # 分组归一化器
         # 类别特征信息
         self.category_mappings = {}  # 类别到编码的映射
-        self.category_info = {}       # 类别特征的元信息
+        self.category_info = {}      # 类别特征的元信息
         # 特征分组信息
         self.feature_groups = {}
     

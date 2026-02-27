@@ -12,11 +12,7 @@
 # ***************************************************
 
 # python libraries
-import sys
 from pathlib import Path
-ROOT = str(Path.cwd())
-if ROOT not in sys.path:
-    sys.path.append(ROOT)
 from typing import List, Dict, Any
 import warnings
 warnings.filterwarnings("ignore")

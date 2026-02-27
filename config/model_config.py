@@ -41,6 +41,7 @@ class ModelConfig_univariate:
     # 特征工程配置
     # ------------------------------
     # 日期类型数据配置
+    # --------------
     enable_date_features: bool = False
     if enable_date_features:
         # 节假日数据
@@ -66,6 +67,7 @@ class ModelConfig_univariate:
         datetype_categorical_features: List[str] = field(default_factory=lambda: [])
     
     # 天气数据配置
+    # --------------
     enable_weather_features: bool = False
     if enable_weather_features:
         # 天气数据
@@ -94,6 +96,7 @@ class ModelConfig_univariate:
         weather_categorical_features: List[str] = field(default_factory=lambda: [])
     
     # 日期时间特征
+    # --------------
     enable_datetime_features: bool = True
     if enable_datetime_features:
         datetime_features: List[str] = field(default_factory=lambda: [
@@ -113,6 +116,7 @@ class ModelConfig_univariate:
         datetime_categorical_features: List[str] = field(default_factory=lambda: [])
     
     # 特征滞后数列表
+    # --------------
     enable_lags_features: bool = False
     if enable_lags_features:
         lags: List[int] = field(default_factory=lambda: [

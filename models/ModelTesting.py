@@ -36,9 +36,11 @@ LOGGING_LABEL = Path(__file__).name[:-3]
 
 class ModelTesting:
     
-    def __init__(self, args, log_prefix: str):
+    def __init__(self, args, log_prefix: str, horizon: int, window_len: int):
         self.args = args
         self.log_prefix = log_prefix
+        self.horizon = horizon
+        self.window_len = window_len
 
     # ------------------------------
     # Model sliding window testing
@@ -168,7 +170,14 @@ class ModelTesting:
         # 测试结果数据保存
         test_scores_df.to_csv(self.args.test_results_dir.joinpath("test_scores_df.csv"), index=False, encoding="utf-8")
         cv_plot_df.to_csv(self.args.test_results_dir.joinpath("cv_plot_df.csv"), index=False, encoding="utf-8")
+        # if getattr(self.args, "disable_plotting", False):
+        #     logger.info(f"{self.log_prefix} Skip plotting because disable_plotting=True.")
+        #     return
         # 测试结果数据可视化
+        required_cols = {"Y_preds", "Y_trues"}
+        if cv_plot_df.empty or not required_cols.issubset(set(cv_plot_df.columns)):
+            logger.warning(f"{self.log_prefix} No valid prediction columns found for visualization.")
+            return
         if len(cv_plot_df["Y_preds"].values) == 0 or len(cv_plot_df["Y_trues"].values) == 0:
             logger.warning(f"{self.log_prefix} No data to visualize for test prediction.")
             return

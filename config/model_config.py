@@ -97,7 +97,7 @@ class ModelConfig_univariate:
     
     # 日期时间特征
     # --------------
-    enable_datetime_features: bool = False
+    enable_datetime_features: bool = True
     if enable_datetime_features:
         datetime_features: List[str] = field(default_factory=lambda: [
             'minute', 'hour', 'day', 'weekday', 'week',
@@ -117,7 +117,7 @@ class ModelConfig_univariate:
     
     # 特征滞后数列表
     # --------------
-    enable_lags_features: bool = True
+    enable_lags_features: bool = False
     if enable_lags_features:
         lags: List[int] = field(default_factory=lambda: [
             1 * 288,  # Daily lag
@@ -192,8 +192,8 @@ class ModelConfig_univariate:
     ensemble_method: str = "stacking"  # 'averaging', 'weighted', 'stacking', "blending"
     # 可选预测方法:
     # - 单变量预测单变量
-    # pred_method: str = "univariate-single-multistep-direct-output"       # USMDO [单变量(包含目标变量的所有内生变量)->单变量(目标内生变量)]多步直接输出预测
-    pred_method: str = "univariate-single-multistep-direct"              # USMD [单变量(包含目标变量的所有内生变量)->单变量(目标内生变量)]多步直接预测
+    pred_method: str = "univariate-single-multistep-direct-output"       # USMDO [单变量(包含目标变量的所有内生变量)->单变量(目标内生变量)]多步直接输出预测
+    # pred_method: str = "univariate-single-multistep-direct"              # USMD [单变量(包含目标变量的所有内生变量)->单变量(目标内生变量)]多步直接预测
     # pred_method: str = "univariate-single-multistep-recursive"           # USMR [单变量(包含目标变量的所有内生变量)->单变量(目标内生变量)]多步递归预测
     # pred_method: str = "univariate-single-multistep-direct-recursive"    # USMDR [单变量(包含目标变量的所有内生变量)->单变量(目标内生变量)]多步直接递归预测
     # - 多变量预测单变量
@@ -212,7 +212,7 @@ class ModelConfig_univariate:
     # 模型运行模式
     # ------------------------------
     # 模型测试
-    is_testing: bool = False
+    is_testing: bool = True
     # 模型预测
     is_forecasting: bool = True
     # 预测推理开始的时间
@@ -237,7 +237,7 @@ class ModelConfig_multivariate:
     # 目标时间序列配置
     data_dir: str = "./dataset/ETT-small"
     data_path: str = "ETTm1.csv"
-    data: str = "AIDC_A_dataset"
+    data: str = "ETTm1"
     freq: str = "15min"
     freq_minutes: int = 15
     target_ts_feat: str = "date"

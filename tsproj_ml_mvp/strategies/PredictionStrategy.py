@@ -75,35 +75,18 @@ class PredictionHelper:
         self.df_history_for_lags = self.df_history.iloc[-self.max_lag:].copy()
         logger.info(f"{self.log_prefix} df_history_for_lags shape: {self.df_history_for_lags.shape}")
         logger.info(f"{self.log_prefix} df_history_for_lags columns: {self.df_history_for_lags.columns.tolist()}")
-    '''
-    @staticmethod
-    def build_lag_features(df, features, lags):
-        """
-        统一的滞后特征构建
-        
-        适用于单变量和多变量方法
-        """
-        for feat in features:
-            for lag in lags:
-                df[f'{feat}_lag_{lag}'] = df[feat].shift(lag)
-        
-        return df
     
     @staticmethod
-    def recursive_predict_step(model, current_features, history, target, step):
-        """
-        递归预测的单步逻辑
-        
-        USMR和MSMR共用此方法
-        """
-        # 预测
-        prediction = model.predict(current_features)[0]
-        
-        # 更新历史
-        history.loc[len(history)] = prediction
-        
-        return prediction
-    '''
+    def _to_1d(pred: Any) -> np.ndarray:
+        pred_arr = np.asarray(pred)
+        if pred_arr.ndim == 0:
+            return np.asarray([float(pred_arr)])
+        return pred_arr.reshape(-1)
+
+    @staticmethod
+    def _to_scalar(pred: Any) -> float:
+        pred_arr = PredictionHelper._to_1d(pred)
+        return float(pred_arr[0]) if pred_arr.size > 0 else np.nan
     # ------------------------------
     # 单变量（目标变量滞后特征）预测单变量（目标变量）
     # ------------------------------
@@ -141,8 +124,9 @@ class PredictionHelper:
             logger.info(f"{self.log_prefix} categorical_features: {categorical_features}")
             # 特征选择
             X_test_future = df_future_featured[predictor_features]
-        elif self.args.is_testing and self.args.is_forecasting:
+        elif self.args.is_testing:
             X_test_future = self.df_future
+            categorical_features = self.categorical_features
         logger.info(f"{self.log_prefix} X_test_future: \n{X_test_future}")
 
         # 特征预处理（预测模式）
@@ -155,7 +139,12 @@ class PredictionHelper:
         
         logger.info(f"{self.log_prefix} USMDO forecast completed, predicted {len(Y_preds)} steps")
 
-        return np.array(Y_preds)
+        if len(Y_preds) == 0:
+            return np.array([])
+        Y_preds = np.asarray(Y_preds)
+        if Y_preds.ndim == 2 and Y_preds.shape[1] == 1:
+            return Y_preds[:, 0]
+        return Y_preds
 
     def univariate_single_multi_step_direct_forecast(self):
         """
@@ -196,7 +185,7 @@ class PredictionHelper:
         self.feature_scaler.validate_features(X_test_processed, stage="prediction")
 
         # 6.模型预测
-        Y_pred_multi_step = self.model.predict(X_test_processed)[0]
+        Y_pred_multi_step = self._to_1d(self.model.predict(X_test_processed)[0])
         
         #TODO 7.Assign predictions to df_future_for_prediction
         if len(Y_pred_multi_step) >= len(self.df_future):
@@ -254,7 +243,7 @@ class PredictionHelper:
             self.feature_scaler.validate_features(X_forecast_processed, stage="prediction")
             
             # 6.模型预测
-            y_pred_step = self.model.predict(X_forecast_processed)[0]
+            y_pred_step = self._to_scalar(self.model.predict(X_forecast_processed))
             Y_preds.append(y_pred_step)
 
             # 7.将预测值更新回 df_future_exogenous，以便为下一步预测提供滞后特征
@@ -337,7 +326,7 @@ class PredictionHelper:
                 self.feature_scaler.validate_features(X_forecast_processed, stage="prediction")
                 
                 # 6. 预测
-                y_pred_step = self.model.predict(X_forecast_processed)[0]
+                y_pred_step = self._to_scalar(self.model.predict(X_forecast_processed))
                 Y_preds.append(y_pred_step)
                 
                 # 7. 更新历史数据（用于下一步预测）
@@ -407,7 +396,7 @@ class PredictionHelper:
         self.feature_scaler.validate_features(X_test_processed, stage="prediction")
         
         # 6.模型预测
-        Y_pred_multi_step = self.model.predict(X_test_processed)[0]
+        Y_pred_multi_step = self._to_1d(self.model.predict(X_test_processed)[0])
         
         # 7.处理预测结果
         if len(Y_pred_multi_step) >= len(self.df_future):
@@ -480,19 +469,20 @@ class PredictionHelper:
             self.feature_scaler.validate_features(X_forecast_processed, stage="prediction")
 
             # 5.模型预测
-            y_pred_step = self.model.predict(X_forecast_processed)[0]
+            y_pred_step = self._to_1d(self.model.predict(X_forecast_processed)[0])
             # Map predictions back to their shifted column names
-            next_pred_dict = dict(zip(self.target_output_features, y_pred_step))
+            active_targets = target_output_features if target_output_features else self.target_output_features
+            next_pred_dict = dict(zip(active_targets, y_pred_step))
 
             # 6.Store the prediction for the primary target (assuming it's the first in target_output_features)
             if self.target_feature:
                 primary_target_shifted_name = f"{self.target_feature}_shift_1"
                 if primary_target_shifted_name in next_pred_dict:
-                    Y_preds.append(next_pred_dict[primary_target_shifted_name])
+                    Y_preds.append(float(next_pred_dict[primary_target_shifted_name]))
                 else:
-                    Y_preds.append(y_pred_step[0])
+                    Y_preds.append(float(y_pred_step[0]))
             else:
-                Y_preds.append(y_pred_step[0])
+                Y_preds.append(float(y_pred_step[0]))
 
             # 6.将预测值更新回 df_future_exogenous，以便为下一步预测提供滞后特征
             df_future_exogenous_new_row = df_future_exogenous.copy().iloc[-1:]
@@ -611,7 +601,7 @@ class PredictionHelper:
                 self.feature_scaler.validate_features(X_forecast_processed, stage="prediction")
                 
                 # 6. 预测目标变量
-                y_pred_target = self.model.predict(X_forecast_processed)[0]
+                y_pred_target = self._to_scalar(self.model.predict(X_forecast_processed))
                 Y_preds.append(y_pred_target)
                 
                 # 7. 更新历史数据
@@ -635,6 +625,38 @@ class PredictionHelper:
         logger.info(f"{self.log_prefix} MSMDR forecast completed, predicted {len(Y_preds)} steps")
         
         return np.array(Y_preds)
+
+    def _predict_by_method(self) -> np.ndarray:
+        """
+        根据配置分发预测策略并返回一维预测数组
+        """
+        if self.args.pred_method == "univariate-single-multistep-direct-output":
+            raw_pred = self.univariate_single_multi_step_direct_output_forecast()
+        elif self.args.pred_method == "univariate-single-multistep-direct":
+            raw_pred = self.univariate_single_multi_step_direct_forecast()
+        elif self.args.pred_method == "univariate-single-multistep-recursive":
+            raw_pred = self.univariate_single_multi_step_recursive_forecast()
+        elif self.args.pred_method == "univariate-single-multistep-direct-recursive":
+            raw_pred = self.univariate_single_multi_step_direct_recursive_forecast()
+        elif self.args.pred_method == "multivariate-single-multistep-direct":
+            raw_pred = self.multivariate_single_multi_step_direct_forecast()
+        elif self.args.pred_method == "multivariate-single-multistep-recursive":
+            raw_pred = self.multivariate_single_multi_step_recursive_forecast()
+        elif self.args.pred_method == "multivariate-single-multistep-direct-recursive":
+            raw_pred = self.multivariate_single_multi_step_direct_recursive_forecast()
+        else:
+            raise ValueError(f"Unsupported pred_method: {self.args.pred_method}")
+
+        pred_arr = np.asarray(raw_pred)
+        if pred_arr.ndim == 0:
+            return np.asarray([float(pred_arr)])
+        if pred_arr.ndim == 1:
+            return pred_arr
+        if pred_arr.shape[0] == 1:
+            return pred_arr[0]
+        if pred_arr.shape[1] == 1:
+            return pred_arr[:, 0]
+        return pred_arr[:, 0]
 
 
 

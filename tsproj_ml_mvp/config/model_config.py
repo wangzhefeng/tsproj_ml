@@ -237,7 +237,7 @@ class ModelConfig_multivariate:
     # 目标时间序列配置
     data_dir: str = "./dataset/ETT-small"
     data_path: str = "ETTm1.csv"
-    data: str = "AIDC_A_dataset"
+    data: str = "ETTm1"
     freq: str = "15min"
     freq_minutes: int = 15
     target_ts_feat: str = "date"

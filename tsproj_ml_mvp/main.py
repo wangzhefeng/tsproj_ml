@@ -27,7 +27,6 @@ if ROOT not in sys.path:
     sys.path.append(ROOT)
 import copy
 import datetime
-from typing import List
 import warnings
 warnings.filterwarnings("ignore")
 
@@ -48,6 +47,7 @@ from features.FeatureEngineering import FeatureEngineer
 from features.FeatureScalering import FeatureScaler
 from models.ModelTesting import ModelTesting
 from models.ModelFactory import ModelFactory
+from models.ModelEnsemble import TimeSeriesEnsembleRegressor, EnsembleConfig
 from strategies.PredictionStrategy import PredictionHelper
 
 # global variable
@@ -124,6 +124,19 @@ class Model:
         logger.info(f"{self.log_prefix} 模型类型: {self.args.model_type}")
         logger.info(f"{self.log_prefix} 高级特征: {'启用' if self.args.enable_advanced_features else '禁用'}")
         logger.info(f"{self.log_prefix} 模型融合: {'启用' if self.args.enable_ensemble else '禁用'}")
+
+    @staticmethod
+    def _align_pred_length(y_pred: np.ndarray, target_len: int, fill_value: float = np.nan) -> np.ndarray:
+        pred = np.asarray(y_pred).reshape(-1)
+        if target_len <= 0:
+            return np.asarray([])
+        if len(pred) == target_len:
+            return pred
+        if len(pred) == 0:
+            return np.full(shape=(target_len,), fill_value=fill_value)
+        if len(pred) > target_len:
+            return pred[:target_len]
+        return np.pad(pred, pad_width=(0, target_len - len(pred)), mode="edge")
     # ##############################
     # Model Testing
     # ##############################
@@ -328,24 +341,26 @@ class Model:
         # 模型训练
         # ------------------------------
         if self.args.enable_ensemble:
-            # 模型融合
-            logger.info(f"{self.log_prefix} 使用模型融合: {self.args.ensemble_models}")
-            models = []
+            logger.info(f"{self.log_prefix} 使用模型融合: {self.args.ensemble_models}, 方法: {self.args.ensemble_method}")
+            base_models = []
             for model_type in self.args.ensemble_models:
-                base_model = self.model_factory.create_model(model_type=model_type, model_params=self.model_params)
-                models.append(base_model)
-            
-            # 简化的融合：平均法
-            for i, model in enumerate(models):
-                logger.info(f"{self.log_prefix} 训练模型 {i+1}/{len(models)}: {self.args.ensemble_models[i]}")
-                if Y_train_df.shape[1] == 1:
-                    model.fit(X_train_df_processed, np.ravel(Y_train_df.values))
-                else:
-                    wrapped_model = MultiOutputRegressor(estimator=model.model)
-                    wrapped_model.fit(X_train_df_processed, Y_train_df)
-                    model.model = wrapped_model
-            # 返回模型列表（在预测时平均）
-            return models
+                model_wrapper = self.model_factory.create_model(model_type=model_type, model_params=self.model_params)
+                estimator = model_wrapper.model
+                if Y_train_df.shape[1] > 1:
+                    estimator = MultiOutputRegressor(estimator)
+                base_models.append((model_type, estimator))
+            ensemble = TimeSeriesEnsembleRegressor(
+                base_models=base_models,
+                config=EnsembleConfig(
+                    method=getattr(self.args, "ensemble_method", "averaging"),
+                    val_ratio=float(getattr(self.args, "ensemble_val_ratio", 0.2)),
+                    random_state=42,
+                ),
+            )
+            y_train_input = np.ravel(Y_train_df.values) if Y_train_df.shape[1] == 1 else Y_train_df.values
+            ensemble.fit(X_train_df_processed, y_train_input)
+            logger.info(f"{self.log_prefix} Ensemble training completed!")
+            return ensemble
         else:
             # 单模型
             lgbm_estimator = self.model_factory.create_model(
@@ -453,30 +468,7 @@ class Model:
 
         Y_pred = predictor._predict_by_method()
         
-        # TODO 模型融合
-        if isinstance(model, List):
-            pass
-        else:
-            pass
-        if len(Y_pred) != len(df_future_for_prediction):
-            min_len = min(len(Y_pred), len(df_future_for_prediction))
-            if min_len == 0:
-                logger.warning(f"{self.log_prefix} Empty forecast outputs, filling with NaN.")
-                Y_pred = np.full(shape=(len(df_future_for_prediction),), fill_value=np.nan)
-            else:
-                logger.warning(
-                    f"{self.log_prefix} Forecast length mismatch: pred={len(Y_pred)} vs "
-                    f"future={len(df_future_for_prediction)}. Aligning by truncation/padding."
-                )
-                Y_pred = np.asarray(Y_pred)[:min_len]
-                if min_len < len(df_future_for_prediction):
-                    pad_value = float(Y_pred[-1])
-                    Y_pred = np.pad(
-                        Y_pred,
-                        pad_width=(0, len(df_future_for_prediction) - min_len),
-                        mode="constant",
-                        constant_values=pad_value,
-                    )
+        Y_pred = self._align_pred_length(Y_pred, len(df_future_for_prediction), fill_value=np.nan)
         # 预测结果收集
         df_future_for_prediction["predict_value"] = Y_pred
         df_future_for_prediction = df_future_for_prediction[["time", "predict_value"]]
@@ -520,6 +512,8 @@ class Model:
          df_weather_history, 
          endogenous_features_with_target, 
          target_feature) = dataloader.process_history_data(input_data = input_data)
+        if target_feature is None:
+            raise ValueError(f"{self.log_prefix} Target feature '{self.args.target}' not found in dataset.")
         # ------------------------------
         # 特征工程
         # ------------------------------
@@ -551,6 +545,8 @@ class Model:
             predictor_features = predictor_features, 
             target_output_features = target_output_features,
         )
+        if X_train_history.empty or Y_train_history.empty:
+            raise ValueError(f"{self.log_prefix} Empty training matrix after feature engineering.")
         logger.info(f"{self.log_prefix} after predictor_target_split X_train_history: \n{X_train_history.head()}")
         logger.info(f"{self.log_prefix} after predictor_target_split Y_train_history: \n{Y_train_history.head()}")
         # ------------------------------

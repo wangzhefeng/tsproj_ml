@@ -604,8 +604,8 @@ class PredictionHelper:
                 y_pred_target = self._to_scalar(self.model.predict(X_forecast_processed))
                 Y_preds.append(y_pred_target)
                 
-                # 7. 更新历史数据
-                df_forecast_exogenous_new_row = X_forecast_input.copy().iloc[-1:]
+                # 7. 更新历史数据（必须用原始时序字段而不是滞后特征字段）
+                df_forecast_exogenous_new_row = df_future_exogenous.copy().iloc[-1:]
                 df_forecast_exogenous_new_row[self.target_feature] = y_pred_target
                 
                 # 8.更新其他内生变量的值（使用持久性预测）
@@ -619,7 +619,14 @@ class PredictionHelper:
                 #         recent_mean = self.df_history_for_lags[feat].tail(3).mean()
                 #         df_forecast_exogenous_new_row[feat] = recent_mean
                 
-                # 9.将新行添加到历史数据中，进行下一次循环
+                # 9.补齐缺失列，避免递归阶段列漂移
+                for col in self.df_history_for_lags.columns:
+                    if col not in df_forecast_exogenous_new_row.columns:
+                        if col in df_future_exogenous.columns:
+                            df_forecast_exogenous_new_row[col] = df_future_exogenous[col].iloc[-1]
+                        else:
+                            df_forecast_exogenous_new_row[col] = self.df_history_for_lags[col].iloc[-1]
+                # 10.将新行添加到历史数据中，进行下一次循环
                 self.df_history_for_lags = pd.concat([self.df_history_for_lags, df_forecast_exogenous_new_row], ignore_index=True)
                 self.df_history_for_lags = self.df_history_for_lags.iloc[-self.max_lag:]
         logger.info(f"{self.log_prefix} MSMDR forecast completed, predicted {len(Y_preds)} steps")

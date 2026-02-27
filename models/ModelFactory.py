@@ -19,6 +19,7 @@ if ROOT not in sys.path:
     sys.path.append(ROOT)
 from abc import ABC, abstractmethod
 from typing import Dict, Any, Optional
+import inspect
 import warnings
 warnings.filterwarnings("ignore")
 
@@ -125,6 +126,12 @@ class BaseModel(ABC):
                 return importance
         return None
 
+
+def _filter_valid_params(params: Dict[str, Any], estimator_cls) -> Dict[str, Any]:
+    valid = set(inspect.signature(estimator_cls.__init__).parameters.keys())
+    valid.discard("self")
+    return {k: v for k, v in params.items() if k in valid}
+
 # ##############################
 # 具体模型实现
 # ##############################
@@ -176,7 +183,7 @@ class LightGBMModel(BaseModel):
             "seed": 42,
         }
         default_params.update(params)
-        self.params = default_params
+        self.params = _filter_valid_params(default_params, lgb.LGBMRegressor)
         self.model = lgb.LGBMRegressor(**self.params)
     
     def fit(self, 
@@ -245,7 +252,7 @@ class XGBoostModel(BaseModel):
             'random_state': 42,
         }
         default_params.update(params)
-        self.params = default_params
+        self.params = _filter_valid_params(default_params, xgb.XGBRegressor)
         self.model = xgb.XGBRegressor(**self.params)
     
     def fit(self, 
@@ -306,7 +313,7 @@ class CatBoostModel(BaseModel):
             'thread_count': -1,
         }
         default_params.update(params)
-        self.params = default_params
+        self.params = _filter_valid_params(default_params, cab.CatBoostRegressor)
         self.model = cab.CatBoostRegressor(**self.params)
     
     def fit(self, 
@@ -368,7 +375,7 @@ class RandomForestModel(BaseModel):
             'random_state': 42,
         }
         default_params.update(params)
-        self.params = default_params
+        self.params = _filter_valid_params(default_params, RandomForestRegressor)
         self.model = RandomForestRegressor(**self.params)
     
     def fit(self, X: pd.DataFrame, y: pd.Series, **kwargs):

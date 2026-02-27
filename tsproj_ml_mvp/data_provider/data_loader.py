@@ -49,7 +49,12 @@ class DataLoader:
         """
         logger.info(f"{self.log_prefix} Loading data from {self.args.data_dir}")
         
-        input_data = {}
+        input_data = {
+            "date_history": None,
+            "date_future": None,
+            "weather_history": None,
+            "weather_future": None,
+        }
         
         # 加载目标时间序列数据
         target_data_path = self.args.data_dir / self.args.data_path
@@ -144,24 +149,26 @@ class DataLoader:
         df_template_copy = df_template.copy()
         if df_series is not None:
             # 目标特征数据转换为浮点数
+            series_indexed = df_series.set_index(col_ts)
             if self.args.target in df_series.columns:
-                df_series[self.args.target] = df_series[self.args.target].apply(lambda x: float(x))
-                df_template_copy["y"] = df_template_copy["time"].map(df_series.set_index(col_ts)[self.args.target])
+                series_indexed[self.args.target] = pd.to_numeric(series_indexed[self.args.target], errors="coerce")
+                df_template_copy["y"] = df_template_copy["time"].map(series_indexed[self.args.target])
                 target_feature = "y"
             else:
                 target_feature = None
+                logger.warning(f"{self.log_prefix} Target column '{self.args.target}' does not exist.")
             # 除目标特征外的其他数值类型的内生变量处理
             filtered_col_numeric = [col for col in col_numeric if col not in [col_ts, self.args.target] + col_categorical + col_drop]
             for col in filtered_col_numeric:
                 if col in df_series.columns:
-                    df_series[col] = df_series[col].apply(lambda x: float(x))
-                    df_template_copy[col] = df_template_copy["time"].map(df_series.set_index(col_ts)[col])
+                    series_indexed[col] = pd.to_numeric(series_indexed[col], errors="coerce")
+                    df_template_copy[col] = df_template_copy["time"].map(series_indexed[col])
             # TODO 类别类型的内生变量处理
             filtered_col_categorical = [col for col in col_categorical if col not in [col_ts, self.args.target] + col_numeric + col_drop]
             for col in filtered_col_categorical:
                 if col in df_series.columns:
-                    df_series[col] = df_series[col].apply(lambda x: str(x))
-                    df_template_copy[col] = df_template_copy["time"].map(df_series.set_index(col_ts)[col])
+                    series_indexed[col] = series_indexed[col].astype(str)
+                    df_template_copy[col] = df_template_copy["time"].map(series_indexed[col])
             # 内生变量(Endogenous variable)
             endogenous_features = [col for col in df_template_copy.columns if col not in ["time"]]
             if target_feature and target_feature in endogenous_features:

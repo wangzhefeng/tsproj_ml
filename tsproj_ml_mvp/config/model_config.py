@@ -190,6 +190,7 @@ class ModelConfig_univariate:
     enable_ensemble: bool = False
     ensemble_models: List = field(default_factory=lambda: ["lgb", "xgb", "cat"])
     ensemble_method: str = "stacking"  # 'averaging', 'weighted', 'stacking', "blending"
+    ensemble_val_ratio: float = 0.2
     # 可选预测方法:
     # - 单变量预测单变量
     pred_method: str = "univariate-single-multistep-direct-output"       # USMDO [单变量(包含目标变量的所有内生变量)->单变量(目标内生变量)]多步直接输出预测
@@ -365,6 +366,7 @@ class ModelConfig_multivariate:
     enable_ensemble: bool = False
     ensemble_models: List = field(default_factory=lambda: ["lgb", "xgb", "cat"])
     ensemble_method: str = "stacking"  # 'averaging', 'weighted', 'stacking', "blending"
+    ensemble_val_ratio: float = 0.2
     # 可选预测方法:
     # - 单变量预测单变量
     # pred_method: str = "univariate-single-multistep-direct-output"       # USMDO [单变量(包含目标变量的所有内生变量)->单变量(目标内生变量)]多步直接输出预测

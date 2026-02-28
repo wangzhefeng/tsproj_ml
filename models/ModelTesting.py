@@ -48,6 +48,7 @@ class ModelTesting:
     def _evaluate_split_index(self, window: int, total_data_points: int):
         """
         数据分割索引构建
+        
         Calculates train/test split indices for a sliding window.
         Assumes total_data_points is the length of `df_history_featured` after dropna,
         so `self.horizon` refers to the number of samples in the test set.
@@ -69,20 +70,20 @@ class ModelTesting:
         """
         logger.info(f"{self.log_prefix} Model Testing sliding window...")
         logger.info(f"{self.log_prefix} {30*'-'}")
-        # 数据分割指标
+
+        # 滑窗数据分割索引
         total_data_points = len(data_X)
         train_start, train_end, test_start, test_end = self._evaluate_split_index(window, total_data_points)
         logger.info(f"{self.log_prefix} split indexes:: [train_start:train_end]: [{train_start}:{train_end}]")
         logger.info(f"{self.log_prefix} split indexes:: [test_start:test_end]: [{test_start}:{test_end+1}]")
-
-        # 数据分割(Data slicing, handle cases where indices might be out of bounds for the window)
         if train_start >= train_end or test_start >= test_end + 1 or train_start < 0 or test_end >= total_data_points:
             logger.warning(f"{self.log_prefix} Insufficient data for window {window} (train_start={train_start}, train_end={train_end}, test_start={test_start}, test_end={test_end}). Skipping this window.")
             return None, None, None, None, None, None
 
+        # 滑窗数据分割
         X_train = data_X.iloc[train_start:train_end]
         Y_train = data_Y.iloc[train_start:train_end]
-        X_test = data_X.iloc[test_start:test_end+1] # +1 to include test_end
+        X_test = data_X.iloc[test_start:test_end+1]
         Y_test = data_Y.iloc[test_start:test_end+1]
         df_history_train = df_history.iloc[train_start:train_end]
         df_history_test = df_history.iloc[test_start:test_end+1]

@@ -35,7 +35,9 @@ import pandas as pd
 import matplotlib.pyplot as plt
 from sklearn.multioutput import MultiOutputRegressor, RegressorChain
 from sklearn.model_selection import (
-    TimeSeriesSplit, GridSearchCV, RandomizedSearchCV
+    TimeSeriesSplit, 
+    GridSearchCV, 
+    RandomizedSearchCV
 )
 
 from config.model_config import (
@@ -47,8 +49,9 @@ from features.FeatureEngineering import FeatureEngineer
 from features.FeatureScalering import FeatureScaler
 from models.ModelTesting import ModelTesting
 from models.ModelFactory import ModelFactory
-from models.ModelEnsemble import TimeSeriesEnsembleRegressor, EnsembleConfig
-from strategies.PredictionStrategy import PredictionHelper
+from models.ModelSaveLoad import ModelDeployPkl
+from models.ModelEnsemble_optim import TimeSeriesEnsembleRegressor, EnsembleConfig
+from models.ModelForecasting import PredictionHelper
 
 # global variable
 LOGGING_LABEL = Path(__file__).name[:-3]
@@ -122,21 +125,29 @@ class Model:
         logger.info(f"{self.log_prefix} history data range: {self.train_start_time}~{self.train_end_time}")
         logger.info(f"{self.log_prefix} predict data range: {self.forecast_start_time}~{self.forecast_end_time}")
         logger.info(f"{self.log_prefix} 模型类型: {self.args.model_type}")
+        logger.info(f"{self.log_prefix} 事件特征: {'启用' if self.args.enable_date_features else '禁用'}")
+        logger.info(f"{self.log_prefix} 气象特征: {'启用' if self.args.enable_weather_features else '禁用'}")
+        logger.info(f"{self.log_prefix} 时间特征: {'启用' if self.args.enable_datetime_features else '禁用'}")
+        logger.info(f"{self.log_prefix} 滞后特征: {'启用' if self.args.enable_lags_features else '禁用'}")
         logger.info(f"{self.log_prefix} 高级特征: {'启用' if self.args.enable_advanced_features else '禁用'}")
+        logger.info(f"{self.log_prefix} 特征变换: {'启用' if self.args.scale else '禁用'}")
+        logger.info(f"{self.log_prefix} 类别特征: {'启用' if self.args.encode_categorical_features else '禁用'}")
         logger.info(f"{self.log_prefix} 模型融合: {'启用' if self.args.enable_ensemble else '禁用'}")
+        logger.info(f"{self.log_prefix} 模型测试: {'启用' if self.args.is_testing else '禁用'}")
+        logger.info(f"{self.log_prefix} 模型预测: {'启用' if self.args.is_forecasting else '禁用'}")
 
-    @staticmethod
-    def _align_pred_length(y_pred: np.ndarray, target_len: int, fill_value: float = np.nan) -> np.ndarray:
-        pred = np.asarray(y_pred).reshape(-1)
-        if target_len <= 0:
-            return np.asarray([])
-        if len(pred) == target_len:
-            return pred
-        if len(pred) == 0:
-            return np.full(shape=(target_len,), fill_value=fill_value)
-        if len(pred) > target_len:
-            return pred[:target_len]
-        return np.pad(pred, pad_width=(0, target_len - len(pred)), mode="edge")
+    # @staticmethod
+    # def _align_pred_length(y_pred: np.ndarray, target_len: int, fill_value: float = np.nan) -> np.ndarray:
+    #     pred = np.asarray(y_pred).reshape(-1)
+    #     if target_len <= 0:
+    #         return np.asarray([])
+    #     if len(pred) == target_len:
+    #         return pred
+    #     if len(pred) == 0:
+    #         return np.full(shape=(target_len,), fill_value=fill_value)
+    #     if len(pred) > target_len:
+    #         return pred[:target_len]
+    #     return np.pad(pred, pad_width=(0, target_len - len(pred)), mode="edge")
     # ##############################
     # Model Testing
     # ##############################
@@ -144,6 +155,8 @@ class Model:
              df_history, 
              X_train_history, 
              Y_train_history, 
+             df_date_history,
+             df_weather_history,
              endogenous_features_with_target, 
              target_feature, 
              predictor_features,
@@ -152,35 +165,54 @@ class Model:
         """
         模型滑窗测试
         """
+        # 模型测试类
         model_testing = ModelTesting(args=self.args, log_prefix=self.log_prefix, horizon=self.horizon, window_len=self.window_len)
-        # 模型测试结果收集
+        # ------------------------------
+        # 模型滑窗测试结果收集
+        # ------------------------------
         test_scores_df = pd.DataFrame()
         cv_plot_df = pd.DataFrame()
-        # Max number of windows to run, ensuring enough data for at least one full test horizon
+        # 训练数据集的完整时间戳
+        cv_timestamp_full_df = pd.DataFrame({"time": pd.date_range(self.train_start_time, self.train_end_time, freq=self.args.freq, inclusive="left")})
+        # ------------------------------
+        # 判断是否有足够的历史数据保证至少一个完整的测试窗口
+        # ------------------------------
         if self.n_windows <= 0:
             logger.warning(f"{self.log_prefix} Not enough data for testing with current window configuration (Total X points: {len(X_train_history)}")
             logger.warning(f"{self.log_prefix} Window length: {self.window_len}, Horizon: {self.horizon}). No tests will be performed.")
             return test_scores_df, cv_plot_df
-        # Create full timestamp df once for evaluation plotting
-        cv_timestamp_full_df = pd.DataFrame({"time": pd.date_range(self.train_start_time, self.train_end_time, freq=self.args.freq, inclusive="left")})
-        # 模型滑窗测试(Model sliding window test)
+        # ------------------------------
+        # 模型滑窗测试过程
+        # ------------------------------
         for window in range(1, int(self.n_windows + 1)):
-            logger.info(f"{self.log_prefix} {'-' * 40}")
+            logger.info(f"{self.log_prefix} {'-' * 48}")
             logger.info(f"{self.log_prefix} Model Testing window: {window}...")
-            logger.info(f"{self.log_prefix} {'-' * 40}")
+            logger.info(f"{self.log_prefix} {'-' * 48}")
+            # ------------------------------
             # 数据分割: 训练集、测试集
-            (X_train, Y_train, X_test, Y_test, df_history_train, df_history_test) = model_testing._evaluate_split(
-                X_train_history, Y_train_history, df_history, window
+            # ------------------------------
+            (X_train, Y_train, 
+             X_test, Y_test, 
+             df_history_train, df_history_test) = model_testing._evaluate_split(
+                 X_train_history, Y_train_history, df_history, window
             )
             if X_train is None:
                 continue
-            # 目标特征处理(Ensure Y_train is DataFrame for MultiOutputRegressor)
+            # 窗口目标特征处理
             Y_train = Y_train.to_frame() if isinstance(Y_train, pd.Series) else Y_train
             Y_test = Y_test.to_frame() if isinstance(Y_test, pd.Series) else Y_test
+            # ------------------------------
             # 窗口训练
-            scaler_testing = FeatureScaler(self.args, self.args.scaler_type, log_prefix=self.log_prefix)
+            # ------------------------------
+            logger.info(f"{self.log_prefix} Model Testing sliding window training...")
+            logger.info(f"{self.log_prefix} {48*'-'}")
+            scaler_testing = FeatureScaler(self.args, scaler_type=self.args.scaler_type, log_prefix=self.log_prefix)
             model = self.train(X_train, Y_train, scaler_testing, categorical_features)
+            # ------------------------------
             # 窗口预测
+            # ------------------------------
+            logger.info(f"{self.log_prefix} Model Testing sliding window forecasting...")
+            logger.info(f"{self.log_prefix} {48*'-'}")
             predictor = PredictionHelper(
                 args=self.args,
                 model=model,
@@ -213,28 +245,34 @@ class Model:
                 min_len = min(len(Y_pred), len(Y_test_for_eval))
                 Y_pred = np.asarray(Y_pred)[:min_len]
                 Y_test_for_eval = np.asarray(Y_test_for_eval)[:min_len]
+            # ------------------------------
+            # 模型测试结果
+            # ------------------------------
             # 测试集评价指标
             eval_scores_window = model_testing._evaluate_score(Y_test_for_eval, Y_pred, window, df_history_test)
             test_scores_df = pd.concat([test_scores_df, eval_scores_window], axis=0)
             # 测试集预测数据
             cv_plot_df_window = model_testing._evaluate_result(Y_test_for_eval, Y_pred, window, cv_timestamp_full_df)
             cv_plot_df = pd.concat([cv_plot_df, cv_plot_df_window], axis=0)
+            # ------------------------------
+            # TODO localtest
+            # ------------------------------
+            break
+        # ------------------------------
+        # 模型滑窗测试结果保存
+        # ------------------------------
+        logger.info(f"{self.log_prefix} {'-' * 48}")
+        logger.info(f"{self.log_prefix} Model Testing result saving...")
+        logger.info(f"{self.log_prefix} {'-' * 48}")
         # 模型测试评价指标数据处理
         if not test_scores_df.empty:
             test_scores_df_mean = test_scores_df.drop(columns=["time_range"]).mean()
             test_scores_df_mean = test_scores_df_mean.to_frame().T.reset_index(drop=True, inplace=False)
             test_scores_df_mean["time_range"] = "均值"
             test_scores_df = pd.concat([test_scores_df, test_scores_df_mean], axis=0)
-        # 模型结果保存
-        logger.info(f"{self.log_prefix} {'-' * 40}")
-        logger.info(f"{self.log_prefix} Model Testing result...")
-        logger.info(f"{self.log_prefix} {'-' * 40}")
         logger.info(f"{self.log_prefix} Model Testing test_scores_df: \n{test_scores_df}")
         logger.info(f"{self.log_prefix} Model Testing cv_plot_df: \n{cv_plot_df.head()}")
-        # 测试结果保存
-        logger.info(f"{self.log_prefix} {40*'-'}")
-        logger.info(f"{self.log_prefix} Model Testing result save...")
-        logger.info(f"{self.log_prefix} {40*'-'}")
+        # 模型测试结果保存
         model_testing.test_results_save(test_scores_df, cv_plot_df)
         logger.info(f"{self.log_prefix} Model Testing result saved in: {self.args.test_results_dir}")
         
@@ -304,10 +342,9 @@ class Model:
         """
         模型保存
         """
-        # model_deploy = ModelDeployPkl(save_file_path=self.args.checkpoints.joinpath("model.pkl"))
-        # model_deploy.save_model(model)
-        # logger.info(f"{self.log_prefix} Model saved to {model_dir.joinpath('model.pkl')}")
-        pass
+        model_deploy = ModelDeployPkl(save_file_path=self.args.checkpoints_dir.joinpath("model.pkl"))
+        model_deploy.save_model(model)
+        logger.info(f"{self.log_prefix} Model saved to {self.args.checkpoints_dir.joinpath('model.pkl')}")
     
     def train(self, X_train, Y_train, feature_scaler, categorical_features):
         """
@@ -322,7 +359,8 @@ class Model:
         # ------------------------------
         # 特征预处理（训练模式）
         X_train_df_processed, actual_categorical = feature_scaler.fit_transform(X_train_df, categorical_features)
-        feature_scaler.validate_features(X_train_df_processed, stage="training")
+        # feature_scaler.validate_features(X_train_df_processed, stage="training")
+        
         # 根据编码策略决定是否传递 categorical_feature
         if self.args.encode_categorical_features:
             # 已编码为整数，不传递 categorical_feature
@@ -330,9 +368,8 @@ class Model:
         else:
             # 未编码，传递 categorical_feature 让 LightGBM 处理
             lgbm_categorical = actual_categorical
-        logger.info(f"{self.log_prefix} lgbm_categorical: {lgbm_categorical}")
         # ------------------------------
-        # TODO Hyperparameter tuning (if enabled)
+        # Hyperparameter tuning (if enabled)
         # ------------------------------
         if self.args.perform_tuning:
             best_model = self._hyperparameters_tuning(X_train_df_processed, Y_train_df)
@@ -368,15 +405,13 @@ class Model:
                 model_params=self.model_params
             )
             if Y_train_df.shape[1] == 1:
-                # 单输出
+                logger.info(f"{self.log_prefix} Training single output LGBMRegressor...")
                 model = lgbm_estimator
                 model.fit(X_train_df_processed, np.ravel(Y_train_df.values))
-                logger.info(f"{self.log_prefix} Training single output LGBMRegressor")
             elif Y_train_df.shape[1] > 1:
-                # 多输出
+                logger.info(f"{self.log_prefix} Training MultiOutputRegressor with {Y_train.shape[1]} outputs")
                 model = MultiOutputRegressor(estimator=lgbm_estimator.model)
                 model.fit(X_train_df_processed, Y_train_df)
-                logger.info(f"{self.log_prefix} Training MultiOutputRegressor with {Y_train.shape[1]} outputs")
             logger.info(f"{self.log_prefix} Model training completed!")
 
             return model
@@ -419,7 +454,7 @@ class Model:
                  df_future, 
                  df_date_future,
                  df_weather_future,
-                 endogenous_features, 
+                 endogenous_features_with_target, 
                  target_feature, 
                  predictor_features,
                  target_output_features, 
@@ -434,18 +469,20 @@ class Model:
         logger.info(f"{self.log_prefix} Model Training start...")
         logger.info(f"{self.log_prefix} {40*'-'}")
         # 创建特征预处理器
-        self.scaler_forecasting = FeatureScaler(self.args, scaler_type=self.args.scaler_type, log_prefix=self.log_prefix)
+        scaler_forecasting = FeatureScaler(self.args, scaler_type=self.args.scaler_type, log_prefix=self.log_prefix)
         # 模型训练
-        model = self.train(X_train_history, Y_train_history, self.scaler_forecasting, categorical_features)
+        model = self.train(X_train_history, Y_train_history, scaler_forecasting, categorical_features)
         # 模型保存
         self.model_save(model)
-        logger.info(f"{self.log_prefix} Model Training result saved in: {self.args.checkpoints_dir}")
         # ------------------------------
         # 模型预测
         # ------------------------------
         logger.info(f"{self.log_prefix} {40*'-'}")
         logger.info(f"{self.log_prefix} Model Forecasting start...")
         logger.info(f"{self.log_prefix} {40*'-'}")
+        # 未来数据复制
+        df_future_for_prediction = df_future.copy()
+        # 模型预测
         predictor = PredictionHelper(
             args = self.args,
             model = model, 
@@ -454,21 +491,19 @@ class Model:
             df_future = df_future, 
             df_date_future=df_date_future,
             df_weather_future=df_weather_future,
-            endogenous_features = endogenous_features, 
+            endogenous_features = endogenous_features_with_target, 
             target_feature = target_feature, 
             target_output_features = target_output_features, 
             categorical_features = categorical_features,
-            feature_scaler = self.scaler_forecasting,
+            feature_scaler = scaler_forecasting,
             log_prefix = self.log_prefix,
         )
-        # Initialize Y_pred
-        Y_pred = np.array([])
-        # Use a copy of raw future data
-        df_future_for_prediction = df_future.copy()
-
         Y_pred = predictor._predict_by_method()
-        
-        Y_pred = self._align_pred_length(Y_pred, len(df_future_for_prediction), fill_value=np.nan)
+        logger.info(f"{self.log_prefix} after forecast Y_pred: \n{Y_pred}")
+        # Y_pred = self._align_pred_length(Y_pred, len(df_future_for_prediction), fill_value=np.nan)
+        # ------------------------------
+        # 模型预测结果收集和保存
+        # ------------------------------
         # 预测结果收集
         df_future_for_prediction["predict_value"] = Y_pred
         df_future_for_prediction = df_future_for_prediction[["time", "predict_value"]]
@@ -512,14 +547,15 @@ class Model:
          df_weather_history, 
          endogenous_features_with_target, 
          target_feature) = dataloader.process_history_data(input_data = input_data)
-        if target_feature is None:
-            raise ValueError(f"{self.log_prefix} Target feature '{self.args.target}' not found in dataset.")
         # ------------------------------
         # 特征工程
         # ------------------------------
         logger.info(f"{self.log_prefix} {80*'='}")
         logger.info(f"{self.log_prefix} Model history data feature engineering...")
         logger.info(f"{self.log_prefix} {80*'='}")
+        logger.info(f"{self.log_prefix} {40*'-'}")
+        logger.info(f"{self.log_prefix} Model history data feature engineering...")
+        logger.info(f"{self.log_prefix} {40*'-'}")
         # 特征预处理器
         feature_engineer_history = FeatureEngineer(self.args, self.log_prefix)
         (df_history_featured, 
@@ -537,18 +573,17 @@ class Model:
         )
         # 删除在构建滞后特征时产生的缺失值
         df_history_featured = df_history_featured.dropna()
-        logger.info(f"{self.log_prefix} after dropna df_history_featured: \n{df_history_featured.head()}")
+        logger.info(f"{self.log_prefix} after dropna df_history_featured: \n{df_history_featured}")
         
-        # 预测特征、目标特征分离
+        # 历史数据预测特征、目标特征分离
+        logger.info(f"{self.log_prefix} {40*'-'}")
+        logger.info(f"{self.log_prefix} Model history data feature split...")
+        logger.info(f"{self.log_prefix} {40*'-'}")
         X_train_history, Y_train_history = feature_engineer_history.predictor_target_split(
             df_series_featured = df_history_featured, 
             predictor_features = predictor_features, 
-            target_output_features = target_output_features,
+            target_output_features = target_output_features, 
         )
-        if X_train_history.empty or Y_train_history.empty:
-            raise ValueError(f"{self.log_prefix} Empty training matrix after feature engineering.")
-        logger.info(f"{self.log_prefix} after predictor_target_split X_train_history: \n{X_train_history.head()}")
-        logger.info(f"{self.log_prefix} after predictor_target_split Y_train_history: \n{Y_train_history.head()}")
         # ------------------------------
         # 模型测试
         # ------------------------------
@@ -556,23 +591,17 @@ class Model:
             logger.info(f"{self.log_prefix} {80*'='}")
             logger.info(f"{self.log_prefix} Model Testing...")
             logger.info(f"{self.log_prefix} {80*'='}")
-            # 历史数据预测特征、目标特征分离
-            logger.info(f"{self.log_prefix} {40*'-'}")
-            logger.info(f"{self.log_prefix} Model history data feature split...")
-            logger.info(f"{self.log_prefix} {40*'-'}")
-            # 模型滑窗测试
-            logger.info(f"{self.log_prefix} {40*'-'}")
-            logger.info(f"{self.log_prefix} Model Testing start...")
-            logger.info(f"{self.log_prefix} {40*'-'}")
             test_scores_df, cv_plot_df = self.test(
                 df_history = df_history,
                 X_train_history = X_train_history,
                 Y_train_history = Y_train_history,
+                df_date_history = df_date_history,
+                df_weather_history = df_weather_history,
                 endogenous_features_with_target = endogenous_features_with_target,
                 target_feature = target_feature,
                 predictor_features = predictor_features,
                 target_output_features = target_output_features,
-                categorical_features = categorical_features, 
+                categorical_features = categorical_features,
             )
         # ------------------------------
         # 模型预测
@@ -597,7 +626,7 @@ class Model:
                 df_future = df_future,
                 df_date_future = df_date_future,
                 df_weather_future = df_weather_future,
-                endogenous_features = endogenous_features_with_target,
+                endogenous_features_with_target = endogenous_features_with_target,
                 target_feature = target_feature,
                 predictor_features = predictor_features,
                 target_output_features = target_output_features,

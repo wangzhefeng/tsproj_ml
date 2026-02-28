@@ -54,7 +54,6 @@ class PredictionHelper:
         self.df_date_future = df_date_future
         self.df_weather_future = df_weather_future
         self.endogenous_features = endogenous_features
-        # self.exogenous_features = exogenous_features
         self.target_feature = target_feature
         self.target_output_features = target_output_features
         self.categorical_features = categorical_features
@@ -64,12 +63,6 @@ class PredictionHelper:
         # 最大滞后数量
         self.max_lag = max(self.args.lags) if self.args.lags else 1
         logger.info(f"{self.log_prefix} max_lag: {self.max_lag}")
-
-        # 分块大小
-        self.block_size = min(self.args.lags) if self.args.lags else 1
-        logger.info(f"{self.log_prefix} block_size: {self.block_size}")
-        self.num_blocks = int(np.ceil(self.horizon / self.block_size))
-        logger.info(f"{self.log_prefix} num_blocks: {self.num_blocks}")
         
         # 获取足够的历史数据以构建滞后特征
         self.df_history_for_lags = self.df_history.iloc[-self.max_lag:].copy()
@@ -98,7 +91,6 @@ class PredictionHelper:
         
         # 多步预测值收集器
         Y_preds = []
-        
         # 特征工程
         if not self.args.is_testing and self.args.is_forecasting:
             # 特征工程
@@ -118,7 +110,7 @@ class PredictionHelper:
             )
             # 删除在构建滞后特征时产生的缺失值
             df_future_featured = df_future_featured.dropna()
-            logger.info(f"{self.log_prefix} df_future_featured: \n{df_future_featured.head()}")
+            logger.info(f"{self.log_prefix} df_future_featured: \n{df_future_featured}")
             logger.info(f"{self.log_prefix} predictor_features: {predictor_features}")
             logger.info(f"{self.log_prefix} target_output_features: {target_output_features}")
             logger.info(f"{self.log_prefix} categorical_features: {categorical_features}")
@@ -131,20 +123,19 @@ class PredictionHelper:
 
         # 特征预处理（预测模式）
         X_test_processed = self.feature_scaler.transform(X_test_future, categorical_features)
-        self.feature_scaler.validate_features(X_test_processed, stage="prediction")
+        # self.feature_scaler.validate_features(X_test_processed, stage="prediction")
         
         # 模型推理
         if len(X_test_processed) > 0:
             Y_preds = self.model.predict(X_test_processed)
-        
-        logger.info(f"{self.log_prefix} USMDO forecast completed, predicted {len(Y_preds)} steps")
+            logger.info(f"{self.log_prefix} USMDO forecast completed, predicted {len(Y_preds)} steps")
 
+        # 模型推理结果处理
         if len(Y_preds) == 0:
             return np.array([])
-        Y_preds = np.asarray(Y_preds)
-        if Y_preds.ndim == 2 and Y_preds.shape[1] == 1:
-            return Y_preds[:, 0]
-        return Y_preds
+        else:
+            Y_preds = np.asarray(Y_preds)
+            return Y_preds
 
     def univariate_single_multi_step_direct_forecast(self):
         """
@@ -182,7 +173,7 @@ class PredictionHelper:
 
         # 5.特征预处理(预测模式)
         X_test_processed = self.feature_scaler.transform(X_forecast_input, categorical_features)
-        self.feature_scaler.validate_features(X_test_processed, stage="prediction")
+        # self.feature_scaler.validate_features(X_test_processed, stage="prediction")
 
         # 6.模型预测
         Y_pred_multi_step = self._to_1d(self.model.predict(X_test_processed)[0])
@@ -240,7 +231,7 @@ class PredictionHelper:
             
             # 5.特征预处理（预测模式）
             X_forecast_processed = self.feature_scaler.transform(X_forecast_input, categorical_features)
-            self.feature_scaler.validate_features(X_forecast_processed, stage="prediction")
+            # self.feature_scaler.validate_features(X_forecast_processed, stage="prediction")
             
             # 6.模型预测
             y_pred_step = self._to_scalar(self.model.predict(X_forecast_processed))
@@ -280,10 +271,13 @@ class PredictionHelper:
             预测结果数组，形状为 (horizon,)
         """
         logger.info(f"{self.log_prefix} univariate_single_multi_step_direct_recursive_forecast(USMDR)")
-        
+        # 分块大小
+        self.block_size = min(self.args.lags) if self.args.lags else 1
+        logger.info(f"{self.log_prefix} block_size: {self.block_size}")
+        self.num_blocks = int(np.ceil(self.horizon / self.block_size))
+        logger.info(f"{self.log_prefix} num_blocks: {self.num_blocks}")
         # 多步预测值收集器
         Y_preds = []
-        
         # 分块递归预测
         for block_idx in range(self.num_blocks):
             block_start = block_idx * self.block_size
@@ -323,7 +317,7 @@ class PredictionHelper:
                 
                 # 5. 特征缩放
                 X_forecast_processed = self.feature_scaler.transform(X_forecast_input, categorical_features)
-                self.feature_scaler.validate_features(X_forecast_processed, stage="prediction")
+                # self.feature_scaler.validate_features(X_forecast_processed, stage="prediction")
                 
                 # 6. 预测
                 y_pred_step = self._to_scalar(self.model.predict(X_forecast_processed))
@@ -393,7 +387,7 @@ class PredictionHelper:
         
         # 5.特征预处理(预测模式)
         X_test_processed = self.feature_scaler.transform(X_forecast_input, categorical_features)
-        self.feature_scaler.validate_features(X_test_processed, stage="prediction")
+        # self.feature_scaler.validate_features(X_test_processed, stage="prediction")
         
         # 6.模型预测
         Y_pred_multi_step = self._to_1d(self.model.predict(X_test_processed)[0])
@@ -466,7 +460,7 @@ class PredictionHelper:
 
             # 4.特征预处理（预测模式）
             X_forecast_processed = self.feature_scaler.transform(X_forecast_input, categorical_features)
-            self.feature_scaler.validate_features(X_forecast_processed, stage="prediction")
+            # self.feature_scaler.validate_features(X_forecast_processed, stage="prediction")
 
             # 5.模型预测
             y_pred_step = self._to_1d(self.model.predict(X_forecast_processed)[0])
@@ -538,7 +532,11 @@ class PredictionHelper:
             目标变量的预测结果数组，形状为 (horizon,)
         """
         logger.info(f"{self.log_prefix} multivariate_single_multi_step_direct_recursive_forecast(MSMDR)")
-
+        # 分块大小
+        self.block_size = min(self.args.lags) if self.args.lags else 1
+        logger.info(f"{self.log_prefix} block_size: {self.block_size}")
+        self.num_blocks = int(np.ceil(self.horizon / self.block_size))
+        logger.info(f"{self.log_prefix} num_blocks: {self.num_blocks}")
         # 多步预测值收集器
         Y_preds = []
         
@@ -598,7 +596,7 @@ class PredictionHelper:
                 
                 # 5. 特征缩放
                 X_forecast_processed = self.feature_scaler.transform(X_forecast_input, categorical_features)
-                self.feature_scaler.validate_features(X_forecast_processed, stage="prediction")
+                # self.feature_scaler.validate_features(X_forecast_processed, stage="prediction")
                 
                 # 6. 预测目标变量
                 y_pred_target = self._to_scalar(self.model.predict(X_forecast_processed))

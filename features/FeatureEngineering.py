@@ -330,7 +330,6 @@ class EndogenousFeatureEngineer:
         Returns:
             (扩展后的数据框, 目标特征列表)
         """
-        logger.info(f"{self.log_prefix} before df: {df.columns}")
         df_copy = df.copy()
         if target in df_copy.columns:
             # shift features building
@@ -893,53 +892,6 @@ class FeatureEngineer:
 
         return df_featured, exogenous_features, categorical_features
 
-    '''
-    def create_exogenouse_features_future(self, df_future, df_date_future, df_weather_future):
-        """
-        未来数据特征工程：外生变量特征
-        """
-        logger.info(f"{self.log_prefix} 未来数据特征工程：外生变量特征...")
-        df_future_featured = df_future.copy()
-        self.exogenous_feature_engineer.reset()
-        
-        # 特征工程：日期类型(节假日、特殊事件)特征
-        if df_date_future is not None:
-            df_future_featured = self.exogenous_feature_engineer.extend_datetype_feature(
-                df=df_future_featured,
-                df_date=df_date_future,
-                col_ts=self.args.date_ts_feat,
-            )
-            logger.info(f"{self.log_prefix} after extend_datetype_feature df_future_featured: \n{df_future_featured.head()}")
-        # 特征工程：天气特征
-        if df_weather_future is not None:
-            df_future_featured = self.exogenous_feature_engineer.extend_future_weather_feature(
-                df=df_future_featured,
-                df_weather=df_weather_future,
-                col_ts=self.args.weather_ts_feat,
-            )
-            logger.info(f"{self.log_prefix} after extend_future_weather_feature df_future_featured: \n{df_future_featured.head()}")
-        # 特征工程：日期时间特征
-        df_future_featured = self.exogenous_feature_engineer.extend_datetime_feature(
-            df=df_future_featured,
-            freq_minutes=self.args.freq_minutes,
-            n_per_day=int(24 * 60 / self.args.freq_minutes),
-        )
-        logger.info(f"{self.log_prefix} after extend_datetime_feature df_future_featured: \n{df_future_featured.head()}")
-        # ------------------------------
-        # 插值填充预测缺失值
-        # ------------------------------
-        df_future_featured = df_future_featured.interpolate(method="linear", limit_direction="both")
-        df_future_featured.dropna(inplace=True, ignore_index=True)
-        logger.info(f"{self.log_prefix} after interpolate and dropna df_future_featured: \n{df_future_featured.head()}")
-        """
-        # 获取所有生成的特征：外生变量特征、类别
-        exogenous_features, categorical_features = self.exogenous_feature_engineer.get_generated_features()
-        # 类别特征去重
-        categorical_features = sorted(set(categorical_features), key=categorical_features.index)
-        """
-        
-        return df_future_featured
-    '''
     def create_endogenous_basic_features(self, df_series, target_feature, endogenous_features_with_target, horizon):
         """
         历史数据特征工程：内生变量特征
@@ -1138,8 +1090,8 @@ class FeatureEngineer:
         # 历史数据特征工程: 内生变量基本特征工程
         (df_series_featured, endogenous_features, target_output_features) = self.create_endogenous_basic_features(
             df_series=df_series_featured, 
-            target_feature=target_feature_copy, 
             endogenous_features_with_target=endogenous_features_with_target_copy,
+            target_feature=target_feature_copy, 
             horizon=horizon,
         )
 
@@ -1148,7 +1100,7 @@ class FeatureEngineer:
             df_series=df_series_featured
         )
         logger.info(f"{self.log_prefix} exogenous_features: {exogenous_features}")
-        logger.info(f"{self.log_prefix} endogenous_features: {endogenous_features}")
+        logger.info(f"{self.log_prefix} endogenous_basic_features: {endogenous_features}")
         logger.info(f"{self.log_prefix} endogenous_advanced_features: {endogenous_advanced_features}")
         logger.info(f"{self.log_prefix} target_output_features: {target_output_features}")
         logger.info(f"{self.log_prefix} categorical_features: {categorical_features}")
@@ -1164,7 +1116,7 @@ class FeatureEngineer:
         logger.info(f"{self.log_prefix} all_cols_needed: {all_cols_needed}")
         # 只保留需要的特征
         df_series_featured = df_series_featured[all_cols_needed]
-        logger.info(f"{self.log_prefix} df_series_featured: \n{df_series_featured.head()}")
+        logger.info(f"{self.log_prefix} df_series_featured: \n{df_series_featured}")
 
         return df_series_featured, predictor_features, target_output_features, categorical_features
 
@@ -1178,8 +1130,10 @@ class FeatureEngineer:
         combined_xy.dropna(inplace=True)
         X_train_history = combined_xy[X_train_history.columns]
         Y_train_history = combined_xy[Y_train_history.columns]
-        logger.info(f"{self.log_prefix} X_train_history shape after NaN drop: {X_train_history.shape}")
-        logger.info(f"{self.log_prefix} Y_train_history shape after NaN drop: {Y_train_history.shape}")
+        logger.info(f"{self.log_prefix} after predictor_target_split X_train_history: \n{X_train_history.head()}")
+        logger.info(f"{self.log_prefix} after predictor_target_split Y_train_history: \n{Y_train_history.head()}")
+        logger.info(f"{self.log_prefix} after predictor_target_split X_train_history.shape: {X_train_history.shape}")
+        logger.info(f"{self.log_prefix} after predictor_target_split Y_train_history.shape: {Y_train_history.shape}")
         
         return X_train_history, Y_train_history
 

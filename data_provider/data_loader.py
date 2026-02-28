@@ -115,6 +115,7 @@ class DataLoader:
             df_weather_all = pd.concat([df_weather_history.iloc[:-1,], df_weather_future], axis=0)
         else:
             df_weather_all = None
+        # 数据收集
         input_data["date_history"] = df_date_all
         input_data["date_future"] = df_date_all
         input_data["weather_history"] = df_weather_all
@@ -145,7 +146,6 @@ class DataLoader:
     def __process_target_series(self, df_template: pd.DataFrame, df_series: pd.DataFrame, col_ts: str, col_numeric: List, col_categorical: List, col_drop: List):
         """
         目标特征数据预处理
-        df_template: ["time"]
         """
         df_template_copy = df_template.copy()
         if df_series is not None:
@@ -160,23 +160,20 @@ class DataLoader:
                 logger.warning(f"{self.log_prefix} Target column '{self.args.target}' does not exist.")
             # 除目标特征外的其他数值类型的内生变量处理
             filtered_col_numeric = [col for col in col_numeric if col not in [col_ts, self.args.target] + col_categorical + col_drop]
-            for col in filtered_col_numeric:
-                if col in df_series.columns:
+            existing_col_numeric = [col for col in filtered_col_numeric if col in df_series.columns]
+            if existing_col_numeric:
+                for col in filtered_col_numeric:
                     series_indexed[col] = pd.to_numeric(series_indexed[col], errors="coerce")
                     df_template_copy[col] = df_template_copy["time"].map(series_indexed[col])
+            # 除目标特征外的其他类别类型的内生变量处理
             filtered_col_categorical = [col for col in col_categorical if col not in [col_ts, self.args.target] + col_numeric + col_drop]
             existing_col_categorical = [col for col in filtered_col_categorical if col in df_series.columns]
             if existing_col_categorical:
                 series_indexed[existing_col_categorical] = series_indexed[existing_col_categorical].astype("category")
-                df_template_copy[existing_col_categorical] = (
-                    series_indexed[existing_col_categorical]
-                    .reindex(df_template_copy["time"])
-                    .reset_index(drop=True)
-                )
+                df_template_copy[existing_col_categorical] = series_indexed[existing_col_categorical].reindex(df_template_copy["time"]).reset_index(drop=True)
             # 内生变量(Endogenous variable)
             endogenous_features = [col for col in df_template_copy.columns if col not in ["time"]]
             if target_feature and target_feature in endogenous_features:
-                 # Remove target from here for consistency, will be handled separately
                  endogenous_features.remove(target_feature)
         else:
             endogenous_features = []
@@ -193,8 +190,7 @@ class DataLoader:
         logger.info(f"{self.log_prefix} template df_history_template: \n{df_history_template}")
         # 数据预处理：目标时间序列特征
         df_history_series = self.__process_df_timestamp(df=input_data["target_series"], col_ts=self.args.target_ts_feat)
-        logger.info(f"{self.log_prefix} after process_df_timestamp df_history_series: \n{df_history_series.head()}")
-        
+        logger.info(f"{self.log_prefix} after __process_df_timestamp df_history_series: \n{df_history_series.head()}")
         df_history, other_endogenous_features, target_feature = self.__process_target_series(
             df_template=df_history_template,
             df_series=df_history_series,
@@ -203,18 +199,23 @@ class DataLoader:
             col_categorical=self.args.target_series_categorical_features,
             col_drop=self.args.target_series_drop_features,
         )
-        logger.info(f"{self.log_prefix} after process_target_series df_history: \n{df_history.head()}")
+        logger.info(f"{self.log_prefix} after __process_target_series df_history: \n{df_history.head()}")
         # 所有内生变量(包含目标特征 y)
         endogenous_features_with_target = other_endogenous_features + [target_feature] if target_feature else other_endogenous_features
-        logger.info(f"{self.log_prefix} other_endogenous_features: {other_endogenous_features}")
-        logger.info(f"{self.log_prefix} target_feature: {target_feature}")
         logger.info(f"{self.log_prefix} endogenous_features_with_target: {endogenous_features_with_target}")
+        logger.info(f"{self.log_prefix} target_feature: {target_feature}")
         # 特征工程：日期类型(节假日、特殊事件)特征
         df_date_history = self.__process_df_timestamp(df=input_data[f"date_history"], col_ts=self.args.date_ts_feat)
-        logger.info(f"{self.log_prefix} process_df_timestamp df_date_history: \n{df_date_history}")
+        if df_date_history:
+            logger.info(f"{self.log_prefix} __process_df_timestamp df_date_history: \n{df_date_history}")
+        else:
+            logger.info(f"{self.log_prefix} __process_df_timestamp df_date_history: {df_date_history}")
         # 特征工程：天气特征
         df_weather_history = self.__process_df_timestamp(df=input_data[f"weather_history"], col_ts=self.args.weather_ts_feat)
-        logger.info(f"{self.log_prefix} process_df_timestamp df_weather_history: \n{df_weather_history}")
+        if df_weather_history:
+            logger.info(f"{self.log_prefix} __process_df_timestamp df_weather_history: \n{df_weather_history}")
+        else:
+            logger.info(f"{self.log_prefix} __process_df_timestamp df_weather_history: {df_weather_history}")
 
         return (df_history, df_date_history, df_weather_history, endogenous_features_with_target, target_feature)
 
@@ -244,10 +245,16 @@ class DataLoader:
         """
         # 特征工程：日期类型(节假日、特殊事件)特征
         df_date_future = self.__process_df_timestamp(df=input_data[f"date_future"], col_ts=self.args.date_ts_feat)
-        logger.info(f"{self.log_prefix} after process_df_timestamp df_date_future: \n{df_date_future}")
+        if df_date_future:
+            logger.info(f"{self.log_prefix} after process_df_timestamp df_date_future: \n{df_date_future}")
+        else:
+            logger.info(f"{self.log_prefix} after process_df_timestamp df_date_future: {df_date_future}")
         # 特征工程：天气特征
         df_weather_future = self.__process_df_timestamp(df=input_data[f"weather_future"], col_ts=self.args.weather_ts_feat)
-        logger.info(f"{self.log_prefix} after process_df_timestamp df_weather_future: \n{df_weather_future}")
+        if df_weather_future:
+            logger.info(f"{self.log_prefix} after process_df_timestamp df_weather_future: \n{df_weather_future}")
+        else:
+            logger.info(f"{self.log_prefix} after process_df_timestamp df_weather_future: {df_weather_future}")
 
         return (df_future_template, df_date_future, df_weather_future)
 

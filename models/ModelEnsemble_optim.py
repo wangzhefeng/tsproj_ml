@@ -1,13 +1,8 @@
 # -*- coding: utf-8 -*-
 
 """Time-series friendly ensemble models for regression."""
-import os
-import sys
-from pathlib import Path
-ROOT = str(Path.cwd())
-if ROOT not in sys.path:
-    sys.path.append(ROOT)
 from __future__ import annotations
+from pathlib import Path
 from dataclasses import dataclass
 from typing import Any, List, Sequence, Tuple
 

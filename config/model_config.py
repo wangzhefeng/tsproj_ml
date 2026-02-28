@@ -42,7 +42,7 @@ class ModelConfig_univariate:
     # ------------------------------
     # 日期类型数据配置
     # --------------
-    enable_date_features: bool = True
+    enable_date_features: bool = False
     if enable_date_features:
         # 节假日数据
         date_history_path: Optional[str] = "df_date.csv"
@@ -117,7 +117,7 @@ class ModelConfig_univariate:
     
     # 特征滞后数列表
     # --------------
-    enable_lags_features: bool = False
+    enable_lags_features: bool = True
     if enable_lags_features:
         lags: List[int] = field(default_factory=lambda: [
             1 * 288,  # Daily lag
@@ -179,7 +179,6 @@ class ModelConfig_univariate:
     history_days: int = 31  # 历史数据天数
     predict_days: int = 1  # 预测未来 1 天的数据
     window_days: int = 15  # 滑动窗口天数
-    encode_categorical_features: bool = False  # 是否对类别特征进行编码
     # ------------------------------
     # 模型配置
     # ------------------------------
@@ -193,9 +192,9 @@ class ModelConfig_univariate:
     ensemble_val_ratio: float = 0.2
     # 可选预测方法:
     # - 单变量预测单变量
-    pred_method: str = "univariate-single-multistep-direct-output"       # USMDO [单变量(包含目标变量的所有内生变量)->单变量(目标内生变量)]多步直接输出预测
+    # pred_method: str = "univariate-single-multistep-direct-output"       # USMDO [单变量(包含目标变量的所有内生变量)->单变量(目标内生变量)]多步直接输出预测
     # pred_method: str = "univariate-single-multistep-direct"              # USMD [单变量(包含目标变量的所有内生变量)->单变量(目标内生变量)]多步直接预测
-    # pred_method: str = "univariate-single-multistep-recursive"           # USMR [单变量(包含目标变量的所有内生变量)->单变量(目标内生变量)]多步递归预测
+    pred_method: str = "univariate-single-multistep-recursive"           # USMR [单变量(包含目标变量的所有内生变量)->单变量(目标内生变量)]多步递归预测
     # pred_method: str = "univariate-single-multistep-direct-recursive"    # USMDR [单变量(包含目标变量的所有内生变量)->单变量(目标内生变量)]多步直接递归预测
     # - 多变量预测单变量
     # pred_method: str = "multivariate-single-multistep-direct"            # MSMD [多变量(包含目标变量的所有内生变量)->单变量(目标内生变量)]多步直接预测
@@ -205,6 +204,7 @@ class ModelConfig_univariate:
     loss: str = "mae"  # 训练损失函数
     learning_rate: float = 0.05  # 模型学习率
     patience: int = 100  # 早停步数
+    encode_categorical_features: bool = False  # 是否对类别特征进行编码
     # 模型超参数调优
     perform_tuning: bool = False
     tuning_metric: str = "neg_mean_absolute_error"
@@ -213,7 +213,7 @@ class ModelConfig_univariate:
     # 模型运行模式
     # ------------------------------
     # 模型测试
-    is_testing: bool = True
+    is_testing: bool = False
     # 模型预测
     is_forecasting: bool = True
     # 预测推理开始的时间
@@ -355,7 +355,6 @@ class ModelConfig_multivariate:
     history_days: int = 31  # 历史数据天数
     predict_days: int = 1  # 预测未来 1 天的数据
     window_days: int = 15  # 滑动窗口天数
-    encode_categorical_features: bool = False  # 是否对类别特征进行编码
     # ------------------------------
     # 模型配置
     # ------------------------------
@@ -381,6 +380,7 @@ class ModelConfig_multivariate:
     loss: str = "mae"  # 训练损失函数
     learning_rate: float = 0.05  # 模型学习率
     patience: int = 100  # 早停步数
+    encode_categorical_features: bool = False  # 是否对类别特征进行编码
     # 模型超参数调优
     perform_tuning: bool = False
     tuning_metric: str = "neg_mean_absolute_error"

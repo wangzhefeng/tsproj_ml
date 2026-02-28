@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import List, Dict
 
 import pandas as pd
+import lightgbm as lgb
 
 from utils.log_util import logger
 
@@ -163,12 +164,15 @@ class DataLoader:
                 if col in df_series.columns:
                     series_indexed[col] = pd.to_numeric(series_indexed[col], errors="coerce")
                     df_template_copy[col] = df_template_copy["time"].map(series_indexed[col])
-            # TODO 类别类型的内生变量处理
             filtered_col_categorical = [col for col in col_categorical if col not in [col_ts, self.args.target] + col_numeric + col_drop]
-            for col in filtered_col_categorical:
-                if col in df_series.columns:
-                    series_indexed[col] = series_indexed[col].astype(str)
-                    df_template_copy[col] = df_template_copy["time"].map(series_indexed[col])
+            existing_col_categorical = [col for col in filtered_col_categorical if col in df_series.columns]
+            if existing_col_categorical:
+                series_indexed[existing_col_categorical] = series_indexed[existing_col_categorical].astype("category")
+                df_template_copy[existing_col_categorical] = (
+                    series_indexed[existing_col_categorical]
+                    .reindex(df_template_copy["time"])
+                    .reset_index(drop=True)
+                )
             # 内生变量(Endogenous variable)
             endogenous_features = [col for col in df_template_copy.columns if col not in ["time"]]
             if target_feature and target_feature in endogenous_features:
@@ -248,11 +252,53 @@ class DataLoader:
         return (df_future_template, df_date_future, df_weather_future)
 
 
+# TODO 未使用
+def get_lgb_train_test_data(train_path, test_path, weight_paths = []):
+    """
+    读取 LightGBM example demo 数据
+    """
+    # read data
+    df_train = pd.read_csv(train_path, header = None, sep = "\t")
+    df_test = pd.read_csv(test_path, header = None, sep = "\t")
+    # print(df_train.head())
+    # print(df_test.head())
+
+    # split data
+    y_train = df_train[0]
+    y_test = df_test[0]
+    X_train = df_train.drop(0, axis = 1)
+    X_test = df_test.drop(0, axis = 1)
+
+    # weight data
+    if weight_paths != []:
+        W_train = pd.read_csv(weight_paths[0], header = None)[0]
+        W_test = pd.read_csv(weight_paths[1], header = None)[0]
+        # lightgbm Dataset
+        lgb_train = lgb.Dataset(X_train, y_train, weight = W_train, free_raw_data = False)
+        lgb_eval = lgb.Dataset(X_test, y_test, reference = lgb_train, weight = W_test, free_raw_data = False)
+        return W_train, W_test, X_train, y_train, X_test, y_test, lgb_train, lgb_eval
+    else:
+        # lightgbm Dataset
+        lgb_train = lgb.Dataset(X_train, y_train)
+        lgb_eval = lgb.Dataset(X_test, y_test, reference = lgb_train)
+        return X_train, y_train, X_test, y_test, lgb_train, lgb_eval
+
+
 
 
 # 测试代码 main 函数
 def main():
-    pass
+    series = pd.read_csv(
+        "https://raw.githubusercontent.com/jbrownlee/Datasets/master/shampoo.csv",
+        header = 0,
+        names = ["Month", "Sales"],
+        index_col = None,
+        parse_dates = False, 
+        date_format = None,
+    )
+    series["Month"] = series["Month"].apply(lambda x: pd.to_datetime("190" + x, format = "%Y-%m"))
+    print(series)
+    print(series.info())
 
 if __name__ == "__main__":
     main()

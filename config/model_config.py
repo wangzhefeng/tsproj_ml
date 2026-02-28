@@ -42,7 +42,7 @@ class ModelConfig_univariate:
     # ------------------------------
     # 日期类型数据配置
     # --------------
-    enable_date_features: bool = False
+    enable_date_features: bool = True
     if enable_date_features:
         # 节假日数据
         date_history_path: Optional[str] = "df_date.csv"

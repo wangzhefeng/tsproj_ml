@@ -1,15 +1,25 @@
 # -*- coding: utf-8 -*-
 
-"""Time-series friendly ensemble models for regression."""
+# ***************************************************
+# * File        : ModelEnsemble_optim.py
+# * Author      : Zhefeng Wang
+# * Email       : zfwang7@gmail.com
+# * Date        : 2026-03-01
+# * Version     : 1.0.030121
+# * Description : description
+# * Link        : link
+# * Requirement : 相关模块版本需求(例如: numpy >= 2.1.0)
+# ***************************************************
+
+# python libraries
 from __future__ import annotations
 from pathlib import Path
 from dataclasses import dataclass
-from typing import Any, List, Sequence, Tuple
+from typing import Any, Sequence, Tuple
 
 import numpy as np
 from sklearn.metrics import mean_absolute_error
 from sklearn.multioutput import MultiOutputRegressor
-
 import lightgbm as lgb
 
 from utils.log_util import logger
@@ -169,3 +179,14 @@ class TimeSeriesEnsembleRegressor:
         if self._single_output:
             return out.ravel()
         return out
+
+
+
+
+
+# 测试代码 main 函数
+def main():
+    pass
+
+if __name__ == "__main__":
+    main()

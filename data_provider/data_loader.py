@@ -64,6 +64,7 @@ class DataLoader:
             # df_target[self.args.target_ts_feat] = pd.to_datetime(df_target[self.args.target_ts_feat])
             input_data["target_series"] = df_target
             logger.info(f"{self.log_prefix} Target series loaded: {df_target.shape}")
+            logger.info(f"{self.log_prefix} Target series missing values: \n{df_target.isna().sum()}")
         else:
             logger.error(f"{self.log_prefix} Target data not found at {target_data_path}")
             raise FileNotFoundError(f"Target data not found at {target_data_path}")
@@ -187,10 +188,12 @@ class DataLoader:
         """
         # 历史数据时间戳
         df_history_template = pd.DataFrame({"time": pd.date_range(self.train_start_time, self.train_end_time, freq=self.args.freq, inclusive="left")})
-        logger.info(f"{self.log_prefix} template df_history_template: \n{df_history_template}")
+        logger.info(f"{self.log_prefix} df_history_template: \n{df_history_template.head()}")
+        logger.info(f"{self.log_prefix} df_history_template shape: {df_history_template.shape}")
         # 数据预处理：目标时间序列特征
         df_history_series = self.__process_df_timestamp(df=input_data["target_series"], col_ts=self.args.target_ts_feat)
         logger.info(f"{self.log_prefix} after __process_df_timestamp df_history_series: \n{df_history_series.head()}")
+        logger.info(f"{self.log_prefix} after __process_df_timestamp df_history_series shape: {df_history_series.shape}")
         df_history, other_endogenous_features, target_feature = self.__process_target_series(
             df_template=df_history_template,
             df_series=df_history_series,
@@ -200,20 +203,23 @@ class DataLoader:
             col_drop=self.args.target_series_drop_features,
         )
         logger.info(f"{self.log_prefix} after __process_target_series df_history: \n{df_history.head()}")
+        logger.info(f"{self.log_prefix} after __process_target_series df_history shape: {df_history.shape}")
         # 所有内生变量(包含目标特征 y)
         endogenous_features_with_target = other_endogenous_features + [target_feature] if target_feature else other_endogenous_features
         logger.info(f"{self.log_prefix} endogenous_features_with_target: {endogenous_features_with_target}")
-        logger.info(f"{self.log_prefix} target_feature: {target_feature}")
+        logger.info(f"{self.log_prefix}                  target_feature: {target_feature}")
         # 特征工程：日期类型(节假日、特殊事件)特征
         df_date_history = self.__process_df_timestamp(df=input_data[f"date_history"], col_ts=self.args.date_ts_feat)
-        if df_date_history:
+        if df_date_history is not None:
             logger.info(f"{self.log_prefix} __process_df_timestamp df_date_history: \n{df_date_history}")
+            logger.info(f"{self.log_prefix} __process_df_timestamp df_date_history shape: {df_date_history.shape}")
         else:
             logger.info(f"{self.log_prefix} __process_df_timestamp df_date_history: {df_date_history}")
         # 特征工程：天气特征
         df_weather_history = self.__process_df_timestamp(df=input_data[f"weather_history"], col_ts=self.args.weather_ts_feat)
-        if df_weather_history:
+        if df_weather_history is not None:
             logger.info(f"{self.log_prefix} __process_df_timestamp df_weather_history: \n{df_weather_history}")
+            logger.info(f"{self.log_prefix} __process_df_timestamp df_weather_history shape: {df_weather_history.shape}")
         else:
             logger.info(f"{self.log_prefix} __process_df_timestamp df_weather_history: {df_weather_history}")
 
@@ -225,12 +231,12 @@ class DataLoader:
         """
         # 未来数据时间戳
         df_future_template = pd.DataFrame({"time": pd.date_range(self.forecast_start_time, self.forecast_end_time, freq=self.args.freq, inclusive="left")})
-        logger.info(f"{self.log_prefix} template df_future_template: \n{df_future_template}")
+        logger.info(f"{self.log_prefix} df_future_template: \n{df_future_template.head()}")
+        logger.info(f"{self.log_prefix} df_future_template shape: {df_future_template.shape}")
         """
         # 数据预处理：目标时间序列特征
         df_future_series = self.__process_df_timestamp(df=input_data["df_future_series"], col_ts=self.args.target_ts_feat)
-        logger.info(f"{self.log_prefix} after process_df_timestamp df_future_series: \n{df_future_series.head()}")
-
+        logger.info(f"{self.log_prefix} after __process_df_timestamp df_future_series: \n{df_future_series.head()}")
         df_future, other_endogenous_features, target_feature = self.__process_target_series(
             df_template=df_future_template,
             df_series=df_future_series,
@@ -239,22 +245,24 @@ class DataLoader:
             col_categorical=self.args.target_series_categorical_features,
             col_drop=self.args.target_series_drop_features,
         )
-        logger.info(f"{self.log_prefix} after process_target_series df_future: \n{df_future.head()}")
+        logger.info(f"{self.log_prefix} after __process_target_series df_future: \n{df_future.head()}")
         # 所有内生变量(没有目标特征 y及其衍生特征)
         endogenous_features_for_lag = other_endogenous_features
         """
         # 特征工程：日期类型(节假日、特殊事件)特征
         df_date_future = self.__process_df_timestamp(df=input_data[f"date_future"], col_ts=self.args.date_ts_feat)
-        if df_date_future:
-            logger.info(f"{self.log_prefix} after process_df_timestamp df_date_future: \n{df_date_future}")
+        if df_date_future is not None:
+            logger.info(f"{self.log_prefix} after __process_df_timestamp df_date_future: \n{df_date_future}")
+            logger.info(f"{self.log_prefix} after __process_df_timestamp df_date_future shape: {df_date_future.shape}")
         else:
-            logger.info(f"{self.log_prefix} after process_df_timestamp df_date_future: {df_date_future}")
+            logger.info(f"{self.log_prefix} after __process_df_timestamp df_date_future: {df_date_future}")
         # 特征工程：天气特征
         df_weather_future = self.__process_df_timestamp(df=input_data[f"weather_future"], col_ts=self.args.weather_ts_feat)
-        if df_weather_future:
-            logger.info(f"{self.log_prefix} after process_df_timestamp df_weather_future: \n{df_weather_future}")
+        if df_weather_future is not None:
+            logger.info(f"{self.log_prefix} after __process_df_timestamp df_weather_future: \n{df_weather_future}")
+            logger.info(f"{self.log_prefix} after __process_df_timestamp df_weather_future shape: {df_weather_future.shape}")
         else:
-            logger.info(f"{self.log_prefix} after process_df_timestamp df_weather_future: {df_weather_future}")
+            logger.info(f"{self.log_prefix} after __process_df_timestamp df_weather_future: {df_weather_future}")
 
         return (df_future_template, df_date_future, df_weather_future)
 

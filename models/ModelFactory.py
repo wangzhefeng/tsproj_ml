@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 
 # ***************************************************
-# * File        : model_factory.py
+# * File        : ModelFactory.py
 # * Author      : Zhefeng Wang
 # * Email       : zfwang7@gmail.com
 # * Date        : 2026-02-11
@@ -12,25 +12,25 @@
 # ***************************************************
 
 # python libraries
-import sys
 from pathlib import Path
-ROOT = str(Path.cwd())
-if ROOT not in sys.path:
-    sys.path.append(ROOT)
 from abc import ABC, abstractmethod
 from typing import Dict, Any, Optional
 import inspect
-import warnings
-warnings.filterwarnings("ignore")
 
 import numpy as np
 import pandas as pd
 import xgboost as xgb
 import lightgbm as lgb
 import catboost as cab
-from sklearn.ensemble import RandomForestRegressor, ExtraTreesRegressor, GradientBoostingRegressor
+from sklearn.ensemble import (
+    RandomForestRegressor, 
+    ExtraTreesRegressor, 
+    GradientBoostingRegressor
+)
 from sklearn.multioutput import MultiOutputRegressor, RegressorChain
 
+# global variable
+LOGGING_LABEL = Path(__file__).name[:-3]
 
 """
 模型抽象层 (Model Abstraction Layer)
@@ -173,6 +173,7 @@ class LightGBMModel(BaseModel):
             "learning_rate": 0.05,
             "max_bin": 31,
             "num_leaves": 31,
+            'max_depth': -1,
             "feature_fraction": 0.8,
             "bagging_fraction": 0.8,
             "bagging_freq": 1,
@@ -180,7 +181,8 @@ class LightGBMModel(BaseModel):
             "lambda_l2": 0.5,
             "verbose": -1,
             "n_jobs": -1,
-            "seed": 42,
+            'random_state': 42,
+            # "force_row_wise": True
         }
         default_params.update(params)
         self.params = _filter_valid_params(default_params, lgb.LGBMRegressor)

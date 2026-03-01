@@ -9,9 +9,13 @@ dependencies = [
     "lightgbm>=4.6.0",
     "matplotlib>=3.10.8",
     "numpy>=2.2.6",
+    "optuna>=4.7.0",
     "pandas>=2.3.3",
+    "pypmml>=1.5.8",
     "scikit-learn>=1.7.2",
     "scipy>=1.15.3",
+    "sklearn-pandas>=2.2.0",
+    "sklearn2pmml>=0.128.1",
     "tqdm>=4.67.3",
     "xgboost>=3.2.0",
 ]

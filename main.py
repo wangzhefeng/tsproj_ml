@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 
 # ***************************************************
-# * File        : exp_forecasting_ml.py
+# * File        : main.py
 # * Author      : Zhefeng Wang
 # * Email       : zfwang7@gmail.com
 # * Date        : 2024-12-11
@@ -25,20 +25,12 @@ from pathlib import Path
 ROOT = str(Path.cwd())
 if ROOT not in sys.path:
     sys.path.append(ROOT)
-import copy
 import datetime
 import warnings
 warnings.filterwarnings("ignore")
 
 import numpy as np
 import pandas as pd
-import matplotlib.pyplot as plt
-from sklearn.multioutput import MultiOutputRegressor, RegressorChain
-from sklearn.model_selection import (
-    TimeSeriesSplit, 
-    GridSearchCV, 
-    RandomizedSearchCV
-)
 
 from config.model_config import (
     ModelConfig_univariate, 
@@ -47,11 +39,9 @@ from config.model_config import (
 from data_provider.data_loader import DataLoader
 from features.FeatureEngineering import FeatureEngineer
 from features.FeatureScalering import FeatureScaler
-from models.ModelTesting import ModelTesting
-from models.ModelFactory import ModelFactory
-from models.ModelSaveLoad import ModelDeployPkl
-from models.ModelEnsemble_optim import TimeSeriesEnsembleRegressor, EnsembleConfig
-from models.ModelForecasting import PredictionHelper
+from models.ModelTesting import Tester
+from models.ModelForecasting import Forecaster
+from models.ModelTraining import Trainer
 
 # global variable
 LOGGING_LABEL = Path(__file__).name[:-3]
@@ -96,11 +86,6 @@ class Model:
         # 预测未来 1 天(24小时)的数据/数据划分长度/预测数据长度
         self.horizon = int(self.args.predict_days * self.n_per_day)
         # ------------------------------
-        # 模型训练
-        # ------------------------------
-        self.model_factory = ModelFactory()
-        self.model_params = copy.deepcopy(self.args.model_params)
-        # ------------------------------
         # 模型测试
         # ------------------------------ 
         # 测试窗口数据长度(训练+测试)
@@ -119,38 +104,23 @@ class Model:
         # ------------------------------
         # 日志打印
         # ------------------------------ 
-        logger.info(f"{self.log_prefix} {80*'='}")
+        logger.info(f"{self.log_prefix} {'=' * 80}")
         logger.info(f"{self.log_prefix} Prepare params...")
-        logger.info(f"{self.log_prefix} {80*'='}")
+        logger.info(f"{self.log_prefix} {'=' * 80}")
         logger.info(f"{self.log_prefix} history data range: {self.train_start_time}~{self.train_end_time}")
         logger.info(f"{self.log_prefix} predict data range: {self.forecast_start_time}~{self.forecast_end_time}")
         logger.info(f"{self.log_prefix} 模型类型: {self.args.model_type}")
-        logger.info(f"{self.log_prefix} 事件特征: {'启用' if self.args.enable_date_features else '禁用'}")
-        logger.info(f"{self.log_prefix} 气象特征: {'启用' if self.args.enable_weather_features else '禁用'}")
-        logger.info(f"{self.log_prefix} 时间特征: {'启用' if self.args.enable_datetime_features else '禁用'}")
-        logger.info(f"{self.log_prefix} 滞后特征: {'启用' if self.args.enable_lags_features else '禁用'}")
-        logger.info(f"{self.log_prefix} 高级特征: {'启用' if self.args.enable_advanced_features else '禁用'}")
+        logger.info(f"{self.log_prefix} 事件(date type features)特征: {'启用' if self.args.enable_date_features else '禁用'}")
+        logger.info(f"{self.log_prefix} 气象(weather   features)特征: {'启用' if self.args.enable_weather_features else '禁用'}")
+        logger.info(f"{self.log_prefix} 时间(date time features)特征: {'启用' if self.args.enable_datetime_features else '禁用'}")
+        logger.info(f"{self.log_prefix} 滞后(lags      features)特征: {'启用' if self.args.enable_lags_features else '禁用'}")
+        logger.info(f"{self.log_prefix} 高级(advanced  features)特征: {'启用' if self.args.enable_advanced_features else '禁用'}")
         logger.info(f"{self.log_prefix} 特征变换: {'启用' if self.args.scale else '禁用'}")
         logger.info(f"{self.log_prefix} 类别特征: {'启用' if self.args.encode_categorical_features else '禁用'}")
         logger.info(f"{self.log_prefix} 模型融合: {'启用' if self.args.enable_ensemble else '禁用'}")
         logger.info(f"{self.log_prefix} 模型测试: {'启用' if self.args.is_testing else '禁用'}")
         logger.info(f"{self.log_prefix} 模型预测: {'启用' if self.args.is_forecasting else '禁用'}")
 
-    # @staticmethod
-    # def _align_pred_length(y_pred: np.ndarray, target_len: int, fill_value: float = np.nan) -> np.ndarray:
-    #     pred = np.asarray(y_pred).reshape(-1)
-    #     if target_len <= 0:
-    #         return np.asarray([])
-    #     if len(pred) == target_len:
-    #         return pred
-    #     if len(pred) == 0:
-    #         return np.full(shape=(target_len,), fill_value=fill_value)
-    #     if len(pred) > target_len:
-    #         return pred[:target_len]
-    #     return np.pad(pred, pad_width=(0, target_len - len(pred)), mode="edge")
-    # ##############################
-    # Model Testing
-    # ##############################
     def test(self, 
              df_history, 
              X_train_history, 
@@ -165,8 +135,10 @@ class Model:
         """
         模型滑窗测试
         """
+        # 模型训练类
+        model_trainer = Trainer(args=self.args, log_prefix=self.log_prefix)
         # 模型测试类
-        model_testing = ModelTesting(args=self.args, log_prefix=self.log_prefix, horizon=self.horizon, window_len=self.window_len)
+        model_tester = Tester(args=self.args, log_prefix=self.log_prefix, horizon=self.horizon, window_len=self.window_len)
         # ------------------------------
         # 模型滑窗测试结果收集
         # ------------------------------
@@ -193,7 +165,7 @@ class Model:
             # ------------------------------
             (X_train, Y_train, 
              X_test, Y_test, 
-             df_history_train, df_history_test) = model_testing._evaluate_split(
+             df_history_train, df_history_test) = model_tester._evaluate_split(
                  X_train_history, Y_train_history, df_history, window
             )
             if X_train is None:
@@ -205,18 +177,19 @@ class Model:
             # 窗口训练
             # ------------------------------
             logger.info(f"{self.log_prefix} Model Testing sliding window training...")
-            logger.info(f"{self.log_prefix} {48*'-'}")
+            logger.info(f"{self.log_prefix} {'-' * 48}")
             scaler_testing = FeatureScaler(self.args, scaler_type=self.args.scaler_type, log_prefix=self.log_prefix)
-            model = self.train(X_train, Y_train, scaler_testing, categorical_features)
+            model, scaler_testing = model_trainer.train(X_train, Y_train, scaler_testing, categorical_features)
             # ------------------------------
             # 窗口预测
             # ------------------------------
             logger.info(f"{self.log_prefix} Model Testing sliding window forecasting...")
-            logger.info(f"{self.log_prefix} {48*'-'}")
-            predictor = PredictionHelper(
+            logger.info(f"{self.log_prefix} {'-' * 48}")
+            predictor = Forecaster(
                 args=self.args,
-                model=model,
                 horizon=len(X_test),
+                model=model,
+                feature_scaler=scaler_testing,
                 df_history=df_history_train,
                 df_future=X_test.copy() if self.args.pred_method == "univariate-single-multistep-direct-output" else df_history_test,
                 df_date_future=None,
@@ -225,7 +198,6 @@ class Model:
                 target_feature=target_feature,
                 target_output_features=target_output_features,
                 categorical_features=categorical_features,
-                feature_scaler=scaler_testing,
                 log_prefix=self.log_prefix,
             )
             Y_pred = predictor._predict_by_method()
@@ -249,10 +221,10 @@ class Model:
             # 模型测试结果
             # ------------------------------
             # 测试集评价指标
-            eval_scores_window = model_testing._evaluate_score(Y_test_for_eval, Y_pred, window, df_history_test)
+            eval_scores_window = model_tester._evaluate_score(Y_test_for_eval, Y_pred, window, df_history_test)
             test_scores_df = pd.concat([test_scores_df, eval_scores_window], axis=0)
             # 测试集预测数据
-            cv_plot_df_window = model_testing._evaluate_result(Y_test_for_eval, Y_pred, window, cv_timestamp_full_df)
+            cv_plot_df_window = model_tester._evaluate_result(Y_test_for_eval, Y_pred, window, cv_timestamp_full_df)
             cv_plot_df = pd.concat([cv_plot_df, cv_plot_df_window], axis=0)
             # ------------------------------
             # TODO localtest
@@ -273,260 +245,92 @@ class Model:
         logger.info(f"{self.log_prefix} Model Testing test_scores_df: \n{test_scores_df}")
         logger.info(f"{self.log_prefix} Model Testing cv_plot_df: \n{cv_plot_df.head()}")
         # 模型测试结果保存
-        model_testing.test_results_save(test_scores_df, cv_plot_df)
+        model_tester.test_results_save(test_scores_df, cv_plot_df)
         logger.info(f"{self.log_prefix} Model Testing result saved in: {self.args.test_results_dir}")
         
-        return test_scores_df, cv_plot_df
-    # ##############################
-    # Model Hyperparameters tuning and Model training
-    # ##############################
-    def _hyperparameters_tuning(self, X_train, Y_train):
-        """
-        模型超参数调优 (Grid Search / Randomized Search with TimeSeriesSplit)
-        """
-        logger.info(f"{self.log_prefix} Starting hyperparameter tuning...")
+        return test_scores_df, cv_plot_df 
 
-        # Define parameter grid
-        param_grid = {
-            'estimator__num_leaves': [15, 31, 63],
-            'estimator__learning_rate': [0.01, 0.05, 0.1],
-            'estimator__feature_fraction': [0.7, 0.8, 0.9],
-            'estimator__lambda_l1': [0.1, 0.5, 1.0],
-            'estimator__lambda_l2': [0.1, 0.5, 1.0],
-            'estimator__min_child_samples': [20, 50, 100], # Corresponds to min_data_in_leaf
-        }
-
-        # Base LightGBM estimator
-        lgbm_base = self.model_factory.create_model(
-            model_type=self.args.model_type,
-            model_params=self.model_params
-        )
-
-        # Wrap in MultiOutputRegressor if the method is multi-output
-        if Y_train.shape[1] == 1:
-            model_for_tuning = lgbm_base.model
-            tuned_param_grid = {k.replace("estimator__", ""): v for k, v in param_grid.items()}
-        else:
-            model_for_tuning = MultiOutputRegressor(lgbm_base.model)
-            tuned_param_grid = param_grid
-
-        # TimeSeriesSplit for cross-validation
-        # n_splits determines how many train-test splits to generate.
-        # The test set size will be at least self.horizon.
-        tscv = TimeSeriesSplit(n_splits=self.args.tuning_n_splits)
-
-        # Use GridSearchCV for exhaustive search or RandomizedSearchCV for faster search
-        # RandomizedSearchCV is generally preferred for larger search spaces
-        search = RandomizedSearchCV(
-            estimator=model_for_tuning,
-            param_distributions=tuned_param_grid,
-            n_iter=10, # Number of parameter settings that are sampled
-            scoring=self.args.tuning_metric,
-            cv=tscv,
-            verbose=1,
-            n_jobs=-1, # Use all available cores
-            random_state=42
-        )
-        search.fit(X_train, Y_train)
-        logger.info(f"{self.log_prefix} Best hyperparameters found: {search.best_params_}")
-        logger.info(f"{self.log_prefix} Best score: {search.best_score_}")
-
-        # Update model_params with the best ones
-        best_params_estimator = {k.replace('estimator__', ''): v for k, v in search.best_params_.items()}
-        self.model_params.update(best_params_estimator)
-        logger.info(f"{self.log_prefix} Model parameters updated with best tuning results.")
-        
-        return search.best_estimator_ # Return the best model direct
-     
-    def model_save(self, model):
-        """
-        模型保存
-        """
-        model_deploy = ModelDeployPkl(save_file_path=self.args.checkpoints_dir.joinpath("model.pkl"))
-        model_deploy.save_model(model)
-        logger.info(f"{self.log_prefix} Model saved to {self.args.checkpoints_dir.joinpath('model.pkl')}")
-    
-    def train(self, X_train, Y_train, feature_scaler, categorical_features):
+    def train(self, X_train, Y_train, categorical_features):
         """
         模型训练
-        """
-        logger.info(f"{self.log_prefix} 开始训练模型...")
-        # 训练集
-        X_train_df = X_train.copy()
-        Y_train_df = Y_train.copy()
-        # ------------------------------
-        # 归一化/标准化
-        # ------------------------------
-        # 特征预处理（训练模式）
-        X_train_df_processed, actual_categorical = feature_scaler.fit_transform(X_train_df, categorical_features)
-        # feature_scaler.validate_features(X_train_df_processed, stage="training")
-        
-        # 根据编码策略决定是否传递 categorical_feature
-        if self.args.encode_categorical_features:
-            # 已编码为整数，不传递 categorical_feature
-            lgbm_categorical = None
-        else:
-            # 未编码，传递 categorical_feature 让 LightGBM 处理
-            lgbm_categorical = actual_categorical
-        # ------------------------------
-        # Hyperparameter tuning (if enabled)
-        # ------------------------------
-        if self.args.perform_tuning:
-            best_model = self._hyperparameters_tuning(X_train_df_processed, Y_train_df)
-            return best_model
-        # ------------------------------
+        """ 
+        # 创建特征预处理器
+        scaler_forecasting = FeatureScaler(
+            self.args, 
+            scaler_type=self.args.scaler_type, 
+            log_prefix=self.log_prefix
+        )
+        # 模型训练类
+        model_trainer = Trainer(args=self.args, log_prefix=self.log_prefix)
         # 模型训练
-        # ------------------------------
-        if self.args.enable_ensemble:
-            logger.info(f"{self.log_prefix} 使用模型融合: {self.args.ensemble_models}, 方法: {self.args.ensemble_method}")
-            base_models = []
-            for model_type in self.args.ensemble_models:
-                model_wrapper = self.model_factory.create_model(model_type=model_type, model_params=self.model_params)
-                estimator = model_wrapper.model
-                if Y_train_df.shape[1] > 1:
-                    estimator = MultiOutputRegressor(estimator)
-                base_models.append((model_type, estimator))
-            ensemble = TimeSeriesEnsembleRegressor(
-                base_models=base_models,
-                config=EnsembleConfig(
-                    method=getattr(self.args, "ensemble_method", "averaging"),
-                    val_ratio=float(getattr(self.args, "ensemble_val_ratio", 0.2)),
-                    random_state=42,
-                ),
-            )
-            y_train_input = np.ravel(Y_train_df.values) if Y_train_df.shape[1] == 1 else Y_train_df.values
-            ensemble.fit(X_train_df_processed, y_train_input)
-            logger.info(f"{self.log_prefix} Ensemble training completed!")
-            return ensemble
-        else:
-            # 单模型
-            lgbm_estimator = self.model_factory.create_model(
-                model_type=getattr(self.args, "model_type", "lightgbm"), 
-                model_params=self.model_params
-            )
-            if Y_train_df.shape[1] == 1:
-                logger.info(f"{self.log_prefix} Training single output LGBMRegressor...")
-                model = lgbm_estimator
-                model.fit(X_train_df_processed, np.ravel(Y_train_df.values))
-            elif Y_train_df.shape[1] > 1:
-                logger.info(f"{self.log_prefix} Training MultiOutputRegressor with {Y_train.shape[1]} outputs")
-                model = MultiOutputRegressor(estimator=lgbm_estimator.model)
-                model.fit(X_train_df_processed, Y_train_df)
-            logger.info(f"{self.log_prefix} Model training completed!")
+        model, scaler_forecasting = model_trainer.train(
+            X_train = X_train, 
+            Y_train = Y_train, 
+            feature_scaler = scaler_forecasting, 
+            categorical_features = categorical_features,
+        )
+        # 模型保存
+        model_trainer.model_save(model)
 
-            return model
-    # ##############################
-    # Model Forecast(Model Inference)
-    # ##############################
-    def forecast_results_save(self, df_history, df_future):
-        """
-        输出结果处理
-        """
-        # 预测结果保存
-        df_future["time"] = pd.to_datetime(df_future["time"])
-        df_future = df_future.sort_values(by=["time"])
-        df_future.to_csv(self.args.pred_results_dir.joinpath("prediction.csv"), encoding="utf_8_sig", index=False)
-        # 预测结果可视化
-        # Only plot the last 2 days of true history for context, if available
-        if not df_history.empty:
-            y_trues_df_plot = df_history.iloc[-2 * self.n_per_day:]
-        else:
-            y_trues_df_plot = pd.DataFrame()
-        plt.figure(figsize=(25, 8))
-        if not y_trues_df_plot.empty and 'y' in y_trues_df_plot.columns:
-            plt.plot(y_trues_df_plot["time"], y_trues_df_plot["y"], label='Trues', lw=2.0)
-        if not df_future.empty and 'predict_value' in df_future.columns:
-            plt.plot(df_future["time"], df_future["predict_value"], label='Preds', lw=2.0, ls="-.")
-        plt.xlabel("Time", fontsize=12)
-        plt.ylabel("Value", fontsize=12)
-        plt.title(f"模型预测预测--{self.args.pred_method}", fontsize=14)
-        plt.legend()
-        plt.grid(True, alpha=1.0)
-        plt.tight_layout()
-        # plt.xticks(rotation=45)
-        plt.savefig(self.args.pred_results_dir.joinpath('prediction.png'), dpi=300, bbox_inches='tight')
-        # plt.show();
-    
+        return model, scaler_forecasting
+
     def forecast(self, 
+                 model, 
+                 scaler_forecasting,
                  df_history, 
-                 X_train_history, 
-                 Y_train_history, 
                  df_future, 
                  df_date_future,
                  df_weather_future,
                  endogenous_features_with_target, 
                  target_feature, 
-                 predictor_features,
                  target_output_features, 
                  categorical_features):
         """
         模型预测
         """
-        # ------------------------------
-        # 模型训练
-        # ------------------------------
-        logger.info(f"{self.log_prefix} {40*'-'}")
-        logger.info(f"{self.log_prefix} Model Training start...")
-        logger.info(f"{self.log_prefix} {40*'-'}")
-        # 创建特征预处理器
-        scaler_forecasting = FeatureScaler(self.args, scaler_type=self.args.scaler_type, log_prefix=self.log_prefix)
-        # 模型训练
-        model = self.train(X_train_history, Y_train_history, scaler_forecasting, categorical_features)
-        # 模型保存
-        self.model_save(model)
-        # ------------------------------
-        # 模型预测
-        # ------------------------------
-        logger.info(f"{self.log_prefix} {40*'-'}")
-        logger.info(f"{self.log_prefix} Model Forecasting start...")
-        logger.info(f"{self.log_prefix} {40*'-'}")
         # 未来数据复制
-        df_future_for_prediction = df_future.copy()
+        df_future_prediction = df_future.copy()
         # 模型预测
-        predictor = PredictionHelper(
+        predictor = Forecaster(
             args = self.args,
-            model = model, 
             horizon = self.horizon,
+            model = model, 
+            feature_scaler = scaler_forecasting,
             df_history = df_history, 
-            df_future = df_future, 
-            df_date_future=df_date_future,
-            df_weather_future=df_weather_future,
+            df_future = df_future_prediction, 
+            df_date_future = df_date_future,
+            df_weather_future = df_weather_future,
             endogenous_features = endogenous_features_with_target, 
             target_feature = target_feature, 
             target_output_features = target_output_features, 
             categorical_features = categorical_features,
-            feature_scaler = scaler_forecasting,
             log_prefix = self.log_prefix,
         )
         Y_pred = predictor._predict_by_method()
-        logger.info(f"{self.log_prefix} after forecast Y_pred: \n{Y_pred}")
-        # Y_pred = self._align_pred_length(Y_pred, len(df_future_for_prediction), fill_value=np.nan)
         # ------------------------------
         # 模型预测结果收集和保存
         # ------------------------------
-        # 预测结果收集
-        df_future_for_prediction["predict_value"] = Y_pred
-        df_future_for_prediction = df_future_for_prediction[["time", "predict_value"]]
-        logger.info(f"{self.log_prefix} after forecast df_future: \n{df_future_for_prediction.head()}")
-        logger.info(f"{self.log_prefix} after forecast df_future.shape: {df_future_for_prediction.shape}")
-        # 模型预测结果保存
-        logger.info(f"{self.log_prefix} {40*'-'}")
+        logger.info(f"{self.log_prefix} {'-' * 82}")
         logger.info(f"{self.log_prefix} Model Forecasting result save...")
-        logger.info(f"{self.log_prefix} {40*'-'}")
-        self.forecast_results_save(df_history, df_future_for_prediction)
+        logger.info(f"{self.log_prefix} {'-' * 82}")
+        # 模型预测结果收集
+        df_future_prediction["predict_value"] = Y_pred
+        df_future_prediction = df_future_prediction[["time", "predict_value"]]
+        logger.info(f"{self.log_prefix} after forecast df_future_prediction: \n{df_future_prediction.head()}")
+        logger.info(f"{self.log_prefix} after forecast df_future_prediction.shape: {df_future_prediction.shape}")
+        # 模型预测结果保存
+        predictor.forecast_results_save(df_history, df_future_prediction, self.n_per_day)
         logger.info(f"{self.log_prefix} Model Forecasting result saved in: {self.args.pred_results_dir}")
         
-        return df_future_for_prediction
-    # ##############################
-    # 运行
-    # ##############################
+        return df_future_prediction
+
     def run(self):
         # ------------------------------
-        # 数据加载
+        # 数据加载和处理
         # ------------------------------
-        logger.info(f"{self.log_prefix} {80*'='}")
+        logger.info(f"{self.log_prefix} {'=' * 85}")
         logger.info(f"{self.log_prefix} Model history and future data loading...")
-        logger.info(f"{self.log_prefix} {80*'='}")
+        logger.info(f"{self.log_prefix} {'=' * 85}")
         dataloader = DataLoader(
             args=self.args, 
             train_start_time=self.train_start_time,
@@ -539,9 +343,9 @@ class Model:
         # ------------------------------
         # 历史数据处理
         # ------------------------------
-        logger.info(f"{self.log_prefix} {80*'='}")
+        logger.info(f"{self.log_prefix} {'=' * 85}")
         logger.info(f"{self.log_prefix} Model history data preprocessing...")
-        logger.info(f"{self.log_prefix} {80*'='}")
+        logger.info(f"{self.log_prefix} {'=' * 85}")
         (df_history, 
          df_date_history, 
          df_weather_history, 
@@ -550,12 +354,12 @@ class Model:
         # ------------------------------
         # 特征工程
         # ------------------------------
-        logger.info(f"{self.log_prefix} {80*'='}")
+        logger.info(f"{self.log_prefix} {'=' * 85}")
         logger.info(f"{self.log_prefix} Model history data feature engineering...")
-        logger.info(f"{self.log_prefix} {80*'='}")
-        logger.info(f"{self.log_prefix} {40*'-'}")
+        logger.info(f"{self.log_prefix} {'=' * 85}")
+        logger.info(f"{self.log_prefix} {'-' * 82}")
         logger.info(f"{self.log_prefix} Model history data feature engineering...")
-        logger.info(f"{self.log_prefix} {40*'-'}")
+        logger.info(f"{self.log_prefix} {'-' * 82}")
         # 特征预处理器
         feature_engineer_history = FeatureEngineer(self.args, self.log_prefix)
         (df_history_featured, 
@@ -573,12 +377,13 @@ class Model:
         )
         # 删除在构建滞后特征时产生的缺失值
         df_history_featured = df_history_featured.dropna()
-        logger.info(f"{self.log_prefix} after dropna df_history_featured: \n{df_history_featured}")
+        logger.info(f"{self.log_prefix} after dropna df_history_featured: \n{df_history_featured.head()}")
+        logger.info(f"{self.log_prefix} after dropna df_history_featured.shape: {df_history_featured.shape}")
         
         # 历史数据预测特征、目标特征分离
-        logger.info(f"{self.log_prefix} {40*'-'}")
+        logger.info(f"{self.log_prefix} {'-' * 82}")
         logger.info(f"{self.log_prefix} Model history data feature split...")
-        logger.info(f"{self.log_prefix} {40*'-'}")
+        logger.info(f"{self.log_prefix} {'-' * 82}")
         X_train_history, Y_train_history = feature_engineer_history.predictor_target_split(
             df_series_featured = df_history_featured, 
             predictor_features = predictor_features, 
@@ -588,9 +393,9 @@ class Model:
         # 模型测试
         # ------------------------------
         if self.args.is_testing:
-            logger.info(f"{self.log_prefix} {80*'='}")
+            logger.info(f"{self.log_prefix} {'=' * 85}")
             logger.info(f"{self.log_prefix} Model Testing...")
-            logger.info(f"{self.log_prefix} {80*'='}")
+            logger.info(f"{self.log_prefix} {'=' * 85}")
             test_scores_df, cv_plot_df = self.test(
                 df_history = df_history,
                 X_train_history = X_train_history,
@@ -607,28 +412,40 @@ class Model:
         # 模型预测
         # ------------------------------
         if self.args.is_forecasting:
-            logger.info(f"{self.log_prefix} {80*'='}")
+            logger.info(f"{self.log_prefix} {'=' * 85}")
             logger.info(f"{self.log_prefix} Model Forecasting...")
-            logger.info(f"{self.log_prefix} {80*'='}")
+            logger.info(f"{self.log_prefix} {'=' * 85}")
             # 未来数据处理(用来推理)
-            logger.info(f"{self.log_prefix} {40*'-'}")
+            logger.info(f"{self.log_prefix} {'-' * 82}")
             logger.info(f"{self.log_prefix} Model Forecasting future data preprocessing...")
-            logger.info(f"{self.log_prefix} {40*'-'}")
-            (df_future, df_date_future, df_weather_future) = dataloader.process_future_data(input_data = input_data)
+            logger.info(f"{self.log_prefix} {'-' * 82}")
+            (df_future, \
+             df_date_future, 
+             df_weather_future) = dataloader.process_future_data(input_data = input_data)
+            
+            # 模型训练
+            logger.info(f"{self.log_prefix} {'-' * 82}")
+            logger.info(f"{self.log_prefix} Model Training start...")
+            logger.info(f"{self.log_prefix} {'-' * 82}")
+            model, scaler_forecasting = self.train(
+                X_train = X_train_history, 
+                Y_train = Y_train_history, 
+                categorical_features = categorical_features
+            )
+            
             # 模型预测
-            logger.info(f"{self.log_prefix} {40*'-'}")
+            logger.info(f"{self.log_prefix} {'-' * 82}")
             logger.info(f"{self.log_prefix} Model Forecasting start...")
-            logger.info(f"{self.log_prefix} {40*'-'}")
+            logger.info(f"{self.log_prefix} {'-' * 82}")
             df_future_predicted = self.forecast(
+                model = model,
+                scaler_forecasting = scaler_forecasting,
                 df_history = df_history,
-                X_train_history = X_train_history,
-                Y_train_history = Y_train_history,
                 df_future = df_future,
                 df_date_future = df_date_future,
                 df_weather_future = df_weather_future,
                 endogenous_features_with_target = endogenous_features_with_target,
                 target_feature = target_feature,
-                predictor_features = predictor_features,
                 target_output_features = target_output_features,
                 categorical_features = categorical_features, 
             )
@@ -644,13 +461,13 @@ def main():
     # 模型配置
     args = ModelConfig_univariate()
     # args = ModelConfig_multivariate()
-    
     # 创建模型实例
     model = Model(args)
-    
     # 运行模型
     model.run()
-    logger.info("预测流程完成！")
+    logger.info(f"{model.log_prefix} {'=' * 85}")
+    logger.info(f"{model.log_prefix} 模型预测流程完成！")
+    logger.info(f"{model.log_prefix} {'=' * 85}")
 
 if __name__ == "__main__":
     main()

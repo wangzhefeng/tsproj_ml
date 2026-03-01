@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 
 # ***************************************************
-# * File        : prediction_strategies.py
+# * File        : ModelForecasting.py
 # * Author      : Zhefeng Wang
 # * Email       : zfwang7@gmail.com
 # * Date        : 2026-02-11
@@ -14,11 +14,10 @@
 # python libraries
 from pathlib import Path
 from typing import List, Dict, Any
-import warnings
-warnings.filterwarnings("ignore")
 
 import numpy as np
 import pandas as pd
+import matplotlib.pyplot as plt
 
 from features.FeatureEngineering import FeatureEngineer
 from utils.log_util import logger
@@ -27,15 +26,16 @@ from utils.log_util import logger
 LOGGING_LABEL = Path(__file__).name[:-3]
 
 
-class PredictionHelper:
+class Forecaster:
     """
     预测辅助类-所有预测方法的公共逻辑
     """
     
     def __init__(self, 
                  args: Dict,
-                 model: Any, 
                  horizon: int,
+                 model: Any, 
+                 feature_scaler,
                  df_history: pd.DataFrame, 
                  df_future: pd.DataFrame, 
                  df_date_future: pd.DataFrame,
@@ -44,11 +44,11 @@ class PredictionHelper:
                  target_feature: str, 
                  target_output_features: List[str], 
                  categorical_features: List[str], 
-                 feature_scaler,
                  log_prefix: str):
         self.args = args
-        self.model = model
         self.horizon = horizon
+        self.model = model
+        self.feature_scaler = feature_scaler
         self.df_history = df_history
         self.df_future = df_future
         self.df_date_future = df_date_future
@@ -57,17 +57,16 @@ class PredictionHelper:
         self.target_feature = target_feature
         self.target_output_features = target_output_features
         self.categorical_features = categorical_features
-        self.feature_scaler = feature_scaler
         self.log_prefix = log_prefix
 
         # 最大滞后数量
         self.max_lag = max(self.args.lags) if self.args.lags else 1
-        logger.info(f"{self.log_prefix} max_lag: {self.max_lag}")
+        logger.info(f"{self.log_prefix} Forecaster max_lag: {self.max_lag}")
         
         # 获取足够的历史数据以构建滞后特征
         self.df_history_for_lags = self.df_history.iloc[-self.max_lag:].copy()
-        logger.info(f"{self.log_prefix} df_history_for_lags shape: {self.df_history_for_lags.shape}")
-        logger.info(f"{self.log_prefix} df_history_for_lags columns: {self.df_history_for_lags.columns.tolist()}")
+        logger.info(f"{self.log_prefix} Forecaster df_history_for_lags shape: {self.df_history_for_lags.shape}")
+        logger.info(f"{self.log_prefix} Forecaster df_history_for_lags columns: {self.df_history_for_lags.columns.tolist()}")
     
     @staticmethod
     def _to_1d(pred: Any) -> np.ndarray:
@@ -78,7 +77,7 @@ class PredictionHelper:
 
     @staticmethod
     def _to_scalar(pred: Any) -> float:
-        pred_arr = PredictionHelper._to_1d(pred)
+        pred_arr = Forecaster._to_1d(pred)
         return float(pred_arr[0]) if pred_arr.size > 0 else np.nan
     # ------------------------------
     # 单变量（目标变量滞后特征）预测单变量（目标变量）
@@ -110,32 +109,29 @@ class PredictionHelper:
             )
             # 删除在构建滞后特征时产生的缺失值
             df_future_featured = df_future_featured.dropna()
-            logger.info(f"{self.log_prefix} df_future_featured: \n{df_future_featured}")
-            logger.info(f"{self.log_prefix} predictor_features: {predictor_features}")
-            logger.info(f"{self.log_prefix} target_output_features: {target_output_features}")
-            logger.info(f"{self.log_prefix} categorical_features: {categorical_features}")
+            logger.info(f"{self.log_prefix} after feature engineering and dropna df_future_featured: \n{df_future_featured.head()}")
+            logger.info(f"{self.log_prefix} after feature engineering and dropna df_future_featured.shape: {df_future_featured.shape}")
             # 特征选择
             X_test_future = df_future_featured[predictor_features]
         elif self.args.is_testing:
             X_test_future = self.df_future
             categorical_features = self.categorical_features
-        logger.info(f"{self.log_prefix} X_test_future: \n{X_test_future}")
-
-        # 特征预处理（预测模式）
+        logger.info(f"{self.log_prefix} after feature engineering X_test_future: \n{X_test_future.head()}")
+        logger.info(f"{self.log_prefix} after feature engineering X_test_future shape: {X_test_future.shape}")
+        logger.info(f"{self.log_prefix} after feature engineering categorical_features: {categorical_features}")
+        # 特征预处理
         X_test_processed = self.feature_scaler.transform(X_test_future, categorical_features)
-        # self.feature_scaler.validate_features(X_test_processed, stage="prediction")
-        
         # 模型推理
         if len(X_test_processed) > 0:
             Y_preds = self.model.predict(X_test_processed)
-            logger.info(f"{self.log_prefix} USMDO forecast completed, predicted {len(Y_preds)} steps")
-
         # 模型推理结果处理
-        if len(Y_preds) == 0:
-            return np.array([])
-        else:
-            Y_preds = np.asarray(Y_preds)
-            return Y_preds
+        Y_preds = np.array([]) if len(Y_preds) == 0 else np.asarray(Y_preds)
+        
+        logger.info(f"{self.log_prefix} USMDO forecast completed...")
+        logger.info(f"{self.log_prefix} {'-' * 27}")
+        logger.info(f"{self.log_prefix} predicted {len(Y_preds)} steps.")
+
+        return Y_preds
 
     def univariate_single_multi_step_direct_forecast(self):
         """
@@ -630,7 +626,9 @@ class PredictionHelper:
         logger.info(f"{self.log_prefix} MSMDR forecast completed, predicted {len(Y_preds)} steps")
         
         return np.array(Y_preds)
-
+    # ------------------------------
+    # forecasting
+    # ------------------------------
     def _predict_by_method(self) -> np.ndarray:
         """
         根据配置分发预测策略并返回一维预测数组
@@ -655,13 +653,45 @@ class PredictionHelper:
         pred_arr = np.asarray(raw_pred)
         if pred_arr.ndim == 0:
             return np.asarray([float(pred_arr)])
-        if pred_arr.ndim == 1:
+        elif pred_arr.ndim == 1:
             return pred_arr
+        
         if pred_arr.shape[0] == 1:
             return pred_arr[0]
+
         if pred_arr.shape[1] == 1:
             return pred_arr[:, 0]
+
         return pred_arr[:, 0]
+
+    def forecast_results_save(self, df_history, df_future, n_per_day):
+        """
+        输出结果处理
+        """
+        # 预测结果保存
+        df_future["time"] = pd.to_datetime(df_future["time"])
+        df_future = df_future.sort_values(by=["time"])
+        df_future.to_csv(self.args.pred_results_dir.joinpath("prediction.csv"), encoding="utf_8_sig", index=False)
+        # 预测结果可视化
+        # Only plot the last 2 days of true history for context, if available
+        if not df_history.empty:
+            y_trues_df_plot = df_history.iloc[-2 * n_per_day:]
+        else:
+            y_trues_df_plot = pd.DataFrame()
+        plt.figure(figsize=(25, 8))
+        if not y_trues_df_plot.empty and 'y' in y_trues_df_plot.columns:
+            plt.plot(y_trues_df_plot["time"], y_trues_df_plot["y"], label='Trues', lw=2.0)
+        if not df_future.empty and 'predict_value' in df_future.columns:
+            plt.plot(df_future["time"], df_future["predict_value"], label='Preds', lw=2.0, ls="-.")
+        plt.xlabel("Time", fontsize=12)
+        plt.ylabel("Value", fontsize=12)
+        plt.title(f"模型预测预测--{self.args.pred_method}", fontsize=14)
+        plt.legend()
+        plt.grid(True, alpha=1.0)
+        plt.tight_layout()
+        # plt.xticks(rotation=45)
+        plt.savefig(self.args.pred_results_dir.joinpath('prediction.png'), dpi=300, bbox_inches='tight')
+        # plt.show();
 
 
 

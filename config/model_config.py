@@ -106,9 +106,9 @@ class ModelConfig_univariate:
         ])
         # 日期时间类别特征
         datetime_categorical_features: List[str] = field(default_factory=lambda: [
-            "datetime_hour", "datetime_day", "datetime_weekday", "datetime_week",
-            "datetime_day_of_week", "datetime_week_of_year", "datetime_month", "datetime_days_in_month",
-            "datetime_quarter", "datetime_day_of_year", "datetime_year",
+            # "dt_hour", "dt_day", "dt_weekday", "dt_week",
+            # "dt_day_of_week", "dt_week_of_year", "dt_month", "dt_days_in_month",
+            # "dt_quarter", "dt_day_of_year", "dt_year",
         ])
     else:
         datetime_features: List[str] = field(default_factory=lambda: [])
@@ -117,7 +117,7 @@ class ModelConfig_univariate:
     
     # 特征滞后数列表
     # --------------
-    enable_lags_features: bool = True
+    enable_lags_features: bool = False
     if enable_lags_features:
         lags: List[int] = field(default_factory=lambda: [
             1 * 288,  # Daily lag
@@ -192,9 +192,9 @@ class ModelConfig_univariate:
     ensemble_val_ratio: float = 0.2
     # 可选预测方法:
     # - 单变量预测单变量
-    # pred_method: str = "univariate-single-multistep-direct-output"       # USMDO [单变量(包含目标变量的所有内生变量)->单变量(目标内生变量)]多步直接输出预测
+    pred_method: str = "univariate-single-multistep-direct-output"       # USMDO [单变量(包含目标变量的所有内生变量)->单变量(目标内生变量)]多步直接输出预测
     # pred_method: str = "univariate-single-multistep-direct"              # USMD [单变量(包含目标变量的所有内生变量)->单变量(目标内生变量)]多步直接预测
-    pred_method: str = "univariate-single-multistep-recursive"           # USMR [单变量(包含目标变量的所有内生变量)->单变量(目标内生变量)]多步递归预测
+    # pred_method: str = "univariate-single-multistep-recursive"           # USMR [单变量(包含目标变量的所有内生变量)->单变量(目标内生变量)]多步递归预测
     # pred_method: str = "univariate-single-multistep-direct-recursive"    # USMDR [单变量(包含目标变量的所有内生变量)->单变量(目标内生变量)]多步直接递归预测
     # - 多变量预测单变量
     # pred_method: str = "multivariate-single-multistep-direct"            # MSMD [多变量(包含目标变量的所有内生变量)->单变量(目标内生变量)]多步直接预测
@@ -213,9 +213,9 @@ class ModelConfig_univariate:
     # 模型运行模式
     # ------------------------------
     # 模型测试
-    is_testing: bool = False
+    is_testing: bool = True
     # 模型预测
-    is_forecasting: bool = True
+    is_forecasting: bool = False
     # 预测推理开始的时间
     now_time: datetime.datetime = field(default_factory=lambda: datetime.datetime(2025, 12, 27, 0, 0, 0))
     # ------------------------------
@@ -281,9 +281,9 @@ class ModelConfig_multivariate:
         ])
         # 日期时间类别特征
         datetime_categorical_features: List[str] = field(default_factory=lambda: [
-            "datetime_hour", "datetime_day", "datetime_weekday", "datetime_week",
-            "datetime_day_of_week", "datetime_week_of_year", "datetime_month", "datetime_days_in_month",
-            "datetime_quarter", "datetime_day_of_year", "datetime_year",
+            "dt_hour", "dt_day", "dt_weekday", "dt_week",
+            "dt_day_of_week", "dt_week_of_year", "dt_month", "dt_days_in_month",
+            "dt_quarter", "dt_day_of_year", "dt_year",
         ])
     else:
         datetime_features: List[str] = field(default_factory=lambda: [])

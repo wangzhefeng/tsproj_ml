@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 
 # ***************************************************
-# * File        : model_deploy.py
+# * File        : ModelSaveLoad.py
 # * Author      : Zhefeng Wang
 # * Email       : wangzhefengr@163.com
 # * Date        : 2024-10-17
@@ -25,7 +25,6 @@ import joblib
 # from sklearn.externals import joblib
 
 from sklearn2pmml import sklearn2pmml, PMMLPipeline
-from sklearn_pandas import DataFrameMapper
 from pypmml import Model
 
 from utils.log_util import logger
@@ -118,7 +117,8 @@ class ModelDeployPmml(ModelDeploy):
         """
         if not self.save_file_path.endswith(".pmml"):
             raise Exception("参数 save_file_path 后缀必须为 'pmml', 请检查.")
-
+        
+        from sklearn_pandas import DataFrameMapper
         mapper = DataFrameMapper([
             ([i], None) for i in features_list
         ])

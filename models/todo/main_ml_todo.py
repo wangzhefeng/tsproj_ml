@@ -28,6 +28,19 @@ from utils.log_util import logger
 
 
 class Model:
+
+    # @staticmethod
+    # def _align_pred_length(y_pred: np.ndarray, target_len: int, fill_value: float = np.nan) -> np.ndarray:
+    #     pred = np.asarray(y_pred).reshape(-1)
+    #     if target_len <= 0:
+    #         return np.asarray([])
+    #     if len(pred) == target_len:
+    #         return pred
+    #     if len(pred) == 0:
+    #         return np.full(shape=(target_len,), fill_value=fill_value)
+    #     if len(pred) > target_len:
+    #         return pred[:target_len]
+    #     return np.pad(pred, pad_width=(0, target_len - len(pred)), mode="edge")
     
     '''
     # ------------------------------

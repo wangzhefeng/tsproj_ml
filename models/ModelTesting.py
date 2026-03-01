@@ -34,7 +34,7 @@ from utils.log_util import logger
 LOGGING_LABEL = Path(__file__).name[:-3]
 
 
-class ModelTesting:
+class Tester:
     
     def __init__(self, args, log_prefix: str, horizon: int, window_len: int):
         self.args = args

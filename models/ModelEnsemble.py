@@ -26,17 +26,10 @@
 # ***************************************************
 
 # python libraries
-import sys
 from pathlib import Path
-ROOT = str(Path.cwd())
-if ROOT not in sys.path:
-    sys.path.append(ROOT)
 from typing import List, Any
-import warnings
-warnings.filterwarnings("ignore")
 
 import numpy as np
-import pandas as pd
 import lightgbm as lgb
 # model evaluation
 from sklearn.metrics import (

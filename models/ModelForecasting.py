@@ -93,16 +93,16 @@ class Forecaster:
         # 特征工程
         if not self.args.is_testing and self.args.is_forecasting:
             # 特征工程
-            feature_engineer_history = FeatureEngineer(self.args, self.log_prefix)
+            feature_engineer_history = FeatureEngineer(self.args, self.log_prefix, verbose=False)
             (df_future_featured, 
              predictor_features, 
              target_output_features, 
              categorical_features) = feature_engineer_history.create_features(
                 df_series = self.df_future,
-                df_date_history=None,
-                df_date_future=self.df_date_future,
-                df_weather_history=None,
-                df_weather_future=self.df_weather_future,
+                df_date_history = None,
+                df_date_future = self.df_date_future,
+                df_weather_history = None,
+                df_weather_future = self.df_weather_future,
                 endogenous_features_with_target = self.endogenous_features,
                 target_feature = self.target_feature,
                 horizon = self.horizon,
@@ -149,7 +149,7 @@ class Forecaster:
         df_forecast = pd.concat([self.df_history_for_lags, df_future_exogenous], ignore_index=True)
 
         # 3.特征工程
-        feature_engineer_history = FeatureEngineer(self.args, self.log_prefix)
+        feature_engineer_history = FeatureEngineer(self.args, self.log_prefix, verbose=False)
         (df_forecast_featured, 
          predictor_features, 
          target_output_features, 
@@ -189,58 +189,51 @@ class Forecaster:
         单变量(内生变量/目标变量)预测单变量(目标变量)多步递归预测(USMR)
         """
         logger.info(f"{self.log_prefix} univariate_single_multi_step_recursive_forecast(USMR)")
-        
         # 多步预测值收集器
         Y_preds = []
-        
         for step in range(self.horizon):
             logger.info(f"{self.log_prefix} recursive forecast step: {step}...")
+            logger.info(f"{self.log_prefix} {'=' * 31}")
             # 0.Prepare current features for prediction
             if step >= len(self.df_future):
                 logger.warning(f"Exhausted df_future for step {step}. Stopping recursive forecast.")
                 break
-            
             # 1.构建预测特征数据
-            df_future_exogenous = self.df_future.iloc[step:step+1].copy()
-
-            # 2. 合并历史数据和当前步数据
-            df_forecast = pd.concat([self.df_history_for_lags, df_future_exogenous], ignore_index=True)
-            
+            df_future_step = self.df_future.iloc[step:step+1].copy()
+            # 2.合并历史数据和当前步数据
+            df_forecast = pd.concat([self.df_history_for_lags, df_future_step], ignore_index=True)
             # 3.特征工程
-            feature_engineer_history = FeatureEngineer(self.args, self.log_prefix)
+            feature_engineer_history = FeatureEngineer(self.args, self.log_prefix, verbose=False)
             (df_forecast_featured, 
              predictor_features, 
              target_output_features, 
              categorical_features) = feature_engineer_history.create_features(
                 df_series = df_forecast,
-                df_date_history=None,
-                df_date_future=self.df_date_future,
-                df_weather_history=None,
-                df_weather_future=self.df_weather_future,
+                df_date_history = None,
+                df_date_future = self.df_date_future,
+                df_weather_history = None,
+                df_weather_future = self.df_weather_future,
                 endogenous_features_with_target = self.endogenous_features,
                 target_feature = self.target_feature,
                 horizon = self.horizon,
             )
-            
             # 4.提取出当前预测步所需要的特征（最后一行）
             X_forecast_input = df_forecast_featured[predictor_features].iloc[-1:]
-            
             # 5.特征预处理（预测模式）
             X_forecast_processed = self.feature_scaler.transform(X_forecast_input, categorical_features)
             # self.feature_scaler.validate_features(X_forecast_processed, stage="prediction")
-            
             # 6.模型预测
             y_pred_step = self._to_scalar(self.model.predict(X_forecast_processed))
             Y_preds.append(y_pred_step)
-
-            # 7.将预测值更新回 df_future_exogenous，以便为下一步预测提供滞后特征
-            df_future_exogenous_new_row = df_future_exogenous.copy().iloc[-1:]
-            df_future_exogenous_new_row[self.target_feature] = y_pred_step
-
+            # 7.将预测值更新回 df_future_step，以便为下一步预测提供滞后特征
+            df_future_step_new_row = df_future_step.copy().iloc[-1:]
+            df_future_step_new_row[self.target_feature] = y_pred_step
             # 8.将新行添加到历史数据中，进行下一次循环
-            self.df_history_for_lags = pd.concat([self.df_history_for_lags, df_future_exogenous_new_row], ignore_index=True)
+            self.df_history_for_lags = pd.concat([self.df_history_for_lags, df_future_step_new_row], ignore_index=True)
             self.df_history_for_lags = self.df_history_for_lags.iloc[-self.max_lag:]
-        logger.info(f"{self.log_prefix} USMR forecast completed, predicted {len(Y_preds)} steps")
+        logger.info(f"{self.log_prefix} USMR forecast completed...")
+        logger.info(f"{self.log_prefix} {'-' * 31}")
+        logger.info(f"{self.log_prefix} predicted {len(Y_preds)} steps.")
 
         return np.array(Y_preds)
 
@@ -293,7 +286,7 @@ class Forecaster:
                 df_forecast = pd.concat([self.df_history_for_lags, df_future_exogenous], ignore_index=True)
                 
                 # 3. 创建特征（只为目标变量创建滞后特征）
-                feature_engineer_history = FeatureEngineer(self.args, self.log_prefix)
+                feature_engineer_history = FeatureEngineer(self.args, self.log_prefix, verbose=False)
                 (df_forecast_featured, 
                 predictor_features, 
                 target_output_features, 
@@ -363,7 +356,7 @@ class Forecaster:
         df_forecast = pd.concat([self.df_history_for_lags, df_future_exogenous], ignore_index=True)
         
         # 3.创建特征
-        feature_engineer_history = FeatureEngineer(self.args, self.log_prefix)
+        feature_engineer_history = FeatureEngineer(self.args, self.log_prefix, verbose=False)
         (df_forecast_featured, 
          predictor_features, 
          target_output_features, 
@@ -436,7 +429,7 @@ class Forecaster:
             df_forecast = pd.concat([self.df_history_for_lags, df_future_exogenous], ignore_index=True)
 
             # 2.特征工程
-            feature_engineer_history = FeatureEngineer(self.args, self.log_prefix)
+            feature_engineer_history = FeatureEngineer(self.args, self.log_prefix, verbose=False)
             (df_forecast_featured, 
              predictor_features, 
              target_output_features, 
@@ -572,7 +565,7 @@ class Forecaster:
                 df_forecast = pd.concat([self.df_history_for_lags, df_future_exogenous], ignore_index=True)
                 
                 # 3. 创建特征（为所有内生变量创建滞后特征）
-                feature_engineer_history = FeatureEngineer(self.args, self.log_prefix)
+                feature_engineer_history = FeatureEngineer(self.args, self.log_prefix, verbose=False)
                 (df_forecast_featured, 
                  predictor_features, 
                  target_output_features, 

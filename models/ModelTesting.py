@@ -68,9 +68,6 @@ class Tester:
         """
         训练、测试数据集分割
         """
-        logger.info(f"{self.log_prefix} Model Testing sliding window...")
-        logger.info(f"{self.log_prefix} {30*'-'}")
-
         # 滑窗数据分割索引
         total_data_points = len(data_X)
         train_start, train_end, test_start, test_end = self._evaluate_split_index(window, total_data_points)
@@ -198,7 +195,8 @@ class Tester:
         # plt.show();
     # ------------------------------
     # Model testing
-    # ------------------------------    
+    # ------------------------------
+    # TODO 未使用
     def _window_test(self, 
                      X_train, Y_train, 
                      X_test, Y_test, 
@@ -311,6 +309,7 @@ class Tester:
             return np.array([])
 
         return Y_pred
+
 
 
 

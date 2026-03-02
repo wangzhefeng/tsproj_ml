@@ -117,7 +117,7 @@ class ModelConfig_univariate:
     
     # 特征滞后数列表
     # --------------
-    enable_lags_features: bool = False
+    enable_lags_features: bool = True
     if enable_lags_features:
         lags: List[int] = field(default_factory=lambda: [
             1 * 288,  # Daily lag
@@ -192,9 +192,9 @@ class ModelConfig_univariate:
     ensemble_val_ratio: float = 0.2
     # 可选预测方法:
     # - 单变量预测单变量
-    pred_method: str = "univariate-single-multistep-direct-output"       # USMDO [单变量(包含目标变量的所有内生变量)->单变量(目标内生变量)]多步直接输出预测
+    # pred_method: str = "univariate-single-multistep-direct-output"       # USMDO [单变量(包含目标变量的所有内生变量)->单变量(目标内生变量)]多步直接输出预测
     # pred_method: str = "univariate-single-multistep-direct"              # USMD [单变量(包含目标变量的所有内生变量)->单变量(目标内生变量)]多步直接预测
-    # pred_method: str = "univariate-single-multistep-recursive"           # USMR [单变量(包含目标变量的所有内生变量)->单变量(目标内生变量)]多步递归预测
+    pred_method: str = "univariate-single-multistep-recursive"           # USMR [单变量(包含目标变量的所有内生变量)->单变量(目标内生变量)]多步递归预测
     # pred_method: str = "univariate-single-multistep-direct-recursive"    # USMDR [单变量(包含目标变量的所有内生变量)->单变量(目标内生变量)]多步直接递归预测
     # - 多变量预测单变量
     # pred_method: str = "multivariate-single-multistep-direct"            # MSMD [多变量(包含目标变量的所有内生变量)->单变量(目标内生变量)]多步直接预测

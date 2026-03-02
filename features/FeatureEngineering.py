@@ -7,15 +7,15 @@
 # * Date        : 2026-02-11
 # * Version     : 1.0.021110
 # * Description : description
-# * Link        : 特征工程：
-# *               - 一、基本特征：
+# * Link        : 特征工程: 
+# *               - 一、基本特征: 
 # *                 - 1.外生变量特征
 # *                     - 1.1 日期时间特征(小时、星期、月份、季度等)、周期性编码(sin/cos)
 # *                     - 1.2 天气特征(天气数据集成)
 # *                     - 1.3 节假日 标记特征(日期类型数据集成)
-# *                 - 2.内生变量特征：
-# *                     - 2.1 滞后特征：单变量(目标变量)滞后特征、多变量(目标变量、其他内生变量)滞后特征
-# *               - 二、高级特征：
+# *                 - 2.内生变量特征: 
+# *                     - 2.1 滞后特征: 单变量(目标变量)滞后特征、多变量(目标变量、其他内生变量)滞后特征
+# *               - 二、高级特征: 
 # *                 - 1.内生变量特征
 # *                     - 1.1 滑动窗口统计特征 (Rolling Window Statistics)
 # *                         - load_rolling_mean_3   # 最近3步平均值
@@ -59,9 +59,10 @@ class ExogenousFeatureEngineer:
     """
     exogenous features engineering
     """
-    def __init__(self, args, log_prefix="[ExogenousFeaturePreprocessor]"):
+    def __init__(self, args, log_prefix="[ExogenousFeaturePreprocessor]", verbose: bool=False):
         self.args = args
         self.log_prefix = log_prefix
+        self.verbose = verbose
         # 生成的外生特征
         self.exogenous_features = []
         # 收集类别特征
@@ -110,13 +111,14 @@ class ExogenousFeatureEngineer:
             self.exogenous_features.extend(datetime_features_list)
             self.categorical_features.extend(self.args.datetime_categorical_features)
         
-        logger.info(f"{self.log_prefix} after extend_datetime_feature datetime_features: {datetime_features_list}")
+        if self.verbose:
+            logger.info(f"{self.log_prefix} after extend_datetime_feature datetime_features: {datetime_features_list}")
 
         return df_copy
 
     def extend_datetype_feature(self, df: pd.DataFrame, df_date: pd.DataFrame, col_ts: str="date", col_type: str="date_type"):
         """
-        增加日期类型特征：
+        增加日期类型特征: 
         1-工作日 2-非工作日 3-删除计算日 4-元旦 5-春节 6-清明节 7-劳动节 8-端午节 9-中秋节 10-国庆节
         """
         df_copy = df.copy()
@@ -134,7 +136,8 @@ class ExogenousFeatureEngineer:
             self.exogenous_features.extend(date_features)
             self.categorical_features.extend(self.args.datetype_categorical_features)
         
-        logger.info(f"{self.log_prefix} after extend_datetype_feature date_features: {date_features}")
+        if self.verbose:
+            logger.info(f"{self.log_prefix} after extend_datetype_feature date_features: {date_features}")
 
         return df_copy
 
@@ -236,7 +239,8 @@ class ExogenousFeatureEngineer:
             self.exogenous_features.extend(weather_features)
             self.categorical_features.extend(self.args.weather_categorical_features)
         
-        logger.info(f"{self.log_prefix} after extend_weather_feature weather_features: {weather_features}")
+        if self.verbose:
+            logger.info(f"{self.log_prefix} after extend_weather_feature weather_features: {weather_features}")
 
         return df_copy
 
@@ -288,7 +292,8 @@ class ExogenousFeatureEngineer:
         if weather_features:
             self.exogenous_features.extend(weather_features)
         
-        logger.info(f"{self.log_prefix} after extend_future_weather_feature weather_features: {weather_features}")
+        if self.verbose:
+            logger.info(f"{self.log_prefix} after extend_future_weather_feature weather_features: {weather_features}")
 
         return df_copy
     
@@ -310,9 +315,10 @@ class EndogenousFeatureEngineer:
     """
     endogenous features engineering
     """
-    def __init__(self, args, log_prefix="[endogenousFeatureProcessor]"):
+    def __init__(self, args, log_prefix="[endogenousFeatureProcessor]", verbose: bool=False):
         self.args = args
         self.log_prefix = log_prefix
+        self.verbose = verbose
         # 生成的内生变量特征
         self.endogenous_features = []
         # 生成的多步预测目标
@@ -341,7 +347,8 @@ class EndogenousFeatureEngineer:
             # 特征收集
             if shift_target_features:
                 self.target_output_features.extend(shift_target_features)
-            logger.info(f"{self.log_prefix} after extend_direct_multi_step_targets target_output_features: {self.target_output_features}")
+            if self.verbose:
+                logger.info(f"{self.log_prefix} after extend_direct_multi_step_targets target_output_features: {self.target_output_features}")
         
         return df_copy
 
@@ -369,7 +376,8 @@ class EndogenousFeatureEngineer:
         # 特征收集
         if lag_features:
             self.endogenous_features.extend(lag_features)
-        logger.info(f"{self.log_prefix} after extend_lag_feature_univariate endogenous_features: {self.endogenous_features}")
+        if self.verbose:
+            logger.info(f"{self.log_prefix} after extend_lag_feature_univariate endogenous_features: {self.endogenous_features}")
 
         return df_lags
 
@@ -403,7 +411,8 @@ class EndogenousFeatureEngineer:
         # 特征收集
         if all_lag_features:
             self.endogenous_features.extend(all_lag_features)
-            logger.info(f"{self.log_prefix} after extend_lag_feature_multivariate endogenous_features: {self.endogenous_features}")
+            if self.verbose:
+                logger.info(f"{self.log_prefix} after extend_lag_feature_multivariate endogenous_features: {self.endogenous_features}")
         
         return df_copy
 
@@ -436,8 +445,9 @@ class EndogenousAdvancedFeatureEngineer:
     8. 多项式特征 (polynomial features)
     """
     
-    def __init__(self, log_prefix: str = "[FeatureEngineer]"):
+    def __init__(self, log_prefix: str = "[FeatureEngineer]", verbose: bool=False):
         self.log_prefix = log_prefix
+        self.verbose = verbose
         # 生成的高级特征工程（内生变量特征）
         self.endogenous_advanced_features = []
     
@@ -524,7 +534,8 @@ class EndogenousAdvancedFeatureEngineer:
                     ).kurt()
                     self.endogenous_advanced_features.append(feature_name)
         
-        logger.info(f"{self.log_prefix} 生成 {len(self.endogenous_advanced_features)} 个滑动窗口统计特征。")
+        if self.verbose:
+            logger.info(f"{self.log_prefix} 生成 {len(self.endogenous_advanced_features)} 个滑动窗口统计特征。")
         return df_enhanced
 
     def add_expanding_statistics(self, df: pd.DataFrame, columns: List[str], stats: List[str] = ["mean", "std", "min", "max", "median", "skew", "kurt"]) -> pd.DataFrame:
@@ -584,7 +595,8 @@ class EndogenousAdvancedFeatureEngineer:
                 df_enhanced[feature_name] = df[col].expanding(min_periods=1).kurt()
                 self.endogenous_advanced_features.append(feature_name)
             
-        logger.info(f"{self.log_prefix} 生成 {len(self.endogenous_advanced_features)} 个扩展窗口统计特征。")
+        if self.verbose:
+            logger.info(f"{self.log_prefix} 生成 {len(self.endogenous_advanced_features)} 个扩展窗口统计特征。")
         return df_enhanced
   
     def add_diff_features(self, df: pd.DataFrame, columns: List[str], periods: List[int] = [1, 7, 24]) -> pd.DataFrame:
@@ -617,7 +629,8 @@ class EndogenousAdvancedFeatureEngineer:
                 df_enhanced[feature_name] = df[col].diff(period)
                 self.endogenous_advanced_features.append(feature_name)
         
-        logger.info(f"{self.log_prefix} 生成 {len(self.endogenous_advanced_features)} 个差分特征。")
+        if self.verbose:
+            logger.info(f"{self.log_prefix} 生成 {len(self.endogenous_advanced_features)} 个差分特征。")
         return df_enhanced
     
     def add_pct_change_features(self, df: pd.DataFrame, columns: List[str], periods: List[int] = [1, 7]) -> pd.DataFrame:
@@ -647,7 +660,8 @@ class EndogenousAdvancedFeatureEngineer:
                 df_enhanced[feature_name] = df[col].pct_change(period)
                 self.endogenous_advanced_features.append(feature_name)
         
-        logger.info(f"{self.log_prefix} 生成 {len(self.endogenous_advanced_features)} 个百分比变化特征。")
+        if self.verbose:
+            logger.info(f"{self.log_prefix} 生成 {len(self.endogenous_advanced_features)} 个百分比变化特征。")
         return df_enhanced
     
     def add_time_since_features(self, df: pd.DataFrame, column: str, events: List[str] = ['peak', 'trough']) -> pd.DataFrame:
@@ -711,7 +725,8 @@ class EndogenousAdvancedFeatureEngineer:
                         df_enhanced.loc[i, feature_name] = i
             self.endogenous_advanced_features.append(feature_name)
         
-        logger.info(f"{self.log_prefix} 生成 {len(self.endogenous_advanced_features)} 个距离关键事件的时间特征。")
+        if self.verbose:
+            logger.info(f"{self.log_prefix} 生成 {len(self.endogenous_advanced_features)} 个距离关键事件的时间特征。")
         return df_enhanced
     
     def add_cyclical_features(self, df: pd.DataFrame, column: str="minute", period: int=15) -> pd.DataFrame:
@@ -734,7 +749,8 @@ class EndogenousAdvancedFeatureEngineer:
         self.endogenous_advanced_features.append(f"{column}_sin")
         self.endogenous_advanced_features.append(f"{column}_cos")
         
-        logger.info(f"{self.log_prefix} 生成 {len(self.endogenous_advanced_features)} 个交互(交叉)特征。")
+        if self.verbose:
+            logger.info(f"{self.log_prefix} 生成 {len(self.endogenous_advanced_features)} 个交互(交叉)特征。")
         return df
     
     def add_interaction_features(self, df: pd.DataFrame, column_pairs: List[tuple], operations: List[str] = ["add", "subtract", "multiply", "divide"]) -> pd.DataFrame:
@@ -777,7 +793,8 @@ class EndogenousAdvancedFeatureEngineer:
                 df_enhanced[feature_name] = df[col1] / (df[col2] + 1e-8)  # 避免除零
                 self.endogenous_advanced_features.append(feature_name)
         
-        logger.info(f"{self.log_prefix} 生成 {len(self.endogenous_advanced_features)} 个交互(交叉)特征。")
+        if self.verbose:
+            logger.info(f"{self.log_prefix} 生成 {len(self.endogenous_advanced_features)} 个交互(交叉)特征。")
         return df_enhanced
     
     def add_polynomial_features(self, df: pd.DataFrame, columns: List[str], degree: int = 2) -> pd.DataFrame:
@@ -805,7 +822,8 @@ class EndogenousAdvancedFeatureEngineer:
                 df_enhanced[feature_name] = df[col] ** d
                 self.endogenous_advanced_features.append(feature_name)
         
-        logger.info(f"{self.log_prefix} 生成 {len(self.endogenous_advanced_features)} 个多项式特征。")
+        if self.verbose:
+            logger.info(f"{self.log_prefix} 生成 {len(self.endogenous_advanced_features)} 个多项式特征。")
         return df_enhanced
     
     def get_generated_features(self) -> List[str]:
@@ -825,74 +843,79 @@ class FeatureEngineer:
     """
     特征预处理器
     """
-    def __init__(self, args, log_prefix="[FeatureEngineer]"):
+    def __init__(self, args, log_prefix="[FeatureEngineer]", verbose: bool=False):
         self.args = args
         self.log_prefix = log_prefix
+        self.verbose = verbose
         # 外生变量特征工程
-        self.exogenous_feature_engineer = ExogenousFeatureEngineer(args, log_prefix)
+        self.exogenous_feature_engineer = ExogenousFeatureEngineer(args, log_prefix, verbose=verbose)
         # 内生变量特征工程
-        self.endogenous_feature_engineer = EndogenousFeatureEngineer(args, log_prefix)
+        self.endogenous_feature_engineer = EndogenousFeatureEngineer(args, log_prefix, verbose=verbose)
         # 高级特征工程
-        self.advanced_feature_engineer = EndogenousAdvancedFeatureEngineer(log_prefix)
+        self.advanced_feature_engineer = EndogenousAdvancedFeatureEngineer(log_prefix, verbose=verbose)
 
     def create_exogenouse_features(self, df, df_date_history, df_date_future, df_weather_history, df_weather_future):
         """
-        历史数据特征工程：外生变量特征
+        历史数据特征工程: 外生变量特征
         """
-        logger.info(f"{self.log_prefix} 历史数据特征工程：外生变量特征...")
-        logger.info(f"{self.log_prefix} {'-' * 45}")
         df_featured = df.copy()
         self.exogenous_feature_engineer.reset()
         
-        # 特征工程：日期类型(节假日、特殊事件)特征
+        # 特征工程: 日期类型(节假日、特殊事件)特征
         if df_date_history is not None:
             df_featured = self.exogenous_feature_engineer.extend_datetype_feature(
                 df=df_featured,
                 df_date=df_date_history,
                 col_ts=self.args.date_ts_feat,
             )
-            logger.info(f"{self.log_prefix} after extend_datetype_feature df_featured: \n{df_featured.head()}")
-            logger.info(f"{self.log_prefix} after extend_datetype_feature df_featured shape: {df_featured.shape}")
+            if self.verbose:
+                logger.info(f"{self.log_prefix} after extend_datetype_feature df_featured: \n{df_featured.head()}")
+                logger.info(f"{self.log_prefix} after extend_datetype_feature df_featured shape: {df_featured.shape}")
         elif df_date_future is not None:
             df_featured = self.exogenous_feature_engineer.extend_datetype_feature(
                 df=df_featured,
                 df_date=df_date_future,
                 col_ts=self.args.date_ts_feat,
             )
-            logger.info(f"{self.log_prefix} after extend_datetype_feature df_featured: \n{df_featured.head()}")
-            logger.info(f"{self.log_prefix} after extend_datetype_feature df_featured shape: {df_featured.shape}")
-        # 特征工程：天气特征
+            if self.verbose:
+                logger.info(f"{self.log_prefix} after extend_datetype_feature df_featured: \n{df_featured.head()}")
+                logger.info(f"{self.log_prefix} after extend_datetype_feature df_featured shape: {df_featured.shape}")
+        # 特征工程: 天气特征
         if df_weather_history is not None:
             df_featured = self.exogenous_feature_engineer.extend_weather_feature(
                 df=df_featured,
                 df_weather=df_weather_history,
                 col_ts=self.args.weather_ts_feat,
             )
-            logger.info(f"{self.log_prefix} after extend_weather_feature df_featured: \n{df_featured.head()}")
-            logger.info(f"{self.log_prefix} after extend_weather_feature df_featured shape: {df_featured.shape}")
+            if self.verbose:
+                logger.info(f"{self.log_prefix} after extend_weather_feature df_featured: \n{df_featured.head()}")
+                logger.info(f"{self.log_prefix} after extend_weather_feature df_featured shape: {df_featured.shape}")
         elif df_weather_future is not None:
             df_featured = self.exogenous_feature_engineer.extend_future_weather_feature(
                 df=df_featured,
                 df_weather=df_weather_future,
                 col_ts=self.args.weather_ts_feat,
             )
-            logger.info(f"{self.log_prefix} after extend_future_weather_feature df_featured: \n{df_featured.head()}")
-            logger.info(f"{self.log_prefix} after extend_future_weather_feature df_featured shape: {df_featured.shape}")
-        # 特征工程：日期时间特征
+            if self.verbose:
+                logger.info(f"{self.log_prefix} after extend_future_weather_feature df_featured: \n{df_featured.head()}")
+                logger.info(f"{self.log_prefix} after extend_future_weather_feature df_featured shape: {df_featured.shape}")
+        # 特征工程: 日期时间特征
         df_featured = self.exogenous_feature_engineer.extend_datetime_feature(
             df=df_featured,
             freq_minutes=self.args.freq_minutes,
             n_per_day=int(24 * 60 / self.args.freq_minutes),
         )
-        logger.info(f"{self.log_prefix} after extend_datetime_feature df_featured: \n{df_featured.head()}")
-        logger.info(f"{self.log_prefix} after extend_datetime_feature df_featured shape: {df_featured.shape}")
+        if self.verbose:
+            logger.info(f"{self.log_prefix} after extend_datetime_feature df_featured: \n{df_featured.head()}")
+            logger.info(f"{self.log_prefix} after extend_datetime_feature df_featured shape: {df_featured.shape}")
         # 插值填充预测缺失值
         df_featured = df_featured.interpolate(method="linear", limit_direction="both")
         df_featured.dropna(inplace=True, ignore_index=True)
-        logger.info(f"{self.log_prefix} after interpolate and dropna df_featured: \n{df_featured.head()}")
-        logger.info(f"{self.log_prefix} after interpolate and dropna df_featured shape: {df_featured.shape}")
+        if self.verbose:
+            logger.info(f"{self.log_prefix} after interpolate and dropna df_featured: \n{df_featured.head()}")
+            logger.info(f"{self.log_prefix} after interpolate and dropna df_featured shape: {df_featured.shape}")
         
-        # 获取所有生成的特征：外生变量特征、类别
+        # 获取所有生成的特征: 外生变量特征、类别
         exogenous_features, categorical_features = self.exogenous_feature_engineer.get_generated_features()
         # 类别特征去重
         categorical_features = sorted(set(categorical_features), key=categorical_features.index)
@@ -901,10 +924,8 @@ class FeatureEngineer:
 
     def create_endogenous_basic_features(self, df_series, target_feature, endogenous_features_with_target, horizon):
         """
-        历史数据特征工程：内生变量特征
+        历史数据特征工程: 内生变量特征
         """
-        logger.info(f"{self.log_prefix} 历史数据特征工程：内生变量基本特征...")
-        logger.info(f"{self.log_prefix} {'-' * 40}")
         df_series_featured = df_series.copy()
         self.endogenous_feature_engineer.reset()
 
@@ -914,111 +935,122 @@ class FeatureEngineer:
                 target = target_feature,
                 horizon = 1,
             )
-            logger.info(f"{self.log_prefix} after extend_direct_multi_step_targets df_series_featured: \n{df_series_featured.head()}")
-            logger.info(f"{self.log_prefix} after extend_direct_multi_step_targets df_series_featured shape: {df_series_featured.shape}")
+            if self.verbose:
+                logger.info(f"{self.log_prefix} after extend_direct_multi_step_targets df_series_featured: \n{df_series_featured.head()}")
+                logger.info(f"{self.log_prefix} after extend_direct_multi_step_targets df_series_featured shape: {df_series_featured.shape}")
         elif self.args.pred_method == "univariate-single-multistep-direct":
             df_series_featured = self.endogenous_feature_engineer.extend_lag_feature_univariate(
                 df = df_series_featured,
                 target = target_feature,
                 lags = self.args.lags,
             )
-            logger.info(f"{self.log_prefix} after extend_lag_feature_univariate df_series_featured: \n{df_series_featured.head()}")
-            logger.info(f"{self.log_prefix} after extend_lag_feature_univariate df_series_featured shape: {df_series_featured.shape}")
+            if self.verbose:
+                logger.info(f"{self.log_prefix} after extend_lag_feature_univariate df_series_featured: \n{df_series_featured.head()}")
+                logger.info(f"{self.log_prefix} after extend_lag_feature_univariate df_series_featured shape: {df_series_featured.shape}")
             df_series_featured = self.endogenous_feature_engineer.extend_direct_multi_step_targets(
                 df = df_series_featured,
                 target = target_feature,
                 horizon = horizon,
             )
-            logger.info(f"{self.log_prefix} after extend_direct_multi_step_targets df_series_featured: \n{df_series_featured.head()}")
-            logger.info(f"{self.log_prefix} after extend_direct_multi_step_targets df_series_featured shape: {df_series_featured.shape}")
+            if self.verbose:
+                logger.info(f"{self.log_prefix} after extend_direct_multi_step_targets df_series_featured: \n{df_series_featured.head()}")
+                logger.info(f"{self.log_prefix} after extend_direct_multi_step_targets df_series_featured shape: {df_series_featured.shape}")
         elif self.args.pred_method == "univariate-single-multistep-recursive":
             df_series_featured = self.endogenous_feature_engineer.extend_lag_feature_univariate(
                 df = df_series_featured,
                 target = target_feature,
                 lags = self.args.lags,
             )
-            logger.info(f"{self.log_prefix} after extend_lag_feature_univariate df_series_featured: \n{df_series_featured.head()}")
-            logger.info(f"{self.log_prefix} after extend_lag_feature_univariate df_series_featured shape: {df_series_featured.shape}")
+            if self.verbose:
+                logger.info(f"{self.log_prefix} after extend_lag_feature_univariate df_series_featured: \n{df_series_featured.head()}")
+                logger.info(f"{self.log_prefix} after extend_lag_feature_univariate df_series_featured shape: {df_series_featured.shape}")
             df_series_featured = self.endogenous_feature_engineer.extend_direct_multi_step_targets(
                 df = df_series_featured,
                 target = target_feature,
                 horizon = 1,
             )
-            logger.info(f"{self.log_prefix} after extend_direct_multi_step_targets df_series_featured: \n{df_series_featured.head()}")
-            logger.info(f"{self.log_prefix} after extend_direct_multi_step_targets df_series_featured shape: {df_series_featured.shape}")
+            if self.verbose:
+                logger.info(f"{self.log_prefix} after extend_direct_multi_step_targets df_series_featured: \n{df_series_featured.head()}")
+                logger.info(f"{self.log_prefix} after extend_direct_multi_step_targets df_series_featured shape: {df_series_featured.shape}")
         elif self.args.pred_method == "univariate-single-multistep-direct-recursive":
             df_series_featured = self.endogenous_feature_engineer.extend_lag_feature_univariate(
                 df = df_series_featured,
                 target = target_feature,
                 lags = self.args.lags,
             )
-            logger.info(f"{self.log_prefix} after extend_lag_feature_univariate df_series_featured: \n{df_series_featured.head()}")
-            logger.info(f"{self.log_prefix} after extend_lag_feature_univariate df_series_featured shape: {df_series_featured.shape}")
+            if self.verbose:
+                logger.info(f"{self.log_prefix} after extend_lag_feature_univariate df_series_featured: \n{df_series_featured.head()}")
+                logger.info(f"{self.log_prefix} after extend_lag_feature_univariate df_series_featured shape: {df_series_featured.shape}")
             df_series_featured = self.endogenous_feature_engineer.extend_direct_multi_step_targets(
                 df = df_series_featured,
                 target = target_feature,
                 horizon = horizon,
             )
-            logger.info(f"{self.log_prefix} after extend_direct_multi_step_targets df_series_featured: \n{df_series_featured.head()}")
-            logger.info(f"{self.log_prefix} after extend_direct_multi_step_targets df_series_featured shape: {df_series_featured.shape}")
+            if self.verbose:
+                logger.info(f"{self.log_prefix} after extend_direct_multi_step_targets df_series_featured: \n{df_series_featured.head()}")
+                logger.info(f"{self.log_prefix} after extend_direct_multi_step_targets df_series_featured shape: {df_series_featured.shape}")
         elif self.args.pred_method == "multivariate-single-multistep-direct":
             df_series_featured = self.endogenous_feature_engineer.extend_lag_feature_multivariate(
                 df = df_series_featured,
                 endogenous_cols = endogenous_features_with_target,
                 lags = self.args.lags,
             )
-            logger.info(f"{self.log_prefix} after extend_lag_feature_multivariate df_series_featured: \n{df_series_featured.head()}")
-            logger.info(f"{self.log_prefix} after extend_lag_feature_multivariate df_series_featured shape: {df_series_featured.shape}")
+            if self.verbose:
+                logger.info(f"{self.log_prefix} after extend_lag_feature_multivariate df_series_featured: \n{df_series_featured.head()}")
+                logger.info(f"{self.log_prefix} after extend_lag_feature_multivariate df_series_featured shape: {df_series_featured.shape}")
             df_series_featured = self.endogenous_feature_engineer.extend_direct_multi_step_targets(
                 df = df_series_featured,
                 target = target_feature,
                 horizon = horizon,
             )
-            logger.info(f"{self.log_prefix} after extend_direct_multi_step_targets df_series_featured: \n{df_series_featured.head()}")
-            logger.info(f"{self.log_prefix} after extend_direct_multi_step_targets df_series_featured shape: {df_series_featured.shape}")
+            if self.verbose:
+                logger.info(f"{self.log_prefix} after extend_direct_multi_step_targets df_series_featured: \n{df_series_featured.head()}")
+                logger.info(f"{self.log_prefix} after extend_direct_multi_step_targets df_series_featured shape: {df_series_featured.shape}")
         elif self.args.pred_method == "multivariate-single-multistep-recursive":
             df_series_featured = self.endogenous_feature_engineer.extend_lag_feature_multivariate(
                 df = df_series_featured,
                 endogenous_cols = endogenous_features_with_target,
                 lags = self.args.lags,
             )
-            logger.info(f"{self.log_prefix} after extend_lag_feature_multivariate df_series_featured: \n{df_series_featured.head()}")
-            logger.info(f"{self.log_prefix} after extend_lag_feature_multivariate df_series_featured shape: {df_series_featured.shape}")
+            if self.verbose:
+                logger.info(f"{self.log_prefix} after extend_lag_feature_multivariate df_series_featured: \n{df_series_featured.head()}")
+                logger.info(f"{self.log_prefix} after extend_lag_feature_multivariate df_series_featured shape: {df_series_featured.shape}")
             df_series_featured = self.endogenous_feature_engineer.extend_direct_multi_step_targets(
                 df = df_series_featured,
                 target = target_feature,
                 horizon = 1,
             )
-            logger.info(f"{self.log_prefix} after extend_direct_multi_step_targets df_series_featured: \n{df_series_featured.head()}")
-            logger.info(f"{self.log_prefix} after extend_direct_multi_step_targets df_series_featured shape: {df_series_featured.shape}")
+            if self.verbose:
+                logger.info(f"{self.log_prefix} after extend_direct_multi_step_targets df_series_featured: \n{df_series_featured.head()}")
+                logger.info(f"{self.log_prefix} after extend_direct_multi_step_targets df_series_featured shape: {df_series_featured.shape}")
         elif self.args.pred_method == "multivariate-single-multistep-direct-recursive":
             df_series_featured = self.endogenous_feature_engineer.extend_lag_feature_multivariate(
                 df = df_series_featured,
                 endogenous_cols = endogenous_features_with_target,
                 lags = self.args.lags,
             )
-            logger.info(f"{self.log_prefix} after extend_lag_feature_multivariate df_series_featured: \n{df_series_featured.head()}")
-            logger.info(f"{self.log_prefix} after extend_lag_feature_multivariate df_series_featured shape: {df_series_featured.shape}")
+            if self.verbose:
+                logger.info(f"{self.log_prefix} after extend_lag_feature_multivariate df_series_featured: \n{df_series_featured.head()}")
+                logger.info(f"{self.log_prefix} after extend_lag_feature_multivariate df_series_featured shape: {df_series_featured.shape}")
             df_series_featured = self.endogenous_feature_engineer.extend_direct_multi_step_targets(
                 df = df_series_featured,
                 target = target_feature,
                 horizon = horizon,
             )
-            logger.info(f"{self.log_prefix} after extend_direct_multi_step_targets df_series_featured: \n{df_series_featured.head()}")
-            logger.info(f"{self.log_prefix} after extend_direct_multi_step_targets df_series_featured shape: {df_series_featured.shape}")
+            if self.verbose:
+                logger.info(f"{self.log_prefix} after extend_direct_multi_step_targets df_series_featured: \n{df_series_featured.head()}")
+                logger.info(f"{self.log_prefix} after extend_direct_multi_step_targets df_series_featured shape: {df_series_featured.shape}")
         
-        # 获取所有生成的特征：内生变量特征、多步预测目标特征
+        # 获取所有生成的特征: 内生变量特征、多步预测目标特征
         endogenous_features, target_output_features = self.endogenous_feature_engineer.get_generated_features()
 
         return df_series_featured, endogenous_features, target_output_features
 
     def create_endogenous_advanced_features(self, df_series):
         """
-        历史数据特征工程：内生生变量高级统计特征
+        历史数据特征工程: 内生生变量高级统计特征
         """
         if self.args.enable_advanced_features:
-            logger.info(f"{self.log_prefix} 历史数据特征工程：内生变量高级特征...")
-            logger.info(f"{self.log_prefix} {'-' * 40}")
             # 复制数据
             df_series_featured = df_series.copy()
             self.advanced_feature_engineer.reset()
@@ -1029,66 +1061,74 @@ class FeatureEngineer:
                 windows=self.args.rolling_windows,
                 stats=self.args.rolling_stats,
             )
-            logger.info(f"{self.log_prefix} after add_rolling_statistics df_series_featured: \n{df_series_featured.head()}")
-            logger.info(f"{self.log_prefix} after add_rolling_statistics df_series_featured shape: {df_series_featured.shape}")
+            if self.verbose:
+                logger.info(f"{self.log_prefix} after add_rolling_statistics df_series_featured: \n{df_series_featured.head()}")
+                logger.info(f"{self.log_prefix} after add_rolling_statistics df_series_featured shape: {df_series_featured.shape}")
             # 添加扩展统计特征
             df_series_featured = self.advanced_feature_engineer.add_expanding_statistics(
                 df_series_featured,
                 columns=self.args.expanding_columns,
                 stats=self.args.expanding_stats,
             )
-            logger.info(f"{self.log_prefix} after add_expanding_statistics df_series_featured: \n{df_series_featured.head()}")
-            logger.info(f"{self.log_prefix} after add_expanding_statistics df_series_featured shape: {df_series_featured.shape}")
+            if self.verbose:
+                logger.info(f"{self.log_prefix} after add_expanding_statistics df_series_featured: \n{df_series_featured.head()}")
+                logger.info(f"{self.log_prefix} after add_expanding_statistics df_series_featured shape: {df_series_featured.shape}")
             # 添加差分特征
             df_series_featured = self.advanced_feature_engineer.add_diff_features(
                 df_series_featured,
                 columns=self.args.diff_columns,
                 periods=self.args.diff_periods
             )
-            logger.info(f"{self.log_prefix} after add_diff_features df_series_featured: \n{df_series_featured.head()}")
-            logger.info(f"{self.log_prefix} after add_diff_features df_series_featured shape: {df_series_featured.shape}")
+            if self.verbose:
+                logger.info(f"{self.log_prefix} after add_diff_features df_series_featured: \n{df_series_featured.head()}")
+                logger.info(f"{self.log_prefix} after add_diff_features df_series_featured shape: {df_series_featured.shape}")
             # 添加差分特征
             df_series_featured = self.advanced_feature_engineer.add_pct_change_features(
                 df_series_featured,
                 columns=self.args.pct_change_columns,
                 periods=self.args.pct_change_periods
             )
-            logger.info(f"{self.log_prefix} after add_pct_change_features df_series_featured: \n{df_series_featured.head()}")
-            logger.info(f"{self.log_prefix} after add_pct_change_features df_series_featured shape: {df_series_featured.shape}")
+            if self.verbose:
+                logger.info(f"{self.log_prefix} after add_pct_change_features df_series_featured: \n{df_series_featured.head()}")
+                logger.info(f"{self.log_prefix} after add_pct_change_features df_series_featured shape: {df_series_featured.shape}")
             # 添加距离关键事件的时间特征
             df_series_featured = self.advanced_feature_engineer.add_time_since_features(
                 df_series_featured,
                 columns=self.args.time_since_columns,
                 events=self.args.time_since_events,
             )
-            logger.info(f"{self.log_prefix} after add_time_since_features df_series_featured: \n{df_series_featured.head()}")
-            logger.info(f"{self.log_prefix} after add_time_since_features df_series_featured shape: {df_series_featured.shape}")
+            if self.verbose:
+                logger.info(f"{self.log_prefix} after add_time_since_features df_series_featured: \n{df_series_featured.head()}")
+                logger.info(f"{self.log_prefix} after add_time_since_features df_series_featured shape: {df_series_featured.shape}")
             # 添加周期性特征（正弦余弦编码）
             df_series_featured = self.advanced_feature_engineer.add_cyclical_features(
                 df_series_featured,
                 columns=self.args.cyclical_columns,
                 period=self.args.cyclical_period,
             )
-            logger.info(f"{self.log_prefix} after add_cyclical_features df_series_featured: \n{df_series_featured.head()}")
-            logger.info(f"{self.log_prefix} after add_cyclical_features df_series_featured shape: {df_series_featured.shape}")
+            if self.verbose:
+                logger.info(f"{self.log_prefix} after add_cyclical_features df_series_featured: \n{df_series_featured.head()}")
+                logger.info(f"{self.log_prefix} after add_cyclical_features df_series_featured shape: {df_series_featured.shape}")
             # 添加交互(交叉)特征
             df_series_featured = self.advanced_feature_engineer.add_interaction_features(
                 df_series_featured,
                 column_pairs=self.args.interaction_column_pairs,
                 operations=self.args.interaction_operations,
             )
-            logger.info(f"{self.log_prefix} after add_interaction_features df_series_featured: \n{df_series_featured.head()}")
-            logger.info(f"{self.log_prefix} after add_interaction_features df_series_featured shape: {df_series_featured.shape}")
+            if self.verbose:
+                logger.info(f"{self.log_prefix} after add_interaction_features df_series_featured: \n{df_series_featured.head()}")
+                logger.info(f"{self.log_prefix} after add_interaction_features df_series_featured shape: {df_series_featured.shape}")
             # 添加多项式特征
             df_series_featured = self.advanced_feature_engineer.add_polynomial_features(
                 df_series_featured,
                 columns=self.args.polynomial_columns,
                 degree=self.args.polynomial_degree,
             )
-            logger.info(f"{self.log_prefix} after add_polynomial_features df_series_featured: \n{df_series_featured.head()}")
-            logger.info(f"{self.log_prefix} after add_polynomial_features df_series_featured shape: {df_series_featured.shape}")
+            if self.verbose:
+                logger.info(f"{self.log_prefix} after add_polynomial_features df_series_featured: \n{df_series_featured.head()}")
+                logger.info(f"{self.log_prefix} after add_polynomial_features df_series_featured shape: {df_series_featured.shape}")
 
-            # 获取所有生成的特征：内生变量高级特征
+            # 获取所有生成的特征: 内生变量高级特征
             endogenous_advanced_features = self.advanced_feature_engineer.get_generated_features()
 
             return df_series_featured, endogenous_advanced_features
@@ -1105,7 +1145,7 @@ class FeatureEngineer:
                         target_feature: str="y",
                         horizon: int=1):
         """
-        特征工程：集成内生变量特征、外生变量特征、内生变量高级特征
+        特征工程: 集成内生变量特征、外生变量特征、内生变量高级特征
         """
         # 复制数据
         df_series_copy = df_series.copy()
@@ -1117,6 +1157,8 @@ class FeatureEngineer:
         # Feature engineering
         # ------------------------------
         # 历史、未来数据特征工程: 外生变量特征工程
+        logger.info(f"{self.log_prefix} 数据特征工程: 外生变量特征...")
+        logger.info(f"{self.log_prefix} {'-' * 60}")
         (df_series_featured, exogenous_features, categorical_features) = self.create_exogenouse_features(
             df=df_series_copy, 
             df_date_history=df_date_history, 
@@ -1126,6 +1168,8 @@ class FeatureEngineer:
         )
 
         # 历史数据特征工程: 内生变量基本特征工程
+        logger.info(f"{self.log_prefix} 数据特征工程: 内生变量基本特征...")
+        logger.info(f"{self.log_prefix} {'-' * 60}")
         (df_series_featured, endogenous_features, target_output_features) = self.create_endogenous_basic_features(
             df_series=df_series_featured, 
             endogenous_features_with_target=endogenous_features_with_target_copy,
@@ -1134,30 +1178,37 @@ class FeatureEngineer:
         )
 
         # 历史数据特征工程: 内生变量高级特征工程
+        if self.args.enable_advanced_features:
+            logger.info(f"{self.log_prefix} 数据特征工程: 内生变量高级特征...")
+            logger.info(f"{self.log_prefix} {'-' * 60}")
         (df_series_featured, endogenous_advanced_features) = self.create_endogenous_advanced_features(
             df_series=df_series_featured
         )
         logger.info(f"{self.log_prefix} 特征工程结束...")
-        logger.info(f"{self.log_prefix} {'-' * 56}")
-        logger.info(f"{self.log_prefix} after feature engineering exogenous_features: {exogenous_features}")
-        logger.info(f"{self.log_prefix} after feature engineering endogenous_basic_features: {endogenous_features}")
-        logger.info(f"{self.log_prefix} after feature engineering endogenous_advanced_features: {endogenous_advanced_features}")
-        logger.info(f"{self.log_prefix} after feature engineering target_output_features: {target_output_features}")
-        logger.info(f"{self.log_prefix} after feature engineering categorical_features: {categorical_features}")
+        logger.info(f"{self.log_prefix} {'-' * 60}")
+        if self.verbose:
+            logger.info(f"{self.log_prefix} after feature engineering exogenous_features: {exogenous_features}")
+            logger.info(f"{self.log_prefix} after feature engineering endogenous_basic_features: {endogenous_features}")
+            logger.info(f"{self.log_prefix} after feature engineering endogenous_advanced_features: {endogenous_advanced_features}")
+            logger.info(f"{self.log_prefix} after feature engineering target_output_features: {target_output_features}")
+            logger.info(f"{self.log_prefix} after feature engineering categorical_features: {categorical_features}")
         # ------------------------------
         # Feature ordering
         # ------------------------------
         # 预测特征 = 外生变量特征 + 内生变量特征（滞后特征） + 内生变量高级特征（滞后统计特征）
         predictor_features = exogenous_features + endogenous_features + endogenous_advanced_features
-        logger.info(f"{self.log_prefix} after feature engineering predictor_features: {predictor_features}")
+        if self.verbose:
+            logger.info(f"{self.log_prefix} after feature engineering predictor_features: {predictor_features}")
         # 所有特征
         # all_cols_needed = ["time"] + predictor_features + target_output_features
         all_cols_needed = predictor_features + target_output_features
-        logger.info(f"{self.log_prefix} after feature engineering all_cols_needed: {all_cols_needed}")
+        if self.verbose:
+            logger.info(f"{self.log_prefix} after feature engineering all_cols_needed: {all_cols_needed}")
         # 只保留需要的特征
         df_series_featured = df_series_featured[all_cols_needed]
-        logger.info(f"{self.log_prefix} after feature engineering df_series_featured: \n{df_series_featured.head()}")
-        logger.info(f"{self.log_prefix} after feature engineering df_series_featured shape: {df_series_featured.shape}")
+        if self.verbose:
+            logger.info(f"{self.log_prefix} after feature engineering df_series_featured: \n{df_series_featured}")
+            logger.info(f"{self.log_prefix} after feature engineering df_series_featured shape: {df_series_featured.shape}")
 
         return df_series_featured, predictor_features, target_output_features, categorical_features
 

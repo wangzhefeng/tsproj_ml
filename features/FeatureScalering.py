@@ -30,9 +30,10 @@ class FeatureScaler:
     统一的特征预处理器: 处理归一化和类别特征编码
     """
     
-    def __init__(self, args, scaler_type="standard", log_prefix: str="[FeatureScaler]"):
+    def __init__(self, args, scaler_type="standard", log_prefix: str="[FeatureScaler]", verbose: bool=False):
         self.args = args
         self.log_prefix = log_prefix
+        self.verbose = verbose
         # 归一化器
         if scaler_type == "standard":
             self.scaler = StandardScaler()
@@ -267,10 +268,10 @@ class FeatureScaler:
             logger.info(f"{self.log_prefix} Scaling numeric features...")
             X_processed = self._fit_transform_numeric(X_processed, actual_categorical)
             logger.info(f"{self.log_prefix} Feature preprocessing completed.")
-
-            logger.info(f"{self.log_prefix} after fit_transform X_processed: \n{X_processed.head()}")
-            logger.info(f"{self.log_prefix} after fit_transform X_processed shape: {X_processed.shape}")
-            logger.info(f"{self.log_prefix} after fit_transform actual_categorical: {actual_categorical}")
+            if self.verbose:
+                logger.info(f"{self.log_prefix} after fit_transform X_processed: \n{X_processed.head()}")
+                logger.info(f"{self.log_prefix} after fit_transform X_processed shape: {X_processed.shape}")
+                logger.info(f"{self.log_prefix} after fit_transform actual_categorical: {actual_categorical}")
         
         return X_processed, actual_categorical
     
@@ -286,7 +287,7 @@ class FeatureScaler:
             转换后的特征 DataFrame
         """
         logger.info(f"{self.log_prefix} Transforming features start (forecasting)...")
-        logger.info(f"{self.log_prefix} {'-' * 68}")
+        logger.info(f"{self.log_prefix} {'-' * 69}")
         X_processed = X.copy()
         # 1. 确定实际存在的类别特征
         actual_categorical = [f for f in categorical_features if f in X_processed.columns]
@@ -308,11 +309,11 @@ class FeatureScaler:
         if self.args.scale:
             logger.info(f"{self.log_prefix} Scaling numeric features...")
             X_processed = self._transform_numeric(X_processed, actual_categorical)
-        logger.info(f"{self.log_prefix} Feature preprocessing completed.")
-
-        logger.info(f"{self.log_prefix} after transform X_processed: \n{X_processed.head()}")
-        logger.info(f"{self.log_prefix} after transform X_processed shape: {X_processed.shape}")
-        logger.info(f"{self.log_prefix} after transform actual_categorical: {actual_categorical}")
+            logger.info(f"{self.log_prefix} Feature preprocessing completed.")
+            if self.verbose:
+                logger.info(f"{self.log_prefix} after transform X_processed: \n{X_processed.head()}")
+                logger.info(f"{self.log_prefix} after transform X_processed shape: {X_processed.shape}")
+                logger.info(f"{self.log_prefix} after transform actual_categorical: {actual_categorical}")
         
         return X_processed
 

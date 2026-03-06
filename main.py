@@ -28,6 +28,7 @@ if ROOT not in sys.path:
 import datetime
 import warnings
 warnings.filterwarnings("ignore")
+from typing import List
 
 import numpy as np
 import pandas as pd
@@ -113,10 +114,10 @@ class Model:
         logger.info(f"{self.log_prefix} 模型测试: {'启用' if self.args.is_testing else '禁用'}")
         logger.info(f"{self.log_prefix} 模型预测: {'启用' if self.args.is_forecasting else '禁用'}")
 
-    def train(self, X_train, Y_train, categorical_features, mode="forecast", verbose=False):
+    def train(self, X_train: pd.DataFrame, Y_train: pd.DataFrame, categorical_features: List, mode: str="forecast", verbose: bool=False):
         """
         模型训练
-        """ 
+        """
         # 创建特征预处理器
         scaler = FeatureScaler(self.args, scaler_type=self.args.scaler_type, log_prefix=self.log_prefix, verbose=verbose)
         # 模型训练类
@@ -166,16 +167,16 @@ class Model:
         # 模型滑窗测试过程
         # ------------------------------
         for window in range(1, int(self.n_windows + 1)):
-            logger.info(f"{self.log_prefix} {'=' * 48}")
+            logger.info(f"{self.log_prefix} {'=' * 81}")
             logger.info(f"{self.log_prefix} Model Testing window: {window}...")
-            logger.info(f"{self.log_prefix} {'=' * 48}")
+            logger.info(f"{self.log_prefix} {'=' * 81}")
             # 模型测试类
             model_tester = Tester(args=self.args, log_prefix=self.log_prefix, horizon=self.horizon, window_len=self.window_len)
             # ------------------------------
             # 数据分割: 训练集、测试集
             # ------------------------------
             logger.info(f"{self.log_prefix} Model Testing sliding window data split...")
-            logger.info(f"{self.log_prefix} {'=' * 48}")
+            logger.info(f"{self.log_prefix} {'=' * 81}")
             (X_train, Y_train, 
              X_test, Y_test, 
              df_history_train, df_history_test) = model_tester._evaluate_split(
@@ -189,9 +190,9 @@ class Model:
             # ------------------------------
             # 窗口训练
             # ------------------------------
-            logger.info(f"{self.log_prefix} {'=' * 48}")
+            logger.info(f"{self.log_prefix} {'=' * 81}")
             logger.info(f"{self.log_prefix} Model Testing sliding window training...")
-            logger.info(f"{self.log_prefix} {'=' * 48}")
+            logger.info(f"{self.log_prefix} {'=' * 81}")
             model, scaler_testing = self.train(
                 X_train = X_train_history, 
                 Y_train = Y_train_history, 
@@ -262,7 +263,7 @@ class Model:
             # ------------------------------
             # localtest
             # ------------------------------
-            # break
+            break
         # ------------------------------
         # 模型测试结果保存
         # ------------------------------
@@ -371,7 +372,7 @@ class Model:
         logger.info(f"{self.log_prefix} Model history data feature engineering...")
         logger.info(f"{self.log_prefix} {'=' * 87}")
         # 特征预处理器
-        feature_engineer_history = FeatureEngineer(self.args, self.log_prefix)
+        feature_engineer_history = FeatureEngineer(self.args, self.log_prefix, verbose=True)
         (df_history_featured, 
          predictor_features, 
          target_output_features, 

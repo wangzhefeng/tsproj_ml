@@ -29,6 +29,8 @@ from sklearn.ensemble import (
 )
 from sklearn.multioutput import MultiOutputRegressor, RegressorChain
 
+from utils.log_util import logger
+
 # global variable
 LOGGING_LABEL = Path(__file__).name[:-3]
 
@@ -68,13 +70,14 @@ class BaseModel(ABC):
     所有具体模型必须继承此类并实现抽象方法
     """
     
-    def __init__(self, params: Dict[str, Any]):
+    def __init__(self, params: Dict[str, Any], log_prefix: str="BaseModel"):
         """
         初始化模型
         
         Args:
             params (Dict[str, Any]): 模型参数字典
         """
+        self.log_prefix = log_prefix
         self.params = params
         self.model = None
         self.is_fitted = False
@@ -127,6 +130,7 @@ class BaseModel(ABC):
         return None
 
 
+# TODO 这个函数的作用是什么？
 def _filter_valid_params(params: Dict[str, Any], estimator_cls) -> Dict[str, Any]:
     valid = set(inspect.signature(estimator_cls.__init__).parameters.keys())
     valid.discard("self")
@@ -146,25 +150,9 @@ class LightGBMModel(BaseModel):
     - 适合大数据集
     """
 
-    def __init__(self, params: Dict[str, Any]):
+    def __init__(self, params: Dict[str, Any], log_prefix: str="LightGBMModel"):
         super().__init__(params)
         # 设置默认参数
-        default_params_v1 = {
-            'boosting_type': 'gbdt',
-            'objective': 'regression',
-            'metric': 'rmse',
-            'n_estimators': 1000,
-            'learning_rate': 0.05,
-            "max_bin": 31,
-            'num_leaves': 31,
-            'max_depth': -1,
-            'feature_fraction': 0.8,
-            'bagging_fraction': 0.8,
-            'bagging_freq': 1,
-            'verbose': -1,
-            'n_jobs': -1,
-            'random_state': 42,
-        }
         default_params = {
             "boosting_type": "gbdt",
             "objective": "regression_l1",  # "regression_l1": L1 loss or MAE, "regression": L2 loss or MSE
@@ -182,51 +170,61 @@ class LightGBMModel(BaseModel):
             "verbose": -1,
             "n_jobs": -1,
             'random_state': 42,
-            # "force_row_wise": True
+            # "force_row_wise": True,
+            "force_col_wise": True,
         }
-        default_params.update(params)
-        self.params = _filter_valid_params(default_params, lgb.LGBMRegressor)
+        # 参数更新
+        params.update(default_params)
+        # 模型参数
+        # self.params = _filter_valid_params(default_params, lgb.LGBMRegressor)
+        self.params = params
+        logger.info(f"{log_prefix} model parameters: \n{self.params}")
+        # 模型构建
         self.model = lgb.LGBMRegressor(**self.params)
     
     def fit(self, 
             X: pd.DataFrame, 
             y: pd.Series, 
-            categorical_features: Optional[list] = None,
+            categorical_feature: Optional[list] = None,
             eval_set: Optional[tuple] = None,
             eval_metric: str = "mae",
             early_stopping_rounds: int = 100,
             verbose: bool = False):
         """
-        训练LightGBM模型
+        训练 LightGBM 模型
         
         Args:
             X: 训练特征
             y: 训练目标
+            categorical_feature: 类别特征列表
             eval_set: 验证集 [(X_val, y_val)]
             eval_metric: 评估指标
-            categorical_features: 类别特征列表
             early_stopping_rounds: 早停轮数
             verbose: 是否显示训练过程
         """
+        # 设置训练参数
         fit_params = {}
-        
         if eval_set is not None:
             fit_params['eval_set'] = eval_set
             fit_params['eval_metric'] = eval_metric
             fit_params['callbacks'] = [lgb.early_stopping(early_stopping_rounds, verbose=verbose)]
+        if verbose is not None:
             fit_params['verbose'] = verbose
-        
-        if categorical_features is not None:
-            fit_params['categorical_feature'] = categorical_features
-        
+        if categorical_feature is not None:
+            fit_params['categorical_feature'] = categorical_feature
+        # 模型训练
         self.model.fit(X, y, **fit_params)
         self.is_fitted = True
+        
         return self
     
     def predict(self, X: pd.DataFrame) -> np.ndarray:
-        """预测"""
+        """
+        预测
+        """
         if not self.is_fitted:
-            raise ValueError("模型尚未训练(Model not fitted yet)")
+            raise ValueError(f"{self.log_prefix} 模型尚未训练(Model not fitted yet).")
+        
         return self.model.predict(X)
 
 class XGBoostModel(BaseModel):
@@ -240,7 +238,7 @@ class XGBoostModel(BaseModel):
     - 广泛应用
     """
 
-    def __init__(self, params: Dict[str, Any]):
+    def __init__(self, params: Dict[str, Any], log_prefix: str="XGBoostModel"):
         super().__init__(params)
         # 设置默认参数
         default_params = {
@@ -253,9 +251,14 @@ class XGBoostModel(BaseModel):
             'n_jobs': -1,
             'random_state': 42,
         }
-        default_params.update(params)
-        self.params = _filter_valid_params(default_params, xgb.XGBRegressor)
+        # 参数更新
+        params.upate(default_params)
+        # 模型参数
+        self.params = _filter_valid_params(params, xgb.XGBRegressor)
+        logger.info(f"{log_prefix} model parameters: \n{self.params}")
+        # 模型构建
         self.model = xgb.XGBRegressor(**self.params)
+        self.log_prefix = log_prefix
     
     def fit(self, 
             X: pd.DataFrame, 
@@ -271,25 +274,31 @@ class XGBoostModel(BaseModel):
             X: 训练特征
             y: 训练目标
             eval_set: 验证集 [(X_val, y_val)]
+            eval_metric: 评估指标
             early_stopping_rounds: 早停轮数
             verbose: 是否显示训练过程s
         """
+        # 设置训练参数
         fit_params = {}
-        
         if eval_set is not None:
             fit_params['eval_set'] = eval_set
             fit_params['eval_metric'] = eval_metric
             fit_params['early_stopping_rounds'] = early_stopping_rounds
+        if verbose is not None:
             fit_params['verbose'] = verbose
-        
+        # 模型训练
         self.model.fit(X, y, **fit_params)
         self.is_fitted = True
+
         return self
     
     def predict(self, X: pd.DataFrame) -> np.ndarray:
-        """预测"""
+        """
+        预测
+        """
         if not self.is_fitted:
-            raise ValueError("模型尚未训练(Model not fitted yet)")
+            raise ValueError("模型尚未训练(Model not fitted yet).")
+        
         return self.model.predict(X)
 
 class CatBoostModel(BaseModel):
@@ -303,7 +312,7 @@ class CatBoostModel(BaseModel):
     - 性能优秀
     """
     
-    def __init__(self, params: Dict[str, Any]):
+    def __init__(self, params: Dict[str, Any], log_prefix: str="CatBoostModel"):
         super().__init__(params)
         # 设置默认参数
         default_params = {
@@ -314,14 +323,19 @@ class CatBoostModel(BaseModel):
             'random_state': 42,
             'thread_count': -1,
         }
-        default_params.update(params)
-        self.params = _filter_valid_params(default_params, cab.CatBoostRegressor)
+        # 参数更新
+        params.update(default_params)
+        # 模型参数
+        self.params = _filter_valid_params(params, cab.CatBoostRegressor)
+        logger.info(f"{log_prefix} model parameters: \n{self.params}")
+        # 模型构建
         self.model = cab.CatBoostRegressor(**self.params)
+        self.log_prefix = log_prefix
     
     def fit(self, 
             X: pd.DataFrame, 
             y: pd.Series,
-            categorical_features: Optional[list] = None,
+            categorical_feature: Optional[list] = None,
             eval_set: Optional[tuple] = None,
             eval_metric: str = "mae",
             early_stopping_rounds: int = 50):
@@ -332,32 +346,36 @@ class CatBoostModel(BaseModel):
             X: 训练特征
             y: 训练目标
             eval_set: 验证集 (X_val, y_val)
-            categorical_features: 类别特征列表
+            eval_metric: 评估指标
+            categorical_feature: 类别特征列表
             early_stopping_rounds: 早停轮数
         """
+        # 设置训练参数
         fit_params = {}
-        
         if eval_set is not None:
             fit_params['eval_set'] = eval_set
             fit_params['eval_metric'] = eval_metric
             fit_params['early_stopping_rounds'] = early_stopping_rounds
-        
-        if categorical_features is not None:
-            fit_params['cat_features'] = categorical_features
-        
+        if categorical_feature is not None:
+            fit_params['cat_features'] = categorical_feature
+        # 模型训练
         self.model.fit(X, y, **fit_params)
         self.is_fitted = True
+
         return self
     
     def predict(self, X: pd.DataFrame) -> np.ndarray:
-        """预测"""
+        """
+        预测
+        """
         if not self.is_fitted:
-            raise ValueError("模型尚未训练")
+            raise ValueError(f"{self.log_prefix} 模型尚未训练")
+        
         return self.model.predict(X)
 
 class RandomForestModel(BaseModel):
     """
-    Random Forest模型封装
+    Random Forest 模型封装
     
     特点:
     - 鲁棒性强
@@ -366,8 +384,9 @@ class RandomForestModel(BaseModel):
     - 并行化训练
     """
     
-    def __init__(self, params: Dict[str, Any]):
+    def __init__(self, params: Dict[str, Any], log_prefix: str="RandomForestModel"):
         super().__init__(params)
+        # 设置默认参数
         default_params = {
             'n_estimators': 100,
             'max_depth': None,
@@ -376,20 +395,31 @@ class RandomForestModel(BaseModel):
             'n_jobs': -1,
             'random_state': 42,
         }
-        default_params.update(params)
+        # 参数更新
+        params.update(default_params)
+        # 模型参数
         self.params = _filter_valid_params(default_params, RandomForestRegressor)
+        logger.info(f"{log_prefix} model parameters: \n{self.params}")
+        # 模型构建
         self.model = RandomForestRegressor(**self.params)
+        self.log_prefix = log_prefix
     
     def fit(self, X: pd.DataFrame, y: pd.Series, **kwargs):
-        """训练Random Forest模型"""
+        """
+        训练 Random Forest 模型
+        """
         self.model.fit(X, y)
         self.is_fitted = True
+
         return self
     
     def predict(self, X: pd.DataFrame) -> np.ndarray:
-        """预测"""
+        """
+        预测
+        """
         if not self.is_fitted:
-            raise ValueError("模型尚未训练")
+            raise ValueError(f"{self.log_prefix} 模型尚未训练")
+        
         return self.model.predict(X)
 # ##############################
 # 模型工厂
@@ -400,7 +430,6 @@ class ModelFactory:
     
     用于创建不同类型的模型实例
     """
-
     # 支持的模型映射
     _models = {
         'lightgbm': LightGBMModel,
@@ -412,9 +441,11 @@ class ModelFactory:
         'randomforest': RandomForestModel,
         'rf': RandomForestModel,
     }
+
+    def __init__(self, log_prefix: str = "ModelFactory"):
+        self.log_prefix = log_prefix
     
-    @staticmethod
-    def create_model(model_type: str, model_params: Dict[str, Any]) -> BaseModel:
+    def create_model(self, model_type: str, model_params: Dict[str, Any]) -> BaseModel:
         """
         创建模型实例
         
@@ -434,48 +465,25 @@ class ModelFactory:
             >>> model.fit(X_train, y_train)
             >>> y_pred = model.predict(X_test)
         """
+        # 模型类型
         model_type = model_type.lower()
-        
         if model_type not in ModelFactory._models:
             supported = ', '.join(ModelFactory._models.keys())
             raise ValueError(
                 f"不支持的模型类型: {model_type}\n"
                 f"支持的模型: {supported}"
             )
-        
+        # 创建模型实例
         model_class = ModelFactory._models[model_type]
-        return model_class(model_params)
+
+        return model_class(model_params, log_prefix=f"{self.log_prefix} {model_type.capitalize()}")
     
     @staticmethod
     def list_models() -> list:
-        """列出所有支持的模型类型"""
+        """
+        列出所有支持的模型类型
+        """
         return list(ModelFactory._models.keys())
-
-# ##############################
-# 示例：在Model类中使用
-# ##############################
-class Model:
-
-    def __init__(self, args):
-        self.args = args
-        # 使用工厂创建模型
-        self.model_factory = ModelFactory()
-    
-    def train(self, X_train, Y_train, categorical_features):
-        # 创建模型
-        base_model = self.model_factory.create_model(
-            self.args.model_type,  # 'lightgbm' / 'xgboost' / 'catboost'
-            self.args.model_params
-        )
-        
-        # 模型训练
-        if Y_train.shape[1] == 1:
-            model = base_model
-        else:
-            model = MultiOutputRegressor(base_model)
-        
-        model.fit(X_train, Y_train)
-        return model
 
 
 

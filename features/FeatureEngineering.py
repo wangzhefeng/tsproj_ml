@@ -907,7 +907,9 @@ class FeatureEngineer:
         )
         if self.verbose:
             logger.info(f"{self.log_prefix} after extend_datetime_feature df_featured: \n{df_featured.head()}")
+            # logger.info(f"{self.log_prefix} after extend_datetime_feature df_featured.columns: \n{df_featured.columns}")
             logger.info(f"{self.log_prefix} after extend_datetime_feature df_featured shape: {df_featured.shape}")
+        
         # 插值填充预测缺失值
         df_featured = df_featured.interpolate(method="linear", limit_direction="both")
         df_featured.dropna(inplace=True, ignore_index=True)
@@ -946,6 +948,7 @@ class FeatureEngineer:
             )
             if self.verbose:
                 logger.info(f"{self.log_prefix} after extend_lag_feature_univariate df_series_featured: \n{df_series_featured.head()}")
+                # logger.info(f"{self.log_prefix} after extend_lag_feature_univariate df_series_featured.columns: {df_series_featured.columns}")
                 logger.info(f"{self.log_prefix} after extend_lag_feature_univariate df_series_featured shape: {df_series_featured.shape}")
             df_series_featured = self.endogenous_feature_engineer.extend_direct_multi_step_targets(
                 df = df_series_featured,
@@ -1156,9 +1159,10 @@ class FeatureEngineer:
         # ------------------------------
         # Feature engineering
         # ------------------------------
+        logger.info(f"{self.log_prefix} 开始数据特征工程...")
+        
         # 历史、未来数据特征工程: 外生变量特征工程
         logger.info(f"{self.log_prefix} 数据特征工程: 外生变量特征...")
-        logger.info(f"{self.log_prefix} {'-' * 60}")
         (df_series_featured, exogenous_features, categorical_features) = self.create_exogenouse_features(
             df=df_series_copy, 
             df_date_history=df_date_history, 
@@ -1169,7 +1173,6 @@ class FeatureEngineer:
 
         # 历史数据特征工程: 内生变量基本特征工程
         logger.info(f"{self.log_prefix} 数据特征工程: 内生变量基本特征...")
-        logger.info(f"{self.log_prefix} {'-' * 60}")
         (df_series_featured, endogenous_features, target_output_features) = self.create_endogenous_basic_features(
             df_series=df_series_featured, 
             endogenous_features_with_target=endogenous_features_with_target_copy,
@@ -1178,14 +1181,11 @@ class FeatureEngineer:
         )
 
         # 历史数据特征工程: 内生变量高级特征工程
-        if self.args.enable_advanced_features:
-            logger.info(f"{self.log_prefix} 数据特征工程: 内生变量高级特征...")
-            logger.info(f"{self.log_prefix} {'-' * 60}")
+        logger.info(f"{self.log_prefix} 数据特征工程: 内生变量高级特征...")
         (df_series_featured, endogenous_advanced_features) = self.create_endogenous_advanced_features(
             df_series=df_series_featured
         )
         logger.info(f"{self.log_prefix} 特征工程结束...")
-        logger.info(f"{self.log_prefix} {'-' * 60}")
         if self.verbose:
             logger.info(f"{self.log_prefix} after feature engineering exogenous_features: {exogenous_features}")
             logger.info(f"{self.log_prefix} after feature engineering endogenous_basic_features: {endogenous_features}")

@@ -38,8 +38,8 @@ class Trainer:
     def __init__(self, args: Dict, log_prefix: str):
         self.args = args
         self.log_prefix = log_prefix
-        self.model_factory = ModelFactory()
         self.model_params = copy.deepcopy(self.args.model_params)
+        self.model_factory = ModelFactory(log_prefix=log_prefix)
 
     def _hyperparameters_tuning(self, X_train, Y_train):
         """
@@ -115,11 +115,9 @@ class Trainer:
         
         # 根据编码策略决定是否传递 categorical_feature
         if self.args.encode_categorical_features:
-            # 已编码为整数，不传递 categorical_feature
-            lgbm_categorical = None
+            lgbm_categorical = None  # 已编码为整数，不传递 categorical_feature
         else:
-            # 未编码，传递 categorical_feature 让 LightGBM 处理
-            lgbm_categorical = actual_categorical
+            lgbm_categorical = actual_categorical  # 未编码，传递 categorical_feature 让 LightGBM 处理
         # ------------------------------
         # Hyperparameter tuning (if enabled)
         # ------------------------------
@@ -156,19 +154,22 @@ class Trainer:
             return ensemble, feature_scaler
         else:
             # 单模型
-            lgbm_estimator = self.model_factory.create_model(model_type=getattr(self.args, "model_type", "lightgbm"), model_params=self.model_params)
-            
+            lgbm_estimator = self.model_factory.create_model(
+                model_type=getattr(self.args, "model_type", "lightgbm"), 
+                model_params=self.model_params,
+            )
+            # 模型训练
             if Y_train_df.shape[1] == 1:
                 logger.info(f"{self.log_prefix} Training single output LGBMRegressor...")
                 logger.info(f"{self.log_prefix} {'-' * 71}")
                 logger.info(f"{self.log_prefix} Model training...")
                 model = lgbm_estimator
-                model.fit(X_train_df_processed, np.ravel(Y_train_df.values), categorical_features=lgbm_categorical)
+                model.fit(X_train_df_processed, np.ravel(Y_train_df.values), categorical_feature=lgbm_categorical)
             elif Y_train_df.shape[1] > 1:
-                logger.info(f"{self.log_prefix} Training MultiOutputRegressor with {Y_train.shape[1]} outputs")
+                logger.info(f"{self.log_prefix} Training MultiOutputRegressor with {Y_train.shape[1]} outputs...")
                 logger.info(f"{self.log_prefix} {'-' * 71}")
                 logger.info(f"{self.log_prefix} Model training...")
-                model = MultiOutputRegressor(estimator=lgbm_estimator.model)
+                model = MultiOutputRegressor(estimator = lgbm_estimator.model, n_jobs=-1)
                 model.fit(X_train_df_processed, Y_train_df)
             
             logger.info(f"{self.log_prefix} Model training completed!")

@@ -58,7 +58,8 @@ class Forecaster:
         self.target_output_features = target_output_features
         self.categorical_features = categorical_features
         self.log_prefix = log_prefix
-
+        logger.info(f"{self.log_prefix} Forecaster params init...")
+        logger.info(f"{self.log_prefix} {'-' * 71}")
         # 最大滞后数量
         self.max_lag = max(self.args.lags) if self.args.lags else 1
         logger.info(f"{self.log_prefix} Forecaster max_lag: {self.max_lag}")
@@ -85,19 +86,17 @@ class Forecaster:
     def univariate_single_multi_step_direct_output_forecast(self):
         """
         单变量(内生变量/目标变量)预测单变量(目标变量)多步直接输出预测(USMDO)
-        """
-        logger.info(f"{self.log_prefix} univariate_single_multi_step_direct_output_forecast(USMDO)")
-        
+        """        
         # 多步预测值收集器
         Y_preds = []
         # 特征工程
         if not self.args.is_testing and self.args.is_forecasting:
             # 特征工程
-            feature_engineer_history = FeatureEngineer(self.args, self.log_prefix, verbose=False)
+            feature_engineer = FeatureEngineer(self.args, self.log_prefix, verbose=False)
             (df_future_featured, 
              predictor_features, 
              target_output_features, 
-             categorical_features) = feature_engineer_history.create_features(
+             categorical_features) = feature_engineer.create_features(
                 df_series = self.df_future,
                 df_date_history = None,
                 df_date_future = self.df_date_future,
@@ -126,10 +125,6 @@ class Forecaster:
             Y_preds = self.model.predict(X_test_processed)
         # 模型推理结果处理
         Y_preds = np.array([]) if len(Y_preds) == 0 else np.asarray(Y_preds)
-        
-        logger.info(f"{self.log_prefix} USMDO forecast completed...")
-        logger.info(f"{self.log_prefix} {'-' * 27}")
-        logger.info(f"{self.log_prefix} predicted {len(Y_preds)} steps.")
 
         return Y_preds
 
@@ -137,23 +132,18 @@ class Forecaster:
         """
         单变量(内生变量/目标变量)预测单变量(目标变量)多步直接预测(USMD)
         """
-        logger.info(f"{self.log_prefix} univariate_single_multi_step_direct_forecast(USMD)")
-
         # 多步预测值收集器
         Y_preds = []
-
         # 1.构建预测特征数据
         df_future_exogenous = self.df_future.iloc[0:1].copy()
-
         # 2.合并历史数据(用于滞后特征)和未来第一个点(用于外生变量)
         df_forecast = pd.concat([self.df_history_for_lags, df_future_exogenous], ignore_index=True)
-
         # 3.特征工程
-        feature_engineer_history = FeatureEngineer(self.args, self.log_prefix, verbose=False)
+        feature_engineer = FeatureEngineer(self.args, self.log_prefix, verbose=False)
         (df_forecast_featured, 
          predictor_features, 
          target_output_features, 
-         categorical_features) = feature_engineer_history.create_features(
+         categorical_features) = feature_engineer.create_features(
             df_series = df_forecast,
             df_date_history=None,
             df_date_future=self.df_date_future,
@@ -163,24 +153,20 @@ class Forecaster:
             target_feature = self.target_feature,
             horizon = self.horizon,
         )
-
         # 4.提取出当前预测步所需要的特征（最后一行）
         X_forecast_input = df_forecast_featured[predictor_features].iloc[-1:]
-
         # 5.特征预处理(预测模式)
         X_test_processed = self.feature_scaler.transform(X_forecast_input, categorical_features)
         # self.feature_scaler.validate_features(X_test_processed, stage="prediction")
-
         # 6.模型预测
-        Y_pred_multi_step = self._to_1d(self.model.predict(X_test_processed)[0])
-        
-        #TODO 7.Assign predictions to df_future_for_prediction
+        Y_pred_multi_step = self.model.predict(X_test_processed)
+        Y_pred_multi_step = Y_pred_multi_step[0]
+        Y_pred_multi_step = self._to_1d(Y_pred_multi_step)
+        # 7.模型预测结果处理
         if len(Y_pred_multi_step) >= len(self.df_future):
             Y_preds = Y_pred_multi_step[:len(self.df_future)]
         else:
-            Y_preds = np.pad(Y_pred_multi_step, (0, len(self.df_future) - len(Y_pred_multi_step)), 'edge')
-        
-        logger.info(f"{self.log_prefix} USMD forecast completed, predicted {len(Y_preds)} steps")
+            Y_preds = np.pad(Y_pred_multi_step, pad_width=(0, len(self.df_future) - len(Y_pred_multi_step)), mode='edge')
         
         return np.array(Y_preds)
 
@@ -188,7 +174,6 @@ class Forecaster:
         """
         单变量(内生变量/目标变量)预测单变量(目标变量)多步递归预测(USMR)
         """
-        logger.info(f"{self.log_prefix} univariate_single_multi_step_recursive_forecast(USMR)")
         # 多步预测值收集器
         Y_preds = []
         for step in range(self.horizon):
@@ -203,11 +188,11 @@ class Forecaster:
             # 2.合并历史数据和当前步数据
             df_forecast = pd.concat([self.df_history_for_lags, df_future_step], ignore_index=True)
             # 3.特征工程
-            feature_engineer_history = FeatureEngineer(self.args, self.log_prefix, verbose=False)
+            feature_engineer = FeatureEngineer(self.args, self.log_prefix, verbose=False)
             (df_forecast_featured, 
              predictor_features, 
              target_output_features, 
-             categorical_features) = feature_engineer_history.create_features(
+             categorical_features) = feature_engineer.create_features(
                 df_series = df_forecast,
                 df_date_history = None,
                 df_date_future = self.df_date_future,
@@ -231,9 +216,6 @@ class Forecaster:
             # 8.将新行添加到历史数据中，进行下一次循环
             self.df_history_for_lags = pd.concat([self.df_history_for_lags, df_future_step_new_row], ignore_index=True)
             self.df_history_for_lags = self.df_history_for_lags.iloc[-self.max_lag:]
-        logger.info(f"{self.log_prefix} USMR forecast completed...")
-        logger.info(f"{self.log_prefix} {'-' * 31}")
-        logger.info(f"{self.log_prefix} predicted {len(Y_preds)} steps.")
 
         return np.array(Y_preds)
 
@@ -259,7 +241,6 @@ class Forecaster:
         Returns:
             预测结果数组，形状为 (horizon,)
         """
-        logger.info(f"{self.log_prefix} univariate_single_multi_step_direct_recursive_forecast(USMDR)")
         # 分块大小
         self.block_size = min(self.args.lags) if self.args.lags else 1
         logger.info(f"{self.log_prefix} block_size: {self.block_size}")
@@ -286,11 +267,11 @@ class Forecaster:
                 df_forecast = pd.concat([self.df_history_for_lags, df_future_exogenous], ignore_index=True)
                 
                 # 3. 创建特征（只为目标变量创建滞后特征）
-                feature_engineer_history = FeatureEngineer(self.args, self.log_prefix, verbose=False)
+                feature_engineer = FeatureEngineer(self.args, self.log_prefix, verbose=False)
                 (df_forecast_featured, 
                 predictor_features, 
                 target_output_features, 
-                categorical_features) = feature_engineer_history.create_features(
+                categorical_features) = feature_engineer.create_features(
                     df_series = df_forecast,
                     df_date_history=None,
                     df_date_future=self.df_date_future,
@@ -319,7 +300,6 @@ class Forecaster:
                 # 8.将新行添加到历史数据中，进行下一次循环
                 self.df_history_for_lags = pd.concat([self.df_history_for_lags, df_future_exogenous_new_row], ignore_index=True)
                 self.df_history_for_lags = self.df_history_for_lags.iloc[-self.max_lag:]  # 只保留需要的历史长度
-        logger.info(f"{self.log_prefix} USMDR forecast completed, predicted {len(Y_preds)} steps")
         
         return np.array(Y_preds)
     # ------------------------------
@@ -339,11 +319,8 @@ class Forecaster:
         Returns:
             预测结果数组，形状为 (horizon,)
         """
-        logger.info(f"{self.log_prefix} multivariate_single_multi_step_direct_forecast(MSMD)")
-        
         # 多步预测值收集器
         Y_preds = []
-        
         # 0.确保所有内生变量都在历史数据中
         for endo_feat in self.endogenous_features:
             if endo_feat not in self.df_history_for_lags.columns and endo_feat in self.df_history.columns:
@@ -356,11 +333,11 @@ class Forecaster:
         df_forecast = pd.concat([self.df_history_for_lags, df_future_exogenous], ignore_index=True)
         
         # 3.创建特征
-        feature_engineer_history = FeatureEngineer(self.args, self.log_prefix, verbose=False)
+        feature_engineer = FeatureEngineer(self.args, self.log_prefix, verbose=False)
         (df_forecast_featured, 
          predictor_features, 
          target_output_features, 
-         categorical_features) = feature_engineer_history.create_features(
+         categorical_features) = feature_engineer.create_features(
             df_series = df_forecast,
             df_date_history=None,
             df_date_future=self.df_date_future,
@@ -387,8 +364,6 @@ class Forecaster:
         else:
             Y_preds = np.pad(Y_pred_multi_step, (0, len(self.df_future) - len(Y_pred_multi_step)), 'edge')
         
-        logger.info(f"{self.log_prefix} MSMD forecast completed, predicted {len(Y_preds)} steps")
-
         return np.array(Y_preds)
 
     def multivariate_single_multi_step_recursive_forecast(self):
@@ -405,8 +380,6 @@ class Forecaster:
         Returns:
             目标变量的预测结果数组，形状为 (horizon,)
         """
-        logger.info(f"{self.log_prefix} multivariate_single_multi_step_recursive_forecast(MSMR)")
-
         # 多步预测值收集器
         Y_preds = []
         
@@ -429,11 +402,11 @@ class Forecaster:
             df_forecast = pd.concat([self.df_history_for_lags, df_future_exogenous], ignore_index=True)
 
             # 2.特征工程
-            feature_engineer_history = FeatureEngineer(self.args, self.log_prefix, verbose=False)
+            feature_engineer = FeatureEngineer(self.args, self.log_prefix, verbose=False)
             (df_forecast_featured, 
              predictor_features, 
              target_output_features, 
-             categorical_features) = feature_engineer_history.create_features(
+             categorical_features) = feature_engineer.create_features(
                 df_series = df_forecast,
                 df_date_history=None,
                 df_date_future=self.df_date_future,
@@ -488,8 +461,6 @@ class Forecaster:
             self.df_history_for_lags = pd.concat([self.df_history_for_lags, df_future_exogenous_new_row], ignore_index=True)
             self.df_history_for_lags = self.df_history_for_lags.iloc[-self.max_lag:]
 
-        logger.info(f"{self.log_prefix} MSMR forecast completed, predicted {len(Y_preds)} steps")
-
         return np.array(Y_preds)
 
     def multivariate_single_multi_step_direct_recursive_forecast(self):
@@ -520,7 +491,6 @@ class Forecaster:
         Returns:
             目标变量的预测结果数组，形状为 (horizon,)
         """
-        logger.info(f"{self.log_prefix} multivariate_single_multi_step_direct_recursive_forecast(MSMDR)")
         # 分块大小
         self.block_size = min(self.args.lags) if self.args.lags else 1
         logger.info(f"{self.log_prefix} block_size: {self.block_size}")
@@ -565,11 +535,11 @@ class Forecaster:
                 df_forecast = pd.concat([self.df_history_for_lags, df_future_exogenous], ignore_index=True)
                 
                 # 3. 创建特征（为所有内生变量创建滞后特征）
-                feature_engineer_history = FeatureEngineer(self.args, self.log_prefix, verbose=False)
+                feature_engineer = FeatureEngineer(self.args, self.log_prefix, verbose=False)
                 (df_forecast_featured, 
                  predictor_features, 
                  target_output_features, 
-                 categorical_features) = feature_engineer_history.create_features(
+                 categorical_features) = feature_engineer.create_features(
                     df_series = df_forecast,
                     df_date_history=None,
                     df_date_future=self.df_date_future,
@@ -616,7 +586,6 @@ class Forecaster:
                 # 10.将新行添加到历史数据中，进行下一次循环
                 self.df_history_for_lags = pd.concat([self.df_history_for_lags, df_forecast_exogenous_new_row], ignore_index=True)
                 self.df_history_for_lags = self.df_history_for_lags.iloc[-self.max_lag:]
-        logger.info(f"{self.log_prefix} MSMDR forecast completed, predicted {len(Y_preds)} steps")
         
         return np.array(Y_preds)
     # ------------------------------
@@ -627,21 +596,42 @@ class Forecaster:
         根据配置分发预测策略并返回一维预测数组
         """
         if self.args.pred_method == "univariate-single-multistep-direct-output":
+            logger.info(f"{self.log_prefix} Forecast method: univariate_single_multi_step_direct_output_forecast(USMDO)")
+            logger.info(f"{self.log_prefix} {'-' * 60}")
             raw_pred = self.univariate_single_multi_step_direct_output_forecast()
+            logger.info(f"{self.log_prefix} USMDO forecast completed, predicted {len(raw_pred)} steps.")
         elif self.args.pred_method == "univariate-single-multistep-direct":
+            logger.info(f"{self.log_prefix} Forecast method: univariate_single_multi_step_direct_forecast(USMD)")
+            logger.info(f"{self.log_prefix} {'-' * 60}")
             raw_pred = self.univariate_single_multi_step_direct_forecast()
+            logger.info(f"{self.log_prefix} USMD forecast completed, predicted {len(raw_pred)} steps.")
         elif self.args.pred_method == "univariate-single-multistep-recursive":
+            logger.info(f"{self.log_prefix} Forecast method: univariate_single_multi_step_recursive_forecast(USMR)")
+            logger.info(f"{self.log_prefix} {'-' * 60}")
             raw_pred = self.univariate_single_multi_step_recursive_forecast()
+            logger.info(f"{self.log_prefix} USMR forecast completed, predicted {len(raw_pred)} steps.")
         elif self.args.pred_method == "univariate-single-multistep-direct-recursive":
+            logger.info(f"{self.log_prefix} Forecast method univariate_single_multi_step_direct_recursive_forecast(USMDR)")
+            logger.info(f"{self.log_prefix} {'-' * 60}")
             raw_pred = self.univariate_single_multi_step_direct_recursive_forecast()
+            logger.info(f"{self.log_prefix} USMDR forecast completed, predicted {len(raw_pred)} steps.")
         elif self.args.pred_method == "multivariate-single-multistep-direct":
+            logger.info(f"{self.log_prefix} Forecast method: multivariate_single_multi_step_direct_forecast(MSMD)")
+            logger.info(f"{self.log_prefix} {'-' * 60}")
             raw_pred = self.multivariate_single_multi_step_direct_forecast()
+            logger.info(f"{self.log_prefix} MSMD forecast completed, predicted {len(raw_pred)} steps.")
         elif self.args.pred_method == "multivariate-single-multistep-recursive":
+            logger.info(f"{self.log_prefix} Forecast method: multivariate_single_multi_step_recursive_forecast(MSMR)")
+            logger.info(f"{self.log_prefix} {'-' * 60}")
             raw_pred = self.multivariate_single_multi_step_recursive_forecast()
+            logger.info(f"{self.log_prefix} MSMR forecast completed, predicted {len(raw_pred)} steps.")
         elif self.args.pred_method == "multivariate-single-multistep-direct-recursive":
+            logger.info(f"{self.log_prefix} Forecast method: multivariate_single_multi_step_direct_recursive_forecast(MSMDR)")
+            logger.info(f"{self.log_prefix} {'-' * 60}")
             raw_pred = self.multivariate_single_multi_step_direct_recursive_forecast()
+            logger.info(f"{self.log_prefix} MSMDR forecast completed, predicted {len(raw_pred)} steps.")
         else:
-            raise ValueError(f"Unsupported pred_method: {self.args.pred_method}")
+            raise ValueError(f"{self.log_prefix} Unsupported pred_method: {self.args.pred_method}")
 
         pred_arr = np.asarray(raw_pred)
         if pred_arr.ndim == 0:

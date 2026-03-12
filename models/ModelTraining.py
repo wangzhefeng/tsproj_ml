@@ -123,7 +123,7 @@ class Trainer:
         # ------------------------------
         if self.args.perform_tuning:
             best_model = self._hyperparameters_tuning(X_train_df_processed, Y_train_df)
-            return best_model
+            return best_model, feature_scaler
         # ------------------------------
         # 模型训练
         # ------------------------------

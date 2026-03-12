@@ -173,11 +173,11 @@ class LightGBMModel(BaseModel):
             # "force_row_wise": True,
             "force_col_wise": True,
         }
-        # 参数更新
-        params.update(default_params)
+        # 参数合并（用户参数优先，避免被默认值覆盖）
+        merged_params = {**default_params, **(params or {})}
         # 模型参数
         # self.params = _filter_valid_params(default_params, lgb.LGBMRegressor)
-        self.params = params
+        self.params = merged_params
         logger.info(f"{log_prefix} model parameters: \n{self.params}")
         # 模型构建
         self.model = lgb.LGBMRegressor(**self.params)
@@ -251,10 +251,10 @@ class XGBoostModel(BaseModel):
             'n_jobs': -1,
             'random_state': 42,
         }
-        # 参数更新
-        params.upate(default_params)
+        # 参数合并（用户参数优先，避免被默认值覆盖）
+        merged_params = {**default_params, **(params or {})}
         # 模型参数
-        self.params = _filter_valid_params(params, xgb.XGBRegressor)
+        self.params = _filter_valid_params(merged_params, xgb.XGBRegressor)
         logger.info(f"{log_prefix} model parameters: \n{self.params}")
         # 模型构建
         self.model = xgb.XGBRegressor(**self.params)
@@ -323,10 +323,10 @@ class CatBoostModel(BaseModel):
             'random_state': 42,
             'thread_count': -1,
         }
-        # 参数更新
-        params.update(default_params)
+        # 参数合并（用户参数优先，避免被默认值覆盖）
+        merged_params = {**default_params, **(params or {})}
         # 模型参数
-        self.params = _filter_valid_params(params, cab.CatBoostRegressor)
+        self.params = _filter_valid_params(merged_params, cab.CatBoostRegressor)
         logger.info(f"{log_prefix} model parameters: \n{self.params}")
         # 模型构建
         self.model = cab.CatBoostRegressor(**self.params)
@@ -395,10 +395,10 @@ class RandomForestModel(BaseModel):
             'n_jobs': -1,
             'random_state': 42,
         }
-        # 参数更新
-        params.update(default_params)
+        # 参数合并（用户参数优先，避免被默认值覆盖）
+        merged_params = {**default_params, **(params or {})}
         # 模型参数
-        self.params = _filter_valid_params(default_params, RandomForestRegressor)
+        self.params = _filter_valid_params(merged_params, RandomForestRegressor)
         logger.info(f"{log_prefix} model parameters: \n{self.params}")
         # 模型构建
         self.model = RandomForestRegressor(**self.params)

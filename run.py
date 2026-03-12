@@ -4,88 +4,196 @@
 # * File        : run.py
 # * Author      : Zhefeng Wang
 # * Email       : zfwang7@gmail.com
-# * Date        : 2025-02-11
-# * Version     : 1.0.021110
-# * Description : description
-# * Link        : link
-# * Requirement : 相关模块版本需求(例如: numpy >= 2.1.0)
+# * Date        : 2026-03-12
+# * Version     : 2.0.0
+# * Description : CLI entry for ML time-series forecasting
 # ***************************************************
 
-import sys
-from pathlib import Path
-ROOT = str(Path.cwd())
-if ROOT not in sys.path:
-    sys.path.append(ROOT)
 import argparse
+import datetime
+import importlib
+import json
+import random
+from typing import Any
 
 from utils.log_util import logger
 
 
-def args_parse():
-    parser = argparse.ArgumentParser(description='Machine Learning Time Series Forecasting')
-    # basic config
-    parser.add_argument('--des', type=str, default='TimeSeries Forecasting Exp', help='exp description')
-    parser.add_argument('--task_name', type=str, required=True, default='long_term_forecasting', help='task name, options:[long_term_forecast, short_term_forecast, imputation, classification, anomaly_detection]')
-    parser.add_argument('--is_training', type=int, required=True, default=0, help='Whether to conduct training')
-    parser.add_argument('--is_testing', type=int, required=True, default=0, help='Whether to conduct testing')
-    parser.add_argument('--testing_step', type=int, default=1, help="Test step")
-    parser.add_argument('--is_forecasting', type=int, required=True, default=0, help='Whether to conduct forecasting')
-    parser.add_argument('--model', type=str, required=True, default='Transformer', help='model name, options: [XGBoost, LightGBM]')
-    # data loader
-    parser.add_argument('--root_path', type=str, required=True, default='./dataset/', help='root path of the data file')
-    parser.add_argument('--data_path', type=str, required=True, default='ETTh1.csv', help='data file')
-    parser.add_argument('--target', type=str, required=True, default='OT', help='target feature in S or MS task')
-    parser.add_argument('--time', type=str, required=True, default='time', help='time feature in S or MS task')
-    parser.add_argument('--freq', type=str, required=True, default='h', help='freq for time features encoding, options:[s:secondly, t:minutely, h:hourly, d:daily, b:business days, w:weekly, m:monthly], you can also use more detailed freq like 15min or 3h')
-    parser.add_argument('--features', type=str, default='MS', help='forecasting task, options:[M, S, MS]; M:multivariate predict multivariate, S:univariate predict univariate, MS:multivariate predict univariate')
-    parser.add_argument("--step_size", type=int, default=1, help="RNNs data window step")
-    parser.add_argument('--train_ratio', type=float, required=True, default=0.7, help='train dataset ratio')
-    parser.add_argument('--test_ratio', type=float, required=True, default=0.2, help='test dataset ratio')
-    parser.add_argument('--scale', type=int, default=0, help = 'data transform')
-    parser.add_argument('--inverse', type=int, default=0, help='inverse output data')
-    # output dirs
-    parser.add_argument('--checkpoints', type=str, default='./saved_results/pretrained_models/', help='location of model models')
-    parser.add_argument('--test_results', type=str, default='./saved_results/test_results/', help='location of model models')
-    parser.add_argument('--pred_results', type=str, default='./saved_results/predict_results/', help='location of model models') 
-    # forecasting task
-    parser.add_argument('--hist_len', type=int, required=True, default=72, help='input sequence length')
-    parser.add_argument('--pred_len', type=int, default=24, help='prediction sequence length')
-    # model define
-    # optimization
-    parser.add_argument('--num_workers', type=int, default=10, help='data loader num workers')
-    parser.add_argument('--patience', type = int, default=15, help = 'early stopping patience')
-    parser.add_argument('--learning_rate', type=float, default=1e-3, help='optimizer learning rate')
-    parser.add_argument('--loss', type=str, default='mse', help='loss function')
-    # metrics (dtw)
-    parser.add_argument('--use_dtw', type=int, default=0, help='the controller of using dtw metric (dtw is time consuming, not suggested unless necessary)')
-    # GPU
-    parser.add_argument('--use_gpu', type=int, default=0, help='use gpu')
-    parser.add_argument('--gpu_type', type=str, default='cuda', help='gpu type')
-    parser.add_argument('--gpu', type=int, default=0, help='gpu')
-    parser.add_argument('--use_multi_gpu', type=int, default=0, help = 'use multiple gpus')
-    parser.add_argument('--devices', type=str, default="0,1,2,3,4,5,6,7,8", help='device ids of multile gpus')
-    
-    # 命令行参数解析
-    args = parser.parse_args()
+def _parse_bool_flag(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return False
+    text = str(value).strip().lower()
+    if text in {"1", "true", "yes", "y", "on"}:
+        return True
+    if text in {"0", "false", "no", "n", "off"}:
+        return False
+    raise ValueError(f"Invalid boolean flag value: {value}")
 
-    return args
+
+def _set_seed(seed: int) -> None:
+    random.seed(seed)
+    try:
+        import numpy as np
+        np.random.seed(seed)
+    except ImportError:
+        logger.warning("[run.py] numpy is not installed, only Python random seed is set.")
+
+
+def _load_config(config_module: str, config_class: str):
+    module = importlib.import_module(config_module)
+    if not hasattr(module, config_class):
+        raise AttributeError(f"Config class '{config_class}' not found in module '{config_module}'.")
+    config_cls = getattr(module, config_class)
+    return config_cls()
+
+
+def _apply_overrides(cfg, args):
+    if args.data_dir is not None:
+        cfg.data_dir = args.data_dir
+    if args.data_path is not None:
+        cfg.data_path = args.data_path
+    if args.data is not None:
+        cfg.data = args.data
+    if args.target is not None:
+        cfg.target = args.target
+    if args.target_ts_feat is not None:
+        cfg.target_ts_feat = args.target_ts_feat
+    if args.freq is not None:
+        cfg.freq = args.freq
+    if args.freq_minutes is not None:
+        cfg.freq_minutes = args.freq_minutes
+
+    if args.model_type is not None:
+        cfg.model_type = args.model_type
+    if args.pred_method is not None:
+        cfg.pred_method = args.pred_method
+
+    if args.history_days is not None:
+        cfg.history_days = args.history_days
+    if args.predict_days is not None:
+        cfg.predict_days = args.predict_days
+    if args.window_days is not None:
+        cfg.window_days = args.window_days
+
+    if args.is_testing is not None:
+        cfg.is_testing = _parse_bool_flag(args.is_testing)
+    if args.is_forecasting is not None:
+        cfg.is_forecasting = _parse_bool_flag(args.is_forecasting)
+
+    if args.scale is not None:
+        cfg.scale = _parse_bool_flag(args.scale)
+    if args.encode_categorical_features is not None:
+        cfg.encode_categorical_features = _parse_bool_flag(args.encode_categorical_features)
+    if args.perform_tuning is not None:
+        cfg.perform_tuning = _parse_bool_flag(args.perform_tuning)
+
+    if args.learning_rate is not None:
+        cfg.learning_rate = args.learning_rate
+    if args.patience is not None:
+        cfg.patience = args.patience
+
+    if args.checkpoints_dir is not None:
+        cfg.checkpoints_dir = args.checkpoints_dir
+    if args.test_results_dir is not None:
+        cfg.test_results_dir = args.test_results_dir
+    if args.pred_results_dir is not None:
+        cfg.pred_results_dir = args.pred_results_dir
+
+    if args.now_time is not None:
+        cfg.now_time = datetime.datetime.fromisoformat(args.now_time)
+
+    if args.lags is not None:
+        cfg.lags = [int(x.strip()) for x in args.lags.split(",") if x.strip()]
+
+    if args.model_params is not None:
+        loaded = json.loads(args.model_params)
+        if not isinstance(loaded, dict):
+            raise ValueError("--model-params must be a JSON object.")
+        cfg.model_params = loaded
+
+    return cfg
+
+
+def args_parse():
+    parser = argparse.ArgumentParser(description="Machine Learning Time Series Forecasting CLI")
+
+    parser.add_argument(
+        "--config-module",
+        type=str,
+        default="config.model_config",
+        help="Python module path for config, e.g. config.model_config_lgbm_usmd_A",
+    )
+    parser.add_argument(
+        "--config-class",
+        type=str,
+        default="ModelConfig_univariate",
+        help="Config class name in config module",
+    )
+
+    parser.add_argument("--seed", type=int, default=2025)
+
+    parser.add_argument("--is-testing", default=None, help="bool flag, supports 1/0/true/false")
+    parser.add_argument("--is-forecasting", default=None, help="bool flag, supports 1/0/true/false")
+
+    parser.add_argument("--model-type", type=str, default=None, help="lightgbm/xgboost/catboost")
+    parser.add_argument("--pred-method", type=str, default=None)
+    parser.add_argument("--model-params", type=str, default=None, help='JSON string, e.g. \'{"num_leaves":63}\'')
+
+    parser.add_argument("--data-dir", type=str, default=None)
+    parser.add_argument("--data-path", type=str, default=None)
+    parser.add_argument("--data", type=str, default=None)
+    parser.add_argument("--target", type=str, default=None)
+    parser.add_argument("--target-ts-feat", type=str, default=None)
+    parser.add_argument("--freq", type=str, default=None)
+    parser.add_argument("--freq-minutes", type=int, default=None)
+
+    parser.add_argument("--history-days", type=int, default=None)
+    parser.add_argument("--predict-days", type=int, default=None)
+    parser.add_argument("--window-days", type=int, default=None)
+    parser.add_argument("--lags", type=str, default=None, help="comma separated list, e.g. 288,576")
+
+    parser.add_argument("--scale", default=None, help="bool flag, supports 1/0/true/false")
+    parser.add_argument("--encode-categorical-features", default=None, help="bool flag")
+    parser.add_argument("--perform-tuning", default=None, help="bool flag")
+    parser.add_argument("--learning-rate", type=float, default=None)
+    parser.add_argument("--patience", type=int, default=None)
+
+    parser.add_argument("--now-time", type=str, default=None, help="ISO datetime, e.g. 2025-12-27T00:00:00")
+
+    parser.add_argument("--checkpoints-dir", type=str, default=None)
+    parser.add_argument("--test-results-dir", type=str, default=None)
+    parser.add_argument("--pred-results-dir", type=str, default=None)
+
+    return parser.parse_args()
 
 
 def run(args):
-    pass
+    cfg = _load_config(args.config_module, args.config_class)
+    cfg = _apply_overrides(cfg, args)
+
+    logger.info(
+        "[run.py] config=%s.%s, model_type=%s, pred_method=%s, is_testing=%s, is_forecasting=%s",
+        args.config_module,
+        args.config_class,
+        cfg.model_type,
+        cfg.pred_method,
+        cfg.is_testing,
+        cfg.is_forecasting,
+    )
+
+    from main import Model
+
+    model = Model(cfg)
+    model.run()
 
 
-
-
-# 测试代码 main 函数
 def main():
-    # 设置随机数
-    set_seed_ml(seed = 2025)
-    # 参数解析
     args = args_parse()
-    print_args_ts(args)
-    # 参数使用
+    _set_seed(args.seed)
     run(args)
+
 
 if __name__ == "__main__":
     main()

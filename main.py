@@ -123,7 +123,7 @@ class Model:
         # 模型训练类
         model_trainer = Trainer(args=self.args, log_prefix=self.log_prefix)
         # 模型训练
-        model, scaler = model_trainer.train(
+        model, scaler, selected_features = model_trainer.train(
             X_train = X_train, 
             Y_train = Y_train, 
             feature_scaler = scaler, 
@@ -133,7 +133,7 @@ class Model:
         if mode == "forecast":
             model_trainer.model_save(model)
 
-        return model, scaler
+        return model, scaler, selected_features
 
     def test(self, 
              df_history, 
@@ -193,7 +193,7 @@ class Model:
             logger.info(f"{self.log_prefix} {'=' * 81}")
             logger.info(f"{self.log_prefix} Model Testing sliding window training...")
             logger.info(f"{self.log_prefix} {'=' * 81}")
-            model, scaler_testing = self.train(
+            model, scaler_testing, selected_features = self.train(
                 X_train = X_train, 
                 Y_train = Y_train, 
                 categorical_features = categorical_features,
@@ -225,6 +225,7 @@ class Model:
                 target_feature = target_feature,
                 target_output_features = target_output_features,
                 categorical_features = categorical_features,
+                selected_features = selected_features,
                 log_prefix = self.log_prefix,
             )
             Y_pred = predictor._predict_by_method()
@@ -295,12 +296,20 @@ class Model:
                  endogenous_features_with_target, 
                  target_feature, 
                  target_output_features, 
-                 categorical_features):
+                 categorical_features,
+                 selected_features=None):
         """
         模型预测
         """
         # 未来数据复制
         df_future_prediction = df_future.copy()
+        # Global 模式下，未来数据补齐 series_id（若缺失）
+        if getattr(self.args, "enable_global_training", False):
+            series_id_col = getattr(self.args, "series_id_feature", "series_id")
+            if series_id_col not in df_future_prediction.columns and series_id_col in df_history.columns:
+                last_series_id = df_history[series_id_col].dropna()
+                if not last_series_id.empty:
+                    df_future_prediction[series_id_col] = last_series_id.iloc[-1]
         # 模型预测
         predictor = Forecaster(
             args = self.args,
@@ -315,6 +324,7 @@ class Model:
             target_feature = target_feature, 
             target_output_features = target_output_features, 
             categorical_features = categorical_features,
+            selected_features = selected_features,
             log_prefix = self.log_prefix,
         )
         Y_pred = predictor._predict_by_method()
@@ -326,7 +336,21 @@ class Model:
         logger.info(f"{self.log_prefix} {'=' * 87}")
         # 模型预测结果收集
         df_future_prediction["predict_value"] = Y_pred
-        df_future_prediction = df_future_prediction[["time", "predict_value"]]
+        # 分位数预测结果（若启用）
+        if getattr(predictor, "quantile_outputs", None):
+            for q, q_pred in sorted(predictor.quantile_outputs.items(), key=lambda x: float(x[0])):
+                q_col = f"predict_q{int(round(float(q) * 100)):02d}"
+                q_arr = np.asarray(q_pred).reshape(-1)
+                if len(q_arr) != len(df_future_prediction):
+                    min_len = min(len(q_arr), len(df_future_prediction))
+                    df_future_prediction.loc[df_future_prediction.index[:min_len], q_col] = q_arr[:min_len]
+                else:
+                    df_future_prediction[q_col] = q_arr
+        quantile_cols = [c for c in df_future_prediction.columns if c.startswith("predict_q")]
+        if quantile_cols:
+            df_future_prediction = df_future_prediction[["time", "predict_value"] + quantile_cols]
+        else:
+            df_future_prediction = df_future_prediction[["time", "predict_value"]]
         logger.info(f"{self.log_prefix} after forecast df_future_prediction: \n{df_future_prediction.head()}")
         logger.info(f"{self.log_prefix} after forecast df_future_prediction.shape: {df_future_prediction.shape}")
         # 模型预测结果保存
@@ -438,7 +462,7 @@ class Model:
             logger.info(f"{self.log_prefix} {'=' * 87}")
             logger.info(f"{self.log_prefix} Model Training start...")
             logger.info(f"{self.log_prefix} {'=' * 87}")
-            model, scaler_forecasting = self.train(
+            model, scaler_forecasting, selected_features = self.train(
                 X_train = X_train_history, 
                 Y_train = Y_train_history, 
                 categorical_features = categorical_features,
@@ -461,6 +485,7 @@ class Model:
                 target_feature = target_feature,
                 target_output_features = target_output_features,
                 categorical_features = categorical_features, 
+                selected_features = selected_features,
             )
 
 
@@ -471,13 +496,11 @@ def main():
     """
     主函数入口
     """
-    from config.univariate_config import (
-        ModelConfig_univariate, 
-        ModelConfig_multivariate
-    )
+    # from config.univariate_config import ModelConfig
+    # from config.multivariate_config import ModelConfig
+    from config.model_config_lgbm_usmdo_A import ModelConfig
     # 模型配置
-    args = ModelConfig_univariate()
-    # args = ModelConfig_multivariate()
+    args = ModelConfig()
     # 创建模型实例
     model = Model(args)
     # 运行模型

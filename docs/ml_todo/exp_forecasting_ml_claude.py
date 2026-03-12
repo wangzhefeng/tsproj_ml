@@ -87,10 +87,10 @@ class ModelConfig:
     date_future_path = None
     date_ts_feat = "date"                         # 日期数据时间戳名称
     
-    # 天气数据配置
+    # 气象数据配置
     weather_history_path = None
     weather_future_path = None
-    weather_ts_feat = "ts"                        # 天气数据时间戳名称
+    weather_ts_feat = "ts"                        # 气象数据时间戳名称
     
     # ------------------------------
     # 模型配置
@@ -228,7 +228,7 @@ class Model:
                 input_data["date_future"] = df_date_future
                 logger.info(f"{self.log_prefix} Date future loaded: {df_date_future.shape}")
         
-        # 加载历史天气数据
+        # 加载历史气象数据
         if self.args.weather_history_path:
             weather_history_path = self.args.data_dir / self.args.weather_history_path
             if weather_history_path.exists():
@@ -237,7 +237,7 @@ class Model:
                 input_data["weather_history"] = df_weather_history
                 logger.info(f"{self.log_prefix} Weather history loaded: {df_weather_history.shape}")
         
-        # 加载未来天气数据
+        # 加载未来气象数据
         if self.args.weather_future_path:
             weather_future_path = self.args.data_dir / self.args.weather_future_path
             if weather_future_path.exists():
@@ -279,7 +279,7 @@ class Model:
             df_target = pd.merge(df_target, df_date, on="time", how="left")
             logger.info(f"{self.log_prefix} After merging date history: {df_target.shape}")
         
-        # 合并天气数据
+        # 合并气象数据
         if "weather_history" in input_data:
             df_weather = input_data["weather_history"].copy()
             df_weather = df_weather.rename(columns={self.args.weather_ts_feat: "time"})
@@ -345,7 +345,7 @@ class Model:
             df_future = pd.merge(df_future, df_date_future, on="time", how="left")
             logger.info(f"{self.log_prefix} After merging date future: {df_future.shape}")
         
-        # 合并未来天气数据
+        # 合并未来气象数据
         if "weather_future" in input_data:
             df_weather_future = input_data["weather_future"].copy()
             df_weather_future = df_weather_future.rename(columns={self.args.weather_ts_feat: "time"})

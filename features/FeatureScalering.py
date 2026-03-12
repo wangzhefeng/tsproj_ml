@@ -18,6 +18,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 from sklearn.preprocessing import StandardScaler, MinMaxScaler
+from sklearn.base import clone
 
 from utils.log_util import logger
 
@@ -46,6 +47,9 @@ class FeatureScaler:
         self.feature_groups = {}
         # 分组归一化器
         self.feature_groups_scalers = {}
+        # 训练特征 schema
+        self.training_columns = []
+        self.training_fill_values = {}
     
     def __identify_feature_groups(self, X: pd.DataFrame, categorical_features: List[str]) -> Dict[str, List[str]]:
         """
@@ -86,6 +90,55 @@ class FeatureScaler:
                 logger.info(f"{self.log_prefix} {group_name}: {len(features)} features")
         # 保存分组信息
         self.feature_groups = groups
+
+    def _capture_training_schema(self, X: pd.DataFrame, categorical_features: List[str]):
+        """
+        记录训练阶段的特征 schema 与缺失值回填默认值
+        """
+        self.training_columns = X.columns.tolist()
+        self.training_fill_values = {}
+        categorical_set = set(categorical_features)
+        for col in self.training_columns:
+            series = X[col]
+            if col in categorical_set:
+                mode = series.mode(dropna=True)
+                self.training_fill_values[col] = mode.iloc[0] if not mode.empty else "__MISSING__"
+            else:
+                if pd.api.types.is_numeric_dtype(series):
+                    median = series.median(skipna=True)
+                    self.training_fill_values[col] = 0.0 if pd.isna(median) else float(median)
+                else:
+                    mode = series.mode(dropna=True)
+                    self.training_fill_values[col] = mode.iloc[0] if not mode.empty else "__MISSING__"
+
+    def _align_feature_schema(self, X: pd.DataFrame) -> pd.DataFrame:
+        """
+        对齐预测阶段特征 schema（补缺失、去多余、按训练顺序重排）
+        """
+        if not self.training_columns:
+            return X
+
+        X_aligned = X.copy()
+        missing_cols = [c for c in self.training_columns if c not in X_aligned.columns]
+        extra_cols = [c for c in X_aligned.columns if c not in self.training_columns]
+
+        if missing_cols:
+            logger.warning(f"{self.log_prefix} Missing columns at inference: {missing_cols}")
+            for col in missing_cols:
+                X_aligned[col] = self.training_fill_values.get(col, 0.0)
+
+        if extra_cols:
+            logger.warning(f"{self.log_prefix} Extra columns at inference (dropped): {extra_cols}")
+            X_aligned = X_aligned.drop(columns=extra_cols)
+
+        X_aligned = X_aligned[self.training_columns]
+
+        # 对齐后再次兜底填充
+        for col in self.training_columns:
+            if X_aligned[col].isna().any():
+                X_aligned[col] = X_aligned[col].fillna(self.training_fill_values.get(col, 0.0))
+
+        return X_aligned
     
     def _fit_transform_categorical(self, X: pd.DataFrame, categorical_features: List[str]) -> pd.DataFrame:
         """
@@ -157,7 +210,7 @@ class FeatureScaler:
                 if not existing_features:
                     continue
                 # 为每组创建独立的归一化器
-                self.feature_groups_scalers[group_name] = self.scaler
+                self.feature_groups_scalers[group_name] = clone(self.scaler)
                 X_processed.loc[:, existing_features] = self.feature_groups_scalers[group_name].fit_transform(X_processed[existing_features])
                 logger.info(f"{self.log_prefix} Scaled {group_name}: {len(existing_features)} features")
         else:
@@ -248,6 +301,8 @@ class FeatureScaler:
         logger.info(f"{self.log_prefix} Fitting and transforming features start (training)...")
         logger.info(f"{self.log_prefix} {'-' * 60}")
         X_processed = X.copy()
+        # 记录训练 schema（原始特征）
+        self._capture_training_schema(X_processed, categorical_features)
         # 1. 识别特征分组
         self.__identify_feature_groups(X_processed, categorical_features)
         # 2. 确定实际存在的类别特征
@@ -288,7 +343,8 @@ class FeatureScaler:
         """
         logger.info(f"{self.log_prefix} Transforming features start (forecasting)...")
         logger.info(f"{self.log_prefix} {'-' * 69}")
-        X_processed = X.copy()
+        # 先按训练阶段 schema 对齐
+        X_processed = self._align_feature_schema(X.copy())
         # 1. 确定实际存在的类别特征
         actual_categorical = [f for f in categorical_features if f in X_processed.columns]
         # 2. 处理类别特征

@@ -11,7 +11,7 @@
 # *               - 一、基本特征: 
 # *                 - 1.外生变量特征
 # *                     - 1.1 日期时间特征(小时、星期、月份、季度等)、周期性编码(sin/cos)
-# *                     - 1.2 天气特征(天气数据集成)
+# *                     - 1.2 天气特征(气象数据集成)
 # *                     - 1.3 节假日 标记特征(日期类型数据集成)
 # *                 - 2.内生变量特征: 
 # *                     - 2.1 滞后特征: 单变量(目标变量)滞后特征、多变量(目标变量、其他内生变量)滞后特征
@@ -74,29 +74,28 @@ class ExogenousFeatureEngineer:
         """
         df_copy = df.copy()
         df_copy["time"] = pd.to_datetime(df_copy["time"])
+        time_series = df_copy["time"]
 
         datetime_features_list = []
-        # 时间基础特征
+        # 时间基础特征（使用 .dt 向量化，避免空表 apply 推断异常）
         feature_map = {
-            "minute": lambda x: x.minute,
-            "hour": lambda x: x.hour,
-            "day": lambda x: x.day,
-            "weekday": lambda x: x.weekday(),
-            # "week": lambda x: x.week,
-            "week": lambda x: x.isocalendar().week, # Use isocalendar().week for consistency
-            "day_of_week": lambda x: x.dayofweek,
-            # "week_of_year": lambda x: x.weekofyear,
-            "week_of_year": lambda x: x.isocalendar().week,
-            "month": lambda x: x.month,
-            "days_in_month": lambda x: x.daysinmonth,
-            "quarter": lambda x: x.quarter,
-            "day_of_year": lambda x: x.dayofyear,
-            "year": lambda x: x.year,
+            "minute": lambda s: s.dt.minute,
+            "hour": lambda s: s.dt.hour,
+            "day": lambda s: s.dt.day,
+            "weekday": lambda s: s.dt.weekday,
+            "week": lambda s: s.dt.isocalendar().week.astype("int64"),
+            "day_of_week": lambda s: s.dt.dayofweek,
+            "week_of_year": lambda s: s.dt.isocalendar().week.astype("int64"),
+            "month": lambda s: s.dt.month,
+            "days_in_month": lambda s: s.dt.daysinmonth,
+            "quarter": lambda s: s.dt.quarter,
+            "day_of_year": lambda s: s.dt.dayofyear,
+            "year": lambda s: s.dt.year,
         }
         for feature_name in self.args.datetime_features:
             if feature_name in feature_map:
                 col_name = f"dt_{feature_name}"
-                df_copy[col_name] = df_copy["time"].apply(feature_map[feature_name])
+                df_copy[col_name] = feature_map[feature_name](time_series)
                 datetime_features_list.append(col_name)
         # 周期性特征 (将时间转换为可循环的 sin/cos 形式)
         if 'dt_hour' in df_copy.columns and 'dt_minute' in df_copy.columns:
@@ -224,7 +223,7 @@ class ExogenousFeatureEngineer:
             weather_features = [f for f in weather_features if f in df_weather_filtered.columns]
             df_weather_filtered = df_weather_filtered[[col_ts] + weather_features]
             
-            # 合并目标数据和天气数据
+            # 合并目标数据和气象数据
             df_copy = pd.merge(df_copy, df_weather_filtered, left_on="time", right_on=col_ts, how="left")
             # 插值填充缺失值
             df_copy = df_copy.interpolate(method="linear", limit_direction="both")
@@ -246,7 +245,7 @@ class ExogenousFeatureEngineer:
 
     def extend_future_weather_feature(self, df: pd.DataFrame, df_weather: pd.DataFrame, col_ts: str):
         """
-        未来天气数据特征构造
+        未来气象数据特征构造
         """
         df_copy = df.copy()
         if df_weather is not None and not df_weather.empty:
@@ -272,7 +271,7 @@ class ExogenousFeatureEngineer:
                     # df_weather_filtered[pred_col] = df_weather_filtered[pred_col].apply(lambda x: float(x))
                     df_weather_filtered[pred_col] = pd.to_numeric(df_weather_filtered[pred_col], errors='coerce')
 
-            # 将预测天气数据整理到预测df中
+            # 将预测气象数据整理到预测df中
             for pred_col, target_col in pred_weather_features_map.items():
                 if pred_col in df_weather_filtered.columns:
                     # Apply specific transformations if defined
@@ -924,6 +923,31 @@ class FeatureEngineer:
 
         return df_featured, exogenous_features, categorical_features
 
+    def _expand_horizon_exogenous_for_direct(self, df: pd.DataFrame, exogenous_features: List[str], horizon: int):
+        """
+        Direct 多步预测场景下，将外生特征扩展为 horizon-aware 形式：
+        exog_h1, exog_h2, ..., exog_hH
+        """
+        if horizon <= 1 or not exogenous_features:
+            return df, exogenous_features
+
+        df_copy = df.copy()
+        expanded_features = []
+        for h in range(1, horizon + 1):
+            shift_steps = -(h - 1)
+            for col in exogenous_features:
+                col_h = f"{col}_h{h}"
+                if shift_steps == 0:
+                    df_copy[col_h] = df_copy[col]
+                else:
+                    df_copy[col_h] = df_copy[col].shift(shift_steps)
+                expanded_features.append(col_h)
+
+        if self.verbose:
+            logger.info(f"{self.log_prefix} horizon-aware exogenous features generated: {len(expanded_features)}")
+
+        return df_copy, expanded_features
+
     def create_endogenous_basic_features(self, df_series, target_feature, endogenous_features_with_target, horizon):
         """
         历史数据特征工程: 内生变量特征
@@ -1170,6 +1194,24 @@ class FeatureEngineer:
             df_weather_history=df_weather_history,
             df_weather_future=df_weather_future,
         )
+        # Direct 系列方法下，按 horizon 展开外生特征
+        if getattr(self.args, "use_horizon_exogenous_for_direct", False) and self.args.pred_method in [
+            "univariate-single-multistep-direct",
+            "multivariate-single-multistep-direct",
+        ]:
+            (df_series_featured, exogenous_features) = self._expand_horizon_exogenous_for_direct(
+                df=df_series_featured,
+                exogenous_features=exogenous_features,
+                horizon=horizon,
+            )
+        # Global 模式：保留序列 ID 作为静态外生类别特征
+        if getattr(self.args, "enable_global_training", False):
+            series_id_col = getattr(self.args, "series_id_feature", "series_id")
+            if series_id_col in df_series_featured.columns:
+                if series_id_col not in exogenous_features:
+                    exogenous_features.append(series_id_col)
+                if series_id_col not in categorical_features:
+                    categorical_features.append(series_id_col)
 
         # 历史数据特征工程: 内生变量基本特征工程
         logger.info(f"{self.log_prefix} 数据特征工程: 内生变量基本特征...")

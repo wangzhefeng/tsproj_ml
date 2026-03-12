@@ -66,11 +66,11 @@ class ModelConfig_univariate:
         # 节假日特征中的类别特征
         datetype_categorical_features: List[str] = field(default_factory=lambda: [])
     
-    # 天气数据配置
+    # 气象数据配置
     # --------------
     enable_weather_features: bool = False
     if enable_weather_features:
-        # 天气数据
+        # 气象数据
         weather_history_path: Optional[str] = "df_weather.csv"
         weather_future_path: Optional[str] = "df_weather_future.csv"
         weather_ts_feat: Optional[str] = "ts"
@@ -86,7 +86,7 @@ class ModelConfig_univariate:
         # 天气特征中的类别特征
         weather_categorical_features: List[str] = field(default_factory=lambda: [])
     else:
-        # 天气数据
+        # 气象数据
         weather_history_path: Optional[str] = None
         weather_future_path: Optional[str] = None
         weather_ts_feat: Optional[str] = None
@@ -262,7 +262,7 @@ class ModelConfig_multivariate:
     # 节假日特征中的类别特征
     datetype_categorical_features: List[str] = field(default_factory=lambda: [])
     
-    # 天气数据
+    # 气象数据
     weather_history_path: Optional[str] = None
     weather_future_path: Optional[str] = None
     weather_ts_feat: Optional[str] = None

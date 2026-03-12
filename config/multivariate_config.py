@@ -1,24 +1,11 @@
 # -*- coding: utf-8 -*-
-
-# ***************************************************
-# * File        : model_config.py
-# * Author      : Zhefeng Wang
-# * Email       : zfwang7@gmail.com
-# * Date        : 2026-02-11
-# * Version     : 1.0.021110
-# * Description : description
-# * Link        : link
-# * Requirement : 相关模块版本需求(例如: numpy >= 2.1.0)
-# ***************************************************
-
-# python libraries
 import datetime
 from typing import List, Dict, Optional
 from dataclasses import dataclass, field
 
 
 @dataclass
-class ModelConfig_multivariate:
+class ModelConfig:
     """
     模型配置类
     包含数据路径、特征设置、模型参数等所有配置项
@@ -53,7 +40,7 @@ class ModelConfig_multivariate:
     # 节假日特征中的类别特征
     datetype_categorical_features: List[str] = field(default_factory=lambda: [])
     
-    # 天气数据
+    # 气象数据
     weather_history_path: Optional[str] = None
     weather_future_path: Optional[str] = None
     weather_ts_feat: Optional[str] = None
@@ -176,6 +163,23 @@ class ModelConfig_multivariate:
     perform_tuning: bool = False
     tuning_metric: str = "neg_mean_absolute_error"
     tuning_n_splits: int = 3
+    # 数据增强（训练集）
+    enable_data_augmentation: bool = False
+    augmentation_ratio: float = 0.2
+    augmentation_feature_noise_std: float = 0.01
+    augmentation_target_noise_std: float = 0.005
+    augmentation_random_state: int = 42
+    # 特征选择（fit on train, reuse on test/forecast）
+    enable_feature_selection: bool = False
+    feature_selection_method: str = "f_regression"  # f_regression / mutual_info
+    feature_selection_max_features: int = 80
+    feature_selection_min_features: int = 10
+    # 学习率策略
+    enable_auto_learning_rate: bool = False
+    auto_lr_min: float = 0.005
+    auto_lr_max: float = 0.2
+    # 鲁棒损失参数（用于 huber scorer）
+    huber_delta: float = 1.0
     # ------------------------------
     # 模型运行模式
     # ------------------------------

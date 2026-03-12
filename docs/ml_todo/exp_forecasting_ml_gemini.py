@@ -109,7 +109,7 @@ class ModelConfig:
     # weather_history_path = None
     weather_future_path = "df_weather_future.csv"
     # weather_future_path = None
-    weather_ts_feat = "ts"                        # 天气数据时间戳名称
+    weather_ts_feat = "ts"                        # 气象数据时间戳名称
     # ------------------------------
     # model name
     # ------------------------------
@@ -699,7 +699,7 @@ class Model:
             weather_features = [f for f in weather_features if f in df_weather_filtered.columns]
             df_weather_filtered = df_weather_filtered[[col_ts] + weather_features]
             
-            # 合并目标数据和天气数据
+            # 合并目标数据和气象数据
             df_copy = pd.merge(df_copy, df_weather_filtered, left_on="time", right_on=col_ts, how="left")
             # 插值填充缺失值
             df_copy = df_copy.interpolate(method="linear", limit_direction="both")
@@ -714,7 +714,7 @@ class Model:
 
     def extend_future_weather_feature(self, df: pd.DataFrame, df_weather: pd.DataFrame, col_ts: str):
         """
-        未来天气数据特征构造
+        未来气象数据特征构造
         """
         df_copy = df.copy()
         if df_weather is not None and not df_weather.empty:
@@ -739,7 +739,7 @@ class Model:
                 if pred_col in df_weather_filtered.columns:
                     df_weather_filtered[pred_col] = pd.to_numeric(df_weather_filtered[pred_col], errors='coerce')
 
-            # 将预测天气数据整理到预测df中
+            # 将预测气象数据整理到预测df中
             for pred_col, target_col in pred_weather_features_map.items():
                 if pred_col in df_weather_filtered.columns:
                     # Apply specific transformations if defined

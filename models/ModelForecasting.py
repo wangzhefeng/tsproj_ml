@@ -13,7 +13,7 @@
 
 # python libraries
 from pathlib import Path
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional, Tuple
 
 import numpy as np
 import pandas as pd
@@ -43,8 +43,9 @@ class Forecaster:
                  endogenous_features: List[str], 
                  target_feature: str, 
                  target_output_features: List[str], 
-                 categorical_features: List[str], 
-                 log_prefix: str):
+                 categorical_features: List[str],
+                 selected_features: List[str] = None,
+                 log_prefix: str = "[Forecaster]"):
         self.args = args
         self.horizon = horizon
         self.model = model
@@ -57,6 +58,7 @@ class Forecaster:
         self.target_feature = target_feature
         self.target_output_features = target_output_features
         self.categorical_features = categorical_features
+        self.selected_features = selected_features
         self.log_prefix = log_prefix
         logger.info(f"{self.log_prefix} Forecaster params init...")
         logger.info(f"{self.log_prefix} {'-' * 71}")
@@ -68,6 +70,14 @@ class Forecaster:
         self.df_history_for_lags = self.df_history.iloc[-self.max_lag:].copy()
         logger.info(f"{self.log_prefix} Forecaster df_history_for_lags shape: {self.df_history_for_lags.shape}")
         logger.info(f"{self.log_prefix} Forecaster df_history_for_lags columns: {self.df_history_for_lags.columns.tolist()}")
+        # 复用特征工程器，避免递归预测中反复实例化
+        self.feature_engineer = FeatureEngineer(self.args, self.log_prefix, verbose=False)
+        # 递归预测 schema 缓存
+        self._recursive_schema_cache = {}
+        # 分位数输出缓存（仅 predict_type=quantile 时）
+        self.quantile_outputs = None
+        # 未来辅助特征索引（日期/天气），用于按步裁剪，减少重复 merge 开销
+        self._prepare_future_aux_index()
     
     @staticmethod
     def _to_1d(pred: Any) -> np.ndarray:
@@ -80,6 +90,166 @@ class Forecaster:
     def _to_scalar(pred: Any) -> float:
         pred_arr = Forecaster._to_1d(pred)
         return float(pred_arr[0]) if pred_arr.size > 0 else np.nan
+
+    def _prepare_future_aux_index(self):
+        """预处理未来日期/气象数据索引，便于按步快速切片。"""
+        self._df_date_future_indexed = None
+        self._df_weather_future_indexed = None
+
+        if (
+            self.df_date_future is not None
+            and getattr(self.args, "date_ts_feat", None)
+            and self.args.date_ts_feat in self.df_date_future.columns
+        ):
+            df_date = self.df_date_future.copy()
+            df_date[self.args.date_ts_feat] = pd.to_datetime(df_date[self.args.date_ts_feat]).dt.normalize()
+            df_date = df_date.drop_duplicates(subset=[self.args.date_ts_feat], keep="last")
+            self._df_date_future_indexed = df_date.set_index(self.args.date_ts_feat).sort_index()
+
+        if (
+            self.df_weather_future is not None
+            and getattr(self.args, "weather_ts_feat", None)
+            and self.args.weather_ts_feat in self.df_weather_future.columns
+        ):
+            df_weather = self.df_weather_future.copy()
+            df_weather[self.args.weather_ts_feat] = pd.to_datetime(df_weather[self.args.weather_ts_feat])
+            df_weather = df_weather.drop_duplicates(subset=[self.args.weather_ts_feat], keep="last")
+            self._df_weather_future_indexed = df_weather.set_index(self.args.weather_ts_feat).sort_index()
+
+    def _slice_future_aux_by_forecast(self, df_forecast: pd.DataFrame):
+        """根据当前预测窗口切出必要的日期/天气特征子集。"""
+        df_date_slice = None
+        df_weather_slice = None
+        if "time" not in df_forecast.columns:
+            return df_date_slice, df_weather_slice
+
+        if self._df_date_future_indexed is not None:
+            needed_dates = pd.to_datetime(df_forecast["time"]).dt.normalize().unique()
+            date_idx = self._df_date_future_indexed.index.intersection(pd.DatetimeIndex(needed_dates))
+            if len(date_idx) > 0:
+                df_date_slice = self._df_date_future_indexed.loc[date_idx].reset_index()
+
+        if self._df_weather_future_indexed is not None:
+            needed_times = pd.to_datetime(df_forecast["time"]).unique()
+            weather_idx = self._df_weather_future_indexed.index.intersection(pd.DatetimeIndex(needed_times))
+            if len(weather_idx) > 0:
+                df_weather_slice = self._df_weather_future_indexed.loc[weather_idx].reset_index()
+
+        return df_date_slice, df_weather_slice
+
+    def _get_recursive_schema(self, schema_key: str):
+        return self._recursive_schema_cache.get(schema_key)
+
+    def _set_recursive_schema(self, schema_key: str, predictor_features, categorical_features, target_output_features):
+        self._recursive_schema_cache[schema_key] = {
+            "predictor_features": predictor_features,
+            "categorical_features": categorical_features,
+            "target_output_features": target_output_features,
+        }
+
+    def _apply_selected_feature_subset(self, predictor_features: List[str], categorical_features: List[str]):
+        """
+        训练阶段做了特征选择时，推理阶段使用同一子集，避免特征空间不一致。
+        """
+        if not self.selected_features:
+            return predictor_features, categorical_features
+
+        selected_set = set(self.selected_features)
+        selected_predictor_features = [f for f in predictor_features if f in selected_set]
+        if not selected_predictor_features:
+            logger.warning(
+                f"{self.log_prefix} selected_features does not overlap current predictor_features, fallback to all predictors."
+            )
+            selected_predictor_features = predictor_features
+        selected_categorical_features = [f for f in categorical_features if f in selected_predictor_features]
+        return selected_predictor_features, selected_categorical_features
+
+    def _is_quantile_bundle(self) -> bool:
+        return isinstance(self.model, dict) and self.model.get("predict_type") == "quantile" and "models" in self.model
+
+    def _predict_point_and_quantiles(self, X_processed: pd.DataFrame) -> Tuple[np.ndarray, Optional[Dict[float, np.ndarray]]]:
+        """
+        统一预测入口：
+        - 点预测模型: 返回(point_pred, None)
+        - 分位数模型: 返回(中位分位点预测, {q: pred_q})
+        """
+        if not self._is_quantile_bundle():
+            return np.asarray(self.model.predict(X_processed)), None
+
+        quantile_models = self.model.get("models", {})
+        quantiles = [float(q) for q in self.model.get("quantiles", list(quantile_models.keys()))]
+        quantile_preds = {}
+        for q in quantiles:
+            q_key = q if q in quantile_models else str(q)
+            model_q = quantile_models.get(q_key)
+            if model_q is None and q in quantile_models:
+                model_q = quantile_models[q]
+            if model_q is None:
+                continue
+            quantile_preds[float(q)] = np.asarray(model_q.predict(X_processed))
+        if not quantile_preds:
+            raise ValueError(f"{self.log_prefix} quantile model bundle has no valid sub-models.")
+
+        median_q = float(self.model.get("median_quantile", min(quantile_preds.keys(), key=lambda x: abs(x - 0.5))))
+        point_pred = quantile_preds.get(median_q)
+        if point_pred is None:
+            median_q = min(quantile_preds.keys(), key=lambda x: abs(x - 0.5))
+            point_pred = quantile_preds[median_q]
+        return point_pred, quantile_preds
+
+    def _record_quantile_direct(self, quantile_preds: Optional[Dict[float, np.ndarray]], n_required: int):
+        if not quantile_preds:
+            return
+        self.quantile_outputs = {}
+        for q, pred in quantile_preds.items():
+            pred_1d = self._to_1d(pred[0] if np.asarray(pred).ndim > 1 else pred)
+            if len(pred_1d) >= n_required:
+                self.quantile_outputs[q] = pred_1d[:n_required]
+            else:
+                self.quantile_outputs[q] = np.pad(pred_1d, (0, n_required - len(pred_1d)), mode="edge")
+
+    def _record_quantile_recursive_step(self, store: Dict[float, List[float]], quantile_preds: Optional[Dict[float, np.ndarray]]):
+        if not quantile_preds:
+            return
+        for q, pred in quantile_preds.items():
+            store.setdefault(q, []).append(self._to_scalar(pred))
+
+    def _finalize_recursive_quantiles(self, store: Dict[float, List[float]]):
+        if not store:
+            return
+        self.quantile_outputs = {q: np.asarray(v, dtype=float) for q, v in store.items()}
+
+    def _build_direct_forecast_input(self, endogenous_features: List[str]):
+        """
+        构建 Direct 策略输入：
+        - 历史 max_lag 行 + 全部未来外生行
+        - 取锚点为最后一个历史行，使 horizon-aware 外生展开可用
+        """
+        for endo_feat in endogenous_features:
+            if endo_feat not in self.df_history_for_lags.columns and endo_feat in self.df_history.columns:
+                self.df_history_for_lags[endo_feat] = self.df_history[endo_feat].iloc[-self.max_lag:]
+
+        df_forecast = pd.concat([self.df_history_for_lags, self.df_future.copy()], ignore_index=True)
+        df_date_future_slice, df_weather_future_slice = self._slice_future_aux_by_forecast(df_forecast)
+        (df_forecast_featured,
+         predictor_features,
+         target_output_features,
+         categorical_features) = self.feature_engineer.create_features(
+            df_series=df_forecast,
+            df_date_history=None,
+            df_date_future=df_date_future_slice,
+            df_weather_history=None,
+            df_weather_future=df_weather_future_slice,
+            endogenous_features_with_target=endogenous_features,
+            target_feature=self.target_feature,
+            horizon=self.horizon,
+        )
+        predictor_features, categorical_features = self._apply_selected_feature_subset(
+            predictor_features, categorical_features
+        )
+        anchor_idx = max(len(self.df_history_for_lags) - 1, 0)
+        X_forecast_input = df_forecast_featured.reindex(columns=predictor_features).iloc[anchor_idx:anchor_idx + 1]
+        return X_forecast_input, categorical_features
     # ------------------------------
     # 单变量（目标变量滞后特征）预测单变量（目标变量）
     # ------------------------------
@@ -88,7 +258,7 @@ class Forecaster:
         单变量(内生变量/目标变量)预测单变量(目标变量)多步直接输出预测(USMDO)
         """        
         # 多步预测值收集器
-        Y_preds = []
+        Y_preds = np.array([])
         # 特征工程
         if not self.args.is_testing and self.args.is_forecasting:
             # 特征工程
@@ -115,6 +285,11 @@ class Forecaster:
         elif self.args.is_testing:
             X_test_future = self.df_future
             categorical_features = self.categorical_features
+        if self.selected_features:
+            selected_cols = [c for c in self.selected_features if c in X_test_future.columns]
+            if selected_cols:
+                X_test_future = X_test_future[selected_cols]
+                categorical_features = [c for c in categorical_features if c in selected_cols]
         logger.info(f"{self.log_prefix} after feature engineering X_test_future: \n{X_test_future.head()}")
         logger.info(f"{self.log_prefix} after feature engineering X_test_future shape: {X_test_future.shape}")
         logger.info(f"{self.log_prefix} after feature engineering categorical_features: {categorical_features}")
@@ -122,9 +297,19 @@ class Forecaster:
         X_test_processed = self.feature_scaler.transform(X_test_future, categorical_features)
         # 模型推理
         if len(X_test_processed) > 0:
-            Y_preds = self.model.predict(X_test_processed)
-        # 模型推理结果处理
-        Y_preds = np.array([]) if len(Y_preds) == 0 else np.asarray(Y_preds)
+            point_pred, quantile_preds = self._predict_point_and_quantiles(X_test_processed)
+            Y_preds = np.asarray(point_pred)
+            if quantile_preds:
+                # 直接输出方法通常每行对应一步预测，按行记录分位数
+                self.quantile_outputs = {
+                    q: np.asarray(pred).reshape(-1) for q, pred in quantile_preds.items()
+                }
+        if Y_preds.size == 0:
+            return np.array([])
+        if Y_preds.ndim == 2 and Y_preds.shape[1] == 1:
+            return Y_preds[:, 0]
+        if Y_preds.ndim == 2 and Y_preds.shape[0] == 1:
+            return Y_preds[0]
 
         return Y_preds
 
@@ -132,43 +317,18 @@ class Forecaster:
         """
         单变量(内生变量/目标变量)预测单变量(目标变量)多步直接预测(USMD)
         """
-        # 多步预测值收集器
-        Y_preds = []
-        # 1.构建预测特征数据
-        df_future_exogenous = self.df_future.iloc[0:1].copy()
-        # 2.合并历史数据(用于滞后特征)和未来第一个点(用于外生变量)
-        df_forecast = pd.concat([self.df_history_for_lags, df_future_exogenous], ignore_index=True)
-        # 3.特征工程
-        feature_engineer = FeatureEngineer(self.args, self.log_prefix, verbose=False)
-        (df_forecast_featured, 
-         predictor_features, 
-         target_output_features, 
-         categorical_features) = feature_engineer.create_features(
-            df_series = df_forecast,
-            df_date_history=None,
-            df_date_future=self.df_date_future,
-            df_weather_history=None,
-            df_weather_future=self.df_weather_future,
-            endogenous_features_with_target = self.endogenous_features,
-            target_feature = self.target_feature,
-            horizon = self.horizon,
+        X_forecast_input, categorical_features = self._build_direct_forecast_input(
+            endogenous_features=self.endogenous_features
         )
-        # 4.提取出当前预测步所需要的特征（最后一行）
-        X_forecast_input = df_forecast_featured[predictor_features].iloc[-1:]
-        # 5.特征预处理(预测模式)
         X_test_processed = self.feature_scaler.transform(X_forecast_input, categorical_features)
-        # self.feature_scaler.validate_features(X_test_processed, stage="prediction")
-        # 6.模型预测
-        Y_pred_multi_step = self.model.predict(X_test_processed)
-        Y_pred_multi_step = Y_pred_multi_step[0]
-        Y_pred_multi_step = self._to_1d(Y_pred_multi_step)
-        # 7.模型预测结果处理
-        if len(Y_pred_multi_step) >= len(self.df_future):
-            Y_preds = Y_pred_multi_step[:len(self.df_future)]
+        point_pred, quantile_preds = self._predict_point_and_quantiles(X_test_processed)
+        y_pred_multi_step = self._to_1d(point_pred[0] if np.asarray(point_pred).ndim > 1 else point_pred)
+        if len(y_pred_multi_step) >= len(self.df_future):
+            y_preds = y_pred_multi_step[:len(self.df_future)]
         else:
-            Y_preds = np.pad(Y_pred_multi_step, pad_width=(0, len(self.df_future) - len(Y_pred_multi_step)), mode='edge')
-        
-        return np.array(Y_preds)
+            y_preds = np.pad(y_pred_multi_step, pad_width=(0, len(self.df_future) - len(y_pred_multi_step)), mode='edge')
+        self._record_quantile_direct(quantile_preds, n_required=len(self.df_future))
+        return np.asarray(y_preds)
 
     def univariate_single_multi_step_recursive_forecast(self):
         """
@@ -176,6 +336,7 @@ class Forecaster:
         """
         # 多步预测值收集器
         Y_preds = []
+        quantile_store = {}
         for step in range(self.horizon):
             logger.info(f"{self.log_prefix} recursive forecast step: {step}...")
             logger.info(f"{self.log_prefix} {'=' * 31}")
@@ -187,29 +348,41 @@ class Forecaster:
             df_future_step = self.df_future.iloc[step:step+1].copy()
             # 2.合并历史数据和当前步数据
             df_forecast = pd.concat([self.df_history_for_lags, df_future_step], ignore_index=True)
-            # 3.特征工程
-            feature_engineer = FeatureEngineer(self.args, self.log_prefix, verbose=False)
-            (df_forecast_featured, 
-             predictor_features, 
-             target_output_features, 
-             categorical_features) = feature_engineer.create_features(
+            # 3.特征工程（按步裁剪辅助特征，避免每步处理完整未来表）
+            df_date_future_step, df_weather_future_step = self._slice_future_aux_by_forecast(df_forecast)
+            (df_forecast_featured,
+             predictor_features,
+             target_output_features,
+             categorical_features) = self.feature_engineer.create_features(
                 df_series = df_forecast,
                 df_date_history = None,
-                df_date_future = self.df_date_future,
+                df_date_future = df_date_future_step,
                 df_weather_history = None,
-                df_weather_future = self.df_weather_future,
+                df_weather_future = df_weather_future_step,
                 endogenous_features_with_target = self.endogenous_features,
                 target_feature = self.target_feature,
                 horizon = self.horizon,
             )
+            schema_key = "usmr"
+            schema = self._get_recursive_schema(schema_key)
+            if schema is None:
+                self._set_recursive_schema(schema_key, predictor_features, categorical_features, target_output_features)
+            else:
+                predictor_features = schema["predictor_features"]
+                categorical_features = schema["categorical_features"]
+            predictor_features, categorical_features = self._apply_selected_feature_subset(
+                predictor_features, categorical_features
+            )
             # 4.提取出当前预测步所需要的特征（最后一行）
-            X_forecast_input = df_forecast_featured[predictor_features].iloc[-1:]
+            X_forecast_input = df_forecast_featured.reindex(columns=predictor_features).iloc[-1:]
             # 5.特征预处理（预测模式）
             X_forecast_processed = self.feature_scaler.transform(X_forecast_input, categorical_features)
             # self.feature_scaler.validate_features(X_forecast_processed, stage="prediction")
             # 6.模型预测
-            y_pred_step = self._to_scalar(self.model.predict(X_forecast_processed))
+            point_pred, quantile_preds = self._predict_point_and_quantiles(X_forecast_processed)
+            y_pred_step = self._to_scalar(point_pred)
             Y_preds.append(y_pred_step)
+            self._record_quantile_recursive_step(quantile_store, quantile_preds)
             # 7.将预测值更新回 df_future_step，以便为下一步预测提供滞后特征
             df_future_step_new_row = df_future_step.copy().iloc[-1:]
             df_future_step_new_row[self.target_feature] = y_pred_step
@@ -217,6 +390,7 @@ class Forecaster:
             self.df_history_for_lags = pd.concat([self.df_history_for_lags, df_future_step_new_row], ignore_index=True)
             self.df_history_for_lags = self.df_history_for_lags.iloc[-self.max_lag:]
 
+        self._finalize_recursive_quantiles(quantile_store)
         return np.array(Y_preds)
 
     def univariate_single_multi_step_direct_recursive_forecast(self):
@@ -241,67 +415,53 @@ class Forecaster:
         Returns:
             预测结果数组，形状为 (horizon,)
         """
-        # 分块大小
-        self.block_size = min(self.args.lags) if self.args.lags else 1
-        logger.info(f"{self.log_prefix} block_size: {self.block_size}")
-        self.num_blocks = int(np.ceil(self.horizon / self.block_size))
-        logger.info(f"{self.log_prefix} num_blocks: {self.num_blocks}")
-        # 多步预测值收集器
-        Y_preds = []
-        # 分块递归预测
-        for block_idx in range(self.num_blocks):
-            block_start = block_idx * self.block_size
-            block_end = min(block_start + self.block_size, self.horizon)
-            logger.info(f"{self.log_prefix} Processing block {block_idx+1}/{self.num_blocks}: steps {block_start} to {block_end-1}")
-            
-            # 在当前块内进行递归预测
-            for step in range(block_start, block_end):
-                if step >= len(self.df_future):
-                    logger.warning(f"{self.log_prefix} Exhausted df_future at step {step}. Stopping.")
-                    break
-                
-                # 1. 获取当前步的外生变量
-                df_future_exogenous = self.df_future.iloc[step:step+1].copy()
-                
-                # 2. 合并历史数据和当前步数据
-                df_forecast = pd.concat([self.df_history_for_lags, df_future_exogenous], ignore_index=True)
-                
-                # 3. 创建特征（只为目标变量创建滞后特征）
-                feature_engineer = FeatureEngineer(self.args, self.log_prefix, verbose=False)
-                (df_forecast_featured, 
-                predictor_features, 
-                target_output_features, 
-                categorical_features) = feature_engineer.create_features(
-                    df_series = df_forecast,
-                    df_date_history=None,
-                    df_date_future=self.df_date_future,
-                    df_weather_history=None,
-                    df_weather_future=self.df_weather_future,
-                    endogenous_features_with_target = self.endogenous_features, # TODO [self.target_feature]
-                    target_feature = self.target_feature,
-                    horizon = self.horizon,
-                )
-                
-                # 4. 提取预测特征（最后一行）
-                X_forecast_input = df_forecast_featured[predictor_features].iloc[-1:]
-                
-                # 5. 特征缩放
-                X_forecast_processed = self.feature_scaler.transform(X_forecast_input, categorical_features)
-                # self.feature_scaler.validate_features(X_forecast_processed, stage="prediction")
-                
-                # 6. 预测
-                y_pred_step = self._to_scalar(self.model.predict(X_forecast_processed))
-                Y_preds.append(y_pred_step)
-                
-                # 7. 更新历史数据（用于下一步预测）
-                df_future_exogenous_new_row = df_future_exogenous.copy().iloc[-1:]
-                df_future_exogenous_new_row[self.target_feature] = y_pred_step
-                
-                # 8.将新行添加到历史数据中，进行下一次循环
-                self.df_history_for_lags = pd.concat([self.df_history_for_lags, df_future_exogenous_new_row], ignore_index=True)
-                self.df_history_for_lags = self.df_history_for_lags.iloc[-self.max_lag:]  # 只保留需要的历史长度
-        
-        return np.array(Y_preds)
+        # 严格分块直接：每个块仅调用一次模型，取块长输出
+        block_size = min(self.args.lags) if self.args.lags else 1
+        logger.info(f"{self.log_prefix} block_size: {block_size}")
+        y_preds = []
+        quantile_store = {}
+        while len(y_preds) < len(self.df_future):
+            produced = len(y_preds)
+            remain = len(self.df_future) - produced
+            df_future_remain = self.df_future.iloc[produced:].copy()
+            df_forecast = pd.concat([self.df_history_for_lags, df_future_remain], ignore_index=True)
+            df_date_future_slice, df_weather_future_slice = self._slice_future_aux_by_forecast(df_forecast)
+            (df_forecast_featured,
+             predictor_features,
+             target_output_features,
+             categorical_features) = self.feature_engineer.create_features(
+                df_series=df_forecast,
+                df_date_history=None,
+                df_date_future=df_date_future_slice,
+                df_weather_history=None,
+                df_weather_future=df_weather_future_slice,
+                endogenous_features_with_target=self.endogenous_features,
+                target_feature=self.target_feature,
+                horizon=self.horizon,
+            )
+            predictor_features, categorical_features = self._apply_selected_feature_subset(
+                predictor_features, categorical_features
+            )
+            anchor_idx = max(len(self.df_history_for_lags) - 1, 0)
+            X_forecast_input = df_forecast_featured.reindex(columns=predictor_features).iloc[anchor_idx:anchor_idx + 1]
+            X_forecast_processed = self.feature_scaler.transform(X_forecast_input, categorical_features)
+            point_pred, quantile_preds = self._predict_point_and_quantiles(X_forecast_processed)
+            pred_vec = self._to_1d(point_pred[0] if np.asarray(point_pred).ndim > 1 else point_pred)
+            take = min(block_size, remain, len(pred_vec))
+            block_pred = pred_vec[:take]
+            y_preds.extend(block_pred.tolist())
+            if quantile_preds:
+                for q, pred in quantile_preds.items():
+                    q_vec = self._to_1d(pred[0] if np.asarray(pred).ndim > 1 else pred)
+                    quantile_store.setdefault(q, []).extend(q_vec[:take].tolist())
+            # 逐点更新历史（块内直接，不再逐点重复调模型）
+            for i in range(take):
+                df_new = df_future_remain.iloc[i:i+1].copy()
+                df_new[self.target_feature] = float(block_pred[i])
+                self.df_history_for_lags = pd.concat([self.df_history_for_lags, df_new], ignore_index=True)
+                self.df_history_for_lags = self.df_history_for_lags.iloc[-self.max_lag:]
+        self._finalize_recursive_quantiles(quantile_store)
+        return np.asarray(y_preds[:len(self.df_future)])
     # ------------------------------
     # 多变量（除目标变量外的内生变量）预测单变量（目标变量）
     # ------------------------------
@@ -319,52 +479,18 @@ class Forecaster:
         Returns:
             预测结果数组，形状为 (horizon,)
         """
-        # 多步预测值收集器
-        Y_preds = []
-        # 0.确保所有内生变量都在历史数据中
-        for endo_feat in self.endogenous_features:
-            if endo_feat not in self.df_history_for_lags.columns and endo_feat in self.df_history.columns:
-                self.df_history_for_lags[endo_feat] = self.df_history[endo_feat].iloc[-self.max_lag:] 
-        
-        # 1.构建预测特征数据
-        df_future_exogenous = self.df_future.iloc[0:1].copy()
-        
-        # 2.合并历史数据(用于滞后特征)和未来第一个点(用于外生变量)
-        df_forecast = pd.concat([self.df_history_for_lags, df_future_exogenous], ignore_index=True)
-        
-        # 3.创建特征
-        feature_engineer = FeatureEngineer(self.args, self.log_prefix, verbose=False)
-        (df_forecast_featured, 
-         predictor_features, 
-         target_output_features, 
-         categorical_features) = feature_engineer.create_features(
-            df_series = df_forecast,
-            df_date_history=None,
-            df_date_future=self.df_date_future,
-            df_weather_history=None,
-            df_weather_future=self.df_weather_future,
-            endogenous_features_with_target = self.endogenous_features,
-            target_feature = self.target_feature,
-            horizon = self.horizon,
+        X_forecast_input, categorical_features = self._build_direct_forecast_input(
+            endogenous_features=self.endogenous_features
         )
-        
-        # 4.提取出当前预测步所需要的特征（最后一行）
-        X_forecast_input = df_forecast_featured[predictor_features].iloc[-1:]
-        
-        # 5.特征预处理(预测模式)
         X_test_processed = self.feature_scaler.transform(X_forecast_input, categorical_features)
-        # self.feature_scaler.validate_features(X_test_processed, stage="prediction")
-        
-        # 6.模型预测
-        Y_pred_multi_step = self._to_1d(self.model.predict(X_test_processed)[0])
-        
-        # 7.处理预测结果
-        if len(Y_pred_multi_step) >= len(self.df_future):
-            Y_preds = Y_pred_multi_step[:len(self.df_future)]
+        point_pred, quantile_preds = self._predict_point_and_quantiles(X_test_processed)
+        y_pred_multi_step = self._to_1d(point_pred[0] if np.asarray(point_pred).ndim > 1 else point_pred)
+        if len(y_pred_multi_step) >= len(self.df_future):
+            y_preds = y_pred_multi_step[:len(self.df_future)]
         else:
-            Y_preds = np.pad(Y_pred_multi_step, (0, len(self.df_future) - len(Y_pred_multi_step)), 'edge')
-        
-        return np.array(Y_preds)
+            y_preds = np.pad(y_pred_multi_step, (0, len(self.df_future) - len(y_pred_multi_step)), 'edge')
+        self._record_quantile_direct(quantile_preds, n_required=len(self.df_future))
+        return np.asarray(y_preds)
 
     def multivariate_single_multi_step_recursive_forecast(self):
         """
@@ -382,10 +508,9 @@ class Forecaster:
         """
         # 多步预测值收集器
         Y_preds = []
-        
-        # Ensure all original endogenous_features are present in last_known_data for lag creation
-        all_endogenous_original_cols = [col.replace("_shift_1", "") for col in self.target_output_features]
-        for col in all_endogenous_original_cols:
+        quantile_store = {}
+        # 确保内生变量存在于历史窗口
+        for col in self.endogenous_features:
             if col not in self.df_history_for_lags.columns and col in self.df_history.columns:
                 self.df_history_for_lags[col] = self.df_history[col].iloc[-self.max_lag:]
         
@@ -401,54 +526,57 @@ class Forecaster:
             df_future_exogenous = self.df_future.iloc[step:step+1].copy()
             df_forecast = pd.concat([self.df_history_for_lags, df_future_exogenous], ignore_index=True)
 
-            # 2.特征工程
-            feature_engineer = FeatureEngineer(self.args, self.log_prefix, verbose=False)
+            # 2.特征工程（按步裁剪辅助特征，避免每步处理完整未来表）
+            df_date_future_step, df_weather_future_step = self._slice_future_aux_by_forecast(df_forecast)
             (df_forecast_featured, 
              predictor_features, 
              target_output_features, 
-             categorical_features) = feature_engineer.create_features(
+             categorical_features) = self.feature_engineer.create_features(
                 df_series = df_forecast,
                 df_date_history=None,
-                df_date_future=self.df_date_future,
+                df_date_future=df_date_future_step,
                 df_weather_history=None,
-                df_weather_future=self.df_weather_future,
+                df_weather_future=df_weather_future_step,
                 endogenous_features_with_target = self.endogenous_features,
                 target_feature = self.target_feature,
                 horizon = self.horizon,
             )
+            schema_key = "msmr"
+            schema = self._get_recursive_schema(schema_key)
+            if schema is None:
+                self._set_recursive_schema(schema_key, predictor_features, categorical_features, target_output_features)
+            else:
+                predictor_features = schema["predictor_features"]
+                categorical_features = schema["categorical_features"]
+                target_output_features = schema["target_output_features"]
+            predictor_features, categorical_features = self._apply_selected_feature_subset(
+                predictor_features, categorical_features
+            )
 
             # 3.提取出当前预测步所需要的特征（最后一行）
-            X_forecast_input = df_forecast_featured[predictor_features].iloc[-1:]
+            X_forecast_input = df_forecast_featured.reindex(columns=predictor_features).iloc[-1:]
 
             # 4.特征预处理（预测模式）
             X_forecast_processed = self.feature_scaler.transform(X_forecast_input, categorical_features)
             # self.feature_scaler.validate_features(X_forecast_processed, stage="prediction")
 
-            # 5.模型预测
-            y_pred_step = self._to_1d(self.model.predict(X_forecast_processed)[0])
-            # Map predictions back to their shifted column names
-            active_targets = target_output_features if target_output_features else self.target_output_features
-            next_pred_dict = dict(zip(active_targets, y_pred_step))
-
-            # 6.Store the prediction for the primary target (assuming it's the first in target_output_features)
-            if self.target_feature:
-                primary_target_shifted_name = f"{self.target_feature}_shift_1"
-                if primary_target_shifted_name in next_pred_dict:
-                    Y_preds.append(float(next_pred_dict[primary_target_shifted_name]))
-                else:
-                    Y_preds.append(float(y_pred_step[0]))
-            else:
-                Y_preds.append(float(y_pred_step[0]))
+            # 5.模型预测（MSMR 当前训练目标为 target 的一步，因此取标量）
+            point_pred, quantile_preds = self._predict_point_and_quantiles(X_forecast_processed)
+            y_pred_target = self._to_scalar(point_pred)
+            Y_preds.append(y_pred_target)
+            self._record_quantile_recursive_step(quantile_store, quantile_preds)
 
             # 6.将预测值更新回 df_future_exogenous，以便为下一步预测提供滞后特征
             df_future_exogenous_new_row = df_future_exogenous.copy().iloc[-1:]
-            
-            # 7.Update endogenous variables (target and other endogenous) with predicted values
-            for shifted_col_name, pred_val in next_pred_dict.items():
-                original_col_name = shifted_col_name.replace("_shift_1", "")
-                df_future_exogenous_new_row[original_col_name] = pred_val
+            df_future_exogenous_new_row[self.target_feature] = y_pred_target
+            # 7. 其他内生变量采用持久性策略，保证多变量滞后特征可继续构造
+            for feat in self.endogenous_features:
+                if feat == self.target_feature:
+                    continue
+                if feat in self.df_history_for_lags.columns:
+                    df_future_exogenous_new_row[feat] = self.df_history_for_lags[feat].iloc[-1]
 
-            # 8.todo
+            # 8.补齐其余列
             for col in self.df_history_for_lags.columns:
                 if col not in df_future_exogenous_new_row.columns:
                     # If it's an exogenous feature in current_step_df, prefer that
@@ -461,6 +589,7 @@ class Forecaster:
             self.df_history_for_lags = pd.concat([self.df_history_for_lags, df_future_exogenous_new_row], ignore_index=True)
             self.df_history_for_lags = self.df_history_for_lags.iloc[-self.max_lag:]
 
+        self._finalize_recursive_quantiles(quantile_store)
         return np.array(Y_preds)
 
     def multivariate_single_multi_step_direct_recursive_forecast(self):
@@ -491,103 +620,72 @@ class Forecaster:
         Returns:
             目标变量的预测结果数组，形状为 (horizon,)
         """
-        # 分块大小
-        self.block_size = min(self.args.lags) if self.args.lags else 1
-        logger.info(f"{self.log_prefix} block_size: {self.block_size}")
-        self.num_blocks = int(np.ceil(self.horizon / self.block_size))
-        logger.info(f"{self.log_prefix} num_blocks: {self.num_blocks}")
-        # 多步预测值收集器
-        Y_preds = []
-        
+        # 严格分块直接：每个块仅调用一次模型，取块长输出
+        block_size = min(self.args.lags) if self.args.lags else 1
+        logger.info(f"{self.log_prefix} block_size: {block_size}")
+        y_preds = []
+        quantile_store = {}
+
         # 确保所有内生变量都在历史数据中
         for endo_feat in self.endogenous_features:
             if endo_feat not in self.df_history_for_lags.columns and endo_feat in self.df_history.columns:
                 self.df_history_for_lags[endo_feat] = self.df_history[endo_feat].iloc[-self.max_lag:]
-        
-        # 为其他内生变量准备持久性预测（假设其他内生变量在未来保持最后观测值不变，或使用简单趋势）
+
         other_endogenous = [feat for feat in self.endogenous_features if feat != self.target_feature]
-        last_values_other_endogenous = {}
-        for feat in other_endogenous:
-            if feat in self.df_history_for_lags.columns:
-                last_values_other_endogenous[feat] = self.df_history_for_lags[feat].iloc[-1]
-            else:
-                last_values_other_endogenous[feat] = 0
-                logger.warning(f"{self.log_prefix} Feature {feat} not found, using 0")
-        
-        # 分块递归预测
-        for block_idx in range(self.num_blocks):
-            # block index
-            block_start = block_idx * self.block_size
-            block_end = min(block_start + self.block_size, self.horizon)
-            logger.info(f"{self.log_prefix} Processing block {block_idx+1}/{self.num_blocks}: steps {block_start}~{block_end-1}")
-            
-            # 在当前块内进行递归预测
-            for step in range(block_start, block_end):
-                logger.info(f"{self.log_prefix} recursive forecast step: {step}...")
-                if step >= len(self.df_future):
-                    logger.warning(f"{self.log_prefix} Exhausted df_future at step {step}. Stopping.")
-                    break
-                
-                # 1.获取当前步的外生变量
-                df_future_exogenous = self.df_future.iloc[step:step+1].copy()
-                
-                # 2. 合并历史数据和当前步数据
-                df_forecast = pd.concat([self.df_history_for_lags, df_future_exogenous], ignore_index=True)
-                
-                # 3. 创建特征（为所有内生变量创建滞后特征）
-                feature_engineer = FeatureEngineer(self.args, self.log_prefix, verbose=False)
-                (df_forecast_featured, 
-                 predictor_features, 
-                 target_output_features, 
-                 categorical_features) = feature_engineer.create_features(
-                    df_series = df_forecast,
-                    df_date_history=None,
-                    df_date_future=self.df_date_future,
-                    df_weather_history=None,
-                    df_weather_future=self.df_weather_future,
-                    endogenous_features_with_target = self.endogenous_features,
-                    target_feature = self.target_feature,
-                    horizon = self.horizon,
-                )
-                
-                # 4. 提取预测特征（最后一行）
-                X_forecast_input = df_forecast_featured[predictor_features].iloc[-1:]
-                
-                # 5. 特征缩放
-                X_forecast_processed = self.feature_scaler.transform(X_forecast_input, categorical_features)
-                # self.feature_scaler.validate_features(X_forecast_processed, stage="prediction")
-                
-                # 6. 预测目标变量
-                y_pred_target = self._to_scalar(self.model.predict(X_forecast_processed))
-                Y_preds.append(y_pred_target)
-                
-                # 7. 更新历史数据（必须用原始时序字段而不是滞后特征字段）
-                df_forecast_exogenous_new_row = df_future_exogenous.copy().iloc[-1:]
-                df_forecast_exogenous_new_row[self.target_feature] = y_pred_target
-                
-                # 8.更新其他内生变量的值（使用持久性预测）
-                # 8.1 策略 1: 保持最后观测值不变（最简单）
+
+        while len(y_preds) < len(self.df_future):
+            produced = len(y_preds)
+            remain = len(self.df_future) - produced
+            df_future_remain = self.df_future.iloc[produced:].copy()
+            df_forecast = pd.concat([self.df_history_for_lags, df_future_remain], ignore_index=True)
+            df_date_future_slice, df_weather_future_slice = self._slice_future_aux_by_forecast(df_forecast)
+            (df_forecast_featured,
+             predictor_features,
+             target_output_features,
+             categorical_features) = self.feature_engineer.create_features(
+                df_series=df_forecast,
+                df_date_history=None,
+                df_date_future=df_date_future_slice,
+                df_weather_history=None,
+                df_weather_future=df_weather_future_slice,
+                endogenous_features_with_target=self.endogenous_features,
+                target_feature=self.target_feature,
+                horizon=self.horizon,
+            )
+            predictor_features, categorical_features = self._apply_selected_feature_subset(
+                predictor_features, categorical_features
+            )
+            anchor_idx = max(len(self.df_history_for_lags) - 1, 0)
+            X_forecast_input = df_forecast_featured.reindex(columns=predictor_features).iloc[anchor_idx:anchor_idx + 1]
+            X_forecast_processed = self.feature_scaler.transform(X_forecast_input, categorical_features)
+            point_pred, quantile_preds = self._predict_point_and_quantiles(X_forecast_processed)
+
+            pred_vec = self._to_1d(point_pred[0] if np.asarray(point_pred).ndim > 1 else point_pred)
+            take = min(block_size, remain, len(pred_vec))
+            block_pred = pred_vec[:take]
+            y_preds.extend(block_pred.tolist())
+            if quantile_preds:
+                for q, pred in quantile_preds.items():
+                    q_vec = self._to_1d(pred[0] if np.asarray(pred).ndim > 1 else pred)
+                    quantile_store.setdefault(q, []).extend(q_vec[:take].tolist())
+
+            # 按步回填目标+其他内生变量(持久性)到历史窗口，供下一块构造滞后特征
+            for i in range(take):
+                df_new = df_future_remain.iloc[i:i+1].copy()
+                df_new[self.target_feature] = float(block_pred[i])
                 for feat in other_endogenous:
-                    df_forecast_exogenous_new_row[feat] = last_values_other_endogenous[feat]
-                # 8.2 策略 2: 也可以使用简单的移动平均或趋势（更复杂但可能更准确）
-                # for feat in other_endogenous:
-                #     # 计算最近几个值的平均作为预测
-                #     if feat in self.df_history_for_lags.columns:
-                #         recent_mean = self.df_history_for_lags[feat].tail(3).mean()
-                #         df_forecast_exogenous_new_row[feat] = recent_mean
-                
-                # 9.补齐缺失列，避免递归阶段列漂移
+                    if feat in df_new.columns and pd.notna(df_new[feat].iloc[0]):
+                        continue
+                    if feat in self.df_history_for_lags.columns:
+                        df_new[feat] = self.df_history_for_lags[feat].iloc[-1]
                 for col in self.df_history_for_lags.columns:
-                    if col not in df_forecast_exogenous_new_row.columns:
-                        if col in df_future_exogenous.columns:
-                            df_forecast_exogenous_new_row[col] = df_future_exogenous[col].iloc[-1]
-                        else:
-                            df_forecast_exogenous_new_row[col] = self.df_history_for_lags[col].iloc[-1]
-                # 10.将新行添加到历史数据中，进行下一次循环
-                self.df_history_for_lags = pd.concat([self.df_history_for_lags, df_forecast_exogenous_new_row], ignore_index=True)
+                    if col not in df_new.columns:
+                        df_new[col] = self.df_history_for_lags[col].iloc[-1]
+                self.df_history_for_lags = pd.concat([self.df_history_for_lags, df_new], ignore_index=True)
                 self.df_history_for_lags = self.df_history_for_lags.iloc[-self.max_lag:]
-        
-        return np.array(Y_preds)
+
+        self._finalize_recursive_quantiles(quantile_store)
+        return np.asarray(y_preds[:len(self.df_future)])
     # ------------------------------
     # forecasting
     # ------------------------------
@@ -595,6 +693,8 @@ class Forecaster:
         """
         根据配置分发预测策略并返回一维预测数组
         """
+        # 每次预测前重置，避免复用同一 Forecaster 实例时污染
+        self.quantile_outputs = None
         if self.args.pred_method == "univariate-single-multistep-direct-output":
             logger.info(f"{self.log_prefix} Forecast method: univariate_single_multi_step_direct_output_forecast(USMDO)")
             logger.info(f"{self.log_prefix} {'-' * 60}")

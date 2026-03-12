@@ -1,54 +1,91 @@
-export LOG_NAME=itransformer-AIDC_A_dataset-large
+#!/usr/bin/env bash
+set -euo pipefail
 
-model_name=LightGBM
+# run.py 标准模板（可复制后按项目场景调整）
+#
+# 用法：
+#   bash scripts/template.sh
+#   MODEL_TYPE=xgboost PRED_METHOD=univariate-single-multistep-recursive bash scripts/template.sh
+#   IS_TESTING=0 IS_FORECASTING=1 NOW_TIME=2025-12-27T00:00:00 bash scripts/template.sh
 
-# 训练、验证、测试
-python -u run_ml.py \
-    --task_name machine_learning_long_term_forecast \
-    --is_training 1 \
-    --is_testing 1 \
-    --testing_step 288 \
-    --is_forecasting 0 \
-    --model_id LightGBM_288_144_288_A_large \
-    --model $model_name \
-    --data_dir ./dataset/electricity_work/ \
-    --data_path ETTh1.csv \
-    --data ETTh1 \
-    --freq 5min \
-    --n_per_day 288 \
-    --target_ts_feat time \
-    --target_series_numeric_features 0 \
-    --target_series_categorical_features 0 \
-    --target y \
-    --date_history_path date.csv \
-    --date_future_path date_future.csv \
-    --date_ts_feat date \
-    --weather_history_path weather.csv \
-    --weather_future_path weather_future.csv \
-    --weather_ts_feat ts \
-    --now_time 2025-05-19 \
-    --scale 1 \
-    --inverse 1 \
-    --target_transform 0 \
-    --target_transform_predict 0 \
-    --date_type 0 \
-    --lags 1,2,3 \
-    --pred_method univariate-multip-step-recursive \
-    --features MS \
-    --history_days 30 \
-    --predict_days 1 \
-    --window_days 15 \
-    --train_ratio 0.7 \
-    --test_ratio 0.2 \
-    --loss MSE \
-    --learning_rate 3e-5 \
-    --patience 7 \
-    --checkpoints ./saved_results/pretrained_models/ \
-    --test_results ./saved_results/test_results/ \
-    --pred_results ./saved_results/predict_results/
+export LOG_NAME="${LOG_NAME:-run-template}"
 
-    # --num_workers 4 \
-    # --use_gpu 1 \
-    # --gpu_type 'cuda' \
-    # --use_multi_gpu 1 \
-    # --devices 0,1,2,3,4,5,6,7
+# 配置模块
+CONFIG_MODULE="${CONFIG_MODULE:-config.univariate_config}"
+CONFIG_CLASS="${CONFIG_CLASS:-ModelConfig_univariate}"
+
+# 基本运行参数
+SEED="${SEED:-2025}"
+MODEL_TYPE="${MODEL_TYPE:-lightgbm}"
+PRED_METHOD="${PRED_METHOD:-univariate-single-multistep-direct}"
+IS_TESTING="${IS_TESTING:-1}"
+IS_FORECASTING="${IS_FORECASTING:-0}"
+NOW_TIME="${NOW_TIME:-2025-12-27T00:00:00}"
+
+# 可选覆盖参数
+HISTORY_DAYS="${HISTORY_DAYS:-}"
+PREDICT_DAYS="${PREDICT_DAYS:-}"
+WINDOW_DAYS="${WINDOW_DAYS:-}"
+LAGS="${LAGS:-}"
+LEARNING_RATE="${LEARNING_RATE:-}"
+MODEL_PARAMS="${MODEL_PARAMS:-}"
+
+# 可选：开启数据增强 / 特征选择 / 自动学习率
+ENABLE_DATA_AUGMENTATION="${ENABLE_DATA_AUGMENTATION:-0}"
+ENABLE_FEATURE_SELECTION="${ENABLE_FEATURE_SELECTION:-0}"
+ENABLE_AUTO_LEARNING_RATE="${ENABLE_AUTO_LEARNING_RATE:-0}"
+FEATURE_SELECTION_METHOD="${FEATURE_SELECTION_METHOD:-f_regression}"
+FEATURE_SELECTION_MAX_FEATURES="${FEATURE_SELECTION_MAX_FEATURES:-80}"
+FEATURE_SELECTION_MIN_FEATURES="${FEATURE_SELECTION_MIN_FEATURES:-10}"
+AUTO_LR_MIN="${AUTO_LR_MIN:-0.005}"
+AUTO_LR_MAX="${AUTO_LR_MAX:-0.2}"
+
+cmd=(python3 -u run.py
+  --config-module "${CONFIG_MODULE}"
+  --config-class "${CONFIG_CLASS}"
+  --seed "${SEED}"
+  --model-type "${MODEL_TYPE}"
+  --pred-method "${PRED_METHOD}"
+  --is-testing "${IS_TESTING}"
+  --is-forecasting "${IS_FORECASTING}"
+  --now-time "${NOW_TIME}"
+  --perform-tuning 0
+  --enable-data-augmentation "${ENABLE_DATA_AUGMENTATION}"
+  --enable-feature-selection "${ENABLE_FEATURE_SELECTION}"
+  --feature-selection-method "${FEATURE_SELECTION_METHOD}"
+  --feature-selection-max-features "${FEATURE_SELECTION_MAX_FEATURES}"
+  --feature-selection-min-features "${FEATURE_SELECTION_MIN_FEATURES}"
+  --enable-auto-learning-rate "${ENABLE_AUTO_LEARNING_RATE}"
+  --auto-lr-min "${AUTO_LR_MIN}"
+  --auto-lr-max "${AUTO_LR_MAX}"
+)
+
+# 仅在传值时附加，避免覆盖 config 默认值
+if [[ -n "${HISTORY_DAYS}" ]]; then
+  cmd+=(--history-days "${HISTORY_DAYS}")
+fi
+if [[ -n "${PREDICT_DAYS}" ]]; then
+  cmd+=(--predict-days "${PREDICT_DAYS}")
+fi
+if [[ -n "${WINDOW_DAYS}" ]]; then
+  cmd+=(--window-days "${WINDOW_DAYS}")
+fi
+if [[ -n "${LAGS}" ]]; then
+  cmd+=(--lags "${LAGS}")
+fi
+if [[ -n "${LEARNING_RATE}" ]]; then
+  cmd+=(--learning-rate "${LEARNING_RATE}")
+fi
+if [[ -n "${MODEL_PARAMS}" ]]; then
+  cmd+=(--model-params "${MODEL_PARAMS}")
+fi
+
+# 新增主流程能力开关
+cmd+=(--scale 0)
+cmd+=(--encode-categorical-features 0)
+
+echo "Running command:"
+printf ' %q' "${cmd[@]}"
+echo
+
+"${cmd[@]}"

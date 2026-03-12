@@ -2,18 +2,17 @@
 set -euo pipefail
 
 # 参考 config 目录中的配置文件：
-#   config/model_config_lgbm_usmd_A.py
-#   config/model_config_xgb_usmd_A.py
-#   config/model_config_cab_usmd_A.py
+#   config/univariate_config.py
+#   config/multivariate_config.py
 #
 # 使用方式：
 #   bash scripts/run_model_test.sh
 # 或覆盖变量：
-#   CONFIG_MODULE=config.model_config_xgb_usmd_A MODEL_TYPE=xgboost bash scripts/run_model_test.sh
+#   CONFIG_MODULE=config.multivariate_config CONFIG_CLASS=ModelConfig_multivariate MODEL_TYPE=xgboost bash scripts/run_model_test.sh
 
 export LOG_NAME="${LOG_NAME:-run-model-test}"
 
-CONFIG_MODULE="${CONFIG_MODULE:-config.model_config_lgbm_usmd_A}"
+CONFIG_MODULE="${CONFIG_MODULE:-config.univariate_config}"
 CONFIG_CLASS="${CONFIG_CLASS:-ModelConfig_univariate}"
 
 MODEL_TYPE="${MODEL_TYPE:-lightgbm}"
@@ -24,6 +23,12 @@ IS_FORECASTING="${IS_FORECASTING:-0}"
 NOW_TIME="${NOW_TIME:-2025-12-27T00:00:00}"
 
 SEED="${SEED:-2025}"
+ENABLE_FEATURE_SELECTION="${ENABLE_FEATURE_SELECTION:-0}"
+ENABLE_DATA_AUGMENTATION="${ENABLE_DATA_AUGMENTATION:-0}"
+ENABLE_AUTO_LEARNING_RATE="${ENABLE_AUTO_LEARNING_RATE:-0}"
+FEATURE_SELECTION_METHOD="${FEATURE_SELECTION_METHOD:-f_regression}"
+FEATURE_SELECTION_MAX_FEATURES="${FEATURE_SELECTION_MAX_FEATURES:-80}"
+FEATURE_SELECTION_MIN_FEATURES="${FEATURE_SELECTION_MIN_FEATURES:-10}"
 
 python3 -u run.py \
   --config-module "${CONFIG_MODULE}" \
@@ -33,5 +38,10 @@ python3 -u run.py \
   --pred-method "${PRED_METHOD}" \
   --is-testing "${IS_TESTING}" \
   --is-forecasting "${IS_FORECASTING}" \
-  --now-time "${NOW_TIME}"
-
+  --now-time "${NOW_TIME}" \
+  --enable-feature-selection "${ENABLE_FEATURE_SELECTION}" \
+  --enable-data-augmentation "${ENABLE_DATA_AUGMENTATION}" \
+  --enable-auto-learning-rate "${ENABLE_AUTO_LEARNING_RATE}" \
+  --feature-selection-method "${FEATURE_SELECTION_METHOD}" \
+  --feature-selection-max-features "${FEATURE_SELECTION_MAX_FEATURES}" \
+  --feature-selection-min-features "${FEATURE_SELECTION_MIN_FEATURES}"

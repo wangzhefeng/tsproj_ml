@@ -435,7 +435,7 @@ class ModelConfig_univariate:
     date_future_path = None
     date_ts_feat = None
     
-    # 天气数据配置
+    # 气象数据配置
     # -----------------
     # weather_history_path = "df_weather.csv"
     # weather_future_path = "df_weather_future.csv"
@@ -593,7 +593,7 @@ class ModelConfig_multivariate:
     date_history_path = None
     date_future_path = None
     date_ts_feat = None
-    # 天气数据配置
+    # 气象数据配置
     # -----------------
     weather_history_path = None
     weather_future_path = None
@@ -1110,7 +1110,7 @@ class Model:
                 input_data["date_future"] = df_date_future
                 logger.info(f"{self.log_prefix} Date future loaded: {df_date_future.shape}")
         
-        # 加载历史天气数据
+        # 加载历史气象数据
         if self.args.weather_history_path:
             weather_history_path = self.args.data_dir / self.args.weather_history_path
             if weather_history_path.exists():
@@ -1119,7 +1119,7 @@ class Model:
                 input_data["weather_history"] = df_weather_history
                 logger.info(f"{self.log_prefix} Weather history loaded: {df_weather_history.shape}")
         
-        # 加载未来天气数据
+        # 加载未来气象数据
         if self.args.weather_future_path:
             weather_future_path = self.args.data_dir / self.args.weather_future_path
             if weather_future_path.exists():
@@ -1491,7 +1491,7 @@ class Model:
             weather_features = [f for f in weather_features if f in df_weather_filtered.columns]
             df_weather_filtered = df_weather_filtered[[col_ts] + weather_features]
             
-            # 合并目标数据和天气数据
+            # 合并目标数据和气象数据
             df_copy = pd.merge(df_copy, df_weather_filtered, left_on="time", right_on=col_ts, how="left")
             # 插值填充缺失值
             df_copy = df_copy.interpolate(method="linear", limit_direction="both")
@@ -1506,7 +1506,7 @@ class Model:
 
     def extend_future_weather_feature(self, df: pd.DataFrame, df_weather: pd.DataFrame, col_ts: str):
         """
-        未来天气数据特征构造
+        未来气象数据特征构造
         """
         df_copy = df.copy()
         if df_weather is not None and not df_weather.empty:
@@ -1532,7 +1532,7 @@ class Model:
                     # df_weather_filtered[pred_col] = df_weather_filtered[pred_col].apply(lambda x: float(x))
                     df_weather_filtered[pred_col] = pd.to_numeric(df_weather_filtered[pred_col], errors='coerce')
 
-            # 将预测天气数据整理到预测df中
+            # 将预测气象数据整理到预测df中
             for pred_col, target_col in pred_weather_features_map.items():
                 if pred_col in df_weather_filtered.columns:
                     # Apply specific transformations if defined

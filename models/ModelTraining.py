@@ -24,9 +24,13 @@ from sklearn.model_selection import (
     RandomizedSearchCV
 )
 
+from features.DataAugment import TimeSeriesAugmenter
+from features.FeatureSelection import FeatureSelector
 from models.ModelFactory import ModelFactory
 from models.ModelSaveLoad import ModelDeployPkl
 from models.ModelEnsemble_optim import TimeSeriesEnsembleRegressor, EnsembleConfig
+from models.learning_rate import resolve_learning_rate
+from models.losses import get_scorer_by_loss_name
 from utils.log_util import logger
 
 # global variable
@@ -40,6 +44,72 @@ class Trainer:
         self.log_prefix = log_prefix
         self.model_params = copy.deepcopy(self.args.model_params)
         self.model_factory = ModelFactory(log_prefix=log_prefix)
+        self.augmenter = TimeSeriesAugmenter(
+            enabled=bool(getattr(self.args, "enable_data_augmentation", False)),
+            augmentation_ratio=float(getattr(self.args, "augmentation_ratio", 0.2)),
+            feature_noise_std=float(getattr(self.args, "augmentation_feature_noise_std", 0.01)),
+            target_noise_std=float(getattr(self.args, "augmentation_target_noise_std", 0.005)),
+            random_state=int(getattr(self.args, "augmentation_random_state", 42)),
+            log_prefix=self.log_prefix,
+        )
+
+    def _build_multi_output_model(self, base_estimator, n_outputs: int):
+        """
+        根据配置构建多输出策略模型
+        """
+        if n_outputs <= 1:
+            return base_estimator
+        strategy = str(getattr(self.args, "multi_output_strategy", "multioutput")).lower()
+        if strategy == "regressor_chain":
+            logger.info(f"{self.log_prefix} Multi-output strategy: RegressorChain")
+            return RegressorChain(estimator=base_estimator)
+        logger.info(f"{self.log_prefix} Multi-output strategy: MultiOutputRegressor")
+        return MultiOutputRegressor(estimator=base_estimator, n_jobs=-1)
+
+    def _inject_quantile_params(self, model_type: str, params: Dict, quantile: float) -> Dict:
+        """
+        为不同回归器注入分位数预测参数
+        """
+        params_q = copy.deepcopy(params)
+        mt = str(model_type).lower()
+        if mt in ["lightgbm", "lgb"]:
+            params_q["objective"] = "quantile"
+            params_q["metric"] = "quantile"
+            params_q["alpha"] = float(quantile)
+        elif mt in ["xgboost", "xgb"]:
+            # xgboost >= 2.0 支持 quantileerror
+            params_q["objective"] = "reg:quantileerror"
+            params_q["quantile_alpha"] = float(quantile)
+            params_q["eval_metric"] = "quantile"
+        elif mt in ["catboost", "cat"]:
+            params_q["loss_function"] = f"Quantile:alpha={float(quantile)}"
+        else:
+            logger.warning(f"{self.log_prefix} model_type={model_type} has no explicit quantile objective, using default params.")
+        return params_q
+
+    def _build_feature_selector(self, categorical_features):
+        return FeatureSelector(
+            enabled=bool(getattr(self.args, "enable_feature_selection", False)),
+            method=str(getattr(self.args, "feature_selection_method", "f_regression")),
+            max_features=int(getattr(self.args, "feature_selection_max_features", 80)),
+            min_features=int(getattr(self.args, "feature_selection_min_features", 10)),
+            force_keep_features=list(categorical_features or []),
+            log_prefix=self.log_prefix,
+        )
+
+    def _prepare_training_data(self, X_train, Y_train, categorical_features):
+        X_prepared = X_train.copy()
+        Y_prepared = Y_train.copy()
+        # 1) 数据增强（仅训练集）
+        X_prepared, Y_prepared = self.augmenter.augment(
+            X_prepared, Y_prepared, categorical_features=categorical_features
+        )
+        # 2) 特征选择（fit on training split）
+        selector = self._build_feature_selector(categorical_features=categorical_features)
+        X_selected, selected_features = selector.fit_transform(
+            X_prepared, Y_prepared, categorical_features=categorical_features
+        )
+        return X_selected, Y_prepared, selected_features
 
     def _hyperparameters_tuning(self, X_train, Y_train):
         """
@@ -78,11 +148,17 @@ class Trainer:
 
         # Use GridSearchCV for exhaustive search or RandomizedSearchCV for faster search
         # RandomizedSearchCV is generally preferred for larger search spaces
+        tuning_metric = getattr(self.args, "tuning_metric", None)
+        if not tuning_metric:
+            tuning_metric = get_scorer_by_loss_name(
+                getattr(self.args, "loss", "mae"),
+                delta=float(getattr(self.args, "huber_delta", 1.0)),
+            )
         search = RandomizedSearchCV(
             estimator=model_for_tuning,
             param_distributions=tuned_param_grid,
             n_iter=10, # Number of parameter settings that are sampled
-            scoring=self.args.tuning_metric,
+            scoring=tuning_metric,
             cv=tscv,
             verbose=1,
             n_jobs=-1, # Use all available cores
@@ -107,6 +183,25 @@ class Trainer:
         X_train_df = X_train.copy()
         Y_train_df = Y_train.copy()
         # ------------------------------
+        # 数据增强 + 特征选择
+        # ------------------------------
+        X_train_df, Y_train_df, selected_features = self._prepare_training_data(
+            X_train_df, Y_train_df, categorical_features
+        )
+        # ------------------------------
+        # 学习率配置（固定 or 自动）
+        # ------------------------------
+        resolved_lr = resolve_learning_rate(
+            base_learning_rate=getattr(self.args, "learning_rate", None),
+            n_samples=len(X_train_df),
+            auto_enabled=bool(getattr(self.args, "enable_auto_learning_rate", False)),
+            min_lr=float(getattr(self.args, "auto_lr_min", 0.005)),
+            max_lr=float(getattr(self.args, "auto_lr_max", 0.2)),
+        )
+        if resolved_lr is not None:
+            self.model_params["learning_rate"] = resolved_lr
+            logger.info(f"{self.log_prefix} Using learning_rate={resolved_lr:.6f}")
+        # ------------------------------
         # 归一化/标准化
         # ------------------------------
         # 特征预处理（训练模式）
@@ -123,11 +218,11 @@ class Trainer:
         # ------------------------------
         if self.args.perform_tuning:
             best_model = self._hyperparameters_tuning(X_train_df_processed, Y_train_df)
-            return best_model, feature_scaler
+            return best_model, feature_scaler, selected_features
         # ------------------------------
         # 模型训练
         # ------------------------------
-        if self.args.enable_ensemble:
+        if self.args.enable_ensemble and str(getattr(self.args, "predict_type", "point")).lower() == "point":
             logger.info(f"{self.log_prefix} Ensemble models: {self.args.ensemble_models}, Ensemble method: {self.args.ensemble_method}")
             logger.info(f"{self.log_prefix} {'-' * 50}")
            
@@ -151,29 +246,61 @@ class Trainer:
             ensemble.fit(X_train_df_processed, y_train_input)
             
             logger.info(f"{self.log_prefix} Ensemble training completed!")
-            return ensemble, feature_scaler
+            return ensemble, feature_scaler, selected_features
         else:
-            # 单模型
-            lgbm_estimator = self.model_factory.create_model(
-                model_type=getattr(self.args, "model_type", "lightgbm"), 
-                model_params=self.model_params,
-            )
-            # 模型训练
-            if Y_train_df.shape[1] == 1:
-                logger.info(f"{self.log_prefix} Training single output LGBMRegressor...")
-                logger.info(f"{self.log_prefix} {'-' * 71}")
-                logger.info(f"{self.log_prefix} Model training...")
-                model = lgbm_estimator
-                model.fit(X_train_df_processed, np.ravel(Y_train_df.values), categorical_feature=lgbm_categorical)
-            elif Y_train_df.shape[1] > 1:
-                logger.info(f"{self.log_prefix} Training MultiOutputRegressor with {Y_train.shape[1]} outputs...")
-                logger.info(f"{self.log_prefix} {'-' * 71}")
-                logger.info(f"{self.log_prefix} Model training...")
-                model = MultiOutputRegressor(estimator = lgbm_estimator.model, n_jobs=-1)
-                model.fit(X_train_df_processed, Y_train_df)
-            
-            logger.info(f"{self.log_prefix} Model training completed!")
-            return model, feature_scaler
+            predict_type = str(getattr(self.args, "predict_type", "point")).lower()
+            model_type = getattr(self.args, "model_type", "lightgbm")
+            # ------------------------------
+            # 单模型 - 点预测
+            # ------------------------------
+            if predict_type == "point":
+                estimator_wrapper = self.model_factory.create_model(
+                    model_type=model_type,
+                    model_params=self.model_params,
+                )
+                if Y_train_df.shape[1] == 1:
+                    logger.info(f"{self.log_prefix} Training single-output regressor...")
+                    logger.info(f"{self.log_prefix} {'-' * 71}")
+                    model = estimator_wrapper
+                    model.fit(X_train_df_processed, np.ravel(Y_train_df.values), categorical_feature=lgbm_categorical)
+                else:
+                    logger.info(f"{self.log_prefix} Training multi-output regressor with {Y_train_df.shape[1]} outputs...")
+                    logger.info(f"{self.log_prefix} {'-' * 71}")
+                    model = self._build_multi_output_model(estimator_wrapper.model, n_outputs=Y_train_df.shape[1])
+                    model.fit(X_train_df_processed, Y_train_df)
+                logger.info(f"{self.log_prefix} Model training completed!")
+                return model, feature_scaler, selected_features
+            # ------------------------------
+            # 单模型 - 分位数预测
+            # ------------------------------
+            quantiles = [float(q) for q in getattr(self.args, "quantiles", [0.1, 0.5, 0.9])]
+            if not quantiles:
+                raise ValueError(f"{self.log_prefix} predict_type=quantile but quantiles is empty.")
+            quantile_models = {}
+            logger.info(f"{self.log_prefix} Training quantile models for quantiles={quantiles}")
+            logger.info(f"{self.log_prefix} {'-' * 71}")
+            for q in quantiles:
+                params_q = self._inject_quantile_params(model_type=model_type, params=self.model_params, quantile=q)
+                estimator_wrapper_q = self.model_factory.create_model(
+                    model_type=model_type,
+                    model_params=params_q,
+                )
+                if Y_train_df.shape[1] == 1:
+                    model_q = estimator_wrapper_q
+                    model_q.fit(X_train_df_processed, np.ravel(Y_train_df.values), categorical_feature=lgbm_categorical)
+                else:
+                    model_q = self._build_multi_output_model(estimator_wrapper_q.model, n_outputs=Y_train_df.shape[1])
+                    model_q.fit(X_train_df_processed, Y_train_df)
+                quantile_models[q] = model_q
+            median_q = min(quantiles, key=lambda x: abs(x - 0.5))
+            quantile_bundle = {
+                "predict_type": "quantile",
+                "quantiles": quantiles,
+                "median_quantile": median_q,
+                "models": quantile_models,
+            }
+            logger.info(f"{self.log_prefix} Quantile model training completed!")
+            return quantile_bundle, feature_scaler, selected_features
 
     def model_save(self, model):
         """

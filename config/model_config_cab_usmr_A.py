@@ -1,24 +1,11 @@
 # -*- coding: utf-8 -*-
-
-# ***************************************************
-# * File        : model_config.py
-# * Author      : Zhefeng Wang
-# * Email       : zfwang7@gmail.com
-# * Date        : 2026-02-11
-# * Version     : 1.0.021110
-# * Description : description
-# * Link        : link
-# * Requirement : 相关模块版本需求(例如: numpy >= 2.1.0)
-# ***************************************************
-
-# python libraries
 import datetime
 from typing import List, Dict, Optional
 from dataclasses import dataclass, field
 
 
 @dataclass
-class ModelConfig_univariate:
+class ModelConfig:
     """
     模型配置类
     包含数据路径、特征设置、模型参数等所有配置项
@@ -66,11 +53,11 @@ class ModelConfig_univariate:
         # 节假日特征中的类别特征
         datetype_categorical_features: List[str] = field(default_factory=lambda: [])
     
-    # 天气数据配置
+    # 气象数据配置
     # --------------
     enable_weather_features: bool = True
     if enable_weather_features:
-        # 天气数据
+        # 气象数据
         weather_history_path: Optional[str] = "df_weather.csv"
         weather_future_path: Optional[str] = "df_weather_future.csv"
         weather_ts_feat: Optional[str] = "ts"
@@ -86,7 +73,7 @@ class ModelConfig_univariate:
         # 天气特征中的类别特征
         weather_categorical_features: List[str] = field(default_factory=lambda: [])
     else:
-        # 天气数据
+        # 气象数据
         weather_history_path: Optional[str] = None
         weather_future_path: Optional[str] = None
         weather_ts_feat: Optional[str] = None

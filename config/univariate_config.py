@@ -1,24 +1,11 @@
 # -*- coding: utf-8 -*-
-
-# ***************************************************
-# * File        : model_config.py
-# * Author      : Zhefeng Wang
-# * Email       : zfwang7@gmail.com
-# * Date        : 2026-02-11
-# * Version     : 1.0.021110
-# * Description : description
-# * Link        : link
-# * Requirement : 相关模块版本需求(例如: numpy >= 2.1.0)
-# ***************************************************
-
-# python libraries
 import datetime
 from typing import List, Dict, Optional
 from dataclasses import dataclass, field
 
 
 @dataclass
-class ModelConfig_univariate:
+class ModelConfig:
     """
     模型配置类
     包含数据路径、特征设置、模型参数等所有配置项
@@ -27,7 +14,7 @@ class ModelConfig_univariate:
     # 输入数据
     # ------------------------------
     # 目标时间序列配置
-    data_dir: str = "./dataset/electricity_work/demand_load/lingang_A"
+    data_dir: str = "./dataset/electricity_work/2026-03-11/demand_load/lingang_A"
     data_path: str = "AIDC_A_dataset.csv"
     data: str = "AIDC_A_dataset"
     freq: str = "5min"
@@ -66,11 +53,11 @@ class ModelConfig_univariate:
         # 节假日特征中的类别特征
         datetype_categorical_features: List[str] = field(default_factory=lambda: [])
     
-    # 天气数据配置
+    # 气象数据配置
     # --------------
     enable_weather_features: bool = False
     if enable_weather_features:
-        # 天气数据
+        # 气象数据
         weather_history_path: Optional[str] = "df_weather.csv"
         weather_future_path: Optional[str] = "df_weather_future.csv"
         weather_ts_feat: Optional[str] = "ts"
@@ -86,7 +73,7 @@ class ModelConfig_univariate:
         # 天气特征中的类别特征
         weather_categorical_features: List[str] = field(default_factory=lambda: [])
     else:
-        # 天气数据
+        # 气象数据
         weather_history_path: Optional[str] = None
         weather_future_path: Optional[str] = None
         weather_ts_feat: Optional[str] = None
@@ -205,10 +192,38 @@ class ModelConfig_univariate:
     learning_rate: float = 0.05  # 模型学习率
     patience: int = 100  # 早停步数
     encode_categorical_features: bool = False  # 是否对类别特征进行编码
+    # 多输出策略: multioutput / regressor_chain
+    multi_output_strategy: str = "multioutput"
+    # 预测类型: point / quantile
+    predict_type: str = "point"
+    # 分位数预测配置（predict_type=quantile 时生效）
+    quantiles: List[float] = field(default_factory=lambda: [0.1, 0.5, 0.9])
+    # Direct 方法是否使用 horizon-aware 外生特征展开
+    use_horizon_exogenous_for_direct: bool = True
+    # 全局训练模式（跨序列联合）
+    enable_global_training: bool = False
+    series_id_feature: str = "series_id"
     # 模型超参数调优
     perform_tuning: bool = False
     tuning_metric: str = "neg_mean_absolute_error"
     tuning_n_splits: int = 3
+    # 数据增强（训练集）
+    enable_data_augmentation: bool = False
+    augmentation_ratio: float = 0.2
+    augmentation_feature_noise_std: float = 0.01
+    augmentation_target_noise_std: float = 0.005
+    augmentation_random_state: int = 42
+    # 特征选择（fit on train, reuse on test/forecast）
+    enable_feature_selection: bool = False
+    feature_selection_method: str = "f_regression"  # f_regression / mutual_info
+    feature_selection_max_features: int = 80
+    feature_selection_min_features: int = 10
+    # 学习率策略
+    enable_auto_learning_rate: bool = False
+    auto_lr_min: float = 0.005
+    auto_lr_max: float = 0.2
+    # 鲁棒损失参数（用于 huber scorer）
+    huber_delta: float = 1.0
     # ------------------------------
     # 模型运行模式
     # ------------------------------

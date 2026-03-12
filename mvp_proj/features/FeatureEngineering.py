@@ -11,7 +11,7 @@
 # *               - 一、基本特征：
 # *                 - 1.外生变量特征
 # *                     - 1.1 日期时间特征(小时、星期、月份、季度等)、周期性编码(sin/cos)
-# *                     - 1.2 天气特征(天气数据集成)
+# *                     - 1.2 天气特征(气象数据集成)
 # *                     - 1.3 节假日 标记特征(日期类型数据集成)
 # *                 - 2.内生变量特征：
 # *                     - 2.1 滞后特征：单变量(目标变量)滞后特征、多变量(目标变量、其他内生变量)滞后特征
@@ -221,7 +221,7 @@ class ExogenousFeatureEngineer:
             weather_features = [f for f in weather_features if f in df_weather_filtered.columns]
             df_weather_filtered = df_weather_filtered[[col_ts] + weather_features]
             
-            # 合并目标数据和天气数据
+            # 合并目标数据和气象数据
             df_copy = pd.merge(df_copy, df_weather_filtered, left_on="time", right_on=col_ts, how="left")
             # 插值填充缺失值
             df_copy = df_copy.interpolate(method="linear", limit_direction="both")
@@ -242,7 +242,7 @@ class ExogenousFeatureEngineer:
 
     def extend_future_weather_feature(self, df: pd.DataFrame, df_weather: pd.DataFrame, col_ts: str):
         """
-        未来天气数据特征构造
+        未来气象数据特征构造
         """
         df_copy = df.copy()
         if df_weather is not None and not df_weather.empty:
@@ -268,7 +268,7 @@ class ExogenousFeatureEngineer:
                     # df_weather_filtered[pred_col] = df_weather_filtered[pred_col].apply(lambda x: float(x))
                     df_weather_filtered[pred_col] = pd.to_numeric(df_weather_filtered[pred_col], errors='coerce')
 
-            # 将预测天气数据整理到预测df中
+            # 将预测气象数据整理到预测df中
             for pred_col, target_col in pred_weather_features_map.items():
                 if pred_col in df_weather_filtered.columns:
                     # Apply specific transformations if defined

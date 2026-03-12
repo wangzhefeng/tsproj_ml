@@ -66,7 +66,7 @@ tsproj_ml/
 
 可选外生数据：
 - 日期类型数据：`date_history_path`, `date_future_path`
-- 天气数据：`weather_history_path`, `weather_future_path`
+- 气象数据：`weather_history_path`, `weather_future_path`
 
 ## 4. 核心流程
 

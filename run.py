@@ -88,6 +88,32 @@ def _apply_overrides(cfg, args):
         cfg.encode_categorical_features = _parse_bool_flag(args.encode_categorical_features)
     if args.perform_tuning is not None:
         cfg.perform_tuning = _parse_bool_flag(args.perform_tuning)
+    if args.enable_data_augmentation is not None:
+        cfg.enable_data_augmentation = _parse_bool_flag(args.enable_data_augmentation)
+    if args.augmentation_ratio is not None:
+        cfg.augmentation_ratio = args.augmentation_ratio
+    if args.augmentation_feature_noise_std is not None:
+        cfg.augmentation_feature_noise_std = args.augmentation_feature_noise_std
+    if args.augmentation_target_noise_std is not None:
+        cfg.augmentation_target_noise_std = args.augmentation_target_noise_std
+    if args.augmentation_random_state is not None:
+        cfg.augmentation_random_state = args.augmentation_random_state
+    if args.enable_feature_selection is not None:
+        cfg.enable_feature_selection = _parse_bool_flag(args.enable_feature_selection)
+    if args.feature_selection_method is not None:
+        cfg.feature_selection_method = args.feature_selection_method
+    if args.feature_selection_max_features is not None:
+        cfg.feature_selection_max_features = args.feature_selection_max_features
+    if args.feature_selection_min_features is not None:
+        cfg.feature_selection_min_features = args.feature_selection_min_features
+    if args.enable_auto_learning_rate is not None:
+        cfg.enable_auto_learning_rate = _parse_bool_flag(args.enable_auto_learning_rate)
+    if args.auto_lr_min is not None:
+        cfg.auto_lr_min = args.auto_lr_min
+    if args.auto_lr_max is not None:
+        cfg.auto_lr_max = args.auto_lr_max
+    if args.huber_delta is not None:
+        cfg.huber_delta = args.huber_delta
 
     if args.learning_rate is not None:
         cfg.learning_rate = args.learning_rate
@@ -122,8 +148,8 @@ def args_parse():
     parser.add_argument(
         "--config-module",
         type=str,
-        default="config.model_config",
-        help="Python module path for config, e.g. config.model_config_lgbm_usmd_A",
+        default="config.univariate_config",
+        help="Python module path for config, e.g. config.univariate_config",
     )
     parser.add_argument(
         "--config-class",
@@ -157,6 +183,19 @@ def args_parse():
     parser.add_argument("--scale", default=None, help="bool flag, supports 1/0/true/false")
     parser.add_argument("--encode-categorical-features", default=None, help="bool flag")
     parser.add_argument("--perform-tuning", default=None, help="bool flag")
+    parser.add_argument("--enable-data-augmentation", default=None, help="bool flag")
+    parser.add_argument("--augmentation-ratio", type=float, default=None)
+    parser.add_argument("--augmentation-feature-noise-std", type=float, default=None)
+    parser.add_argument("--augmentation-target-noise-std", type=float, default=None)
+    parser.add_argument("--augmentation-random-state", type=int, default=None)
+    parser.add_argument("--enable-feature-selection", default=None, help="bool flag")
+    parser.add_argument("--feature-selection-method", type=str, default=None, help="f_regression/mutual_info")
+    parser.add_argument("--feature-selection-max-features", type=int, default=None)
+    parser.add_argument("--feature-selection-min-features", type=int, default=None)
+    parser.add_argument("--enable-auto-learning-rate", default=None, help="bool flag")
+    parser.add_argument("--auto-lr-min", type=float, default=None)
+    parser.add_argument("--auto-lr-max", type=float, default=None)
+    parser.add_argument("--huber-delta", type=float, default=None)
     parser.add_argument("--learning-rate", type=float, default=None)
     parser.add_argument("--patience", type=int, default=None)
 

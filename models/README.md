@@ -1,89 +1,167 @@
-# Models README
+# 基于机器学习回归模型的时间序列多步预测方法调研（含原理图）
 
-本文档整理了原始 `README.md` 中关于时间序列预测方法的介绍，并结合业界常用实践进行了补充。
+本文档专注于 **机器学习回归模型**（LightGBM / XGBoost / CatBoost / RandomForest / Linear Models）在多步预测中的常用方法，并与当前实现 `models/ModelForecasting.py` 逐项对比。
 
-## 1. 当前项目已实现的 7 种预测方法
+## 1. 业界常用多步预测方法与原理
 
-### 1.1 方法总览
+> 图示规范（v2）：统一配色、统一编号（图1-图6）、中文标注、统一图例口径（优点/缺点/适用场景）。
 
-| 方法代码 | 方法名称 | 多步策略 | 目标维度 | 是否常见 | 说明 |
-|---|---|---|---|---|---|
-| USMDO | 单变量多步直接输出 | MIMO/Direct | 单变量H步 | 中 | 更像“仅外生变量”基线 |
-| USMD | 单变量多步直接 | Direct | 单变量H步 | 高 | 经典直接法，避免递归误差累积 |
-| USMR | 单变量多步递归 | Recursive | 单变量1步滚动 | 高 | 工程最常见之一，训练简单 |
-| USMDR | 单变量多步直接递归 | DirRec/Block-Recursive | 单变量 | 中高 | Direct 与 Recursive 折中 |
-| MSMD | 多变量多步直接 | Direct (with multivariate lags) | 单变量H步 | 高 | 零售/负荷常见，效果通常好于 USMD |
-| MSMR | 多变量多步递归 | Recursive | 多变量1步滚动 | 中高 | 适合系统联动变量预测 |
-| MSMDR | 多变量多步直接递归 | DirRec | 多变量 | 中 | 实现复杂，调参成本高 |
 
-### 1.2 各方法核心思路（整理版）
+### 1.1 Recursive（递归法）
 
-1. `USMDO`：仅使用外生特征（时间、节假日、天气等）直接输出未来 H 步。适合冷启动或缺少目标历史值场景。
-2. `USMD`：使用目标序列滞后特征 + 外生特征，一次输出 H 步。适合短期预测和稳定性优先场景。
-3. `USMR`：训练一步模型并递归滚动预测 H 步。训练快、部署简单，但长 horizon 误差会累积。
-4. `USMDR`：分块递归（DirRec），在效率和误差累积之间折中。
-5. `MSMD`：使用“目标+其他内生变量”的滞后特征，直接预测目标未来 H 步。多变量相关性强时常是首选。
-6. `MSMR`：递归预测所有内生变量，保留变量联动关系，适合需要联动输出的系统建模。
-7. `MSMDR`：多变量分块递归，思路先进但工程复杂度较高。
+核心原理：
+- 训练一个一步模型 `f1`，只学 `y(t+1)`。
+- 推理时把 `y_hat(t+1)` 回填到历史，再预测 `y_hat(t+2)`，循环到 `H`。
 
-## 2. 当前方法是否业界常用
+![Recursive Principle](imgs/method_recursive_v2.png)
 
-结论：**是，当前 7 种方法在“多步预测策略”层面属于业界主流范式**，尤其是 `Direct / Recursive / DirRec / Multi-output`。
+适用性：
+- 优点：训练成本最低、模型管理最简单。
+- 风险：误差逐步累积，长 horizon 易漂移。
 
-依据：
-- 这些策略本身是经典多步预测问题的标准分解方式，学术和工业中长期被采用。
-- 现代时间序列库仍显式支持这些范式（如 `sktime` 的 direct/recursive/dirrec/reduction，`skforecast` 的 direct/recursive）。
-- 在大规模实战竞赛（例如 M5）中，递归与非递归（direct）策略都被大量使用，尤其与 LightGBM 等模型结合时。
+### 1.2 Direct（直接法）
 
-补充判断：
-- `USMDO` 在业界更多作为 baseline 或冷启动方案，不是多数高精度生产系统的主模型。
-- `MSMD/USMD` 这类“滞后特征 + 树模型 + 直接多步”是目前业务预测（零售、需求、负荷）非常常见的配置。
+核心原理：
+- 每个 horizon 单独训练：`f1` 预测 `t+1`，`f2` 预测 `t+2`，…，`fH` 预测 `t+H`。
+- 预测时并行输出后拼接。
 
-## 3. 业界常用但当前项目可进一步补充的方法
+![Direct Principle](imgs/method_direct_v2.png)
 
-以下方法是目前业界高频出现、且与你当前框架兼容或可扩展的方向。
+适用性：
+- 优点：无递归误差传播，短中期稳定。
+- 风险：模型数量多，训练和维护成本高。
 
-### 3.1 统计与可解释基线（建议优先补）
+### 1.3 MIMO / Multi-output（多输出直接法）
 
-1. `SeasonalNaive / Naive`：低成本强基线，必须保留用于 sanity check。
-2. `ETS/Holt-Winters`：季节性强的业务序列常见强基线。
-3. `ARIMA/SARIMA/SARIMAX`：经典可解释方案，仍被大量用于产线和监控基线。
-4. `AutoARIMA`：自动选阶，适合快速建模和小样本。
-5. `Prophet`：节假日/事件驱动场景可解释性较好。
+核心原理：
+- 用一个模型一次输出整个 horizon 向量：`[y(t+1), ..., y(t+H)]`。
+- 常见实现：`MultiOutputRegressor(base_estimator)`。
 
-### 3.2 机器学习增强（与你当前路线最匹配）
+![MIMO Principle](imgs/method_mimo_v2.png)
 
-1. `Global LightGBM/XGBoost`：跨序列联合训练（cross-learning），已被 M5 充分验证。
-2. `Quantile LightGBM/CatBoost`：直接输出分位数预测，满足补货/容量场景的风险控制需求。
-3. `分层预测 + Reconciliation`：集团-区域-门店-商品等层级业务中很常见。
+适用性：
+- 优点：部署和推理简单。
+- 风险：若底层是独立头（常见于 `MultiOutputRegressor`），跨 horizon 依赖建模有限。
 
-### 3.3 深度学习（按业务规模逐步引入）
+### 1.4 DirRec（直接-递归混合）
 
-1. `DeepAR`：多序列概率预测工业落地经典（尤其大量相关序列）。
-2. `N-BEATS / N-HiTS`：在通用单变量/多序列任务中表现稳定。
-3. `TFT`：多输入、多步、需要解释性时常用。
-4. `PatchTST / Autoformer / Informer`：长序列场景常见 Transformer 路线。
+核心原理：
+- 顺序地做 horizon 预测，每一步可把前一步预测加入特征。
+- 兼具 direct 与 recursive 的特点。
 
-## 4. 对本项目的建议落地顺序
+![DirRec Principle](imgs/method_dirrec_v2.png)
 
-1. 先补统计强基线：`SeasonalNaive + ETS + SARIMAX`。
-2. 在现有树模型基础上补概率预测：`Quantile`（P10/P50/P90）。
-3. 补层级预测能力（如按门店/品类聚合后再协调）。
-4. 数据规模足够时再引入 `DeepAR/N-BEATS/TFT/PatchTST`，并与现有树模型做集成。
+适用性：
+- 优点：在中长 horizon 常较 recursive 更稳。
+- 风险：特征 schema 管理复杂（列对齐、回填规则）。
 
-## 5. 参考资料（调研来源）
+### 1.5 Block Direct / DIRMO（分块直接法）
 
-1. Ben Taieb, S., Hyndman, R.J. (Direct/Recursive/Rectify): https://robjhyndman.com/publications/rectify/index.html
-2. sktime Forecasting API（含 Direct/Recursive/DirRec/多类 forecaster）: https://www.sktime.net/en/stable/api_reference/forecasting.html
-3. skforecast（Recursive/Direct 文档与实现）: https://skforecast.org/latest/user_guides/autoregresive-forecaster
-4. statsmodels ARIMA/SARIMAX: https://www.statsmodels.org/stable/generated/statsmodels.tsa.arima.model.ARIMA.html
-5. statsmodels ExponentialSmoothing: https://www.statsmodels.org/v0.10.2/generated/statsmodels.tsa.holtwinters.ExponentialSmoothing.html
-6. Prophet（Forecasting at Scale）: https://www.tandfonline.com/doi/abs/10.1080/00031305.2017.1380080
-7. M4 Competition 结果总结: https://www.sciencedirect.com/science/article/abs/pii/S0169207018300785
-8. M4 冠军方法（ES + RNN 混合）: https://econpapers.repec.org/article/eeeintfor/v_3a36_3ay_3a2020_3ai_3a1_3ap_3a75-85.htm
-9. M5 背景论文: https://www.sciencedirect.com/science/article/pii/S0169207021001187
-10. M5 Accuracy 结果论文（LightGBM 与递归/非递归策略）: https://statmodeling.stat.columbia.edu/wp-content/uploads/2021/10/M5_accuracy_competition.pdf
-11. DeepAR（AWS 文档）: https://docs.aws.amazon.com/en_us/sagemaker/latest/dg/deepar.html
-12. Autoformer (NeurIPS 2021): https://proceedings.neurips.cc/paper/2021/hash/bcc0d400288793e8bdcd7c19a8ac0c2b-Abstract.html
-13. PatchTST (ICLR 2023): https://iclr.cc/virtual/2023/poster/10876
-14. Informer (AAAI 2021): https://aaai.org/papers/11106-informer-beyond-efficient-transformer-for-long-sequence-time-series-forecasting/
+核心原理：
+- 将 horizon 切成若干块，每块由一个多输出模型直接预测。
+- 是 Direct 与 Recursive 间的工程折中。
+
+![Block Direct Principle](imgs/method_block_direct_v2.png)
+
+适用性：
+- 优点：模型数少于 Direct，误差传播小于 Recursive。
+- 风险：块大小（block size）需要调参。
+
+### 1.6 方法对比总览
+
+![Method Comparison Matrix](imgs/method_comparison_matrix_v2.png)
+
+## 2. 你的实现与业界常用方法的对比
+
+当前 `ModelForecasting.py` 方法映射：
+
+| 业界方法 | 你当前实现 | 结论 |
+|---|---|---|
+| Recursive | `univariate_single_multi_step_recursive_forecast`、`multivariate_single_multi_step_recursive_forecast` | 已覆盖 |
+| Direct | `univariate_single_multi_step_direct_forecast`、`multivariate_single_multi_step_direct_forecast` | 已覆盖 |
+| MIMO / Multi-output | 训练侧 `MultiOutputRegressor`（`ModelTraining.py`）+ direct 推理 | 已覆盖（基础版） |
+| DirRec | `univariate_single_multi_step_direct_recursive_forecast`、`multivariate_single_multi_step_direct_recursive_forecast` | 已覆盖 |
+| Block Direct / DIRMO | 当前“分块”实现更偏分块递归 | 部分覆盖 |
+| Regressor Chain | 未实现 | 缺失 |
+| Quantile 多分位预测 | 未实现 | 缺失 |
+| Global（跨序列联合） | 未体现 `series_id` 联合建模 | 缺失 |
+
+## 3. 与你当前实现的关键区别（代码级）
+
+1. `USMD/MSMD` 推理阶段只用未来第一个外生点构建输入
+- 代码位置：`models/ModelForecasting.py` 约 138-170 行、330-366 行。
+- 区别：业界 direct 常按 horizon 使用 `X_exog(t+h)`，你当前实现会弱化外生变量时变信息。
+
+2. `MSMR` 目标映射依赖 `_shift_1` 字符串替换
+- 代码位置：约 387-449 行。
+- 区别：业界更常用显式 target schema，降低列错位风险。
+
+3. `MSMDR` 对其他内生变量采用持久性回填
+- 代码位置：约 507-572 行。
+- 区别：业界通常会为关键协变量提供独立预测器或场景输入，不仅使用 last-value。
+
+4. 当前“分块策略”仍以递归回填为主，不是严格 block-direct
+- 代码位置：约 245-304 行、495-590 行。
+- 区别：严格 DIRMO 是“按块直接训练/预测”，递归依赖更弱。
+
+## 4. 面向你实现的优化建议
+
+### P0（优先做）
+
+1. `USMD/MSMD` 改为 horizon-aware 外生特征
+- 每个 `h` 使用 `X_exog(t+h)`。
+- 对应训练目标 `y(t+h)`，保证训练/推理一致。
+
+2. 增加统一 `FeatureSchema` 校验
+- 训练与预测强制列顺序、类型、缺失列补齐策略一致。
+
+### P1
+
+1. 新增 `RegressorChain` 策略
+- 用于增强多输出情况下 horizon 间依赖建模。
+
+2. 新增 Quantile 预测
+- 输出 `P10/P50/P90`，为业务提供不确定性区间。
+
+### P2
+
+1. 将当前分块递归扩展为严格 `Block Direct (DIRMO)`
+- 每块训练一个多输出模型，减少递归传播。
+
+2. 增加 Global 训练模式
+- 跨序列联合训练（`series_id` + 静态特征），提升泛化与样本利用率。
+
+## 5. 本次生成的图片文件
+
+已生成并保存于 `models/imgs/`：
+- `method_recursive_v2.png`
+- `method_direct_v2.png`
+- `method_mimo_v2.png`
+- `method_dirrec_v2.png`
+- `method_block_direct_v2.png`
+- `method_comparison_matrix_v2.png`
+
+## 6. 调研参考资料（核心）
+
+1. Ben Taieb & Hyndman（多步策略文献入口）
+- https://robjhyndman.com/publications/rectify/index.html
+
+2. sktime reduction（direct / recursive / multioutput）
+- https://www.sktime.net/en/stable/api_reference/auto_generated/sktime.forecasting.compose.make_reduction.html
+
+3. scikit-learn MultiOutputRegressor
+- https://scikit-learn.org/stable/modules/generated/sklearn.multioutput.MultiOutputRegressor.html
+
+4. scikit-learn RegressorChain
+- https://scikit-learn.org/stable/modules/generated/sklearn.multioutput.RegressorChain.html
+
+5. skforecast（回归模型 direct/recursive 实战）
+- https://skforecast.org/latest/
+
+6. M5 Accuracy（LightGBM 与多步策略工业实践）
+- https://statmodeling.stat.columbia.edu/wp-content/uploads/2021/10/M5_accuracy_competition.pdf
+
+7. LightGBM / XGBoost / CatBoost 文档（含 quantile 相关能力）
+- https://lightgbm.readthedocs.io/
+- https://xgboost.readthedocs.io/en/stable/parameter.html
+- https://catboost.ai/docs/en/concepts/loss-functions-regression

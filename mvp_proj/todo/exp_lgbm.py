@@ -57,7 +57,7 @@ weekly_cycle = 200 * np.sin(np.arange(len(df)) * 2 * np.pi / (288 * 7))
 noise = np.random.normal(0, 50, len(df))
 df['real_power'] = base_load + daily_cycle + weekly_cycle + noise
 
-# 模拟天气数据
+# 模拟气象数据
 df['wind_speed'] = np.random.uniform(0, 15, len(df))
 df['wind_angle'] = np.random.uniform(0, 360, len(df))
 df['temp'] = 25 + 5 * np.sin(np.arange(len(df)) * 2 * np.pi / 288) + np.random.uniform(-2, 2, len(df))
@@ -174,7 +174,7 @@ history_df = df.copy()
 
 # 创建未来288个点的时间戳
 future_dates = pd.date_range(history_df['data_time'].iloc[-1] + pd.Timedelta(minutes=5), periods=288, freq='5T')
-# 假设未来的天气数据是已知的（天气预报）,在此我们用历史最后一天的数据来模拟未来的天气预报
+# 假设未来的气象数据是已知的（天气预报）,在此我们用历史最后一天的数据来模拟未来的天气预报
 future_weather_forecast = history_df.iloc[-288:].copy()
 future_weather_forecast['data_time'] = future_dates
 future_weather_forecast = future_weather_forecast.drop(columns=['real_power'])

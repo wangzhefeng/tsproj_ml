@@ -87,7 +87,7 @@ class DataLoader:
                 input_data["date_future"] = df_date_future
                 logger.info(f"{self.log_prefix} Date future loaded: {df_date_future.shape}")
         
-        # 加载历史天气数据
+        # 加载历史气象数据
         if self.args.weather_history_path:
             weather_history_path = self.args.data_dir / self.args.weather_history_path
             if weather_history_path.exists():
@@ -96,7 +96,7 @@ class DataLoader:
                 input_data["weather_history"] = df_weather_history
                 logger.info(f"{self.log_prefix} Weather history loaded: {df_weather_history.shape}")
         
-        # 加载未来天气数据
+        # 加载未来气象数据
         if self.args.weather_future_path:
             weather_future_path = self.args.data_dir / self.args.weather_future_path
             if weather_future_path.exists():
@@ -172,6 +172,16 @@ class DataLoader:
             if existing_col_categorical:
                 series_indexed[existing_col_categorical] = series_indexed[existing_col_categorical].astype("category")
                 df_template_copy[existing_col_categorical] = series_indexed[existing_col_categorical].reindex(df_template_copy["time"]).reset_index(drop=True)
+            # Global 模式下透传 series_id（若存在）
+            if getattr(self.args, "enable_global_training", False):
+                series_id_col = getattr(self.args, "series_id_feature", "series_id")
+                if series_id_col in df_series.columns:
+                    df_template_copy[series_id_col] = (
+                        series_indexed[series_id_col]
+                        .astype("category")
+                        .reindex(df_template_copy["time"])
+                        .reset_index(drop=True)
+                    )
             # 内生变量(Endogenous variable)
             endogenous_features = [col for col in df_template_copy.columns if col not in ["time"]]
             if target_feature and target_feature in endogenous_features:

@@ -38,7 +38,7 @@ from sklearn.model_selection import (
     TimeSeriesSplit, GridSearchCV, RandomizedSearchCV
 )
 
-from config.model_config import (
+from config.univariate_config import (
     ModelConfig_univariate, 
     ModelConfig_multivariate
 )

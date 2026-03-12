@@ -150,19 +150,19 @@ class Model:
         模型滑窗测试
         """
         # ------------------------------
-        # 判断是否有足够的历史数据保证至少一个完整的测试窗口
-        # ------------------------------
-        if self.n_windows <= 0:
-            logger.warning(f"{self.log_prefix} Not enough data for testing with current window configuration (Total X points: {len(X_train_history)}")
-            logger.warning(f"{self.log_prefix} Window length: {self.window_len}, Horizon: {self.horizon}). No tests will be performed.")
-            return test_scores_df, cv_plot_df
-        # ------------------------------
         # 模型滑窗测试结果收集
         # ------------------------------
         test_scores_df = pd.DataFrame()
         cv_plot_df = pd.DataFrame()
         # 训练数据集的完整时间戳
         cv_timestamp_full_df = pd.DataFrame({"time": pd.date_range(self.train_start_time, self.train_end_time, freq=self.args.freq, inclusive="left")})
+        # ------------------------------
+        # 判断是否有足够的历史数据保证至少一个完整的测试窗口
+        # ------------------------------
+        if self.n_windows <= 0:
+            logger.warning(f"{self.log_prefix} Not enough data for testing with current window configuration (Total X points: {len(X_train_history)}")
+            logger.warning(f"{self.log_prefix} Window length: {self.window_len}, Horizon: {self.horizon}). No tests will be performed.")
+            return test_scores_df, cv_plot_df
         # ------------------------------
         # 模型滑窗测试过程
         # ------------------------------
@@ -194,8 +194,8 @@ class Model:
             logger.info(f"{self.log_prefix} Model Testing sliding window training...")
             logger.info(f"{self.log_prefix} {'=' * 81}")
             model, scaler_testing = self.train(
-                X_train = X_train_history, 
-                Y_train = Y_train_history, 
+                X_train = X_train, 
+                Y_train = Y_train, 
                 categorical_features = categorical_features,
                 mode = "test",
                 verbose = False,
@@ -263,7 +263,7 @@ class Model:
             # ------------------------------
             # localtest
             # ------------------------------
-            break
+            # break
         # ------------------------------
         # 模型测试结果保存
         # ------------------------------
@@ -471,7 +471,7 @@ def main():
     """
     主函数入口
     """
-    from config.model_config import (
+    from config.univariate_config import (
         ModelConfig_univariate, 
         ModelConfig_multivariate
     )

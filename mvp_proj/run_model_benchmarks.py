@@ -7,7 +7,7 @@ from typing import Dict, List
 
 import pandas as pd
 
-from config.model_config import ModelConfig_univariate, ModelConfig_multivariate
+from config.univariate_config import ModelConfig_univariate, ModelConfig_multivariate
 from main import Model
 
 

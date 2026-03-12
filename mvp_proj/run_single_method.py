@@ -3,7 +3,7 @@
 
 import argparse
 
-from config.model_config import ModelConfig_univariate, ModelConfig_multivariate
+from config.univariate_config import ModelConfig_univariate, ModelConfig_multivariate
 from main import Model
 
 

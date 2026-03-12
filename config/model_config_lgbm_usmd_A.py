@@ -1,0 +1,412 @@
+# -*- coding: utf-8 -*-
+
+# ***************************************************
+# * File        : model_config.py
+# * Author      : Zhefeng Wang
+# * Email       : zfwang7@gmail.com
+# * Date        : 2026-02-11
+# * Version     : 1.0.021110
+# * Description : description
+# * Link        : link
+# * Requirement : 相关模块版本需求(例如: numpy >= 2.1.0)
+# ***************************************************
+
+# python libraries
+import datetime
+from typing import List, Dict, Optional
+from dataclasses import dataclass, field
+
+
+@dataclass
+class ModelConfig_univariate:
+    """
+    模型配置类
+    包含数据路径、特征设置、模型参数等所有配置项
+    """
+    # ------------------------------
+    # 输入数据
+    # ------------------------------
+    # 目标时间序列配置
+    data_dir: str = "./dataset/electricity_work/2026-03-12/demand_load/lingang_A"
+    data_path: str = "df_power.csv"
+    data: str = "df_power"
+    freq: str = "5min"
+    freq_minutes: int = 5
+    target_ts_feat: str = "count_data_time"
+    target_series_numeric_features: List[str] = field(default_factory=list)
+    target_series_categorical_features: List[str] = field(default_factory=list)
+    target_series_drop_features: List[str] = field(default_factory=list)
+    target: str = "h_total_use"
+    # ------------------------------
+    # 特征工程配置
+    # ------------------------------
+    # 日期类型数据配置
+    # --------------
+    enable_date_features: bool = True
+    if enable_date_features:
+        # 节假日数据
+        date_history_path: Optional[str] = "df_date.csv"
+        date_future_path: Optional[str] = "df_date_future.csv"
+        date_ts_feat: Optional[str] = "date"
+        # 节假日特征
+        datetype_features: List[str] = field(default_factory=lambda: [
+            "date_type"
+        ])
+        # 节假日特征中的类别特征
+        datetype_categorical_features: List[str] = field(default_factory=lambda: [
+            "date_type"
+        ])
+    else:
+        # 节假日数据
+        date_history_path: Optional[str] = None
+        date_future_path: Optional[str] = None
+        date_ts_feat: Optional[str] = None
+        # 节假日特征
+        datetype_features: List[str] = field(default_factory=lambda: [])
+        # 节假日特征中的类别特征
+        datetype_categorical_features: List[str] = field(default_factory=lambda: [])
+    
+    # 天气数据配置
+    # --------------
+    enable_weather_features: bool = True
+    if enable_weather_features:
+        # 天气数据
+        weather_history_path: Optional[str] = "df_weather.csv"
+        weather_future_path: Optional[str] = "df_weather_future.csv"
+        weather_ts_feat: Optional[str] = "ts"
+        # 天气特征
+        weather_features: List[str] = field(default_factory=lambda: [
+            "rt_ssr",   # 太阳总辐射
+            "rt_ws10",  # 10m 风速
+            "rt_tt2",   # 2M 气温
+            "cal_rh",   # 相对湿度
+            "rt_ps",    # 气压
+            "rt_rain",  # 降雨量
+        ])
+        # 天气特征中的类别特征
+        weather_categorical_features: List[str] = field(default_factory=lambda: [])
+    else:
+        # 天气数据
+        weather_history_path: Optional[str] = None
+        weather_future_path: Optional[str] = None
+        weather_ts_feat: Optional[str] = None
+        # 天气特征
+        weather_features: List[str] = field(default_factory=lambda: [])
+        # 天气特征中的类别特征
+        weather_categorical_features: List[str] = field(default_factory=lambda: [])
+    
+    # 日期时间特征
+    # --------------
+    enable_datetime_features: bool = True
+    if enable_datetime_features:
+        datetime_features: List[str] = field(default_factory=lambda: [
+            'minute', 'hour', 'day', 'weekday', 'week',
+            'day_of_week', 'week_of_year', 'month', 'days_in_month',
+            'quarter', 'day_of_year', 'year',
+        ])
+        # 日期时间类别特征
+        datetime_categorical_features: List[str] = field(default_factory=lambda: [
+            # "dt_hour", "dt_day", "dt_weekday", "dt_week",
+            # "dt_day_of_week", "dt_week_of_year", "dt_month", "dt_days_in_month",
+            # "dt_quarter", "dt_day_of_year", "dt_year",
+        ])
+    else:
+        datetime_features: List[str] = field(default_factory=lambda: [])
+        # 日期时间类别特征
+        datetime_categorical_features: List[str] = field(default_factory=lambda: [])
+    
+    # 特征滞后数列表
+    # --------------
+    enable_lags_features: bool = True
+    if enable_lags_features:
+        lags: List[int] = field(default_factory=lambda: [
+            1 * 288,  # Daily lag
+            2 * 288,
+            3 * 288,
+            4 * 288,
+            5 * 288,
+            6 * 288,
+            7 * 288,  # Weekly lag
+        ])
+    else:
+        lags: List[int] = field(default_factory=lambda: [])
+    
+    # 高级特征工程配置
+    enable_advanced_features: bool = False
+    
+    enable_rolling_features: bool = False
+    rolling_columns: List[str] = field(default_factory=lambda: ["y"])
+    rolling_windows: List[int] = field(default_factory=lambda: [3, 7, 14, 28])
+    rolling_stats: List[str] = field(default_factory=lambda: ["mean", "std", "min", "max", "skew", "kurt"])
+    
+    enable_expanding_features: bool = False
+    expanding_columns: List[str] = field(default_factory=lambda: ["y"])
+    expanding_stats: List[str] = field(default_factory=lambda: ["mean", "std", "min", "max", "skew", "kurt"])
+    
+    enable_diff_features: bool = False
+    diff_columns: List[str] = field(default_factory=lambda: ["y"])
+    diff_periods: List[int] = field(default_factory=lambda: [1, 7, 24])
+    
+    enable_pct_change_features: bool = False
+    pct_change_columns: List[str] = field(default_factory=lambda: ["y"])
+    pct_change_periods: List[int] = field(default_factory=lambda: [1, 7])
+    
+    enable_time_since_features: bool = False
+    time_since_columns: List[str] = field(default_factory=lambda: ["y"])
+    time_since_events: List[str] = field(default_factory=lambda: ["peak", "thoughl"])
+
+    enable_cyclical_features: bool = False
+    cyclical_columns: List[str] = field(default_factory=lambda: ["minute"])
+    cyclical_period: int = field(default_factory=lambda: 15)
+    
+    enable_interaction_features: bool = False
+    interaction_column_pairs: List[tuple] = field(default_factory=lambda: [("y", "dt_hour")])
+    interaction_operations: List[str] = field(default_factory=lambda: ["add", "subtract", "multiply", "divide"])
+
+    enable_polynomial_features: bool = False
+    polynomial_columns: List[str] = field(default_factory=lambda: ["y"])
+    polynomial_degree: int = field(default_factory=lambda: 2)
+    # ------------------------------
+    # 数据预处理
+    # ------------------------------
+    scale: bool = False  # 是否进行归一化/标准化
+    inverse: bool = False  # 目标变量是否进行归一化/标准化逆变换
+    scaler_type: str = "minmax"  # "standard" 或 "minmax"
+    use_grouped_scaling: str = False
+    # ------------------------------
+    # 训练和预测配置
+    # ------------------------------
+    history_days: int = 39  # 历史数据天数
+    predict_days: int = 1  # 预测未来 1 天的数据
+    window_days: int = 15  # 滑动窗口天数
+    # ------------------------------
+    # 模型配置
+    # ------------------------------
+    # 单模型预测
+    model_type: str = "lightgbm"
+    model_params: Dict = field(default_factory=lambda: {})
+    # 模型融合预测
+    enable_ensemble: bool = False
+    ensemble_models: List = field(default_factory=lambda: ["lgb", "xgb", "cat"])
+    ensemble_method: str = "stacking"  # 'averaging', 'weighted', 'stacking', "blending"
+    ensemble_val_ratio: float = 0.2
+    # 可选预测方法:
+    # - 单变量预测单变量
+    # pred_method: str = "univariate-single-multistep-direct-output"       # USMDO [单变量(包含目标变量的所有内生变量)->单变量(目标内生变量)]多步直接输出预测
+    pred_method: str = "univariate-single-multistep-direct"              # USMD [单变量(包含目标变量的所有内生变量)->单变量(目标内生变量)]多步直接预测
+    # pred_method: str = "univariate-single-multistep-recursive"           # USMR [单变量(包含目标变量的所有内生变量)->单变量(目标内生变量)]多步递归预测
+    # pred_method: str = "univariate-single-multistep-direct-recursive"    # USMDR [单变量(包含目标变量的所有内生变量)->单变量(目标内生变量)]多步直接递归预测
+    # - 多变量预测单变量
+    # pred_method: str = "multivariate-single-multistep-direct"            # MSMD [多变量(包含目标变量的所有内生变量)->单变量(目标内生变量)]多步直接预测
+    # pred_method: str = "multivariate-single-multistep-recursive"         # MSMR [多变量(包含目标变量的所有内生变量)->单变量(目标内生变量)]多步递归预测
+    # pred_method: str = "multivariate-single-multistep-direct-recursive"  # MSMDR [多变量(包含目标变量的所有内生变量)->单变量(目标内生变量)]多步直接递归预测
+    objective: str = "regression_l1"  # 训练目标
+    loss: str = "mae"  # 训练损失函数
+    learning_rate: float = 0.05  # 模型学习率
+    patience: int = 100  # 早停步数
+    encode_categorical_features: bool = False  # 是否对类别特征进行编码
+    # 模型超参数调优
+    perform_tuning: bool = False
+    tuning_metric: str = "neg_mean_absolute_error"
+    tuning_n_splits: int = 3
+    # ------------------------------
+    # 模型运行模式
+    # ------------------------------
+    # 模型测试
+    is_testing: bool = True
+    # 模型预测
+    is_forecasting: bool = True
+    # 预测推理开始的时间
+    now_time: datetime.datetime = field(default_factory=lambda: datetime.datetime(2025, 12, 27, 0, 0, 0))
+    # ------------------------------
+    # 结果保存路径
+    # ------------------------------
+    checkpoints_dir: str = "./saved_results/pretrained_models/"
+    test_results_dir: str = "./saved_results/results_test/"
+    pred_results_dir: str = "./saved_results/results_forecast/"
+
+
+@dataclass
+class ModelConfig_multivariate:
+    """
+    模型配置类
+    包含数据路径、特征设置、模型参数等所有配置项
+    """
+    # ------------------------------
+    # 输入数据
+    # ------------------------------
+    # 目标时间序列配置
+    data_dir: str = "./dataset/ETT-small"
+    data_path: str = "ETTm1.csv"
+    data: str = "ETTm1"
+    freq: str = "15min"
+    freq_minutes: int = 15
+    target_ts_feat: str = "date"
+    target_series_numeric_features: List[str] = field(default_factory=lambda: [
+        "HUFL", #"HULL", "MUFL", "MULL", "LUFL", "LULL"
+    ])
+    target_series_categorical_features: List[str] = field(default_factory=lambda: [])
+    target_series_drop_features: List[str] = field(default_factory=lambda: [
+        "HULL", "MUFL", "MULL", "LUFL", "LULL"
+    ])
+    target: str = "OT"
+    # ------------------------------
+    # 特征工程配置
+    # ------------------------------
+    # 节假日数据
+    date_history_path: Optional[str] = None
+    date_future_path: Optional[str] = None
+    date_ts_feat: Optional[str] = None
+    # 节假日特征
+    datetype_features: List[str] = field(default_factory=lambda: [])
+    # 节假日特征中的类别特征
+    datetype_categorical_features: List[str] = field(default_factory=lambda: [])
+    
+    # 天气数据
+    weather_history_path: Optional[str] = None
+    weather_future_path: Optional[str] = None
+    weather_ts_feat: Optional[str] = None
+    # 天气特征
+    weather_features: List[str] = field(default_factory=lambda: [])
+    # 天气特征中的类别特征
+    weather_categorical_features: List[str] = field(default_factory=lambda: [])
+
+    # 日期时间特征
+    enable_datetime_features: bool = False
+    if enable_datetime_features:
+        datetime_features: List[str] = field(default_factory=lambda: [
+            'minute', 'hour', 'day', 'weekday', 'week',
+            'day_of_week', 'week_of_year', 'month', 'days_in_month',
+            'quarter', 'day_of_year', 'year',
+        ])
+        # 日期时间类别特征
+        datetime_categorical_features: List[str] = field(default_factory=lambda: [
+            "dt_hour", "dt_day", "dt_weekday", "dt_week",
+            "dt_day_of_week", "dt_week_of_year", "dt_month", "dt_days_in_month",
+            "dt_quarter", "dt_day_of_year", "dt_year",
+        ])
+    else:
+        datetime_features: List[str] = field(default_factory=lambda: [])
+        # 日期时间类别特征
+        datetime_categorical_features: List[str] = field(default_factory=lambda: [])
+
+    # 特征滞后数列表
+    enable_lags_features: bool = True
+    if enable_lags_features:
+        lags: List[int] = field(default_factory=lambda: [
+            1 * 288,  # Daily lag
+            2 * 288,
+            3 * 288,
+            4 * 288,
+            5 * 288,
+            6 * 288,
+            7 * 288,  # Weekly lag
+        ])
+    else:
+        lags: List[int] = field(default_factory=lambda: [])
+    
+    # 高级特征工程配置
+    enable_advanced_features: bool = False
+    
+    enable_rolling_features: bool = False
+    rolling_columns: List[str] = field(default_factory=lambda: ["y"])
+    rolling_windows: List[int] = field(default_factory=lambda: [3, 7, 14, 28])
+    rolling_stats: List[str] = field(default_factory=lambda: ["mean", "std", "min", "max", "skew", "kurt"])
+    
+    enable_expanding_features: bool = False
+    expanding_columns: List[str] = field(default_factory=lambda: ["y"])
+    expanding_stats: List[str] = field(default_factory=lambda: ["mean", "std", "min", "max", "skew", "kurt"])
+    
+    enable_diff_features: bool = False
+    diff_columns: List[str] = field(default_factory=lambda: ["y"])
+    diff_periods: List[int] = field(default_factory=lambda: [1, 7, 24])
+    
+    enable_pct_change_features: bool = False
+    pct_change_columns: List[str] = field(default_factory=lambda: ["y"])
+    pct_change_periods: List[int] = field(default_factory=lambda: [1, 7])
+    
+    enable_time_since_features: bool = False
+    time_since_columns: List[str] = field(default_factory=lambda: ["y"])
+    time_since_events: List[str] = field(default_factory=lambda: ["peak", "thoughl"])
+
+    enable_cyclical_features: bool = False
+    cyclical_columns: List[str] = field(default_factory=lambda: ["minute"])
+    cyclical_period: int = field(default_factory=lambda: 15)
+    
+    enable_interaction_features: bool = False
+    interaction_column_pairs: List[tuple] = field(default_factory=lambda: [("y", "dt_hour")])
+    interaction_operations: List[str] = field(default_factory=lambda: ["add", "subtract", "multiply", "divide"])
+
+    enable_polynomial_features: bool = False
+    polynomial_columns: List[str] = field(default_factory=lambda: ["y"])
+    polynomial_degree: int = field(default_factory=lambda: 2)
+    # ------------------------------
+    # 数据预处理
+    # ------------------------------
+    # 数据预处理
+    scale: bool = False  # 是否进行归一化/标准化
+    inverse: bool = False  # 目标变量是否进行归一化/标准化逆变换
+    scaler_type: str = "minmax"  # "standard" 或 "minmax"
+    use_grouped_scaling: str = False
+    # ------------------------------
+    # 训练和预测配置
+    # ------------------------------
+    # 训练和预测配置
+    history_days: int = 39  # 历史数据天数
+    predict_days: int = 1  # 预测未来 1 天的数据
+    window_days: int = 15  # 滑动窗口天数
+    # ------------------------------
+    # 模型配置
+    # ------------------------------
+    # 单模型预测
+    model_type: str = "lightgbm"
+    model_params: Dict = field(default_factory=lambda: {})
+    # 模型融合预测
+    enable_ensemble: bool = False
+    ensemble_models: List = field(default_factory=lambda: ["lgb", "xgb", "cat"])
+    ensemble_method: str = "stacking"  # 'averaging', 'weighted', 'stacking', "blending"
+    ensemble_val_ratio: float = 0.2
+    # 可选预测方法:
+    # - 单变量预测单变量
+    # pred_method: str = "univariate-single-multistep-direct-output"       # USMDO [单变量(包含目标变量的所有内生变量)->单变量(目标内生变量)]多步直接输出预测
+    # pred_method: str = "univariate-single-multistep-direct"              # USMD [单变量(包含目标变量的所有内生变量)->单变量(目标内生变量)]多步直接预测
+    # pred_method: str = "univariate-single-multistep-recursive"           # USMR [单变量(包含目标变量的所有内生变量)->单变量(目标内生变量)]多步递归预测
+    # pred_method: str = "univariate-single-multistep-direct-recursive"    # USMDR [单变量(包含目标变量的所有内生变量)->单变量(目标内生变量)]多步直接递归预测
+    # - 多变量预测单变量
+    # pred_method: str = "multivariate-single-multistep-direct"            # MSMD [多变量(包含目标变量的所有内生变量)->单变量(目标内生变量)]多步直接预测
+    # pred_method: str = "multivariate-single-multistep-recursive"         # MSMR [多变量(包含目标变量的所有内生变量)->单变量(目标内生变量)]多步递归预测
+    pred_method: str = "multivariate-single-multistep-direct-recursive"  # MSMDR [多变量(包含目标变量的所有内生变量)->单变量(目标内生变量)]多步直接递归预测
+    objective: str = "regression_l1"  # 训练目标
+    loss: str = "mae"  # 训练损失函数
+    learning_rate: float = 0.05  # 模型学习率
+    patience: int = 100  # 早停步数
+    encode_categorical_features: bool = False  # 是否对类别特征进行编码
+    # 模型超参数调优
+    perform_tuning: bool = False
+    tuning_metric: str = "neg_mean_absolute_error"
+    tuning_n_splits: int = 3
+    # ------------------------------
+    # 模型运行模式
+    # ------------------------------
+    # 模型测试
+    is_testing: bool = True
+    # 模型预测
+    is_forecasting: bool = True
+    # 预测推理开始的时间
+    now_time: datetime.datetime = field(default_factory=lambda: datetime.datetime(2018, 6, 26, 19, 45, 0))
+    # ------------------------------
+    # 结果保存路径
+    # ------------------------------
+    checkpoints_dir: str = "./saved_results/pretrained_models/"
+    test_results_dir: str = "./saved_results/results_test/"
+    pred_results_dir = "./saved_results/results_forecast/"
+
+
+
+
+# 测试代码 main 函数
+def main():
+    pass
+
+if __name__ == "__main__":
+    main()

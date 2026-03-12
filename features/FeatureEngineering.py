@@ -149,11 +149,11 @@ class ExogenousFeatureEngineer:
             weather_features_raw = ["rt_ssr", "rt_ws10", "rt_tt2", "rt_dt", "rt_ps", "rt_rain"]
             # Ensure df_weather has these columns
             df_weather_filtered = df_weather[[col for col in [col_ts] + weather_features_raw if col in df_weather.columns]].copy()
-            # 删除含空值的行
-            df_weather_filtered.dropna(inplace=True, ignore_index=True)
+            # 仅删除时间戳缺失，保留其余缺失值，避免时间不对齐时样本被全部清空
+            df_weather_filtered = df_weather_filtered.dropna(subset=[col_ts]).reset_index(drop=True)
             if df_weather_filtered.empty:
                 logger.warning(f"{self.log_prefix} df_weather became empty after dropping NaNs.")
-                return df_copy, []
+                return df_copy
 
             # 将除了timeStamp的列转为float类型
             for col in weather_features_raw:
@@ -225,9 +225,16 @@ class ExogenousFeatureEngineer:
             
             # 合并目标数据和气象数据
             df_copy = pd.merge(df_copy, df_weather_filtered, left_on="time", right_on=col_ts, how="left")
-            # 插值填充缺失值
-            df_copy = df_copy.interpolate(method="linear", limit_direction="both")
-            df_copy.dropna(inplace=True, ignore_index=True)
+            # 插值填充天气特征缺失值，保留原始样本行
+            weather_existing = [f for f in weather_features if f in df_copy.columns]
+            if weather_existing:
+                df_copy.loc[:, weather_existing] = (
+                    df_copy[weather_existing]
+                    .interpolate(method="linear", limit_direction="both")
+                    .ffill()
+                    .bfill()
+                    .fillna(0.0)
+                )
             # 删除无用特征
             if col_ts in df_copy.columns:
                 del df_copy[col_ts]
@@ -911,15 +918,23 @@ class FeatureEngineer:
         
         # 插值填充预测缺失值
         df_featured = df_featured.interpolate(method="linear", limit_direction="both")
-        df_featured.dropna(inplace=True, ignore_index=True)
         if self.verbose:
-            logger.info(f"{self.log_prefix} after interpolate and dropna df_featured: \n{df_featured.head()}")
-            logger.info(f"{self.log_prefix} after interpolate and dropna df_featured shape: {df_featured.shape}")
+            logger.info(f"{self.log_prefix} after interpolate df_featured: \n{df_featured.head()}")
+            logger.info(f"{self.log_prefix} after interpolate df_featured shape: {df_featured.shape}")
         
         # 获取所有生成的特征: 外生变量特征、类别
         exogenous_features, categorical_features = self.exogenous_feature_engineer.get_generated_features()
         # 类别特征去重
         categorical_features = sorted(set(categorical_features), key=categorical_features.index)
+        # 避免外生数据时间不对齐导致样本被全部丢弃，保留样本并对外生特征做兜底填充
+        existing_exogenous = [col for col in exogenous_features if col in df_featured.columns]
+        if existing_exogenous:
+            df_featured.loc[:, existing_exogenous] = (
+                df_featured[existing_exogenous]
+                .ffill()
+                .bfill()
+                .fillna(0.0)
+            )
 
         return df_featured, exogenous_features, categorical_features
 
@@ -1261,7 +1276,8 @@ class FeatureEngineer:
         X_train_history = df_series_featured[predictor_features]
         Y_train_history = df_series_featured[target_output_features]
         combined_xy = pd.concat([X_train_history, Y_train_history], axis=1)
-        combined_xy.dropna(inplace=True)
+        # 训练样本仅按目标列过滤，外生缺失在前面已进行兜底填充
+        combined_xy = combined_xy.dropna(subset=target_output_features)
         X_train_history = combined_xy[X_train_history.columns]
         Y_train_history = combined_xy[Y_train_history.columns]
         logger.info(f"{self.log_prefix} after predictor_target_split X_train_history: \n{X_train_history.head()}")

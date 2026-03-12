@@ -313,7 +313,7 @@ class PredictionHelper:
                     df_date_future=self.df_date_future,
                     df_weather_history=None,
                     df_weather_future=self.df_weather_future,
-                    endogenous_features_with_target = self.endogenous_features, # TODO [self.target_feature]
+                    endogenous_features_with_target = self.endogenous_features,
                     target_feature = self.target_feature,
                     horizon = self.horizon,
                 )

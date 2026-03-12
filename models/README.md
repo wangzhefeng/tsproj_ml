@@ -13,7 +13,7 @@
 - 训练一个一步模型 `f1`，只学 `y(t+1)`。
 - 推理时把 `y_hat(t+1)` 回填到历史，再预测 `y_hat(t+2)`，循环到 `H`。
 
-![Recursive Principle](imgs/method_recursive_v2.png)
+![Recursive Principle](../docs/assets/forecasting_imgs/method_recursive_v2.png)
 
 适用性：
 - 优点：训练成本最低、模型管理最简单。
@@ -25,7 +25,7 @@
 - 每个 horizon 单独训练：`f1` 预测 `t+1`，`f2` 预测 `t+2`，…，`fH` 预测 `t+H`。
 - 预测时并行输出后拼接。
 
-![Direct Principle](imgs/method_direct_v2.png)
+![Direct Principle](../docs/assets/forecasting_imgs/method_direct_v2.png)
 
 适用性：
 - 优点：无递归误差传播，短中期稳定。
@@ -37,7 +37,7 @@
 - 用一个模型一次输出整个 horizon 向量：`[y(t+1), ..., y(t+H)]`。
 - 常见实现：`MultiOutputRegressor(base_estimator)`。
 
-![MIMO Principle](imgs/method_mimo_v2.png)
+![MIMO Principle](../docs/assets/forecasting_imgs/method_mimo_v2.png)
 
 适用性：
 - 优点：部署和推理简单。
@@ -49,7 +49,7 @@
 - 顺序地做 horizon 预测，每一步可把前一步预测加入特征。
 - 兼具 direct 与 recursive 的特点。
 
-![DirRec Principle](imgs/method_dirrec_v2.png)
+![DirRec Principle](../docs/assets/forecasting_imgs/method_dirrec_v2.png)
 
 适用性：
 - 优点：在中长 horizon 常较 recursive 更稳。
@@ -61,7 +61,7 @@
 - 将 horizon 切成若干块，每块由一个多输出模型直接预测。
 - 是 Direct 与 Recursive 间的工程折中。
 
-![Block Direct Principle](imgs/method_block_direct_v2.png)
+![Block Direct Principle](../docs/assets/forecasting_imgs/method_block_direct_v2.png)
 
 适用性：
 - 优点：模型数少于 Direct，误差传播小于 Recursive。
@@ -69,71 +69,60 @@
 
 ### 1.6 方法对比总览
 
-![Method Comparison Matrix](imgs/method_comparison_matrix_v2.png)
+![Method Comparison Matrix](../docs/assets/forecasting_imgs/method_comparison_matrix_v2.png)
 
-## 2. 你的实现与业界常用方法的对比
+## 2. 当前实现状态（以代码为准）
 
-当前 `ModelForecasting.py` 方法映射：
+以下结论基于当前 `models/ModelForecasting.py`（并结合训练侧 `ModelTraining.py`）：
 
-| 业界方法 | 你当前实现 | 结论 |
+| 业界方法 | 当前实现 | 状态 |
 |---|---|---|
-| Recursive | `univariate_single_multi_step_recursive_forecast`、`multivariate_single_multi_step_recursive_forecast` | 已覆盖 |
-| Direct | `univariate_single_multi_step_direct_forecast`、`multivariate_single_multi_step_direct_forecast` | 已覆盖 |
-| MIMO / Multi-output | 训练侧 `MultiOutputRegressor`（`ModelTraining.py`）+ direct 推理 | 已覆盖（基础版） |
-| DirRec | `univariate_single_multi_step_direct_recursive_forecast`、`multivariate_single_multi_step_direct_recursive_forecast` | 已覆盖 |
-| Block Direct / DIRMO | 当前“分块”实现更偏分块递归 | 部分覆盖 |
-| Regressor Chain | 未实现 | 缺失 |
-| Quantile 多分位预测 | 未实现 | 缺失 |
-| Global（跨序列联合） | 未体现 `series_id` 联合建模 | 缺失 |
+| Recursive | `univariate_single_multi_step_recursive_forecast`、`multivariate_single_multi_step_recursive_forecast` | 已实现 |
+| Direct | `univariate_single_multi_step_direct_forecast`、`multivariate_single_multi_step_direct_forecast` | 已实现 |
+| Direct Output | `univariate_single_multi_step_direct_output_forecast` | 已实现 |
+| DirRec | `univariate_single_multi_step_direct_recursive_forecast`、`multivariate_single_multi_step_direct_recursive_forecast` | 已实现 |
+| Block Direct / DIRMO | USMDR、MSMDR 均为“每块一次模型调用”的严格分块实现 | 已实现 |
+| MIMO / Multi-output | 训练侧支持 `MultiOutputRegressor` | 已实现 |
+| Regressor Chain | 训练侧支持 `RegressorChain`（`multi_output_strategy`） | 已实现 |
+| Quantile 多分位预测 | 训练侧量化模型 bundle + 预测侧统一分位推理 | 已实现 |
+| Global（跨序列） | 支持 `enable_global_training` 与 `series_id` 特征透传（最小可用） | 部分实现 |
 
-## 3. 与你当前实现的关键区别（代码级）
+## 3. 当前代码实现要点（ModelForecasting）
 
-1. `USMD/MSMD` 推理阶段只用未来第一个外生点构建输入
-- 代码位置：`models/ModelForecasting.py` 约 138-170 行、330-366 行。
-- 区别：业界 direct 常按 horizon 使用 `X_exog(t+h)`，你当前实现会弱化外生变量时变信息。
+1. 统一的预测入口与分位数输出
+- 通过 `_predict_point_and_quantiles` 支持：
+  - 点预测模型：直接返回预测值；
+  - 分位数模型：返回中位分位点预测 + 所有分位点预测。
+- `quantile_outputs` 在 `_predict_by_method` 前会重置，避免复用污染。
 
-2. `MSMR` 目标映射依赖 `_shift_1` 字符串替换
-- 代码位置：约 387-449 行。
-- 区别：业界更常用显式 target schema，降低列错位风险。
+2. Direct 方法的输入构建已对齐 horizon-aware 外生特征
+- `_build_direct_forecast_input` 采用“历史 `max_lag` + 全部未来外生行”，并在最后一个历史锚点取特征输入。
+- 配合特征工程侧的 horizon 展开，可保证 direct 训练/推理语义一致。
 
-3. `MSMDR` 对其他内生变量采用持久性回填
-- 代码位置：约 507-572 行。
-- 区别：业界通常会为关键协变量提供独立预测器或场景输入，不仅使用 last-value。
+3. 递归类方法的 schema 与状态管理
+- 递归方法 (`USMR/MSMR`) 使用 `_recursive_schema_cache` 固定特征 schema。
+- 推理阶段支持 `selected_features` 子集对齐，减少训练-推理特征漂移风险。
 
-4. 当前“分块策略”仍以递归回填为主，不是严格 block-direct
-- 代码位置：约 245-304 行、495-590 行。
-- 区别：严格 DIRMO 是“按块直接训练/预测”，递归依赖更弱。
+4. USMDR / MSMDR 已采用严格分块 direct 逻辑
+- 每个块只调用一次模型，取该块长度的输出。
+- 块间再进行历史回填（目标值必回填；MSMDR 对其他内生变量采用持久性填充）。
 
-## 4. 面向你实现的优化建议
+## 4. 下一步可优化点（当前版本剩余）
 
-### P0（优先做）
+1. MSMR/MSMDR 中“其他内生变量”预测仍为持久性策略
+- 当前默认使用 last-value 回填。
+- 若业务里其他内生变量可预测，建议引入协变量子模型或场景输入，提高中长 horizon 稳定性。
 
-1. `USMD/MSMD` 改为 horizon-aware 外生特征
-- 每个 `h` 使用 `X_exog(t+h)`。
-- 对应训练目标 `y(t+h)`，保证训练/推理一致。
+2. Global 训练仍是最小可用版本
+- 已支持 `series_id` 透传，但尚未形成完整多序列评估与采样策略（如按系列分层验证、跨系列权重策略）。
 
-2. 增加统一 `FeatureSchema` 校验
-- 训练与预测强制列顺序、类型、缺失列补齐策略一致。
-
-### P1
-
-1. 新增 `RegressorChain` 策略
-- 用于增强多输出情况下 horizon 间依赖建模。
-
-2. 新增 Quantile 预测
-- 输出 `P10/P50/P90`，为业务提供不确定性区间。
-
-### P2
-
-1. 将当前分块递归扩展为严格 `Block Direct (DIRMO)`
-- 每块训练一个多输出模型，减少递归传播。
-
-2. 增加 Global 训练模式
-- 跨序列联合训练（`series_id` + 静态特征），提升泛化与样本利用率。
+3. 测试配置对样本量敏感
+- 当 `lags` 大、`history_days/window_days/predict_days` 不匹配时，容易出现有效样本不足。
+- 建议在配置层增加自动可行性检查与窗口自适应降级。
 
 ## 5. 本次生成的图片文件
 
-已生成并保存于 `models/imgs/`：
+已生成并保存于 `../docs/assets/forecasting_imgs/`：
 - `method_recursive_v2.png`
 - `method_direct_v2.png`
 - `method_mimo_v2.png`

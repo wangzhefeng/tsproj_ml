@@ -128,12 +128,16 @@ class Forecaster:
             date_idx = self._df_date_future_indexed.index.intersection(pd.DatetimeIndex(needed_dates))
             if len(date_idx) > 0:
                 df_date_slice = self._df_date_future_indexed.loc[date_idx].reset_index()
+                if self.args.date_ts_feat not in df_date_slice.columns and "index" in df_date_slice.columns:
+                    df_date_slice = df_date_slice.rename(columns={"index": self.args.date_ts_feat})
 
         if self._df_weather_future_indexed is not None:
             needed_times = pd.to_datetime(df_forecast["time"]).unique()
             weather_idx = self._df_weather_future_indexed.index.intersection(pd.DatetimeIndex(needed_times))
             if len(weather_idx) > 0:
                 df_weather_slice = self._df_weather_future_indexed.loc[weather_idx].reset_index()
+                if self.args.weather_ts_feat not in df_weather_slice.columns and "index" in df_weather_slice.columns:
+                    df_weather_slice = df_weather_slice.rename(columns={"index": self.args.weather_ts_feat})
 
         return df_date_slice, df_weather_slice
 
@@ -259,32 +263,28 @@ class Forecaster:
         """        
         # 多步预测值收集器
         Y_preds = np.array([])
-        # 特征工程
-        if not self.args.is_testing and self.args.is_forecasting:
-            # 特征工程
-            feature_engineer = FeatureEngineer(self.args, self.log_prefix, verbose=False)
-            (df_future_featured, 
-             predictor_features, 
-             target_output_features, 
-             categorical_features) = feature_engineer.create_features(
-                df_series = self.df_future,
-                df_date_history = None,
-                df_date_future = self.df_date_future,
-                df_weather_history = None,
-                df_weather_future = self.df_weather_future,
-                endogenous_features_with_target = self.endogenous_features,
-                target_feature = self.target_feature,
-                horizon = self.horizon,
-            )
-            # 删除在构建滞后特征时产生的缺失值
-            df_future_featured = df_future_featured.dropna()
-            logger.info(f"{self.log_prefix} after feature engineering and dropna df_future_featured: \n{df_future_featured.head()}")
-            logger.info(f"{self.log_prefix} after feature engineering and dropna df_future_featured.shape: {df_future_featured.shape}")
-            # 特征选择
-            X_test_future = df_future_featured[predictor_features]
-        elif self.args.is_testing:
-            X_test_future = self.df_future
+        # 预测阶段始终使用未来日期/天气进行特征工程，避免被 is_testing 分支误跳过
+        feature_engineer = FeatureEngineer(self.args, self.log_prefix, verbose=False)
+        (df_future_featured, 
+         predictor_features, 
+         target_output_features, 
+         categorical_features) = feature_engineer.create_features(
+            df_series = self.df_future,
+            df_date_history = None,
+            df_date_future = self.df_date_future,
+            df_weather_history = None,
+            df_weather_future = self.df_weather_future,
+            endogenous_features_with_target = self.endogenous_features,
+            target_feature = self.target_feature,
+            horizon = self.horizon,
+        )
+        if predictor_features:
+            X_test_future = df_future_featured[predictor_features].copy()
+        else:
+            logger.warning(f"{self.log_prefix} predictor_features is empty in USMDO forecast; fallback to raw future frame.")
+            X_test_future = self.df_future.copy()
             categorical_features = self.categorical_features
+        logger.info(f"{self.log_prefix} after feature engineering df_future_featured shape: {df_future_featured.shape}")
         if self.selected_features:
             selected_cols = [c for c in self.selected_features if c in X_test_future.columns]
             if selected_cols:
@@ -752,15 +752,46 @@ class Forecaster:
         输出结果处理
         """
         # 预测结果保存
+        df_future = df_future.copy()
         df_future["time"] = pd.to_datetime(df_future["time"])
-        df_future = df_future.sort_values(by=["time"])
+        df_future = df_future.sort_values(by=["time"]).reset_index(drop=True)
         df_future.to_csv(self.args.pred_results_dir.joinpath("prediction.csv"), encoding="utf_8_sig", index=False)
-        # 预测结果可视化
-        # Only plot the last 2 days of true history for context, if available
-        if not df_history.empty:
-            y_trues_df_plot = df_history.iloc[-2 * n_per_day:]
-        else:
-            y_trues_df_plot = pd.DataFrame()
+        # 历史上下文截取：以未来预测起点为边界，取其前最近 2 天历史真值
+        y_trues_df_plot = pd.DataFrame()
+        if df_history is not None and not df_history.empty and "time" in df_history.columns and "y" in df_history.columns:
+            df_history_plot = df_history.copy()
+            df_history_plot["time"] = pd.to_datetime(df_history_plot["time"])
+            df_history_plot = df_history_plot.sort_values(by=["time"]).dropna(subset=["y"]).reset_index(drop=True)
+            if not df_future.empty:
+                future_start = df_future["time"].iloc[0]
+                history_before_future = df_history_plot[df_history_plot["time"] < future_start]
+                if history_before_future.empty:
+                    logger.warning(
+                        f"{self.log_prefix} No history before forecast start ({future_start}); "
+                        "fallback to latest available 2-day history for plotting."
+                    )
+                    y_trues_df_plot = df_history_plot.tail(2 * n_per_day).copy()
+                else:
+                    y_trues_df_plot = history_before_future.tail(2 * n_per_day).copy()
+            else:
+                y_trues_df_plot = df_history_plot.tail(2 * n_per_day).copy()
+        # 拼接可视化数据：最近两天历史 + 未来一天预测
+        history_part = pd.DataFrame()
+        if not y_trues_df_plot.empty:
+            history_part = y_trues_df_plot[["time", "y"]].rename(columns={"y": "value"})
+            history_part["series_type"] = "history_true"
+        future_part = pd.DataFrame()
+        if not df_future.empty and "predict_value" in df_future.columns:
+            future_part = df_future[["time", "predict_value"]].rename(columns={"predict_value": "value"})
+            future_part["series_type"] = "future_pred"
+        if not history_part.empty or not future_part.empty:
+            plot_concat_df = pd.concat([history_part, future_part], axis=0, ignore_index=True)
+            plot_concat_df = plot_concat_df.sort_values(by=["time"]).reset_index(drop=True)
+            plot_concat_df.to_csv(
+                self.args.pred_results_dir.joinpath("prediction_plot_concat.csv"),
+                encoding="utf_8_sig",
+                index=False,
+            )
         plt.figure(figsize=(25, 8))
         if not y_trues_df_plot.empty and 'y' in y_trues_df_plot.columns:
             plt.plot(y_trues_df_plot["time"], y_trues_df_plot["y"], label='Trues', lw=2.0)

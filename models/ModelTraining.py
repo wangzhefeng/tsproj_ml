@@ -64,7 +64,8 @@ class Trainer:
             logger.info(f"{self.log_prefix} Multi-output strategy: RegressorChain")
             return RegressorChain(estimator=base_estimator)
         logger.info(f"{self.log_prefix} Multi-output strategy: MultiOutputRegressor")
-        return MultiOutputRegressor(estimator=base_estimator, n_jobs=-1)
+        # 在受限执行环境中避免 loky 多进程信号量权限问题
+        return MultiOutputRegressor(estimator=base_estimator, n_jobs=1)
 
     def _inject_quantile_params(self, model_type: str, params: Dict, quantile: float) -> Dict:
         """

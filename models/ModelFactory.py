@@ -212,6 +212,9 @@ class LightGBMModel(BaseModel):
             fit_params['verbose'] = verbose
         if categorical_feature is not None:
             fit_params['categorical_feature'] = categorical_feature
+        # 兼容不同 lightgbm 版本的 sklearn API 参数差异（例如 fit 不再接受 verbose）
+        supported_fit_params = set(inspect.signature(self.model.fit).parameters.keys())
+        fit_params = {k: v for k, v in fit_params.items() if k in supported_fit_params}
         # 模型训练
         self.model.fit(X, y, **fit_params)
         self.is_fitted = True

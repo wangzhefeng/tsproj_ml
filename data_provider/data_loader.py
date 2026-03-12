@@ -212,6 +212,33 @@ class DataLoader:
             col_categorical=self.args.target_series_categorical_features,
             col_drop=self.args.target_series_drop_features,
         )
+        # 若配置时间窗与目标序列不重叠，导致目标全空，则自动回退到最近可用历史窗口
+        if target_feature and target_feature in df_history.columns and df_history[target_feature].notna().sum() == 0:
+            logger.warning(
+                f"{self.log_prefix} target is empty in configured history window "
+                f"[{self.train_start_time}, {self.train_end_time}); fallback to latest available history."
+            )
+            target_source_col = self.args.target
+            ts_source_col = self.args.target_ts_feat
+            df_series_valid = df_history_series.copy()
+            if target_source_col in df_series_valid.columns:
+                df_series_valid[target_source_col] = pd.to_numeric(df_series_valid[target_source_col], errors="coerce")
+                df_series_valid = df_series_valid.dropna(subset=[target_source_col]).sort_values(ts_source_col)
+                if df_series_valid.empty:
+                    raise ValueError(f"{self.log_prefix} No valid target values found in source series.")
+                fallback_rows = min(len(df_history_template), len(df_series_valid))
+                df_series_valid = df_series_valid.tail(fallback_rows).reset_index(drop=True)
+                df_series_valid = df_series_valid.rename(
+                    columns={
+                        ts_source_col: "time",
+                        target_source_col: "y",
+                    }
+                )
+                keep_cols = ["time", "y"] + [col for col in other_endogenous_features if col in df_series_valid.columns]
+                df_history = df_series_valid[keep_cols].copy()
+                target_feature = "y"
+            else:
+                raise ValueError(f"{self.log_prefix} Target column '{target_source_col}' does not exist in source series.")
         logger.info(f"{self.log_prefix} after __process_target_series df_history: \n{df_history.head()}")
         logger.info(f"{self.log_prefix} after __process_target_series df_history shape: {df_history.shape}")
         # 所有内生变量(包含目标特征 y)

@@ -410,8 +410,8 @@ class Model:
             target_feature = target_feature,
             horizon = self.horizon,
         )
-        # 删除在构建滞后特征时产生的缺失值
-        df_history_featured = df_history_featured.dropna()
+        # 删除在构建目标输出时产生的缺失值（仅按目标列过滤，避免外生缺失导致样本被清空）
+        df_history_featured = df_history_featured.dropna(subset=target_output_features)
         logger.info(f"{self.log_prefix} after dropna df_history_featured: \n{df_history_featured.head()}")
         logger.info(f"{self.log_prefix} after dropna df_history_featured.shape: {df_history_featured.shape}")
         
@@ -498,7 +498,9 @@ def main():
     """
     # from config.univariate_config import ModelConfig
     # from config.multivariate_config import ModelConfig
-    from config.model_config_lgbm_usmdo_A import ModelConfig
+    # from config.model_config_lgbm_usmdo_A import ModelConfig
+    # from config.model_config_lgbm_usmr_A import ModelConfig
+    from config.model_config_lgbm_usmd_A import ModelConfig
     # 模型配置
     args = ModelConfig()
     # 创建模型实例

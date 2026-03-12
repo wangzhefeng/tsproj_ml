@@ -332,7 +332,7 @@ class Model:
             lgbm_categorical = actual_categorical
         logger.info(f"{self.log_prefix} lgbm_categorical: {lgbm_categorical}")
         # ------------------------------
-        # TODO Hyperparameter tuning (if enabled)
+        # Hyperparameter tuning (if enabled)
         # ------------------------------
         if self.args.perform_tuning:
             best_model = self._hyperparameters_tuning(X_train_df_processed, Y_train_df)

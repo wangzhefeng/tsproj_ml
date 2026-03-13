@@ -228,7 +228,7 @@ class ModelConfig:
     # 模型运行模式
     # ------------------------------
     # 模型测试
-    is_testing: bool = True
+    is_testing: bool = False
     # 模型预测
     is_forecasting: bool = True
     # 预测推理开始的时间

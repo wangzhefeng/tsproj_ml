@@ -41,7 +41,7 @@ class ModelConfig:
         ])
         # 节假日特征中的类别特征
         datetype_categorical_features: List[str] = field(default_factory=lambda: [
-            "date_type"
+            # "date_type"
         ])
     else:
         # 节假日数据
@@ -109,10 +109,10 @@ class ModelConfig:
         lags: List[int] = field(default_factory=lambda: [
             1 * 288,  # Daily lag
             2 * 288,
-            3 * 288,
-            4 * 288,
-            5 * 288,
-            6 * 288,
+            # 3 * 288,
+            # 4 * 288,
+            # 5 * 288,
+            # 6 * 288,
             7 * 288,  # Weekly lag
         ])
     else:
@@ -163,15 +163,22 @@ class ModelConfig:
     # ------------------------------
     # 训练和预测配置
     # ------------------------------
-    history_days: int = 39  # 历史数据天数
+    history_days: int = 31  # 历史数据天数(快速测试档)
     predict_days: int = 1  # 预测未来 1 天的数据
-    window_days: int = 15  # 滑动窗口天数
+    window_days: int = 15  # 滑动窗口天数(快速测试档)
     # ------------------------------
     # 模型配置
     # ------------------------------
     # 单模型预测
     model_type: str = "lightgbm"
-    model_params: Dict = field(default_factory=lambda: {})
+    model_params: Dict = field(default_factory=lambda: {
+        "n_estimators": 300,
+        "num_leaves": 23,
+        "max_bin": 31,
+        "feature_fraction": 0.8,
+        "bagging_fraction": 0.8,
+        "bagging_freq": 1,
+    })
     # 模型融合预测
     enable_ensemble: bool = False
     ensemble_models: List = field(default_factory=lambda: ["lgb", "xgb", "cat"])
@@ -189,8 +196,8 @@ class ModelConfig:
     # pred_method: str = "multivariate-single-multistep-direct-recursive"  # MSMDR [多变量(包含目标变量的所有内生变量)->单变量(目标内生变量)]多步直接递归预测
     objective: str = "regression_l1"  # 训练目标
     loss: str = "mae"  # 训练损失函数
-    learning_rate: float = 0.05  # 模型学习率
-    patience: int = 100  # 早停步数
+    learning_rate: float = 0.08  # 模型学习率(快速测试档)
+    patience: int = 30  # 早停步数(快速测试档)
     encode_categorical_features: bool = False  # 是否对类别特征进行编码
     # 多输出策略: multioutput / regressor_chain
     multi_output_strategy: str = "multioutput"
@@ -199,7 +206,7 @@ class ModelConfig:
     # 分位数预测配置（predict_type=quantile 时生效）
     quantiles: List[float] = field(default_factory=lambda: [0.1, 0.5, 0.9])
     # Direct 方法是否使用 horizon-aware 外生特征展开
-    use_horizon_exogenous_for_direct: bool = True
+    use_horizon_exogenous_for_direct: bool = False
     # 全局训练模式（跨序列联合）
     enable_global_training: bool = False
     series_id_feature: str = "series_id"
@@ -228,9 +235,9 @@ class ModelConfig:
     # 模型运行模式
     # ------------------------------
     # 模型测试
-    is_testing: bool = False
+    is_testing: bool = True
     # 模型预测
-    is_forecasting: bool = True
+    is_forecasting: bool = False
     # 预测推理开始的时间
     now_time: datetime.datetime = field(default_factory=lambda: datetime.datetime(2026, 3, 12, 0, 0, 0))
     # ------------------------------

@@ -501,6 +501,7 @@ def main():
     # from config.model_config_lgbm_usmdo_A import ModelConfig
     # from config.model_config_lgbm_usmr_A import ModelConfig
     from config.model_config_lgbm_usmd_A import ModelConfig
+    # from config.model_config_lgbm_usmdr_A import ModelConfig
     # 模型配置
     args = ModelConfig()
     # 创建模型实例

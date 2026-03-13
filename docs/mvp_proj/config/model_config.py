@@ -389,7 +389,7 @@ class ModelConfig_multivariate:
     # 模型运行模式
     # ------------------------------
     # 模型测试
-    is_testing: bool = False
+    is_testing: bool = True
     # 模型预测
     is_forecasting: bool = True
     # 预测推理开始的时间

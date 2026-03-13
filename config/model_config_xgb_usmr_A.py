@@ -170,7 +170,7 @@ class ModelConfig:
     # 模型配置
     # ------------------------------
     # 单模型预测
-    model_type: str = "lightgbm"
+    model_type: str = "xgboost"
     model_params: Dict = field(default_factory=lambda: {})
     # 模型融合预测
     enable_ensemble: bool = False

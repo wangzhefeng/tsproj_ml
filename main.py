@@ -207,10 +207,7 @@ class Model:
             logger.info(f"{self.log_prefix} Model Testing sliding window forecasting...")
             logger.info(f"{self.log_prefix} {'=' * 48}")
             # 未来数据
-            if self.args.pred_method == "univariate-single-multistep-direct-output":
-                df_future_prediction = X_test.copy()
-            else:
-                df_future_prediction = df_history_test
+            df_future_prediction = df_history_test.copy()
             # 模型预测
             predictor = Forecaster(
                 args = self.args,
@@ -498,10 +495,22 @@ def main():
     """
     # from config.univariate_config import ModelConfig
     # from config.multivariate_config import ModelConfig
+    # lightgbm
     # from config.model_config_lgbm_usmdo_A import ModelConfig
     # from config.model_config_lgbm_usmr_A import ModelConfig
-    from config.model_config_lgbm_usmd_A import ModelConfig
+    # from config.model_config_lgbm_usmd_A import ModelConfig
     # from config.model_config_lgbm_usmdr_A import ModelConfig
+    # xgboost
+    # from config.model_config_xgb_usmdo_A import ModelConfig
+    # from config.model_config_xgb_usmr_A import ModelConfig
+    # from config.model_config_xgb_usmd_A import ModelConfig
+    # from config.model_config_xgb_usmdr_A import ModelConfig
+    # catboost
+    # from config.model_config_cab_usmdo_A import ModelConfig
+    # from config.model_config_cab_usmr_A import ModelConfig
+    # from config.model_config_cab_usmd_A import ModelConfig
+    from config.model_config_cab_usmdr_A import ModelConfig
+    
     # 模型配置
     args = ModelConfig()
     # 创建模型实例

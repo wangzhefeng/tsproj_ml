@@ -230,7 +230,7 @@ class ModelConfig:
     # 模型测试
     is_testing: bool = True
     # 模型预测
-    is_forecasting: bool = False
+    is_forecasting: bool = True
     # 预测推理开始的时间
     now_time: datetime.datetime = field(default_factory=lambda: datetime.datetime(2025, 12, 27, 0, 0, 0))
     # ------------------------------

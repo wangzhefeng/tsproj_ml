@@ -263,7 +263,10 @@ class Trainer:
                     logger.info(f"{self.log_prefix} Training single-output regressor...")
                     logger.info(f"{self.log_prefix} {'-' * 71}")
                     model = estimator_wrapper
-                    model.fit(X_train_df_processed, np.ravel(Y_train_df.values), categorical_feature=lgbm_categorical)
+                    fit_kwargs = {}
+                    if str(model_type).lower() in ["lightgbm", "lgb"] and lgbm_categorical is not None:
+                        fit_kwargs["categorical_feature"] = lgbm_categorical
+                    model.fit(X_train_df_processed, np.ravel(Y_train_df.values), **fit_kwargs)
                 else:
                     logger.info(f"{self.log_prefix} Training multi-output regressor with {Y_train_df.shape[1]} outputs...")
                     logger.info(f"{self.log_prefix} {'-' * 71}")
@@ -288,7 +291,10 @@ class Trainer:
                 )
                 if Y_train_df.shape[1] == 1:
                     model_q = estimator_wrapper_q
-                    model_q.fit(X_train_df_processed, np.ravel(Y_train_df.values), categorical_feature=lgbm_categorical)
+                    fit_kwargs_q = {}
+                    if str(model_type).lower() in ["lightgbm", "lgb"] and lgbm_categorical is not None:
+                        fit_kwargs_q["categorical_feature"] = lgbm_categorical
+                    model_q.fit(X_train_df_processed, np.ravel(Y_train_df.values), **fit_kwargs_q)
                 else:
                     model_q = self._build_multi_output_model(estimator_wrapper_q.model, n_outputs=Y_train_df.shape[1])
                     model_q.fit(X_train_df_processed, Y_train_df)

@@ -328,6 +328,15 @@ class CatBoostModel(BaseModel):
         }
         # 参数合并（用户参数优先，避免被默认值覆盖）
         merged_params = {**default_params, **(params or {})}
+        # CatBoost 的 iterations / n_estimators / num_boost_round / num_trees 是同义参数，只能保留一个
+        iteration_aliases = ['n_estimators', 'num_boost_round', 'num_trees']
+        for alias in iteration_aliases:
+            if alias in merged_params:
+                merged_params['iterations'] = merged_params.pop(alias)
+        # 清理从其他树模型配置复用过来的不兼容参数
+        incompatible_params = ['num_leaves', 'feature_fraction', 'bagging_fraction', 'bagging_freq']
+        for param in incompatible_params:
+            merged_params.pop(param, None)
         # 模型参数
         self.params = _filter_valid_params(merged_params, cab.CatBoostRegressor)
         logger.info(f"{log_prefix} model parameters: \n{self.params}")

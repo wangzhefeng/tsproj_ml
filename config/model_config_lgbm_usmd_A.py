@@ -163,9 +163,9 @@ class ModelConfig:
     # ------------------------------
     # 训练和预测配置
     # ------------------------------
-    history_days: int = 31  # 历史数据天数(快速测试档)
+    history_days: int = 31  # 历史数据天数
     predict_days: int = 1  # 预测未来 1 天的数据
-    window_days: int = 15  # 滑动窗口天数(快速测试档)
+    window_days: int = 15  # 滑动窗口天数
     # ------------------------------
     # 模型配置
     # ------------------------------
@@ -196,8 +196,8 @@ class ModelConfig:
     # pred_method: str = "multivariate-single-multistep-direct-recursive"  # MSMDR [多变量(包含目标变量的所有内生变量)->单变量(目标内生变量)]多步直接递归预测
     objective: str = "regression_l1"  # 训练目标
     loss: str = "mae"  # 训练损失函数
-    learning_rate: float = 0.08  # 模型学习率(快速测试档)
-    patience: int = 30  # 早停步数(快速测试档)
+    learning_rate: float = 0.08  # 模型学习率
+    patience: int = 30  # 早停步数
     encode_categorical_features: bool = False  # 是否对类别特征进行编码
     # 多输出策略: multioutput / regressor_chain
     multi_output_strategy: str = "multioutput"
@@ -237,7 +237,7 @@ class ModelConfig:
     # 模型测试
     is_testing: bool = True
     # 模型预测
-    is_forecasting: bool = False
+    is_forecasting: bool = True
     # 预测推理开始的时间
     now_time: datetime.datetime = field(default_factory=lambda: datetime.datetime(2026, 3, 12, 0, 0, 0))
     # ------------------------------

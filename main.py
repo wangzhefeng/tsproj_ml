@@ -497,7 +497,7 @@ def main():
     # from config.multivariate_config import ModelConfig
     # lightgbm
     # from config.model_config_lgbm_usmdo_A import ModelConfig
-    # from config.model_config_lgbm_usmr_A import ModelConfig
+    from config.model_config_lgbm_usmr_A import ModelConfig
     # from config.model_config_lgbm_usmd_A import ModelConfig
     # from config.model_config_lgbm_usmdr_A import ModelConfig
     # xgboost
@@ -509,7 +509,7 @@ def main():
     # from config.model_config_cab_usmdo_A import ModelConfig
     # from config.model_config_cab_usmr_A import ModelConfig
     # from config.model_config_cab_usmd_A import ModelConfig
-    from config.model_config_cab_usmdr_A import ModelConfig
+    # from config.model_config_cab_usmdr_A import ModelConfig
     
     # 模型配置
     args = ModelConfig()

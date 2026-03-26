@@ -12,6 +12,7 @@
 # ***************************************************
 
 # python libraries
+import copy
 from pathlib import Path
 from abc import ABC, abstractmethod
 from typing import Dict, Any, Optional
@@ -132,7 +133,12 @@ class BaseModel(ABC):
 
 # TODO 这个函数的作用是什么？
 def _filter_valid_params(params: Dict[str, Any], estimator_cls) -> Dict[str, Any]:
-    valid = set(inspect.signature(estimator_cls.__init__).parameters.keys())
+    signature = inspect.signature(estimator_cls.__init__)
+    # 部分 sklearn 风格封装（如 XGBoost）通过 **kwargs 接收额外原生参数，
+    # 这类模型不能用显式签名做白名单过滤，否则会错误丢弃合法配置。
+    if any(param.kind == inspect.Parameter.VAR_KEYWORD for param in signature.parameters.values()):
+        return dict(params)
+    valid = set(signature.parameters.keys())
     valid.discard("self")
     return {k: v for k, v in params.items() if k in valid}
 
@@ -150,33 +156,28 @@ class LightGBMModel(BaseModel):
     - 适合大数据集
     """
 
+    DEFAULT_PARAMS = {
+        "boosting_type": "gbdt",
+        "objective": "regression_l1",
+        "metric": "mae",
+        "n_estimators": 300,
+        "learning_rate": 0.05,
+        "max_bin": 63,
+        "num_leaves": 31,
+        "max_depth": -1,
+        "feature_fraction": 0.8,
+        "bagging_fraction": 0.8,
+        "bagging_freq": 1,
+        "verbose": -1,
+        "n_jobs": -1,
+        "random_state": 42,
+        "force_col_wise": True,
+    }
+
     def __init__(self, params: Dict[str, Any], log_prefix: str="LightGBMModel"):
         super().__init__(params)
-        # 设置默认参数
-        default_params = {
-            "boosting_type": "gbdt",
-            "objective": "regression_l1",  # "regression_l1": L1 loss or MAE, "regression": L2 loss or MSE
-            "metric": "mae",  # if objective=="regression_l1": mae, if objective=="regression": rmse
-            "n_estimators": 1000,
-            "learning_rate": 0.05,
-            "max_bin": 31,
-            "num_leaves": 31,
-            'max_depth': -1,
-            "feature_fraction": 0.8,
-            "bagging_fraction": 0.8,
-            "bagging_freq": 1,
-            "lambda_l1": 0.5,
-            "lambda_l2": 0.5,
-            "verbose": -1,
-            "n_jobs": -1,
-            'random_state': 42,
-            # "force_row_wise": True,
-            "force_col_wise": True,
-        }
-        # 参数合并（用户参数优先，避免被默认值覆盖）
-        merged_params = {**default_params, **(params or {})}
+        merged_params = {**copy.deepcopy(self.DEFAULT_PARAMS), **(params or {})}
         # 模型参数
-        # self.params = _filter_valid_params(default_params, lgb.LGBMRegressor)
         self.params = merged_params
         logger.info(f"{log_prefix} model parameters: \n{self.params}")
         # 模型构建
@@ -241,21 +242,21 @@ class XGBoostModel(BaseModel):
     - 广泛应用
     """
 
+    DEFAULT_PARAMS = {
+        "objective": "reg:absoluteerror",
+        "eval_metric": "mae",
+        "n_estimators": 300,
+        "learning_rate": 0.05,
+        "max_depth": 6,
+        "subsample": 0.8,
+        "colsample_bytree": 0.8,
+        "n_jobs": -1,
+        "random_state": 42,
+    }
+
     def __init__(self, params: Dict[str, Any], log_prefix: str="XGBoostModel"):
         super().__init__(params)
-        # 设置默认参数
-        default_params = {
-            'objective': 'reg:squarederror',
-            'n_estimators': 1000,
-            'learning_rate': 0.05,
-            'max_depth': 6,
-            'subsample': 0.8,
-            'colsample_bytree': 0.8,
-            'n_jobs': -1,
-            'random_state': 42,
-        }
-        # 参数合并（用户参数优先，避免被默认值覆盖）
-        merged_params = {**default_params, **(params or {})}
+        merged_params = {**copy.deepcopy(self.DEFAULT_PARAMS), **(params or {})}
         # 模型参数
         self.params = _filter_valid_params(merged_params, xgb.XGBRegressor)
         logger.info(f"{log_prefix} model parameters: \n{self.params}")
@@ -315,19 +316,20 @@ class CatBoostModel(BaseModel):
     - 性能优秀
     """
     
+    DEFAULT_PARAMS = {
+        "loss_function": "MAE",
+        "eval_metric": "MAE",
+        "iterations": 300,
+        "learning_rate": 0.05,
+        "depth": 6,
+        "verbose": False,
+        "random_state": 42,
+        "thread_count": -1,
+    }
+
     def __init__(self, params: Dict[str, Any], log_prefix: str="CatBoostModel"):
         super().__init__(params)
-        # 设置默认参数
-        default_params = {
-            'iterations': 1000,
-            'learning_rate': 0.05,
-            'depth': 6,
-            'verbose': False,
-            'random_state': 42,
-            'thread_count': -1,
-        }
-        # 参数合并（用户参数优先，避免被默认值覆盖）
-        merged_params = {**default_params, **(params or {})}
+        merged_params = {**copy.deepcopy(self.DEFAULT_PARAMS), **(params or {})}
         # CatBoost 的 iterations / n_estimators / num_boost_round / num_trees 是同义参数，只能保留一个
         iteration_aliases = ['n_estimators', 'num_boost_round', 'num_trees']
         for alias in iteration_aliases:
@@ -456,6 +458,31 @@ class ModelFactory:
 
     def __init__(self, log_prefix: str = "ModelFactory"):
         self.log_prefix = log_prefix
+
+    @staticmethod
+    def _normalize_model_type(model_type: str) -> str:
+        model_type = str(model_type).lower()
+        if model_type not in ModelFactory._models:
+            supported = ', '.join(ModelFactory._models.keys())
+            raise ValueError(
+                f"不支持的模型类型: {model_type}\n"
+                f"支持的模型: {supported}"
+            )
+        return model_type
+
+    @classmethod
+    def get_default_model_params(cls, model_type: str) -> Dict[str, Any]:
+        normalized_type = cls._normalize_model_type(model_type)
+        model_class = cls._models[normalized_type]
+
+        return copy.deepcopy(getattr(model_class, "DEFAULT_PARAMS", {}))
+
+    @classmethod
+    def resolve_model_params(cls, model_type: str, model_params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        resolved = cls.get_default_model_params(model_type)
+        resolved.update(copy.deepcopy(model_params or {}))
+
+        return resolved
     
     def create_model(self, model_type: str, model_params: Dict[str, Any]) -> BaseModel:
         """
@@ -478,17 +505,12 @@ class ModelFactory:
             >>> y_pred = model.predict(X_test)
         """
         # 模型类型
-        model_type = model_type.lower()
-        if model_type not in ModelFactory._models:
-            supported = ', '.join(ModelFactory._models.keys())
-            raise ValueError(
-                f"不支持的模型类型: {model_type}\n"
-                f"支持的模型: {supported}"
-            )
+        model_type = self._normalize_model_type(model_type)
         # 创建模型实例
         model_class = ModelFactory._models[model_type]
+        resolved_params = self.resolve_model_params(model_type, model_params)
 
-        return model_class(model_params, log_prefix=f"{self.log_prefix} {model_type.capitalize()}")
+        return model_class(resolved_params, log_prefix=f"{self.log_prefix} {model_type.capitalize()}")
     
     @staticmethod
     def list_models() -> list:

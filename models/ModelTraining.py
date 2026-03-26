@@ -30,7 +30,7 @@ from models.ModelFactory import ModelFactory
 from models.ModelSaveLoad import ModelDeployPkl
 from models.ModelEnsemble_optim import TimeSeriesEnsembleRegressor, EnsembleConfig
 from models.learning_rate import resolve_learning_rate
-from models.losses import get_scorer_by_loss_name
+from models.losses import get_loss_name_from_model_params, get_scorer_by_loss_name
 from utils.log_util import logger
 
 # global variable
@@ -42,8 +42,13 @@ class Trainer:
     def __init__(self, args: Dict, log_prefix: str):
         self.args = args
         self.log_prefix = log_prefix
-        self.model_params = copy.deepcopy(self.args.model_params)
         self.model_factory = ModelFactory(log_prefix=log_prefix)
+        self.model_type = getattr(self.args, "model_type", "lightgbm")
+        self.model_param_overrides = copy.deepcopy(getattr(self.args, "model_params", {}) or {})
+        self.model_params = self.model_factory.resolve_model_params(
+            self.model_type,
+            self.model_param_overrides,
+        )
         self.augmenter = TimeSeriesAugmenter(
             enabled=bool(getattr(self.args, "enable_data_augmentation", False)),
             augmentation_ratio=float(getattr(self.args, "augmentation_ratio", 0.2)),
@@ -52,6 +57,34 @@ class Trainer:
             random_state=int(getattr(self.args, "augmentation_random_state", 42)),
             log_prefix=self.log_prefix,
         )
+
+    def _get_tuning_param_grid(self, model_type: str) -> Dict[str, list]:
+        mt = str(model_type).lower()
+        if mt in ["lightgbm", "lgb"]:
+            return {
+                "num_leaves": [15, 31, 63],
+                "learning_rate": [0.03, 0.05, 0.08],
+                "feature_fraction": [0.7, 0.8, 0.9],
+                "bagging_fraction": [0.7, 0.8, 0.9],
+                "min_child_samples": [20, 50, 100],
+            }
+        if mt in ["xgboost", "xgb"]:
+            return {
+                "max_depth": [4, 6, 8],
+                "learning_rate": [0.03, 0.05, 0.08],
+                "subsample": [0.7, 0.8, 0.9],
+                "colsample_bytree": [0.7, 0.8, 0.9],
+                "min_child_weight": [1, 3, 5],
+            }
+        if mt in ["catboost", "cat"]:
+            return {
+                "depth": [4, 6, 8],
+                "learning_rate": [0.03, 0.05, 0.08],
+                "l2_leaf_reg": [3, 5, 7],
+                "bagging_temperature": [0, 0.5, 1.0],
+            }
+
+        return {}
 
     def _build_multi_output_model(self, base_estimator, n_outputs: int):
         """
@@ -118,29 +151,22 @@ class Trainer:
         """
         logger.info(f"{self.log_prefix} Starting hyperparameter tuning...")
 
-        # Define parameter grid
-        param_grid = {
-            'estimator__num_leaves': [15, 31, 63],
-            'estimator__learning_rate': [0.01, 0.05, 0.1],
-            'estimator__feature_fraction': [0.7, 0.8, 0.9],
-            'estimator__lambda_l1': [0.1, 0.5, 1.0],
-            'estimator__lambda_l2': [0.1, 0.5, 1.0],
-            'estimator__min_child_samples': [20, 50, 100], # Corresponds to min_data_in_leaf
-        }
+        base_param_grid = self._get_tuning_param_grid(self.model_type)
+        if not base_param_grid:
+            raise ValueError(f"Unsupported model_type for hyperparameter tuning: {self.model_type}")
 
-        # Base LightGBM estimator
-        lgbm_base = self.model_factory.create_model(
-            model_type=self.args.model_type,
+        base_estimator = self.model_factory.create_model(
+            model_type=self.model_type,
             model_params=self.model_params
         )
 
         # Wrap in MultiOutputRegressor if the method is multi-output
         if Y_train.shape[1] == 1:
-            model_for_tuning = lgbm_base.model
-            tuned_param_grid = {k.replace("estimator__", ""): v for k, v in param_grid.items()}
+            model_for_tuning = base_estimator.model
+            tuned_param_grid = base_param_grid
         else:
-            model_for_tuning = MultiOutputRegressor(lgbm_base.model)
-            tuned_param_grid = param_grid
+            model_for_tuning = MultiOutputRegressor(base_estimator.model)
+            tuned_param_grid = {f"estimator__{k}": v for k, v in base_param_grid.items()}
 
         # TimeSeriesSplit for cross-validation
         # n_splits determines how many train-test splits to generate.
@@ -151,8 +177,9 @@ class Trainer:
         # RandomizedSearchCV is generally preferred for larger search spaces
         tuning_metric = getattr(self.args, "tuning_metric", None)
         if not tuning_metric:
+            loss_name = get_loss_name_from_model_params(self.model_type, self.model_params)
             tuning_metric = get_scorer_by_loss_name(
-                getattr(self.args, "loss", "mae"),
+                loss_name,
                 delta=float(getattr(self.args, "huber_delta", 1.0)),
             )
         search = RandomizedSearchCV(
@@ -193,7 +220,7 @@ class Trainer:
         # 学习率配置（固定 or 自动）
         # ------------------------------
         resolved_lr = resolve_learning_rate(
-            base_learning_rate=getattr(self.args, "learning_rate", None),
+            base_learning_rate=self.model_params.get("learning_rate"),
             n_samples=len(X_train_df),
             auto_enabled=bool(getattr(self.args, "enable_auto_learning_rate", False)),
             min_lr=float(getattr(self.args, "auto_lr_min", 0.005)),
@@ -229,7 +256,10 @@ class Trainer:
            
             base_models = []
             for model_type in self.args.ensemble_models:
-                model_wrapper = self.model_factory.create_model(model_type=model_type, model_params=self.model_params)
+                model_wrapper = self.model_factory.create_model(
+                    model_type=model_type,
+                    model_params=self.model_param_overrides,
+                )
                 estimator = model_wrapper.model
                 if Y_train_df.shape[1] > 1:
                     estimator = MultiOutputRegressor(estimator)
@@ -250,7 +280,7 @@ class Trainer:
             return ensemble, feature_scaler, selected_features
         else:
             predict_type = str(getattr(self.args, "predict_type", "point")).lower()
-            model_type = getattr(self.args, "model_type", "lightgbm")
+            model_type = self.model_type
             # ------------------------------
             # 单模型 - 点预测
             # ------------------------------

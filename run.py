@@ -9,6 +9,12 @@
 # * Description : CLI entry for ML time-series forecasting
 # ***************************************************
 
+import os
+import sys
+from pathlib import Path
+ROOT = str(Path.cwd())
+if ROOT not in sys.path:
+    sys.path.append(ROOT)
 import argparse
 import datetime
 import importlib
@@ -16,6 +22,9 @@ import json
 import random
 from typing import Any
 
+# global variable
+LOGGING_LABEL = Path(__file__).name[:-3]
+os.environ['LOG_NAME'] = LOGGING_LABEL
 from utils.log_util import logger
 
 
@@ -115,8 +124,6 @@ def _apply_overrides(cfg, args):
     if args.huber_delta is not None:
         cfg.huber_delta = args.huber_delta
 
-    if args.learning_rate is not None:
-        cfg.learning_rate = args.learning_rate
     if args.patience is not None:
         cfg.patience = args.patience
 
@@ -196,7 +203,6 @@ def args_parse():
     parser.add_argument("--auto-lr-min", type=float, default=None)
     parser.add_argument("--auto-lr-max", type=float, default=None)
     parser.add_argument("--huber-delta", type=float, default=None)
-    parser.add_argument("--learning-rate", type=float, default=None)
     parser.add_argument("--patience", type=int, default=None)
 
     parser.add_argument("--now-time", type=str, default=None, help="ISO datetime, e.g. 2025-12-27T00:00:00")

@@ -4,7 +4,7 @@
 损失函数与调参 scorer 映射工具。
 """
 
-from typing import Callable, Union
+from typing import Any, Callable, Dict, Union
 
 import numpy as np
 from sklearn.metrics import (
@@ -45,15 +45,44 @@ def get_scorer_by_loss_name(loss_name: str, delta: float = 1.0) -> Union[str, Ca
     return "neg_mean_absolute_error"
 
 
-def get_default_objective_and_metric(loss_name: str):
+def _normalize_loss_name(loss_name: Any) -> str:
+    if isinstance(loss_name, (list, tuple)) and loss_name:
+        loss_name = loss_name[0]
+    text = str(loss_name or "mae").strip().lower()
+    text = text.split(":", 1)[0]
+    aliases = {
+        "mae": "mae",
+        "l1": "mae",
+        "regression_l1": "mae",
+        "reg:absoluteerror": "mae",
+        "meanabsoluteerror": "mae",
+        "mse": "mse",
+        "l2": "mse",
+        "regression": "mse",
+        "reg:squarederror": "mse",
+        "meansquarederror": "mse",
+        "rmse": "rmse",
+        "rootmeansquarederror": "rmse",
+        "mape": "mape",
+        "huber": "huber",
+        "huber_loss": "huber",
+    }
+    return aliases.get(text, text)
+
+
+def get_loss_name_from_model_params(model_type: str, model_params: Dict[str, Any]) -> str:
     """
-    返回 tree 模型常用 objective/metric 映射。
+    从各模型原生参数中提取统一的损失名称，用于 sklearn scorer 映射。
     """
-    name = (loss_name or "mae").strip().lower()
-    if name in {"mae", "l1", "regression_l1"}:
-        return "regression_l1", "mae"
-    if name in {"mse", "l2", "regression"}:
-        return "regression", "rmse"
-    if name in {"huber", "huber_loss"}:
-        return "huber", "mae"
-    return "regression_l1", "mae"
+    params = model_params or {}
+    model_key = str(model_type or "").strip().lower()
+
+    raw_loss = None
+    if model_key in {"lightgbm", "lgb"}:
+        raw_loss = params.get("metric") or params.get("objective")
+    elif model_key in {"xgboost", "xgb"}:
+        raw_loss = params.get("eval_metric") or params.get("objective")
+    elif model_key in {"catboost", "cat"}:
+        raw_loss = params.get("eval_metric") or params.get("loss_function")
+
+    return _normalize_loss_name(raw_loss)

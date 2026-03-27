@@ -352,7 +352,9 @@ class CatBoostModel(BaseModel):
             categorical_feature: Optional[list] = None,
             eval_set: Optional[tuple] = None,
             eval_metric: str = "mae",
-            early_stopping_rounds: int = 50):
+            early_stopping_rounds: int = 50,
+            native_train_data = None,
+            native_eval_data = None):
         """
         训练CatBoost模型
         
@@ -367,13 +369,15 @@ class CatBoostModel(BaseModel):
         # 设置训练参数
         fit_params = {}
         if eval_set is not None:
-            fit_params['eval_set'] = eval_set
+            fit_params['eval_set'] = native_eval_data if native_eval_data is not None else eval_set
             fit_params['eval_metric'] = eval_metric
             fit_params['early_stopping_rounds'] = early_stopping_rounds
-        if categorical_feature is not None:
+        if categorical_feature is not None and native_train_data is None:
             fit_params['cat_features'] = categorical_feature
         # 模型训练
-        self.model.fit(X, y, **fit_params)
+        fit_input = native_train_data if native_train_data is not None else X
+        fit_target = None if native_train_data is not None else y
+        self.model.fit(fit_input, fit_target, **fit_params)
         self.is_fitted = True
 
         return self

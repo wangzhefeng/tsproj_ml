@@ -49,6 +49,7 @@ from typing import List
 import numpy as np
 import pandas as pd
 
+from utils.frequency import resolve_freq_step_minutes, resolve_samples_per_day
 from utils.log_util import logger
 
 # global variable
@@ -68,7 +69,7 @@ class ExogenousFeatureEngineer:
         # 收集类别特征
         self.categorical_features = []
     
-    def extend_datetime_feature(self, df: pd.DataFrame, freq_minutes: int, n_per_day):
+    def extend_datetime_feature(self, df: pd.DataFrame, step_minutes: float, n_per_day: int):
         """
         日期时间特征
         """
@@ -99,7 +100,8 @@ class ExogenousFeatureEngineer:
                 datetime_features_list.append(col_name)
         # 周期性特征 (将时间转换为可循环的 sin/cos 形式)
         if 'dt_hour' in df_copy.columns and 'dt_minute' in df_copy.columns:
-            df_copy["dt_minute_in_day"] = df_copy["dt_hour"] * (60 / freq_minutes) + df_copy["dt_minute"] / freq_minutes
+            minute_of_day = df_copy["dt_hour"] * 60 + df_copy["dt_minute"]
+            df_copy["dt_minute_in_day"] = minute_of_day / step_minutes
             df_copy["dt_minute_in_day_sin"] = np.sin(df_copy["dt_minute_in_day"] * (2 * np.pi / n_per_day))
             df_copy["dt_minute_in_day_cos"] = np.cos(df_copy["dt_minute_in_day"] * (2 * np.pi / n_per_day))
             del df_copy["dt_minute_in_day"]
@@ -908,8 +910,8 @@ class FeatureEngineer:
         # 特征工程: 日期时间特征
         df_featured = self.exogenous_feature_engineer.extend_datetime_feature(
             df=df_featured,
-            freq_minutes=self.args.freq_minutes,
-            n_per_day=int(24 * 60 / self.args.freq_minutes),
+            step_minutes=resolve_freq_step_minutes(self.args.freq),
+            n_per_day=resolve_samples_per_day(self.args.freq),
         )
         if self.verbose:
             logger.info(f"{self.log_prefix} after extend_datetime_feature df_featured: \n{df_featured.head()}")

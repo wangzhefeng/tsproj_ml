@@ -13,8 +13,10 @@
 
 # python libraries
 import copy
+import os
 from pathlib import Path
 from typing import Dict
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import numpy as np
 from sklearn.multioutput import MultiOutputRegressor, RegressorChain
@@ -24,11 +26,12 @@ from sklearn.model_selection import (
     RandomizedSearchCV
 )
 
+from data_provider.data_loader import prepare_native_train_eval_datasets
 from features.DataAugment import TimeSeriesAugmenter
 from features.FeatureSelection import FeatureSelector
 from models.ModelFactory import ModelFactory
 from models.ModelSaveLoad import ModelDeployPkl
-from models.ModelEnsemble_optim import TimeSeriesEnsembleRegressor, EnsembleConfig
+from models.ModelEnsemble import TimeSeriesEnsembleRegressor, EnsembleConfig
 from models.learning_rate import resolve_learning_rate
 from models.losses import get_loss_name_from_model_params, get_scorer_by_loss_name
 from utils.log_util import logger
@@ -49,6 +52,7 @@ class Trainer:
             self.model_type,
             self.model_param_overrides,
         )
+        self._apply_model_thread_limits()
         self.augmenter = TimeSeriesAugmenter(
             enabled=bool(getattr(self.args, "enable_data_augmentation", False)),
             augmentation_ratio=float(getattr(self.args, "augmentation_ratio", 0.2)),
@@ -57,6 +61,28 @@ class Trainer:
             random_state=int(getattr(self.args, "augmentation_random_state", 42)),
             log_prefix=self.log_prefix,
         )
+
+    def _resolve_worker_count(self, attr_name: str, default: int = 1) -> int:
+        value = int(getattr(self.args, attr_name, default) or default)
+        if value <= 0:
+            cpu_count = os.cpu_count() or 1
+            return max(1, cpu_count)
+        return value
+
+    def _apply_model_thread_limits(self):
+        if not hasattr(self.args, "model_thread_count"):
+            return
+        raw_value = getattr(self.args, "model_thread_count", None)
+        if raw_value is None:
+            return
+        model_threads = self._resolve_worker_count("model_thread_count", default=1)
+        mt = str(self.model_type).lower()
+        if mt in ["lightgbm", "lgb"]:
+            self.model_params["n_jobs"] = model_threads
+        elif mt in ["xgboost", "xgb"]:
+            self.model_params["n_jobs"] = model_threads
+        elif mt in ["catboost", "cat"]:
+            self.model_params["thread_count"] = model_threads
 
     def _get_tuning_param_grid(self, model_type: str) -> Dict[str, list]:
         mt = str(model_type).lower()
@@ -96,9 +122,35 @@ class Trainer:
         if strategy == "regressor_chain":
             logger.info(f"{self.log_prefix} Multi-output strategy: RegressorChain")
             return RegressorChain(estimator=base_estimator)
+        multi_output_n_jobs = self._resolve_worker_count("multi_output_n_jobs", default=1)
         logger.info(f"{self.log_prefix} Multi-output strategy: MultiOutputRegressor")
-        # 在受限执行环境中避免 loky 多进程信号量权限问题
-        return MultiOutputRegressor(estimator=base_estimator, n_jobs=1)
+        return MultiOutputRegressor(estimator=base_estimator, n_jobs=multi_output_n_jobs)
+
+    def _train_quantile_single_model(
+        self,
+        quantile: float,
+        model_type: str,
+        X_train_df_processed,
+        Y_train_df_processed,
+        lgbm_categorical,
+    ):
+        params_q = self._inject_quantile_params(model_type=model_type, params=self.model_params, quantile=quantile)
+        estimator_wrapper_q = self.model_factory.create_model(
+            model_type=model_type,
+            model_params=params_q,
+        )
+        if Y_train_df_processed.shape[1] == 1:
+            model_q = estimator_wrapper_q
+            fit_kwargs_q = {}
+            if str(model_type).lower() in ["lightgbm", "lgb"] and lgbm_categorical is not None:
+                fit_kwargs_q["categorical_feature"] = lgbm_categorical
+            if str(model_type).lower() in ["catboost", "cat"] and getattr(self, "native_data_bundle", {}).get("enabled"):
+                fit_kwargs_q["native_train_data"] = self.native_data_bundle.get("train_native")
+            model_q.fit(X_train_df_processed, np.ravel(Y_train_df_processed.values), **fit_kwargs_q)
+        else:
+            model_q = self._build_multi_output_model(estimator_wrapper_q.model, n_outputs=Y_train_df_processed.shape[1])
+            model_q.fit(X_train_df_processed, Y_train_df_processed)
+        return quantile, model_q
 
     def _inject_quantile_params(self, model_type: str, params: Dict, quantile: float) -> Dict:
         """
@@ -145,6 +197,25 @@ class Trainer:
         )
         return X_selected, Y_prepared, selected_features
 
+    def _prepare_native_model_data(self, X_train, Y_train, categorical_features):
+        native_bundle = prepare_native_train_eval_datasets(
+            model_type=self.model_type,
+            X_train=X_train,
+            y_train=Y_train,
+            categorical_features=categorical_features,
+        )
+        if native_bundle.get("enabled"):
+            logger.info(
+                f"{self.log_prefix} Prepared native {native_bundle['framework']} training container: "
+                f"{type(native_bundle['train_native']).__name__}"
+            )
+        else:
+            logger.info(
+                f"{self.log_prefix} Native training container skipped for {self.model_type}: "
+                f"{native_bundle.get('reason')}"
+            )
+        return native_bundle
+
     def _hyperparameters_tuning(self, X_train, Y_train):
         """
         模型超参数调优 (Grid Search / Randomized Search with TimeSeriesSplit)
@@ -165,7 +236,10 @@ class Trainer:
             model_for_tuning = base_estimator.model
             tuned_param_grid = base_param_grid
         else:
-            model_for_tuning = MultiOutputRegressor(base_estimator.model)
+            model_for_tuning = MultiOutputRegressor(
+                base_estimator.model,
+                n_jobs=self._resolve_worker_count("multi_output_n_jobs", default=1),
+            )
             tuned_param_grid = {f"estimator__{k}": v for k, v in base_param_grid.items()}
 
         # TimeSeriesSplit for cross-validation
@@ -203,7 +277,7 @@ class Trainer:
         
         return search.best_estimator_ # Return the best model direct
     
-    def train(self, X_train, Y_train, feature_scaler, categorical_features):
+    def train(self, X_train, Y_train, feature_scaler, target_scaler, categorical_features):
         """
         模型训练
         """
@@ -234,6 +308,8 @@ class Trainer:
         # ------------------------------
         # 特征预处理（训练模式）
         X_train_df_processed, actual_categorical = feature_scaler.fit_transform(X_train_df, categorical_features)
+        # 目标变量预处理（训练模式）
+        Y_train_df_processed = target_scaler.fit_transform(Y_train_df)
         # feature_scaler.validate_features(X_train_df_processed, stage="training")
         
         # 根据编码策略决定是否传递 categorical_feature
@@ -241,12 +317,18 @@ class Trainer:
             lgbm_categorical = None  # 已编码为整数，不传递 categorical_feature
         else:
             lgbm_categorical = actual_categorical  # 未编码，传递 categorical_feature 让 LightGBM 处理
+        native_data_bundle = self._prepare_native_model_data(
+            X_train_df_processed,
+            Y_train_df_processed,
+            actual_categorical,
+        )
+        self.native_data_bundle = native_data_bundle
         # ------------------------------
         # Hyperparameter tuning (if enabled)
         # ------------------------------
         if self.args.perform_tuning:
-            best_model = self._hyperparameters_tuning(X_train_df_processed, Y_train_df)
-            return best_model, feature_scaler, selected_features
+            best_model = self._hyperparameters_tuning(X_train_df_processed, Y_train_df_processed)
+            return best_model, feature_scaler, target_scaler, selected_features
         # ------------------------------
         # 模型训练
         # ------------------------------
@@ -261,8 +343,11 @@ class Trainer:
                     model_params=self.model_param_overrides,
                 )
                 estimator = model_wrapper.model
-                if Y_train_df.shape[1] > 1:
-                    estimator = MultiOutputRegressor(estimator)
+                if Y_train_df_processed.shape[1] > 1:
+                    estimator = MultiOutputRegressor(
+                        estimator,
+                        n_jobs=self._resolve_worker_count("multi_output_n_jobs", default=1),
+                    )
                 base_models.append((model_type, estimator))
             
             ensemble = TimeSeriesEnsembleRegressor(
@@ -271,13 +356,18 @@ class Trainer:
                     method=getattr(self.args, "ensemble_method", "averaging"),
                     val_ratio=float(getattr(self.args, "ensemble_val_ratio", 0.2)),
                     random_state=42,
+                    parallel_workers=self._resolve_worker_count("ensemble_parallel_workers", default=1),
                 ),
             )
-            y_train_input = np.ravel(Y_train_df.values) if Y_train_df.shape[1] == 1 else Y_train_df.values
+            y_train_input = (
+                np.ravel(Y_train_df_processed.values)
+                if Y_train_df_processed.shape[1] == 1
+                else Y_train_df_processed.values
+            )
             ensemble.fit(X_train_df_processed, y_train_input)
             
             logger.info(f"{self.log_prefix} Ensemble training completed!")
-            return ensemble, feature_scaler, selected_features
+            return ensemble, feature_scaler, target_scaler, selected_features
         else:
             predict_type = str(getattr(self.args, "predict_type", "point")).lower()
             model_type = self.model_type
@@ -289,21 +379,23 @@ class Trainer:
                     model_type=model_type,
                     model_params=self.model_params,
                 )
-                if Y_train_df.shape[1] == 1:
+                if Y_train_df_processed.shape[1] == 1:
                     logger.info(f"{self.log_prefix} Training single-output regressor...")
                     logger.info(f"{self.log_prefix} {'-' * 71}")
                     model = estimator_wrapper
                     fit_kwargs = {}
                     if str(model_type).lower() in ["lightgbm", "lgb"] and lgbm_categorical is not None:
                         fit_kwargs["categorical_feature"] = lgbm_categorical
-                    model.fit(X_train_df_processed, np.ravel(Y_train_df.values), **fit_kwargs)
+                    if str(model_type).lower() in ["catboost", "cat"] and native_data_bundle.get("enabled"):
+                        fit_kwargs["native_train_data"] = native_data_bundle.get("train_native")
+                    model.fit(X_train_df_processed, np.ravel(Y_train_df_processed.values), **fit_kwargs)
                 else:
-                    logger.info(f"{self.log_prefix} Training multi-output regressor with {Y_train_df.shape[1]} outputs...")
+                    logger.info(f"{self.log_prefix} Training multi-output regressor with {Y_train_df_processed.shape[1]} outputs...")
                     logger.info(f"{self.log_prefix} {'-' * 71}")
-                    model = self._build_multi_output_model(estimator_wrapper.model, n_outputs=Y_train_df.shape[1])
-                    model.fit(X_train_df_processed, Y_train_df)
+                    model = self._build_multi_output_model(estimator_wrapper.model, n_outputs=Y_train_df_processed.shape[1])
+                    model.fit(X_train_df_processed, Y_train_df_processed)
                 logger.info(f"{self.log_prefix} Model training completed!")
-                return model, feature_scaler, selected_features
+                return model, feature_scaler, target_scaler, selected_features
             # ------------------------------
             # 单模型 - 分位数预测
             # ------------------------------
@@ -313,22 +405,33 @@ class Trainer:
             quantile_models = {}
             logger.info(f"{self.log_prefix} Training quantile models for quantiles={quantiles}")
             logger.info(f"{self.log_prefix} {'-' * 71}")
-            for q in quantiles:
-                params_q = self._inject_quantile_params(model_type=model_type, params=self.model_params, quantile=q)
-                estimator_wrapper_q = self.model_factory.create_model(
-                    model_type=model_type,
-                    model_params=params_q,
-                )
-                if Y_train_df.shape[1] == 1:
-                    model_q = estimator_wrapper_q
-                    fit_kwargs_q = {}
-                    if str(model_type).lower() in ["lightgbm", "lgb"] and lgbm_categorical is not None:
-                        fit_kwargs_q["categorical_feature"] = lgbm_categorical
-                    model_q.fit(X_train_df_processed, np.ravel(Y_train_df.values), **fit_kwargs_q)
-                else:
-                    model_q = self._build_multi_output_model(estimator_wrapper_q.model, n_outputs=Y_train_df.shape[1])
-                    model_q.fit(X_train_df_processed, Y_train_df)
-                quantile_models[q] = model_q
+            quantile_workers = self._resolve_worker_count("quantile_parallel_workers", default=1)
+            if quantile_workers > 1 and len(quantiles) > 1:
+                with ThreadPoolExecutor(max_workers=quantile_workers) as executor:
+                    futures = [
+                        executor.submit(
+                            self._train_quantile_single_model,
+                            q,
+                            model_type,
+                            X_train_df_processed,
+                            Y_train_df_processed,
+                            lgbm_categorical,
+                        )
+                        for q in quantiles
+                    ]
+                    for future in as_completed(futures):
+                        q, model_q = future.result()
+                        quantile_models[q] = model_q
+            else:
+                for q in quantiles:
+                    q_key, model_q = self._train_quantile_single_model(
+                        q,
+                        model_type,
+                        X_train_df_processed,
+                        Y_train_df_processed,
+                        lgbm_categorical,
+                    )
+                    quantile_models[q_key] = model_q
             median_q = min(quantiles, key=lambda x: abs(x - 0.5))
             quantile_bundle = {
                 "predict_type": "quantile",
@@ -337,9 +440,9 @@ class Trainer:
                 "models": quantile_models,
             }
             logger.info(f"{self.log_prefix} Quantile model training completed!")
-            return quantile_bundle, feature_scaler, selected_features
+            return quantile_bundle, feature_scaler, target_scaler, selected_features
 
-    def model_save(self, model):
+    def model_save(self, model, target_scaler=None):
         """
         模型保存
         """
@@ -347,6 +450,11 @@ class Trainer:
         logger.info(f"{self.log_prefix} {'-' * 66}")
         model_deploy = ModelDeployPkl(save_file_path=self.args.checkpoints_dir.joinpath("model.pkl"))
         model_deploy.save_model(model)
+        if target_scaler is not None and getattr(target_scaler, "is_fitted", False):
+            target_scaler_deploy = ModelDeployPkl(
+                save_file_path=self.args.checkpoints_dir.joinpath("target_scaler.pkl")
+            )
+            target_scaler_deploy.save_model(target_scaler)
         logger.info(f"{self.log_prefix} Model saved to {self.args.checkpoints_dir.joinpath('model.pkl')}")
 
 

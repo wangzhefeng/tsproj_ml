@@ -4,41 +4,24 @@
 # * File        : ModelEnsemble.py
 # * Author      : Zhefeng Wang
 # * Email       : zfwang7@gmail.com
-# * Date        : 2026-02-11
-# * Version     : 1.0.021117
-# * Description : description
-# * Link        : 模型融合模块 (Model Ensemble)
-# *               ============================
-# *               提供多种模型融合策略，提升预测精度
-# *               
-# *               支持的融合方法:
-# *               1. Voting - 投票法
-# *                   - Hard Voting（硬投票）
-# *                   - Soft Voting（软投票）
-# *               2. Averaging - 平均法
-# *                   - Simple Average（简单平均）
-# *                   - Weighted Average（加权平均）
-# *               4. Stacking - 堆叠法
-# *                   - 两层堆叠
-# *                   - 多层堆叠
-# *               5. Blending（混合）
+# * Date        : 2026-03-27
+# * Version     : 2.0.032700
+# * Description : 时间序列回归模型融合模块
+# * Link        : link
 # * Requirement : 相关模块版本需求(例如: numpy >= 2.1.0)
 # ***************************************************
 
 # python libraries
+from __future__ import annotations
+
 from pathlib import Path
-from typing import List, Any
+from dataclasses import dataclass
+from typing import Any, Sequence, Tuple
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import numpy as np
-import lightgbm as lgb
-# model evaluation
-from sklearn.metrics import (
-    r2_score,                        # R2
-    mean_squared_error,              # MSE
-    root_mean_squared_error,         # RMSE
-    mean_absolute_error,             # MAE
-    mean_absolute_percentage_error,  # MAPE
-)
+from sklearn.linear_model import RidgeCV
+from sklearn.metrics import mean_absolute_error
 
 from utils.log_util import logger
 
@@ -46,144 +29,154 @@ from utils.log_util import logger
 LOGGING_LABEL = Path(__file__).name[:-3]
 
 
-class ModelEnsemble:
+def _to_2d(arr: Any) -> np.ndarray:
+    pred = np.asarray(arr)
+    if pred.ndim == 1:
+        pred = pred.reshape(-1, 1)
+    return pred
+
+
+@dataclass
+class EnsembleConfig:
+    method: str = "averaging"
+    val_ratio: float = 0.2
+    random_state: int = 42
+    parallel_workers: int = 1
+    stacking_alphas: Tuple[float, ...] = (0.01, 0.1, 1.0, 10.0)
+
+
+class TimeSeriesEnsembleRegressor:
     """
-    模型融合类
-    
-    支持三种融合策略:
-    1. average: 简单平均
-    2. weighted: 加权平均（权重可优化）
-    3. stacking: 堆叠集成（两层模型）
+    时间序列回归融合器。
+
+    支持的常用融合方法:
+    - averaging: 简单平均
+    - weighted: 基于验证集 MAE 的加权平均
+    - blending: 基于验证集最小二乘的非负加权融合
+    - stacking: 基于验证集预测的二层 RidgeCV 融合
     """
-    
-    def __init__(self, models: List[tuple[str, Any]], method: str = 'average'):
-        """
-        Args:
-            models: 模型列表[(name, model), ...]
-            method: 融合方法 ['voting', 'averaging', 'stacking', 'blending']
-        """
-        self.models = models
-        self.method = method
-        self.meta_model = None  # 用于stacking
-    
-    def fit(self, X_train, y_train, X_val=None, y_val=None):
-        """
-        训练所有基模型和元模型
-        """
-        # 训练基模型
-        for name, model in self.models:
-            logger.info(f"Training model {name}")
+
+    def __init__(self, base_models: Sequence[Tuple[str, Any]], config: EnsembleConfig):
+        self.base_models = list(base_models)
+        self.config = config
+        self.weights_: np.ndarray | None = None
+        self.meta_model_: Any | None = None
+        self._single_output = True
+
+    def _split_train_val(self, X, y):
+        n = len(X)
+        if n < 10:
+            return X, y, None, None
+        val_ratio = min(max(self.config.val_ratio, 0.05), 0.4)
+        split_idx = int(n * (1.0 - val_ratio))
+        split_idx = min(max(split_idx, 1), n - 1)
+        return X[:split_idx], y[:split_idx], X[split_idx:], y[split_idx:]
+
+    def _fit_base_models(self, X_train, y_train):
+        if self.config.parallel_workers <= 1 or len(self.base_models) <= 1:
+            for name, model in self.base_models:
+                logger.info(f"[Ensemble] Training base model: {name}")
+                model.fit(X_train, y_train)
+            return
+
+        def _fit_one(name, model):
+            logger.info(f"[Ensemble] Training base model: {name}")
             model.fit(X_train, y_train)
-        
-        # 如果是stacking，训练元模型
-        if self.method == 'stacking' and X_val is not None:
-            # 获取基模型在验证集上的预测
-            meta_features = self._get_meta_features(X_val)
-            # 训练元模型
-            self.meta_model = lgb.LGBMRegressor(n_estimators=100, learning_rate=0.05)
-            self.meta_model.fit(meta_features, y_val)
-        
-        # 如果是加权平均，优化权重
-        if self.method == 'weighted' and X_val is not None:
-            self.optimize_weights(X_val, y_val)
-    
-    def predict(self, X):
-        """
-        融合预测
-        """
-        if self.method == 'voting':
-            return self._voting_predict(X)
-        elif self.method == 'averaging':
-            return self._averaging_predict(X)
-        elif self.method == 'weighted_averaging':
-            return self._weighted_averaging_predict(X, self.weights)
-        elif self.method == 'stacking':
-            return self._stacking_predict(X)
-        elif self.method == 'blending':
-            return self._blending_predict(X)
+            return name, model
+
+        with ThreadPoolExecutor(max_workers=self.config.parallel_workers) as executor:
+            futures = [executor.submit(_fit_one, name, model) for name, model in self.base_models]
+            fitted_models = []
+            for future in as_completed(futures):
+                fitted_models.append(future.result())
+        fitted_map = {name: model for name, model in fitted_models}
+        self.base_models = [(name, fitted_map[name]) for name, _ in self.base_models]
+
+    def _collect_predictions(self, X) -> np.ndarray:
+        preds = []
+        for _, model in self.base_models:
+            preds.append(_to_2d(model.predict(X)))
+        # shape: (n_models, n_samples, n_outputs)
+        return np.stack(preds, axis=0)
+
+    def _fit_weighted(self, val_preds: np.ndarray, y_val_2d: np.ndarray):
+        maes = []
+        for i in range(val_preds.shape[0]):
+            maes.append(mean_absolute_error(y_val_2d, val_preds[i]))
+        maes = np.asarray(maes, dtype=float)
+        inv = 1.0 / np.clip(maes, 1e-8, None)
+        self.weights_ = inv / inv.sum()
+        logger.info(f"[Ensemble] Weighted averaging weights: {self.weights_}")
+
+    def _fit_blending(self, val_preds: np.ndarray, y_val_2d: np.ndarray):
+        n_models = val_preds.shape[0]
+        Z = val_preds.transpose(1, 0, 2).reshape(-1, n_models)
+        y = y_val_2d.reshape(-1)
+        w, *_ = np.linalg.lstsq(Z, y, rcond=None)
+        w = np.clip(w, 0.0, None)
+        if w.sum() <= 1e-8:
+            w = np.ones(n_models, dtype=float) / n_models
         else:
-            raise ValueError(f"Unknown method: {self.method}")
-    
-    def _voting_predict(self, X):
-        """投票预测（用于分类，回归用平均）"""
-        return self._averaging_predict(X)
-    
-    def _averaging_predict(self, X):
-        """平均预测"""
-        predictions = np.array([model.predict(X) for model in self.models])
-        return np.mean(predictions, axis=0)
-    
-    def _weighted_averaging_predict(self, X, weights):
-        """加权平均预测"""
-        predictions = np.array([model.predict(X) for model in self.models])
-        return np.average(predictions, axis=0, weights=weights)
-    
-    def _stacking_predict(self, X):
-        """堆叠预测"""
-        # 获取基模型预测作为元特征
-        meta_features = self._get_meta_features(X)
-        # 使用元模型预测
-        return self.meta_model.predict(meta_features)
-    
-    def _blending_predict(self, X):
-        """混合预测（类似stacking但使用固定权重）"""
-        # 简化版：使用平均
-        return self._averaging_predict(X)
-    
-    def _get_meta_features(self, X):
-        """获取元特征（基模型的预测）"""
-        meta_features = [model.predict(X) for model in self.models]
-        return np.column_stack(meta_features)
+            w = w / w.sum()
+        self.weights_ = w
+        logger.info(f"[Ensemble] Blending weights: {self.weights_}")
 
-    def optimize_weights(self, X_val, y_val):
-        """
-        优化加权平均的权重
-        """
-        from scipy.optimize import minimize
-        
-        def objective(weights):
-            preds = [model.predict(X_val) for _, model in self.models]
-            ensemble_pred = np.average(preds, axis=0, weights=weights)
-            return mean_squared_error(y_val, ensemble_pred)
-        
-        n_models = len(self.models)
-        constraints = {'type': 'eq', 'fun': lambda w: np.sum(w) - 1}
-        bounds = [(0, 1)] * n_models
-        initial = np.ones(n_models) / n_models
-        
-        result = minimize(
-            objective, 
-            initial, 
-            method='SLSQP',
-            bounds=bounds,
-            constraints=constraints
-        )
-        
-        self.weights = result.x
+    def _fit_stacking(self, val_preds: np.ndarray, y_val_2d: np.ndarray):
+        n_models, n_samples, n_outputs = val_preds.shape
+        X_meta = val_preds.transpose(1, 0, 2).reshape(n_samples, n_models * n_outputs)
+        meta = RidgeCV(alphas=self.config.stacking_alphas)
+        meta.fit(X_meta, y_val_2d.ravel() if self._single_output else y_val_2d)
+        self.meta_model_ = meta
+        logger.info("[Ensemble] Stacking meta-model fitted with RidgeCV.")
 
+    def fit(self, X, y):
+        y_2d = _to_2d(y)
+        self._single_output = y_2d.shape[1] == 1
 
-# ##############################
-# 使用示例
-# ##############################
-from models.ModelFactory import LightGBMModel, XGBoostModel, CatBoostModel
-def train_with_ensemble(X_train, y_train, X_val, y_val):
-    # 创建多个模型
-    models = {
-        "lightgmb": LightGBMModel({'n_estimators': 1000, 'learning_rate': 0.05}),
-        "xgboost": XGBoostModel({'n_estimators': 1000, 'learning_rate': 0.05}),
-        "catboost": CatBoostModel({'iterations': 1000, 'learning_rate': 0.05}),
-    }
-    
-    # 创建融合器
-    ensemble = ModelEnsemble(models, method='stacking')
-    
-    # 训练
-    ensemble.fit(X_train, y_train, X_val, y_val)
-    
-    # 预测
-    y_pred = ensemble.predict(X_val)
-    
-    return ensemble, y_pred
+        X_train, y_train, X_val, y_val = self._split_train_val(X, y_2d)
+        self._fit_base_models(X_train, y_train.ravel() if self._single_output else y_train)
+
+        method = str(self.config.method).lower()
+        needs_val = method in {"weighted", "blending", "stacking"}
+        if needs_val and X_val is not None and len(X_val) > 0:
+            val_preds = self._collect_predictions(X_val)
+            if method == "weighted":
+                self._fit_weighted(val_preds, y_val)
+            elif method == "blending":
+                self._fit_blending(val_preds, y_val)
+            elif method == "stacking":
+                self._fit_stacking(val_preds, y_val)
+            self._fit_base_models(X, y_2d.ravel() if self._single_output else y_2d)
+        elif needs_val:
+            logger.warning("[Ensemble] Validation split unavailable, fallback to averaging.")
+            self.config.method = "averaging"
+
+        return self
+
+    def predict(self, X) -> np.ndarray:
+        method = str(self.config.method).lower()
+        preds = self._collect_predictions(X)
+
+        if method == "averaging":
+            out = preds.mean(axis=0)
+        elif method in {"weighted", "blending"}:
+            w = self.weights_
+            if w is None:
+                w = np.ones(preds.shape[0], dtype=float) / preds.shape[0]
+            out = np.tensordot(w, preds, axes=(0, 0))
+        elif method == "stacking":
+            if self.meta_model_ is None:
+                out = preds.mean(axis=0)
+            else:
+                n_models, n_samples, n_outputs = preds.shape
+                X_meta = preds.transpose(1, 0, 2).reshape(n_samples, n_models * n_outputs)
+                out = _to_2d(self.meta_model_.predict(X_meta))
+        else:
+            raise ValueError(f"Unsupported ensemble method: {self.config.method}")
+
+        if self._single_output:
+            return out.ravel()
+        return out
 
 
 

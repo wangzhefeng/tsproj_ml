@@ -12,18 +12,272 @@
 # ***************************************************
 
 # python libraries
-from typing import List, Dict, Tuple
+from typing import List, Dict, Tuple, Optional
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
-from sklearn.preprocessing import StandardScaler, MinMaxScaler
+from sklearn.preprocessing import StandardScaler, MinMaxScaler, RobustScaler, PowerTransformer
 from sklearn.base import clone
 
 from utils.log_util import logger
 
 # global variable
 LOGGING_LABEL = Path(__file__).name[:-3]
+
+
+def resolve_scale_features_enabled(args) -> bool:
+    """优先使用新字段，兼容旧字段 `scale`。"""
+    return bool(getattr(args, "scale_features", getattr(args, "scale", False)))
+
+
+def resolve_scale_target_enabled(args) -> bool:
+    """优先使用新字段，兼容旧字段 `scale`。"""
+    return bool(getattr(args, "scale_target", getattr(args, "scale", False)))
+
+
+def resolve_inverse_target_enabled(args) -> bool:
+    """优先使用新字段，兼容旧字段 `inverse`。"""
+    return bool(getattr(args, "inverse_target", getattr(args, "inverse", False)))
+
+
+def resolve_feature_scaler_type(args) -> str:
+    """获取预测特征 X 的缩放方法。"""
+    return str(getattr(args, "feature_scaler_type", "standard")).lower()
+
+
+def resolve_target_scaler_type(args) -> str:
+    """获取目标变量 Y 的缩放方法。"""
+    return str(getattr(args, "target_scaler_type", "standard")).lower()
+
+
+class TargetScaler:
+    """
+    目标变量缩放器。
+
+    与 FeatureScaler 分离，专门处理训练目标 Y 的缩放与逆变换。
+    """
+
+    def __init__(self, args, scaler_type="standard", log_prefix: str="[TargetScaler]", verbose: bool = False):
+        self.args = args
+        self.log_prefix = log_prefix
+        self.verbose = verbose
+        self.enabled = resolve_scale_target_enabled(self.args)
+        self.scaler_type = str(scaler_type).lower()
+        self.column_transformers = {}
+        self.column_names = []
+        self.is_fitted = False
+
+    def _resolve_columns(self, columns: Optional[List[str]] = None) -> List[str]:
+        if columns is not None:
+            return list(columns)
+        return list(self.column_names)
+
+    def _validate_columns(self, columns: List[str]):
+        if not self.column_names:
+            raise ValueError(f"{self.log_prefix} Target scaler has not been fitted yet.")
+        missing = [col for col in columns if col not in self.column_names]
+        if missing:
+            raise ValueError(f"{self.log_prefix} Unknown target columns for scaling: {missing}")
+
+    def _create_column_transformer(self):
+        if self.scaler_type == "none":
+            return None
+        if self.scaler_type == "standard":
+            return StandardScaler()
+        if self.scaler_type == "minmax":
+            return MinMaxScaler()
+        if self.scaler_type == "robust":
+            return RobustScaler()
+        if self.scaler_type in {"yeo-johnson", "yeojohnson"}:
+            return PowerTransformer(method="yeo-johnson", standardize=True)
+        if self.scaler_type == "log1p":
+            return "log1p"
+        raise ValueError(
+            f"{self.log_prefix} Unsupported target_scaler_type={self.scaler_type}. "
+            f"Supported: none, standard, minmax, log1p, robust, yeo-johnson."
+        )
+
+    def _fit_transform_column(self, values: np.ndarray, column_name: str) -> np.ndarray:
+        transformer = self._create_column_transformer()
+        self.column_transformers[column_name] = transformer
+
+        if transformer is None:
+            return values
+        if transformer == "log1p":
+            if np.any(values < 0):
+                raise ValueError(f"{self.log_prefix} log1p target scaling requires non-negative values, but column '{column_name}' contains negatives.")
+            return np.log1p(values)
+
+        return transformer.fit_transform(values)
+
+    def _apply_column_transform(self, values: np.ndarray, column_name: str, inverse: bool) -> np.ndarray:
+        transformer = self.column_transformers.get(column_name)
+        if transformer is None:
+            return values
+        if transformer == "log1p":
+            if not inverse and np.any(values < 0):
+                raise ValueError(f"{self.log_prefix} log1p target scaling requires non-negative values, but column '{column_name}' contains negatives.")
+            return np.expm1(values) if inverse else np.log1p(values)
+        return transformer.inverse_transform(values) if inverse else transformer.transform(values)
+
+    @staticmethod
+    def _ensure_2d_array(y, columns: List[str]):
+        original_type = "array"
+        original_shape = np.asarray(y).shape
+        original_index = None
+        original_columns = columns
+
+        if isinstance(y, pd.DataFrame):
+            original_type = "dataframe"
+            original_index = y.index
+            original_columns = y.columns.tolist()
+            arr = y.values
+        elif isinstance(y, pd.Series):
+            original_type = "series"
+            original_index = y.index
+            original_columns = [y.name if y.name is not None else columns[0]]
+            arr = y.to_frame().values
+        else:
+            arr = np.asarray(y)
+            if arr.ndim == 0:
+                arr = arr.reshape(1, 1)
+            elif arr.ndim == 1:
+                if len(columns) > 1:
+                    arr = arr.reshape(1, -1)
+                else:
+                    arr = arr.reshape(-1, 1)
+
+        return arr.astype(float), original_type, original_shape, original_index, original_columns
+
+    @staticmethod
+    def _restore_type(arr: np.ndarray, original_type: str, original_shape, original_index, original_columns):
+        if original_type == "dataframe":
+            return pd.DataFrame(arr, index=original_index, columns=original_columns)
+        if original_type == "series":
+            return pd.Series(arr.reshape(-1), index=original_index, name=original_columns[0])
+
+        if len(original_shape) == 0:
+            return np.asarray(arr).reshape(())
+        if len(original_shape) == 1:
+            return np.asarray(arr).reshape(-1)
+        return np.asarray(arr)
+
+    def fit_transform(self, y):
+        if isinstance(y, pd.DataFrame):
+            self.column_names = y.columns.tolist()
+        elif isinstance(y, pd.Series):
+            self.column_names = [y.name if y.name is not None else "target"]
+        else:
+            arr = np.asarray(y)
+            width = arr.shape[1] if arr.ndim == 2 else 1
+            self.column_names = [f"target_{i}" for i in range(width)]
+
+        if not self.enabled:
+            return y.copy() if hasattr(y, "copy") else np.asarray(y).copy()
+
+        arr, original_type, original_shape, original_index, original_columns = self._ensure_2d_array(
+            y,
+            self.column_names,
+        )
+        transformed = np.zeros_like(arr, dtype=float)
+        self.column_transformers = {}
+        for idx, column_name in enumerate(self.column_names):
+            transformed[:, [idx]] = self._fit_transform_column(arr[:, [idx]], column_name)
+        self.is_fitted = True
+
+        if self.verbose:
+            logger.info(f"{self.log_prefix} Fitted target scaler ({self.scaler_type}) on columns: {self.column_names}")
+
+        return self._restore_type(transformed, original_type, original_shape, original_index, original_columns)
+
+    def transform(self, y, columns: Optional[List[str]] = None):
+        if not self.enabled:
+            return y.copy() if hasattr(y, "copy") else np.asarray(y).copy()
+
+        resolved_columns = self._resolve_columns(columns)
+        self._validate_columns(resolved_columns)
+        arr, original_type, original_shape, original_index, original_columns = self._ensure_2d_array(
+            y,
+            resolved_columns,
+        )
+        transformed = np.zeros_like(arr, dtype=float)
+        for idx, column_name in enumerate(resolved_columns):
+            transformed[:, [idx]] = self._apply_column_transform(arr[:, [idx]], column_name, inverse=False)
+
+        return self._restore_type(transformed, original_type, original_shape, original_index, original_columns)
+
+    def inverse_transform(self, y, columns: Optional[List[str]] = None):
+        if not self.enabled:
+            return y.copy() if hasattr(y, "copy") else np.asarray(y).copy()
+
+        resolved_columns = self._resolve_columns(columns)
+        self._validate_columns(resolved_columns)
+        arr, original_type, original_shape, original_index, original_columns = self._ensure_2d_array(
+            y,
+            resolved_columns,
+        )
+        restored = np.zeros_like(arr, dtype=float)
+        for idx, column_name in enumerate(resolved_columns):
+            restored[:, [idx]] = self._apply_column_transform(arr[:, [idx]], column_name, inverse=True)
+
+        return self._restore_type(restored, original_type, original_shape, original_index, original_columns)
+
+    @staticmethod
+    def get_prediction_target_columns(pred_method: str, target_output_features: List[str]) -> List[str]:
+        """
+        根据预测方法确定预测结果对应的目标列。
+        """
+        direct_multi_step_methods = {
+            "univariate-single-multistep-direct",
+            "univariate-single-multistep-direct-recursive",
+            "multivariate-single-multistep-direct",
+            "multivariate-single-multistep-direct-recursive",
+        }
+        if pred_method in direct_multi_step_methods:
+            return list(target_output_features)
+        return [target_output_features[0]]
+
+    def restore_predictions(self, values, target_columns: List[str]):
+        """
+        在需要时将预测结果从目标缩放空间恢复到原始量纲。
+        """
+        values_arr = np.asarray(values)
+        if not self.enabled:
+            return values_arr
+        if not resolve_inverse_target_enabled(self.args):
+            return values_arr
+        return np.asarray(self.inverse_transform(values_arr, columns=target_columns))
+
+    def prepare_eval_target(self, values, target_columns: List[str]):
+        """
+        统一评估阶段的目标尺度：
+        - inverse_target=True: 使用原始量纲
+        - inverse_target=False: 将真实值映射到目标缩放空间
+        """
+        values_arr = np.asarray(values)
+        if not self.enabled:
+            return values_arr
+        if resolve_inverse_target_enabled(self.args):
+            return values_arr
+        return np.asarray(self.transform(values_arr, columns=target_columns))
+
+    def prepare_history_target_for_plot(self, df_history: pd.DataFrame, target_columns: List[str]):
+        """
+        预测图保存前，按输出尺度对历史目标列做对齐。
+        """
+        if (
+            not self.enabled
+            or resolve_inverse_target_enabled(self.args)
+            or df_history is None
+            or df_history.empty
+            or "y" not in df_history.columns
+        ):
+            return df_history
+
+        df_history_plot = df_history.copy()
+        df_history_plot["y"] = self.transform(df_history_plot["y"], columns=target_columns)
+        return df_history_plot
 
 
 class FeatureScaler:
@@ -35,11 +289,18 @@ class FeatureScaler:
         self.args = args
         self.log_prefix = log_prefix
         self.verbose = verbose
+        self.enabled = resolve_scale_features_enabled(self.args)
+        self.scaler_type = str(scaler_type).lower()
         # 归一化器
-        if scaler_type == "standard":
+        if self.scaler_type == "standard":
             self.scaler = StandardScaler()
-        else:
+        elif self.scaler_type == "minmax":
             self.scaler = MinMaxScaler()
+        else:
+            raise ValueError(
+                f"{self.log_prefix} Unsupported feature_scaler_type={self.scaler_type}. "
+                f"Supported: standard, minmax."
+            )
         # 类别特征信息
         self.category_mappings = {}  # 类别到编码的映射
         self.category_info = {}      # 类别特征的元信息
@@ -84,7 +345,7 @@ class FeatureScaler:
         groups['other_numeric'] = [col for col in X.columns if col not in all_special]
         # logger.info(f"{self.log_prefix} groups: \n{groups}")
         # 打印分组信息
-        if self.args.scale:
+        if self.enabled:
             logger.info(f"{self.log_prefix} Feature groups identified:")
             for group_name, features in groups.items():
                 logger.info(f"{self.log_prefix} {group_name}: {len(features)} features")
@@ -319,7 +580,7 @@ class FeatureScaler:
                     X_processed[col] = X_processed[col].astype('category')
                     self.category_info[col] = X_processed[col].cat.categories.tolist()
         # 4. 数值特征归一化
-        if self.args.scale:
+        if self.enabled:
             logger.info(f"{self.log_prefix} Scaling numeric features...")
             X_processed = self._fit_transform_numeric(X_processed, actual_categorical)
             logger.info(f"{self.log_prefix} Feature preprocessing completed.")
@@ -362,7 +623,7 @@ class FeatureScaler:
                         logger.warning(f"{self.log_prefix} No category info for {col}, using as is.")
                         X_processed[col] = X_processed[col].astype('category')
         # 3. 数值特征归一化
-        if self.args.scale:
+        if self.enabled:
             logger.info(f"{self.log_prefix} Scaling numeric features...")
             X_processed = self._transform_numeric(X_processed, actual_categorical)
             logger.info(f"{self.log_prefix} Feature preprocessing completed.")

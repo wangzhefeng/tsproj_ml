@@ -63,16 +63,12 @@ def _apply_overrides(cfg, args):
         cfg.data_dir = args.data_dir
     if args.data_path is not None:
         cfg.data_path = args.data_path
-    if args.data is not None:
-        cfg.data = args.data
     if args.target is not None:
         cfg.target = args.target
     if args.target_ts_feat is not None:
         cfg.target_ts_feat = args.target_ts_feat
     if args.freq is not None:
         cfg.freq = args.freq
-    if args.freq_minutes is not None:
-        cfg.freq_minutes = args.freq_minutes
 
     if args.model_type is not None:
         cfg.model_type = args.model_type
@@ -176,11 +172,9 @@ def args_parse():
 
     parser.add_argument("--data-dir", type=str, default=None)
     parser.add_argument("--data-path", type=str, default=None)
-    parser.add_argument("--data", type=str, default=None)
     parser.add_argument("--target", type=str, default=None)
     parser.add_argument("--target-ts-feat", type=str, default=None)
     parser.add_argument("--freq", type=str, default=None)
-    parser.add_argument("--freq-minutes", type=int, default=None)
 
     parser.add_argument("--history-days", type=int, default=None)
     parser.add_argument("--predict-days", type=int, default=None)

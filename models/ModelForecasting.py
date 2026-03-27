@@ -12,6 +12,7 @@
 # ***************************************************
 
 # python libraries
+import time
 from pathlib import Path
 from typing import List, Dict, Any, Optional, Tuple
 
@@ -36,6 +37,7 @@ class Forecaster:
                  horizon: int,
                  model: Any, 
                  feature_scaler,
+                 target_scaler,
                  df_history: pd.DataFrame, 
                  df_future: pd.DataFrame, 
                  df_date_future: pd.DataFrame,
@@ -50,6 +52,7 @@ class Forecaster:
         self.horizon = horizon
         self.model = model
         self.feature_scaler = feature_scaler
+        self.target_scaler = target_scaler
         self.df_history = df_history
         self.df_future = df_future
         self.df_date_future = df_date_future
@@ -78,6 +81,12 @@ class Forecaster:
         self.quantile_outputs = None
         # 未来辅助特征索引（日期/天气），用于按步裁剪，减少重复 merge 开销
         self._prepare_future_aux_index()
+
+    def _should_log_step(self, step: int) -> bool:
+        if not bool(getattr(self.args, "enable_step_logging", False)):
+            return False
+        interval = max(1, int(getattr(self.args, "forecast_log_interval", 1) or 1))
+        return step == 0 or (step + 1) % interval == 0 or (step + 1) == self.horizon
     
     @staticmethod
     def _to_1d(pred: Any) -> np.ndarray:
@@ -115,6 +124,24 @@ class Forecaster:
             df_weather[self.args.weather_ts_feat] = pd.to_datetime(df_weather[self.args.weather_ts_feat])
             df_weather = df_weather.drop_duplicates(subset=[self.args.weather_ts_feat], keep="last")
             self._df_weather_future_indexed = df_weather.set_index(self.args.weather_ts_feat).sort_index()
+
+    def _append_history_row(self, row_df: pd.DataFrame):
+        """
+        将新预测步回填到固定长度历史窗口，避免在递归预测中反复 concat。
+        """
+        if row_df is None or row_df.empty:
+            return
+
+        row = row_df.iloc[-1:].copy()
+        history_columns = self.df_history_for_lags.columns.tolist()
+        if history_columns:
+            row = row.reindex(columns=history_columns)
+            if len(self.df_history_for_lags) > 0:
+                row = row.fillna(self.df_history_for_lags.iloc[-1])
+
+        self.df_history_for_lags.loc[len(self.df_history_for_lags)] = row.iloc[0]
+        if len(self.df_history_for_lags) > self.max_lag:
+            self.df_history_for_lags = self.df_history_for_lags.iloc[-self.max_lag:].reset_index(drop=True)
 
     def _slice_future_aux_by_forecast(self, df_forecast: pd.DataFrame):
         """根据当前预测窗口切出必要的日期/天气特征子集。"""
@@ -233,7 +260,7 @@ class Forecaster:
             if endo_feat not in self.df_history_for_lags.columns and endo_feat in self.df_history.columns:
                 self.df_history_for_lags[endo_feat] = self.df_history[endo_feat].iloc[-self.max_lag:]
 
-        df_forecast = pd.concat([self.df_history_for_lags, self.df_future.copy()], ignore_index=True)
+        df_forecast = pd.concat([self.df_history_for_lags, self.df_future.copy()], ignore_index=True, copy=False)
         df_date_future_slice, df_weather_future_slice = self._slice_future_aux_by_forecast(df_forecast)
         (df_forecast_featured,
          predictor_features,
@@ -264,11 +291,10 @@ class Forecaster:
         # 多步预测值收集器
         Y_preds = np.array([])
         # 预测阶段始终使用未来日期/天气进行特征工程，避免被 is_testing 分支误跳过
-        feature_engineer = FeatureEngineer(self.args, self.log_prefix, verbose=False)
         (df_future_featured, 
          predictor_features, 
          target_output_features, 
-         categorical_features) = feature_engineer.create_features(
+         categorical_features) = self.feature_engineer.create_features(
             df_series = self.df_future,
             df_date_history = None,
             df_date_future = self.df_date_future,
@@ -338,8 +364,9 @@ class Forecaster:
         Y_preds = []
         quantile_store = {}
         for step in range(self.horizon):
-            logger.info(f"{self.log_prefix} recursive forecast step: {step}...")
-            logger.info(f"{self.log_prefix} {'=' * 31}")
+            if self._should_log_step(step):
+                logger.info(f"{self.log_prefix} recursive forecast step: {step}...")
+                logger.info(f"{self.log_prefix} {'=' * 31}")
             # 0.Prepare current features for prediction
             if step >= len(self.df_future):
                 logger.warning(f"Exhausted df_future for step {step}. Stopping recursive forecast.")
@@ -347,7 +374,7 @@ class Forecaster:
             # 1.构建预测特征数据
             df_future_step = self.df_future.iloc[step:step+1].copy()
             # 2.合并历史数据和当前步数据
-            df_forecast = pd.concat([self.df_history_for_lags, df_future_step], ignore_index=True)
+            df_forecast = pd.concat([self.df_history_for_lags, df_future_step], ignore_index=True, copy=False)
             # 3.特征工程（按步裁剪辅助特征，避免每步处理完整未来表）
             df_date_future_step, df_weather_future_step = self._slice_future_aux_by_forecast(df_forecast)
             (df_forecast_featured,
@@ -387,8 +414,7 @@ class Forecaster:
             df_future_step_new_row = df_future_step.copy().iloc[-1:]
             df_future_step_new_row[self.target_feature] = y_pred_step
             # 8.将新行添加到历史数据中，进行下一次循环
-            self.df_history_for_lags = pd.concat([self.df_history_for_lags, df_future_step_new_row], ignore_index=True)
-            self.df_history_for_lags = self.df_history_for_lags.iloc[-self.max_lag:]
+            self._append_history_row(df_future_step_new_row)
 
         self._finalize_recursive_quantiles(quantile_store)
         return np.array(Y_preds)
@@ -424,7 +450,7 @@ class Forecaster:
             produced = len(y_preds)
             remain = len(self.df_future) - produced
             df_future_remain = self.df_future.iloc[produced:].copy()
-            df_forecast = pd.concat([self.df_history_for_lags, df_future_remain], ignore_index=True)
+            df_forecast = pd.concat([self.df_history_for_lags, df_future_remain], ignore_index=True, copy=False)
             df_date_future_slice, df_weather_future_slice = self._slice_future_aux_by_forecast(df_forecast)
             (df_forecast_featured,
              predictor_features,
@@ -458,8 +484,7 @@ class Forecaster:
             for i in range(take):
                 df_new = df_future_remain.iloc[i:i+1].copy()
                 df_new[self.target_feature] = float(block_pred[i])
-                self.df_history_for_lags = pd.concat([self.df_history_for_lags, df_new], ignore_index=True)
-                self.df_history_for_lags = self.df_history_for_lags.iloc[-self.max_lag:]
+                self._append_history_row(df_new)
         self._finalize_recursive_quantiles(quantile_store)
         return np.asarray(y_preds[:len(self.df_future)])
     # ------------------------------
@@ -516,7 +541,8 @@ class Forecaster:
         
         # Iterate for each step in the forecast horizon
         for step in range(self.horizon):
-            logger.info(f"{self.log_prefix} multivariate-recursive forecast step: {step}...")
+            if self._should_log_step(step):
+                logger.info(f"{self.log_prefix} multivariate-recursive forecast step: {step}...")
             # 0.Prepare current features for prediction
             if step >= len(self.df_future):
                 logger.warning(f"Exhausted df_future for step {step}. Stopping recursive forecast.")
@@ -524,7 +550,7 @@ class Forecaster:
             
             # 1. Prepare current features for prediction
             df_future_exogenous = self.df_future.iloc[step:step+1].copy()
-            df_forecast = pd.concat([self.df_history_for_lags, df_future_exogenous], ignore_index=True)
+            df_forecast = pd.concat([self.df_history_for_lags, df_future_exogenous], ignore_index=True, copy=False)
 
             # 2.特征工程（按步裁剪辅助特征，避免每步处理完整未来表）
             df_date_future_step, df_weather_future_step = self._slice_future_aux_by_forecast(df_forecast)
@@ -586,8 +612,7 @@ class Forecaster:
                         df_future_exogenous_new_row[col] = self.df_history_for_lags[col].iloc[-1]
 
             # 9.将新行添加到历史数据中，进行下一次循环
-            self.df_history_for_lags = pd.concat([self.df_history_for_lags, df_future_exogenous_new_row], ignore_index=True)
-            self.df_history_for_lags = self.df_history_for_lags.iloc[-self.max_lag:]
+            self._append_history_row(df_future_exogenous_new_row)
 
         self._finalize_recursive_quantiles(quantile_store)
         return np.array(Y_preds)
@@ -637,7 +662,7 @@ class Forecaster:
             produced = len(y_preds)
             remain = len(self.df_future) - produced
             df_future_remain = self.df_future.iloc[produced:].copy()
-            df_forecast = pd.concat([self.df_history_for_lags, df_future_remain], ignore_index=True)
+            df_forecast = pd.concat([self.df_history_for_lags, df_future_remain], ignore_index=True, copy=False)
             df_date_future_slice, df_weather_future_slice = self._slice_future_aux_by_forecast(df_forecast)
             (df_forecast_featured,
              predictor_features,
@@ -681,8 +706,7 @@ class Forecaster:
                 for col in self.df_history_for_lags.columns:
                     if col not in df_new.columns:
                         df_new[col] = self.df_history_for_lags[col].iloc[-1]
-                self.df_history_for_lags = pd.concat([self.df_history_for_lags, df_new], ignore_index=True)
-                self.df_history_for_lags = self.df_history_for_lags.iloc[-self.max_lag:]
+                self._append_history_row(df_new)
 
         self._finalize_recursive_quantiles(quantile_store)
         return np.asarray(y_preds[:len(self.df_future)])
@@ -695,6 +719,7 @@ class Forecaster:
         """
         # 每次预测前重置，避免复用同一 Forecaster 实例时污染
         self.quantile_outputs = None
+        perf_start = time.perf_counter()
         if self.args.pred_method == "univariate-single-multistep-direct-output":
             logger.info(f"{self.log_prefix} Forecast method: univariate_single_multi_step_direct_output_forecast(USMDO)")
             logger.info(f"{self.log_prefix} {'-' * 60}")
@@ -735,17 +760,21 @@ class Forecaster:
 
         pred_arr = np.asarray(raw_pred)
         if pred_arr.ndim == 0:
-            return np.asarray([float(pred_arr)])
+            result = np.asarray([float(pred_arr)])
         elif pred_arr.ndim == 1:
-            return pred_arr
-        
-        if pred_arr.shape[0] == 1:
-            return pred_arr[0]
+            result = pred_arr
+        elif pred_arr.shape[0] == 1:
+            result = pred_arr[0]
+        elif pred_arr.shape[1] == 1:
+            result = pred_arr[:, 0]
+        else:
+            result = pred_arr[:, 0]
 
-        if pred_arr.shape[1] == 1:
-            return pred_arr[:, 0]
-
-        return pred_arr[:, 0]
+        logger.info(
+            f"{self.log_prefix} Forecast method runtime: "
+            f"{self.args.pred_method} took {time.perf_counter() - perf_start:.3f}s"
+        )
+        return result
 
     def forecast_results_save(self, df_history, df_future, n_per_day):
         """

@@ -62,7 +62,7 @@ tsproj_ml/
 - `data_path`: 目标序列文件
 - `target_ts_feat`: 时间列名
 - `target`: 预测目标列名
-- `freq`, `freq_minutes`: 时间频率
+- `freq`: 时间频率，使用 pandas 固定频率字符串，例如 `5min`、`15min`、`1h`、`1D`
 
 可选外生数据：
 - 日期类型数据：`date_history_path`, `date_future_path`

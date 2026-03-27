@@ -3,7 +3,6 @@ import datetime
 from typing import List, Dict, Optional
 from dataclasses import dataclass, field
 
-
 @dataclass
 class ModelConfig:
     """
@@ -25,9 +24,7 @@ class ModelConfig:
     # ------------------------------
     data_dir: str = "./dataset/electricity_work/2026-03-12/demand_load/lingang_A"
     data_path: str = "df_power.csv"
-    data: str = "df_power"
     freq: str = "5min"
-    freq_minutes: int = 5
     target_ts_feat: str = "count_data_time"
     target: str = "h_total_use"
     target_series_numeric_features: List[str] = field(default_factory=list)
@@ -51,7 +48,6 @@ class ModelConfig:
         date_ts_feat: Optional[str] = None
         datetype_features: List[str] = field(default_factory=lambda: [])
         datetype_categorical_features: List[str] = field(default_factory=lambda: [])
-    
     # 气象数据配置
     # --------------
     enable_weather_features: bool = True
@@ -74,7 +70,6 @@ class ModelConfig:
         weather_ts_feat: Optional[str] = None
         weather_features: List[str] = field(default_factory=lambda: [])
         weather_categorical_features: List[str] = field(default_factory=lambda: [])
-    
     # 日期时间特征
     # --------------
     enable_datetime_features: bool = True
@@ -92,7 +87,6 @@ class ModelConfig:
     else:
         datetime_features: List[str] = field(default_factory=lambda: [])
         datetime_categorical_features: List[str] = field(default_factory=lambda: [])
-    
     # 特征滞后数列表
     # --------------
     enable_lags_features: bool = True
@@ -108,28 +102,27 @@ class ModelConfig:
         ])
     else:
         lags: List[int] = field(default_factory=lambda: [])
-    
     # 高级特征工程配置
     # --------------
     enable_advanced_features: bool = False
-    
+
     enable_rolling_features: bool = False
     rolling_columns: List[str] = field(default_factory=lambda: ["y"])
     rolling_windows: List[int] = field(default_factory=lambda: [3, 7, 14, 28])
     rolling_stats: List[str] = field(default_factory=lambda: ["mean", "std", "min", "max", "skew", "kurt"])
-    
+
     enable_expanding_features: bool = False
     expanding_columns: List[str] = field(default_factory=lambda: ["y"])
     expanding_stats: List[str] = field(default_factory=lambda: ["mean", "std", "min", "max", "skew", "kurt"])
-    
+
     enable_diff_features: bool = False
     diff_columns: List[str] = field(default_factory=lambda: ["y"])
     diff_periods: List[int] = field(default_factory=lambda: [1, 7, 24])
-    
+
     enable_pct_change_features: bool = False
     pct_change_columns: List[str] = field(default_factory=lambda: ["y"])
     pct_change_periods: List[int] = field(default_factory=lambda: [1, 7])
-    
+
     enable_time_since_features: bool = False
     time_since_columns: List[str] = field(default_factory=lambda: ["y"])
     time_since_events: List[str] = field(default_factory=lambda: ["peak", "thoughl"])
@@ -137,7 +130,7 @@ class ModelConfig:
     enable_cyclical_features: bool = False
     cyclical_columns: List[str] = field(default_factory=lambda: ["minute"])
     cyclical_period: int = field(default_factory=lambda: 15)
-    
+
     enable_interaction_features: bool = False
     interaction_column_pairs: List[tuple] = field(default_factory=lambda: [("y", "dt_hour")])
     interaction_operations: List[str] = field(default_factory=lambda: ["add", "subtract", "multiply", "divide"])
@@ -148,10 +141,15 @@ class ModelConfig:
     # ------------------------------
     # 数据预处理
     # ------------------------------
-    scale: bool = False  # 是否进行归一化/标准化
-    inverse: bool = False  # 目标变量是否进行归一化/标准化逆变换
-    scaler_type: str = "minmax"  # "standard" 或 "minmax"
-    use_grouped_scaling: str = False  # 是否使用分组归一化/标准化
+    # 预测特征
+    scale_features: bool = False  # 是否对预测特征 X 进行归一化/标准化
+    feature_scaler_type: str = "minmax"  # 预测特征 X 的缩放方法: "standard" 或 "minmax"
+    # 目标特征
+    scale_target: bool = False  # 是否对目标变量 Y 进行归一化/标准化
+    inverse_target: bool = False  # 预测结果是否对目标变量 Y 进行逆变换
+    target_scaler_type: str = "minmax"  # 目标变量 Y 的缩放方法: "none"、"standard"、"minmax"、"log1p"、"robust" 或 "yeo-johnson"
+    # 是否对特征使用分组归一化/标准化
+    use_grouped_scaling: str = False
     # ------------------------------
     # 模型配置
     # ------------------------------
@@ -163,7 +161,7 @@ class ModelConfig:
     ensemble_models: List = field(default_factory=lambda: ["lgb", "xgb", "cat"])
     ensemble_method: str = "stacking"  # 'averaging', 'weighted', 'stacking', "blending"
     ensemble_val_ratio: float = 0.2
-    
+
     # 可选预测方法:
     # - 单变量预测单变量
     # pred_method: str = "univariate-single-multistep-direct-output"       # USMDO [单变量(包含目标变量的所有内生变量)->单变量(目标内生变量)]多步直接输出预测
@@ -174,8 +172,10 @@ class ModelConfig:
     # pred_method: str = "multivariate-single-multistep-direct"            # MSMD [多变量(包含目标变量的所有内生变量)->单变量(目标内生变量)]多步直接预测
     # pred_method: str = "multivariate-single-multistep-recursive"         # MSMR [多变量(包含目标变量的所有内生变量)->单变量(目标内生变量)]多步递归预测
     # pred_method: str = "multivariate-single-multistep-direct-recursive"  # MSMDR [多变量(包含目标变量的所有内生变量)->单变量(目标内生变量)]多步直接递归预测
-    patience: int = 100  # 早停步数
-    encode_categorical_features: bool = False  # 是否对类别特征进行编码
+    # 早停步数
+    patience: int = 100
+    # 是否对类别特征进行编码
+    encode_categorical_features: bool = False
     # 多输出策略: multioutput / regressor_chain
     multi_output_strategy: str = "multioutput"
     # 预测类型: point / quantile
@@ -208,6 +208,14 @@ class ModelConfig:
     auto_lr_max: float = 0.2
     # 鲁棒损失参数（用于 huber scorer）
     huber_delta: float = 1.0
+    # 性能与并行配置
+    window_parallel_workers: int = 1
+    multi_output_n_jobs: int = 1
+    quantile_parallel_workers: int = 1
+    ensemble_parallel_workers: int = 1
+    model_thread_count: int = 1
+    enable_step_logging: bool = False
+    forecast_log_interval: int = 24
     # ------------------------------
     # 结果保存路径
     # ------------------------------

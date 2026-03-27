@@ -27,7 +27,14 @@ from sklearn.metrics import (
     mean_absolute_percentage_error,  # MAPE
 )
 
-from features.FeatureScalering import FeatureScaler
+from features.FeatureScalering import (
+    FeatureScaler,
+    TargetScaler,
+    resolve_feature_scaler_type,
+    resolve_target_scaler_type,
+)
+from models.ModelTraining import Trainer
+from models.ModelForecasting import Forecaster
 from utils.log_util import logger
 
 # global variable
@@ -42,10 +49,130 @@ class Tester:
         self.horizon = horizon
         self.window_len = window_len
 
+    @staticmethod
+    def _window_test(payload):
+        """
+        单个滑动窗口测试任务
+        """
+        args = payload["args"]
+        log_prefix = payload["log_prefix"]
+        horizon = payload["horizon"]
+        window_len = payload["window_len"]
+        window = payload["window"]
+
+        # 滑窗数据分割
+        (X_train, Y_train,
+         X_test, Y_test,
+         df_history_train, df_history_test) = Tester._evaluate_split(
+            payload["X_train_history"],
+            payload["Y_train_history"],
+            payload["df_history"],
+            window,
+            horizon=horizon,
+            window_len=window_len,
+            log_prefix=log_prefix,
+        )
+        if X_train is None:
+            return {"window": window, "test_scores_df": None, "cv_plot_df": None}
+        # 窗口目标特征处理
+        Y_train = Y_train.to_frame() if isinstance(Y_train, pd.Series) else Y_train
+        Y_test = Y_test.to_frame() if isinstance(Y_test, pd.Series) else Y_test
+        # ------------------------------
+        # 窗口训练
+        # ------------------------------
+        scaler = FeatureScaler(
+            args,
+            scaler_type=resolve_feature_scaler_type(args),
+            log_prefix=log_prefix,
+            verbose=False,
+        )
+        target_scaler = TargetScaler(
+            args,
+            scaler_type=resolve_target_scaler_type(args),
+            log_prefix=log_prefix,
+            verbose=False,
+        )
+        model_trainer = Trainer(args=args, log_prefix=log_prefix)
+        model, scaler_testing, target_scaler_testing, selected_features = model_trainer.train(
+            X_train=X_train,
+            Y_train=Y_train,
+            feature_scaler=scaler,
+            target_scaler=target_scaler,
+            categorical_features=payload["categorical_features"],
+        )
+        # ------------------------------
+        # 窗口预测
+        # ------------------------------
+        predictor = Forecaster(
+            args=args,
+            horizon=min(horizon, len(X_test)),
+            model=model,
+            feature_scaler=scaler_testing,
+            target_scaler=target_scaler_testing,
+            df_history=df_history_train,
+            df_future=df_history_test.copy(),
+            df_date_future=payload["df_date_history"],
+            df_weather_future=payload["df_weather_history"],
+            endogenous_features=payload["endogenous_features_with_target"],
+            target_feature=payload["target_feature"],
+            target_output_features=payload["target_output_features"],
+            categorical_features=payload["categorical_features"],
+            selected_features=selected_features,
+            log_prefix=log_prefix,
+        )
+        y_pred = predictor._predict_by_method()
+        # ------------------------------
+        # 模型滑窗预测结果收集
+        # ------------------------------
+        if len(y_pred) == 0:
+            return {"window": window, "test_scores_df": None, "cv_plot_df": None}
+        # 预测结果恢复到目标空间，用于评估
+        pred_target_columns = target_scaler_testing.get_prediction_target_columns(
+            args.pred_method,
+            payload["target_output_features"],
+        )
+        y_pred = target_scaler_testing.restore_predictions(y_pred, pred_target_columns)
+        # 始终评估主目标的一步预测
+        y_test_for_eval = target_scaler_testing.prepare_eval_target(
+            Y_test.iloc[:, 0].values,
+            [payload["target_output_features"][0]],
+        )
+        # 对齐预测结果与评估标签长度
+        if len(y_pred) != len(y_test_for_eval):
+            min_len = min(len(y_pred), len(y_test_for_eval))
+            y_pred = np.asarray(y_pred)[:min_len]
+            y_test_for_eval = np.asarray(y_test_for_eval)[:min_len]
+        # 完整时间戳索引，用于窗口结果回填
+        cv_timestamp_full_df = pd.DataFrame(
+            {
+                "time": pd.date_range(
+                    payload["train_start_time"],
+                    payload["train_end_time"],
+                    freq=args.freq,
+                    inclusive="left",
+                )
+            }
+        )
+        # 测试集评价指标
+        eval_scores_window = Tester._evaluate_score(y_test_for_eval, y_pred, window, df_history_test, log_prefix=log_prefix)
+        # 测试集预测数据
+        cv_plot_df_window = Tester._evaluate_result(
+            y_test_for_eval,
+            y_pred,
+            window,
+            cv_timestamp_full_df,
+            horizon=horizon,
+            window_len=window_len,
+            log_prefix=log_prefix,
+        )
+
+        return {"window": window, "test_scores_df": eval_scores_window, "cv_plot_df": cv_plot_df_window}
+
     # ------------------------------
     # Model sliding window testing
     # ------------------------------
-    def _evaluate_split_index(self, window: int, total_data_points: int):
+    @staticmethod
+    def _evaluate_split_index(window: int, total_data_points: int, horizon: int, window_len: int):
         """
         数据分割索引构建
         
@@ -55,26 +182,37 @@ class Tester:
         The window slides from the most recent data backwards.
         """
         # Calculate test start/end index
-        test_end = total_data_points - 1 - (self.horizon * (window - 1))
-        test_start = test_end - self.horizon + 1
+        test_end = total_data_points - 1 - (horizon * (window - 1))
+        test_start = test_end - horizon + 1
         # Calculate train start/end index
         train_end = test_start
-        train_start = train_end - (self.window_len - self.horizon)
+        train_start = train_end - (window_len - horizon)
         train_start = max(0, train_start)
 
         return train_start, train_end, test_start, test_end
 
-    def _evaluate_split(self, data_X: pd.DataFrame, data_Y: pd.Series, df_history: pd.DataFrame, window: int):
+    @staticmethod
+    def _evaluate_split(
+        data_X: pd.DataFrame,
+        data_Y: pd.Series,
+        df_history: pd.DataFrame,
+        window: int,
+        horizon: int,
+        window_len: int,
+        log_prefix: str,
+    ):
         """
         训练、测试数据集分割
         """
         # 滑窗数据分割索引
         total_data_points = len(data_X)
-        train_start, train_end, test_start, test_end = self._evaluate_split_index(window, total_data_points)
-        logger.info(f"{self.log_prefix} split indexes:: [train_start:train_end]: [{train_start}:{train_end}]")
-        logger.info(f"{self.log_prefix} split indexes:: [test_start:test_end]: [{test_start}:{test_end+1}]")
+        train_start, train_end, test_start, test_end = Tester._evaluate_split_index(
+            window, total_data_points, horizon, window_len
+        )
+        logger.info(f"{log_prefix} split indexes:: [train_start:train_end]: [{train_start}:{train_end}]")
+        logger.info(f"{log_prefix} split indexes:: [test_start:test_end]: [{test_start}:{test_end+1}]")
         if train_start >= train_end or test_start >= test_end + 1 or train_start < 0 or test_end >= total_data_points:
-            logger.warning(f"{self.log_prefix} Insufficient data for window {window} (train_start={train_start}, train_end={train_end}, test_start={test_start}, test_end={test_end}). Skipping this window.")
+            logger.warning(f"{log_prefix} Insufficient data for window {window} (train_start={train_start}, train_end={train_end}, test_start={test_start}, test_end={test_end}). Skipping this window.")
             return None, None, None, None, None, None
 
         # 滑窗数据分割
@@ -84,17 +222,24 @@ class Tester:
         Y_test = data_Y.iloc[test_start:test_end+1]
         df_history_train = df_history.iloc[train_start:train_end]
         df_history_test = df_history.iloc[test_start:test_end+1]
-        logger.info(f"{self.log_prefix} X_train.shape: {X_train.shape}, Y_train.shape: {Y_train.shape}")
-        logger.info(f"{self.log_prefix} X_test.shape: {X_test.shape}, Y_test.shape: {Y_test.shape}")
-        logger.info(f"{self.log_prefix} df_history_train.shape: {df_history_train.shape}, df_history_test.shape: {df_history_test.shape}")
+        logger.info(f"{log_prefix} X_train.shape: {X_train.shape}, Y_train.shape: {Y_train.shape}")
+        logger.info(f"{log_prefix} X_test.shape: {X_test.shape}, Y_test.shape: {Y_test.shape}")
+        logger.info(f"{log_prefix} df_history_train.shape: {df_history_train.shape}, df_history_test.shape: {df_history_test.shape}")
 
         if X_train.empty or Y_train.empty or X_test.empty or Y_test.empty:
-            logger.warning(f"{self.log_prefix} Empty dataframe in window {window} split. Skipping.")
+            logger.warning(f"{log_prefix} Empty dataframe in window {window} split. Skipping.")
             return None, None, None, None, None, None
         
         return X_train, Y_train, X_test, Y_test, df_history_train, df_history_test
 
-    def _evaluate_score(self, y_test: np.ndarray, y_pred: np.ndarray, window: int, df_history_test: pd.DataFrame):
+    @staticmethod
+    def _evaluate_score(
+        y_test: np.ndarray,
+        y_pred: np.ndarray,
+        window: int,
+        df_history_test: pd.DataFrame,
+        log_prefix: str,
+    ):
         """
         模型评估
         计算模型的性能指标
@@ -116,11 +261,20 @@ class Tester:
         test_scores_df = pd.DataFrame(test_scores, index=[window])
         test_scores_df["time_range"] = f"{df_history_test['time'].min()}~{df_history_test['time'].max()}"
         test_scores_df = test_scores_df[["time_range"] + list(test_scores.keys())]
-        logger.info(f"{self.log_prefix} test_scores_df: \n{test_scores_df}")
+        logger.info(f"{log_prefix} test_scores_df: \n{test_scores_df}")
         
         return test_scores_df
 
-    def _evaluate_result(self, y_test: np.ndarray, y_pred: np.ndarray, window: int, cv_timestamp_df: pd.DataFrame):
+    @staticmethod
+    def _evaluate_result(
+        y_test: np.ndarray,
+        y_pred: np.ndarray,
+        window: int,
+        cv_timestamp_df: pd.DataFrame,
+        horizon: int,
+        window_len: int,
+        log_prefix: str,
+    ):
         """
         测试集预测数据
         """
@@ -132,12 +286,14 @@ class Tester:
         cv_plot_df_window = pd.DataFrame()
         
         total_data_points_ts_df = len(cv_timestamp_df)
-        _, _, test_start_ts_idx, test_end_ts_idx = self._evaluate_split_index(window, total_data_points_ts_df)
+        _, _, test_start_ts_idx, test_end_ts_idx = Tester._evaluate_split_index(
+            window, total_data_points_ts_df, horizon, window_len
+        )
         
         # Ensure the slice is valid and matches the length of y_pred/y_test
         time_slice = cv_timestamp_df["time"].iloc[test_start_ts_idx:test_end_ts_idx + 1]
         if len(time_slice) != len(y_pred):
-            logger.warning(f"Length mismatch for plotting data: time_slice ({len(time_slice)}) vs y_pred ({len(y_pred)}). Adjusting to min length.")
+            logger.warning(f"{log_prefix} Length mismatch for plotting data: time_slice ({len(time_slice)}) vs y_pred ({len(y_pred)}). Adjusting to min length.")
             min_len = min(len(time_slice), len(y_pred))
             cv_plot_df_window["time"] = time_slice.iloc[:min_len].values
             cv_plot_df_window["Y_trues"] = y_test[:min_len]
@@ -164,20 +320,21 @@ class Tester:
     # ------------------------------
     # Model results save
     # ------------------------------
-    def test_results_save(self, test_scores_df, cv_plot_df):
+    @staticmethod
+    def test_results_save(args, log_prefix: str, test_scores_df, cv_plot_df):
         # 测试结果数据保存
-        test_scores_df.to_csv(self.args.test_results_dir.joinpath("test_scores_df.csv"), index=False, encoding="utf-8")
-        cv_plot_df.to_csv(self.args.test_results_dir.joinpath("cv_plot_df.csv"), index=False, encoding="utf-8")
+        test_scores_df.to_csv(args.test_results_dir.joinpath("test_scores_df.csv"), index=False, encoding="utf-8")
+        cv_plot_df.to_csv(args.test_results_dir.joinpath("cv_plot_df.csv"), index=False, encoding="utf-8")
         # if getattr(self.args, "disable_plotting", False):
-        #     logger.info(f"{self.log_prefix} Skip plotting because disable_plotting=True.")
+        #     logger.info(f"{log_prefix} Skip plotting because disable_plotting=True.")
         #     return
         # 测试结果数据可视化
         required_cols = {"Y_preds", "Y_trues"}
         if cv_plot_df.empty or not required_cols.issubset(set(cv_plot_df.columns)):
-            logger.warning(f"{self.log_prefix} No valid prediction columns found for visualization.")
+            logger.warning(f"{log_prefix} No valid prediction columns found for visualization.")
             return
         if len(cv_plot_df["Y_preds"].values) == 0 or len(cv_plot_df["Y_trues"].values) == 0:
-            logger.warning(f"{self.log_prefix} No data to visualize for test prediction.")
+            logger.warning(f"{log_prefix} No data to visualize for test prediction.")
             return
         # 画布
         plt.figure(figsize=(25, 8))
@@ -191,124 +348,8 @@ class Tester:
         plt.title('Trues and Preds Timeseries Plot')
         plt.grid(True)
         plt.tight_layout()
-        plt.savefig(self.args.test_results_dir.joinpath("test_prediction.png"), bbox_inches='tight', dpi=300)
+        plt.savefig(args.test_results_dir.joinpath("test_prediction.png"), bbox_inches='tight', dpi=300)
         # plt.show();
-    # ------------------------------
-    # Model testing
-    # ------------------------------
-    # TODO 未使用
-    def _window_test(self, 
-                     X_train, Y_train, 
-                     X_test, Y_test, 
-                     df_history_train, df_history_test, 
-                     endogenous_features, exogenous_features, 
-                     target_feature, target_output_features, 
-                     categorical_features):
-        """
-        模型滑窗测试
-        """
-        # ------------------------------
-        # 模型训练
-        # ------------------------------
-        logger.info(f"{self.log_prefix} Model Testing training start...")
-        logger.info(f"{self.log_prefix} {30*'-'}")
-        # 创建特征预处理器
-        self.scaler_testing = FeatureScaler(self.args, self.args.scaler_type, log_prefix=self.log_prefix)
-        model = self.train(X_train, Y_train, self.scaler_testing, categorical_features)
-        # ------------------------------
-        # 模型预测
-        # ------------------------------
-        logger.info(f"{self.log_prefix} Model Testing forecasting start...")
-        logger.info(f"{self.log_prefix} {30*'-'}")
-        Y_pred = None
-        if self.args.pred_method == "univariate-single-multistep-direct-output":
-            Y_pred = self.univariate_single_multi_step_direct_output_forecast(
-                model = model,
-                df_future = X_test.copy(), 
-                endogenous_features = endogenous_features, 
-                exogenous_features = exogenous_features, 
-                target_feature = target_feature, 
-                categorical_features = categorical_features,
-                feature_scaler = self.scaler_testing
-            )
-        elif self.args.pred_method == "univariate-single-multistep-direct":
-            Y_pred = self.univariate_single_multi_step_direct_forecast(
-                model = model,
-                df_history = df_history_train,
-                df_future = df_history_test,
-                endogenous_features = endogenous_features,
-                exogenous_features = exogenous_features,
-                target_feature = target_feature,
-                categorical_features = categorical_features,
-                # target_output_features = target_output_features,
-                feature_scaler = self.scaler_testing,
-            )
-        elif self.args.pred_method == "univariate-single-multistep-recursive":
-            Y_pred = self.univariate_single_multi_step_recursive_forecast(
-                model = model,
-                df_history = df_history_train,
-                df_future = df_history_test,
-                endogenous_features = endogenous_features,
-                exogenous_features = exogenous_features,
-                target_feature = target_feature,
-                # target_output_features = target_output_features,
-                categorical_features = categorical_features,
-                feature_scaler = self.scaler_testing,
-            )
-        elif self.args.pred_method == "univariate-single-multistep-direct-recursive":
-            Y_pred = self.univariate_single_multi_step_direct_recursive_forecast(
-                model = model,
-                df_history = df_history_train,
-                df_future = df_history_test,
-                endogenous_features = endogenous_features,
-                exogenous_features = exogenous_features,
-                target_feature = target_feature,
-                # target_output_features = target_output_features,
-                categorical_features = categorical_features,
-                feature_scaler = self.scaler_testing,
-            )
-        elif self.args.pred_method == "multivariate-single-multistep-direct":
-            Y_pred = self.multivariate_single_multi_step_direct_forecast(
-                model = model,
-                df_history = df_history_train,
-                df_future = df_history_test,
-                endogenous_features = endogenous_features,
-                exogenous_features = exogenous_features,
-                target_feature = target_feature,
-                # target_output_features = target_output_features,
-                categorical_features = categorical_features,
-                feature_scaler = self.scaler_testing,
-            )
-        elif self.args.pred_method == "multivariate-single-multistep-recursive":
-            Y_pred = self.multivariate_single_multi_step_recursive_forecast(
-                model = model,
-                df_history = df_history_train,
-                df_future = df_history_test,
-                endogenous_features = endogenous_features,
-                exogenous_features = exogenous_features,
-                target_feature = target_feature,
-                target_output_features = target_output_features,
-                categorical_features = categorical_features,
-                feature_scaler = self.scaler_testing,
-            )
-        elif self.args.pred_method == "multivariate-single-multistep-direct-recursive":
-            Y_pred = self.multivariate_single_multi_step_direct_recursive_forecast(
-                model = model,
-                df_history = df_history_train,
-                df_future = df_history_test,
-                endogenous_features = endogenous_features,
-                exogenous_features = exogenous_features,
-                target_feature = target_feature,
-                # target_output_features = target_output_features,
-                categorical_features = categorical_features,
-                feature_scaler = self.scaler_testing,
-            )
-        # Return empty array if prediction fails or is empty
-        if Y_pred is None or len(Y_pred) == 0:
-            logger.error(f"{self.log_prefix} Prediction failed or returned empty for method: {self.args.pred_method}. Returning empty array.")
-            return np.array([])
-
-        return Y_pred
 
 
 

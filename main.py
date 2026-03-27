@@ -21,11 +21,13 @@
 # python libraries
 import os
 import sys
+import time
 from pathlib import Path
 ROOT = str(Path.cwd())
 if ROOT not in sys.path:
     sys.path.append(ROOT)
 import datetime
+from concurrent.futures import ProcessPoolExecutor, as_completed
 import warnings
 warnings.filterwarnings("ignore")
 from typing import List
@@ -34,11 +36,20 @@ import numpy as np
 import pandas as pd
 
 from data_provider.data_loader import DataLoader
-from features.FeatureScalering import FeatureScaler
+from features.FeatureScalering import (
+    FeatureScaler,
+    TargetScaler,
+    resolve_feature_scaler_type,
+    resolve_inverse_target_enabled,
+    resolve_scale_features_enabled,
+    resolve_scale_target_enabled,
+    resolve_target_scaler_type,
+)
 from features.FeatureEngineering import FeatureEngineer
 from models.ModelTraining import Trainer
 from models.ModelTesting import Tester
 from models.ModelForecasting import Forecaster
+from utils.frequency import resolve_freq_step_minutes, resolve_samples_per_day
 
 # global variable
 LOGGING_LABEL = Path(__file__).name[:-3]
@@ -55,15 +66,17 @@ class Model:
         初始化模型
         """
         self.args = args
-        self.setting = f"{self.args.model_type}-{self.args.data}-{self.args.pred_method}"
-        self.log_prefix = f"[{self.args.model_type}-{self.args.data}]"
+        data_name = Path(self.args.data_path).stem if getattr(self.args, "data_path", None) else "unknown_data"
+        self.setting = f"{self.args.model_type}-{data_name}-{self.args.pred_method}"
+        self.log_prefix = f"[{self.args.model_type}-{data_name}]"
         # ------------------------------
         # 数据参数
         # ------------------------------
         # 数据读取路径
         self.args.data_dir = Path(self.args.data_dir)
+        self.step_minutes = resolve_freq_step_minutes(self.args.freq)
         # 目标时间序列每天样本数量
-        self.n_per_day = int(24 * 60 / self.args.freq_minutes)
+        self.n_per_day = resolve_samples_per_day(self.args.freq)
         # 时间序列历史数据开始时刻
         start_time = self.args.now_time.replace(hour=0) - datetime.timedelta(days=self.args.history_days)
         # 时间序列当前时刻(模型预测的日期时间)
@@ -108,32 +121,53 @@ class Model:
         logger.info(f"{self.log_prefix} 时间(date time features)特征: {'启用' if self.args.enable_datetime_features else '禁用'}")
         logger.info(f"{self.log_prefix} 滞后(lags      features)特征: {'启用' if self.args.enable_lags_features else '禁用'}")
         logger.info(f"{self.log_prefix} 高级(advanced  features)特征: {'启用' if self.args.enable_advanced_features else '禁用'}")
-        logger.info(f"{self.log_prefix} 特征变换: {'启用' if self.args.scale else '禁用'}")
+        logger.info(f"{self.log_prefix} 特征缩放: {'启用' if resolve_scale_features_enabled(self.args) else '禁用'}")
+        logger.info(f"{self.log_prefix} 目标缩放: {'启用' if resolve_scale_target_enabled(self.args) else '禁用'}")
+        logger.info(f"{self.log_prefix} 目标逆变换: {'启用' if resolve_inverse_target_enabled(self.args) else '禁用'}")
         logger.info(f"{self.log_prefix} 类别特征: {'启用' if self.args.encode_categorical_features else '禁用'}")
         logger.info(f"{self.log_prefix} 模型融合: {'启用' if self.args.enable_ensemble else '禁用'}")
         logger.info(f"{self.log_prefix} 模型测试: {'启用' if self.args.is_testing else '禁用'}")
         logger.info(f"{self.log_prefix} 模型预测: {'启用' if self.args.is_forecasting else '禁用'}")
+        logger.info(f"{self.log_prefix} 窗口并行数: {int(getattr(self.args, 'window_parallel_workers', 1) or 1)}")
+        logger.info(f"{self.log_prefix} 多输出并行数: {int(getattr(self.args, 'multi_output_n_jobs', 1) or 1)}")
+        logger.info(f"{self.log_prefix} 分位数并行数: {int(getattr(self.args, 'quantile_parallel_workers', 1) or 1)}")
+        logger.info(f"{self.log_prefix} 集成并行数: {int(getattr(self.args, 'ensemble_parallel_workers', 1) or 1)}")
+        logger.info(f"{self.log_prefix} 模型线程数: {int(getattr(self.args, 'model_thread_count', 1) or 1)}")
 
     def train(self, X_train: pd.DataFrame, Y_train: pd.DataFrame, categorical_features: List, mode: str="forecast", verbose: bool=False):
         """
         模型训练
         """
+        train_start = time.perf_counter()
         # 创建特征预处理器
-        scaler = FeatureScaler(self.args, scaler_type=self.args.scaler_type, log_prefix=self.log_prefix, verbose=verbose)
+        scaler = FeatureScaler(
+            self.args,
+            scaler_type=resolve_feature_scaler_type(self.args),
+            log_prefix=self.log_prefix,
+            verbose=verbose,
+        )
+        target_scaler = TargetScaler(
+            self.args,
+            scaler_type=resolve_target_scaler_type(self.args),
+            log_prefix=self.log_prefix,
+            verbose=verbose,
+        )
         # 模型训练类
         model_trainer = Trainer(args=self.args, log_prefix=self.log_prefix)
         # 模型训练
-        model, scaler, selected_features = model_trainer.train(
+        model, scaler, target_scaler, selected_features = model_trainer.train(
             X_train = X_train, 
             Y_train = Y_train, 
             feature_scaler = scaler, 
+            target_scaler = target_scaler,
             categorical_features = categorical_features,
         )
         # 模型保存
         if mode == "forecast":
-            model_trainer.model_save(model)
+            model_trainer.model_save(model, target_scaler)
+        logger.info(f"{self.log_prefix} Model Training runtime: {time.perf_counter() - train_start:.3f}s")
 
-        return model, scaler, selected_features
+        return model, scaler, target_scaler, selected_features
 
     def test(self, 
              df_history, 
@@ -149,13 +183,12 @@ class Model:
         """
         模型滑窗测试
         """
+        test_start = time.perf_counter()
         # ------------------------------
         # 模型滑窗测试结果收集
         # ------------------------------
         test_scores_df = pd.DataFrame()
         cv_plot_df = pd.DataFrame()
-        # 训练数据集的完整时间戳
-        cv_timestamp_full_df = pd.DataFrame({"time": pd.date_range(self.train_start_time, self.train_end_time, freq=self.args.freq, inclusive="left")})
         # ------------------------------
         # 判断是否有足够的历史数据保证至少一个完整的测试窗口
         # ------------------------------
@@ -166,102 +199,44 @@ class Model:
         # ------------------------------
         # 模型滑窗测试过程
         # ------------------------------
-        for window in range(1, int(self.n_windows + 1)):
-            logger.info(f"{self.log_prefix} {'=' * 81}")
-            logger.info(f"{self.log_prefix} Model Testing window: {window}...")
-            logger.info(f"{self.log_prefix} {'=' * 81}")
-            # 模型测试类
-            model_tester = Tester(args=self.args, log_prefix=self.log_prefix, horizon=self.horizon, window_len=self.window_len)
-            # ------------------------------
-            # 数据分割: 训练集、测试集
-            # ------------------------------
-            logger.info(f"{self.log_prefix} Model Testing sliding window data split...")
-            logger.info(f"{self.log_prefix} {'=' * 81}")
-            (X_train, Y_train, 
-             X_test, Y_test, 
-             df_history_train, df_history_test) = model_tester._evaluate_split(
-                 X_train_history, Y_train_history, df_history, window
-            )
-            if X_train is None:
+        payloads = [
+            {
+                "args": self.args,
+                "log_prefix": self.log_prefix,
+                "horizon": self.horizon,
+                "window_len": self.window_len,
+                "window": window,
+                "X_train_history": X_train_history,
+                "Y_train_history": Y_train_history,
+                "df_history": df_history,
+                "df_date_history": df_date_history,
+                "df_weather_history": df_weather_history,
+                "endogenous_features_with_target": endogenous_features_with_target,
+                "target_feature": target_feature,
+                "target_output_features": target_output_features,
+                "categorical_features": categorical_features,
+                "train_start_time": self.train_start_time,
+                "train_end_time": self.train_end_time,
+            }
+            for window in range(1, int(self.n_windows + 1))
+        ]
+        window_workers = int(getattr(self.args, "window_parallel_workers", 1) or 1)
+        window_results = []
+        if window_workers > 1 and len(payloads) > 1:
+            logger.info(f"{self.log_prefix} Model Testing window parallel workers: {window_workers}")
+            with ProcessPoolExecutor(max_workers=window_workers) as executor:
+                futures = [executor.submit(Tester._window_test, payload) for payload in payloads]
+                for future in as_completed(futures):
+                    window_results.append(future.result())
+        else:
+            for payload in payloads:
+                window_results.append(Tester._window_test(payload))
+        # 滑窗测试结果解析
+        for result in sorted(window_results, key=lambda x: x["window"]):
+            if result["test_scores_df"] is None or result["cv_plot_df"] is None:
                 continue
-            # 窗口目标特征处理
-            Y_train = Y_train.to_frame() if isinstance(Y_train, pd.Series) else Y_train
-            Y_test = Y_test.to_frame() if isinstance(Y_test, pd.Series) else Y_test
-            # ------------------------------
-            # 窗口训练
-            # ------------------------------
-            logger.info(f"{self.log_prefix} {'=' * 81}")
-            logger.info(f"{self.log_prefix} Model Testing sliding window training...")
-            logger.info(f"{self.log_prefix} {'=' * 81}")
-            model, scaler_testing, selected_features = self.train(
-                X_train = X_train, 
-                Y_train = Y_train, 
-                categorical_features = categorical_features,
-                mode = "test",
-                verbose = False,
-            )
-            # ------------------------------
-            # 窗口预测
-            # ------------------------------
-            logger.info(f"{self.log_prefix} {'=' * 48}")
-            logger.info(f"{self.log_prefix} Model Testing sliding window forecasting...")
-            logger.info(f"{self.log_prefix} {'=' * 48}")
-            # 未来数据
-            df_future_prediction = df_history_test.copy()
-            # 模型预测
-            predictor = Forecaster(
-                args = self.args,
-                horizon = min(self.horizon, len(X_test)),
-                model = model,
-                feature_scaler = scaler_testing,
-                df_history = df_history_train,
-                df_future = df_future_prediction,
-                df_date_future = df_date_history,
-                df_weather_future = df_weather_history,
-                endogenous_features = endogenous_features_with_target,
-                target_feature = target_feature,
-                target_output_features = target_output_features,
-                categorical_features = categorical_features,
-                selected_features = selected_features,
-                log_prefix = self.log_prefix,
-            )
-            Y_pred = predictor._predict_by_method()
-            # ------------------------------
-            # 模型滑窗预测结果收集
-            # ------------------------------
-            logger.info(f"{self.log_prefix} {'=' * 48}")
-            logger.info(f"{self.log_prefix} Model Testing sliding window forecasting results collecting...")
-            logger.info(f"{self.log_prefix} {'=' * 48}")
-            # If window test returned empty predictions
-            if len(Y_pred) == 0:
-                logger.warning(f"{self.log_prefix} Skipping evaluation for window {window} due to empty predictions.")
-                continue
-
-            # Process Y_test and Y_pred for evaluation. We always evaluate the primary target's first step prediction.
-            # Y_test for evaluation should always be the actuals for target_t+1.
-            # Assuming the primary target (y) shifted by 1 is always the first column of Y_test
-            Y_test_for_eval = Y_test.iloc[:, 0].values
-            
-            # Ensure Y_pred matches length of Y_test_for_eval
-            if len(Y_pred) != len(Y_test_for_eval):
-                logger.warning(
-                    f"Length mismatch: Y_pred ({len(Y_pred)}) vs Y_test_for_eval ({len(Y_test_for_eval)}) "
-                    f"in window {window}. Truncating both to the minimum length."
-                )
-                min_len = min(len(Y_pred), len(Y_test_for_eval))
-                Y_pred = np.asarray(Y_pred)[:min_len]
-                Y_test_for_eval = np.asarray(Y_test_for_eval)[:min_len]
-
-            # 测试集评价指标
-            eval_scores_window = model_tester._evaluate_score(Y_test_for_eval, Y_pred, window, df_history_test)
-            test_scores_df = pd.concat([test_scores_df, eval_scores_window], axis=0)
-            # 测试集预测数据
-            cv_plot_df_window = model_tester._evaluate_result(Y_test_for_eval, Y_pred, window, cv_timestamp_full_df)
-            cv_plot_df = pd.concat([cv_plot_df, cv_plot_df_window], axis=0)
-            # ------------------------------
-            # localtest
-            # ------------------------------
-            # break
+            test_scores_df = pd.concat([test_scores_df, result["test_scores_df"]], axis=0)
+            cv_plot_df = pd.concat([cv_plot_df, result["cv_plot_df"]], axis=0)
         # ------------------------------
         # 模型测试结果保存
         # ------------------------------
@@ -278,14 +253,16 @@ class Model:
         logger.info(f"{self.log_prefix} Model Testing cv_plot_df: \n{cv_plot_df.head()}")
         logger.info(f"{self.log_prefix} Model Testing cv_plot_df shape: {cv_plot_df.shape}")
         # 模型测试结果保存
-        model_tester.test_results_save(test_scores_df, cv_plot_df)
+        Tester.test_results_save(self.args, self.log_prefix, test_scores_df, cv_plot_df)
         logger.info(f"{self.log_prefix} Model Testing result saved in: {self.args.test_results_dir}")
+        logger.info(f"{self.log_prefix} Model Testing runtime: {time.perf_counter() - test_start:.3f}s")
         
         return test_scores_df, cv_plot_df 
 
     def forecast(self, 
                  model, 
                  scaler_forecasting,
+                 target_scaler_forecasting,
                  df_history, 
                  df_future, 
                  df_date_future,
@@ -298,6 +275,7 @@ class Model:
         """
         模型预测
         """
+        forecast_start = time.perf_counter()
         # 未来数据复制
         df_future_prediction = df_future.copy()
         # Global 模式下，未来数据补齐 series_id（若缺失）
@@ -313,6 +291,7 @@ class Model:
             horizon = self.horizon,
             model = model, 
             feature_scaler = scaler_forecasting,
+            target_scaler = target_scaler_forecasting,
             df_history = df_history, 
             df_future = df_future_prediction, 
             df_date_future = df_date_future,
@@ -332,12 +311,20 @@ class Model:
         logger.info(f"{self.log_prefix} Model Forecasting result save...")
         logger.info(f"{self.log_prefix} {'=' * 87}")
         # 模型预测结果收集
+        pred_target_columns = target_scaler_forecasting.get_prediction_target_columns(
+            self.args.pred_method,
+            target_output_features,
+        )
+        Y_pred = target_scaler_forecasting.restore_predictions(Y_pred, pred_target_columns)
         df_future_prediction["predict_value"] = Y_pred
         # 分位数预测结果（若启用）
         if getattr(predictor, "quantile_outputs", None):
             for q, q_pred in sorted(predictor.quantile_outputs.items(), key=lambda x: float(x[0])):
                 q_col = f"predict_q{int(round(float(q) * 100)):02d}"
-                q_arr = np.asarray(q_pred).reshape(-1)
+                q_arr = target_scaler_forecasting.restore_predictions(
+                    np.asarray(q_pred).reshape(-1),
+                    pred_target_columns,
+                ).reshape(-1)
                 if len(q_arr) != len(df_future_prediction):
                     min_len = min(len(q_arr), len(df_future_prediction))
                     df_future_prediction.loc[df_future_prediction.index[:min_len], q_col] = q_arr[:min_len]
@@ -351,12 +338,18 @@ class Model:
         logger.info(f"{self.log_prefix} after forecast df_future_prediction: \n{df_future_prediction.head()}")
         logger.info(f"{self.log_prefix} after forecast df_future_prediction.shape: {df_future_prediction.shape}")
         # 模型预测结果保存
-        predictor.forecast_results_save(df_history, df_future_prediction, self.n_per_day)
+        df_history_for_plot = target_scaler_forecasting.prepare_history_target_for_plot(
+            df_history,
+            [target_output_features[0]],
+        )
+        predictor.forecast_results_save(df_history_for_plot, df_future_prediction, self.n_per_day)
         logger.info(f"{self.log_prefix} Model Forecasting result saved in: {self.args.pred_results_dir}")
+        logger.info(f"{self.log_prefix} Model Forecasting runtime: {time.perf_counter() - forecast_start:.3f}s")
         
         return df_future_prediction
 
     def run(self):
+        run_start = time.perf_counter()
         # ------------------------------
         # 数据加载和处理
         # ------------------------------
@@ -459,7 +452,7 @@ class Model:
             logger.info(f"{self.log_prefix} {'=' * 87}")
             logger.info(f"{self.log_prefix} Model Training start...")
             logger.info(f"{self.log_prefix} {'=' * 87}")
-            model, scaler_forecasting, selected_features = self.train(
+            model, scaler_forecasting, target_scaler_forecasting, selected_features = self.train(
                 X_train = X_train_history, 
                 Y_train = Y_train_history, 
                 categorical_features = categorical_features,
@@ -474,6 +467,7 @@ class Model:
             df_future_predicted = self.forecast(
                 model = model,
                 scaler_forecasting = scaler_forecasting,
+                target_scaler_forecasting = target_scaler_forecasting,
                 df_history = df_history,
                 df_future = df_future,
                 df_date_future = df_date_future,
@@ -484,6 +478,7 @@ class Model:
                 categorical_features = categorical_features, 
                 selected_features = selected_features,
             )
+        logger.info(f"{self.log_prefix} Total runtime: {time.perf_counter() - run_start:.3f}s")
 
 
 

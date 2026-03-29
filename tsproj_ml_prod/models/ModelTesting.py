@@ -4,11 +4,11 @@
 # * File        : ModelTesting.py
 # * Author      : Zhefeng Wang
 # * Email       : zfwang7@gmail.com
-# * Date        : 2026-02-25
-# * Version     : 1.0.022509
-# * Description : description
+# * Date        : 2026-03-29
+# * Version     : 1.0.032909
+# * Description : 生产环境滑窗测试模块
 # * Link        : link
-# * Requirement : 相关模块版本需求(例如: numpy >= 2.1.0)
+# * Requirement : pandas, numpy, scikit-learn
 # ***************************************************
 
 # python libraries
@@ -27,15 +27,9 @@ from sklearn.metrics import (
     mean_absolute_percentage_error,  # MAPE
 )
 
-from features.FeatureScalering import (
-    FeatureScaler,
-    TargetScaler,
-    resolve_feature_scaler_type,
-    resolve_target_scaler_type,
-)
-from models.ModelTraining import Trainer
-from models.ModelForecasting import Forecaster
-from utils.log_util import logger
+from tsproj_ml_prod.models.ModelTraining import Trainer
+from tsproj_ml_prod.models.ModelForecasting import Forecaster
+from tsproj_ml_prod.utils.log_util import logger
 
 # global variable
 LOGGING_LABEL = Path(__file__).name[:-3]
@@ -80,24 +74,12 @@ class Tester:
         # ------------------------------
         # 窗口训练
         # ------------------------------
-        scaler = FeatureScaler(
-            args,
-            scaler_type=resolve_feature_scaler_type(args),
-            log_prefix=log_prefix,
-            verbose=False,
-        )
-        target_scaler = TargetScaler(
-            args,
-            scaler_type=resolve_target_scaler_type(args),
-            log_prefix=log_prefix,
-            verbose=False,
-        )
         model_trainer = Trainer(args=args, log_prefix=log_prefix)
         model, scaler_testing, target_scaler_testing, selected_features = model_trainer.train(
             X_train=X_train,
             Y_train=Y_train,
-            feature_scaler=scaler,
-            target_scaler=target_scaler,
+            feature_scaler=None,
+            target_scaler=None,
             categorical_features=payload["categorical_features"],
         )
         # ------------------------------
@@ -127,17 +109,22 @@ class Tester:
         if len(y_pred) == 0:
             return {"window": window, "test_scores_df": None, "cv_plot_df": None}
         # 预测结果恢复到目标空间，用于评估
-        pred_target_columns = target_scaler_testing.get_prediction_target_columns(
-            args.pred_method,
-            payload["target_output_features"],
-        )
-        y_pred = target_scaler_testing.restore_predictions(y_pred, pred_target_columns)
-        # 始终评估主目标的一步预测
-        y_test_for_eval = target_scaler_testing.prepare_eval_target(
-            Y_test.iloc[:, 0].values,
-            [payload["target_output_features"][0]],
-        )
-        # 对齐预测结果与评估标签长度
+        if target_scaler_testing is not None:
+            pred_target_columns = target_scaler_testing.get_prediction_target_columns(
+                args.pred_method,
+                payload["target_output_features"],
+            )
+            y_pred = target_scaler_testing.restore_predictions(
+                y_pred,
+                pred_target_columns,
+            )
+            # 始终评估主目标的一步预测
+            y_test_for_eval = target_scaler_testing.prepare_eval_target(
+                Y_test.iloc[:, 0].values,
+                [payload["target_output_features"][0]],
+            )
+        else:
+            y_test_for_eval = np.asarray(Y_test.iloc[:, 0].values).reshape(-1)
         if len(y_pred) != len(y_test_for_eval):
             min_len = min(len(y_pred), len(y_test_for_eval))
             y_pred = np.asarray(y_pred)[:min_len]
@@ -309,7 +296,6 @@ class Tester:
         """
         分析预测特征与目标特征的相关性
         """
-        # Ensure 'load' is target_feature for this function, assuming it's the target.
         if self.args.target in df.columns:
             features_corr = df[train_features + [self.args.target]].corr()
         else:
@@ -325,9 +311,6 @@ class Tester:
         # 测试结果数据保存
         test_scores_df.to_csv(args.test_results_dir.joinpath("test_scores_df.csv"), index=False, encoding="utf-8")
         cv_plot_df.to_csv(args.test_results_dir.joinpath("cv_plot_df.csv"), index=False, encoding="utf-8")
-        # if getattr(self.args, "disable_plotting", False):
-        #     logger.info(f"{log_prefix} Skip plotting because disable_plotting=True.")
-        #     return
         # 测试结果数据可视化
         required_cols = {"Y_preds", "Y_trues"}
         if cv_plot_df.empty or not required_cols.issubset(set(cv_plot_df.columns)):

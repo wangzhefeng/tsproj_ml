@@ -4,33 +4,26 @@
 # * File        : ModelFactory.py
 # * Author      : Zhefeng Wang
 # * Email       : zfwang7@gmail.com
-# * Date        : 2026-02-11
-# * Version     : 1.0.021110
-# * Description : description
+# * Date        : 2026-03-29
+# * Version     : 1.0.032909
+# * Description : 生产环境模型工厂
 # * Link        : link
-# * Requirement : 相关模块版本需求(例如: numpy >= 2.1.0)
+# * Requirement : lightgbm, catboost, pandas, numpy
 # ***************************************************
 
 # python libraries
 import copy
-from pathlib import Path
-from abc import ABC, abstractmethod
-from typing import Dict, Any, Optional
 import inspect
+from abc import ABC, abstractmethod
+from pathlib import Path
+from typing import Any, Dict, Optional
 
 import numpy as np
 import pandas as pd
-import xgboost as xgb
 import lightgbm as lgb
 import catboost as cab
-from sklearn.ensemble import (
-    RandomForestRegressor, 
-    ExtraTreesRegressor, 
-    GradientBoostingRegressor
-)
-from sklearn.multioutput import MultiOutputRegressor, RegressorChain
 
-from utils.log_util import logger
+from tsproj_ml_prod.utils.log_util import logger
 
 # global variable
 LOGGING_LABEL = Path(__file__).name[:-3]
@@ -43,11 +36,7 @@ LOGGING_LABEL = Path(__file__).name[:-3]
 
 支持的模型:
 - LightGBM
-- XGBoost  
 - CatBoost
-- Random Forest
-- Extra Trees
-- Gradient Boosting
 
 使用示例:
     # 创建模型
@@ -134,7 +123,7 @@ class BaseModel(ABC):
 # TODO 这个函数的作用是什么？
 def _filter_valid_params(params: Dict[str, Any], estimator_cls) -> Dict[str, Any]:
     signature = inspect.signature(estimator_cls.__init__)
-    # 部分 sklearn 风格封装（如 XGBoost）通过 **kwargs 接收额外原生参数，
+    # 部分 sklearn 风格封装通过 **kwargs 接收额外原生参数，
     # 这类模型不能用显式签名做白名单过滤，否则会错误丢弃合法配置。
     if any(param.kind == inspect.Parameter.VAR_KEYWORD for param in signature.parameters.values()):
         return dict(params)
@@ -169,7 +158,7 @@ class LightGBMModel(BaseModel):
         "bagging_fraction": 0.8,
         "bagging_freq": 1,
         "verbose": -1,
-        "n_jobs": -1,
+        "n_jobs": 1,
         "random_state": 42,
         "force_col_wise": True,
     }
@@ -231,79 +220,6 @@ class LightGBMModel(BaseModel):
         
         return self.model.predict(X)
 
-class XGBoostModel(BaseModel):
-    """
-    XGBoost模型封装
-    
-    特点:
-    - 性能优秀
-    - 正则化能力强
-    - GPU加速支持
-    - 广泛应用
-    """
-
-    DEFAULT_PARAMS = {
-        "objective": "reg:absoluteerror",
-        "eval_metric": "mae",
-        "n_estimators": 300,
-        "learning_rate": 0.05,
-        "max_depth": 6,
-        "subsample": 0.8,
-        "colsample_bytree": 0.8,
-        "n_jobs": -1,
-        "random_state": 42,
-    }
-
-    def __init__(self, params: Dict[str, Any], log_prefix: str="XGBoostModel"):
-        super().__init__(params)
-        merged_params = {**copy.deepcopy(self.DEFAULT_PARAMS), **(params or {})}
-        # 模型参数
-        self.params = _filter_valid_params(merged_params, xgb.XGBRegressor)
-        logger.info(f"{log_prefix} model parameters: \n{self.params}")
-        # 模型构建
-        self.model = xgb.XGBRegressor(**self.params)
-        self.log_prefix = log_prefix
-    
-    def fit(self, 
-            X: pd.DataFrame, 
-            y: pd.Series,
-            eval_set: Optional[tuple] = None,
-            eval_metric: str = "mae",
-            early_stopping_rounds: int = 50,
-            verbose: bool = False):
-        """
-        训练XGBoost模型
-        
-        Args:
-            X: 训练特征
-            y: 训练目标
-            eval_set: 验证集 [(X_val, y_val)]
-            eval_metric: 评估指标
-            early_stopping_rounds: 早停轮数
-            verbose: 是否显示训练过程s
-        """
-        # 设置训练参数
-        fit_params = {}
-        if eval_set is not None:
-            fit_params['eval_set'] = eval_set
-            fit_params['eval_metric'] = eval_metric
-            fit_params['early_stopping_rounds'] = early_stopping_rounds
-        if verbose is not None:
-            fit_params['verbose'] = verbose
-        # 模型训练
-        self.model.fit(X, y, **fit_params)
-        self.is_fitted = True
-
-        return self
-    
-    def predict(self, X: pd.DataFrame) -> np.ndarray:
-        """
-        预测
-        """
-        if not self.is_fitted:
-            raise ValueError("模型尚未训练(Model not fitted yet).")
-        
-        return self.model.predict(X)
 
 class CatBoostModel(BaseModel):
     """
@@ -323,8 +239,9 @@ class CatBoostModel(BaseModel):
         "learning_rate": 0.05,
         "depth": 6,
         "verbose": False,
-        "random_state": 42,
-        "thread_count": -1,
+        "random_seed": 42,
+        "thread_count": 1,
+        "allow_writing_files": False,
     }
 
     def __init__(self, params: Dict[str, Any], log_prefix: str="CatBoostModel"):
@@ -335,8 +252,11 @@ class CatBoostModel(BaseModel):
         for alias in iteration_aliases:
             if alias in merged_params:
                 merged_params["iterations"] = merged_params.pop(alias)
+        # CatBoost 的 random_seed / random_state 是同义参数，只能保留一个
+        if "random_seed" in merged_params and "random_state" in merged_params:
+            merged_params.pop("random_state", None)
         # 清理从其他树模型配置复用过来的不兼容参数
-        incompatible_params = ["num_leaves", "feature_fraction", "bagging_fraction", "bagging_freq"]
+        incompatible_params = ["num_leaves", "feature_fraction", "bagging_fraction", "bagging_freq", "force_col_wise"]
         for param in incompatible_params:
             merged_params.pop(param, None)
         # 模型参数
@@ -352,9 +272,7 @@ class CatBoostModel(BaseModel):
             categorical_feature: Optional[list] = None,
             eval_set: Optional[tuple] = None,
             eval_metric: str = "mae",
-            early_stopping_rounds: int = 50,
-            native_train_data = None,
-            native_eval_data = None):
+            early_stopping_rounds: int = 50):
         """
         训练 CatBoost 模型
         
@@ -369,15 +287,13 @@ class CatBoostModel(BaseModel):
         # 设置训练参数
         fit_params = {}
         if eval_set is not None:
-            fit_params["eval_set"] = native_eval_data if native_eval_data is not None else eval_set
+            fit_params["eval_set"] = eval_set
             fit_params["eval_metric"] = eval_metric
             fit_params["early_stopping_rounds"] = early_stopping_rounds
-        if categorical_feature is not None and native_train_data is None:
+        if categorical_feature is not None:
             fit_params["cat_features"] = categorical_feature
         # 模型训练
-        fit_input = native_train_data if native_train_data is not None else X
-        fit_target = None if native_train_data is not None else y
-        self.model.fit(fit_input, fit_target, **fit_params)
+        self.model.fit(X, y, **fit_params)
         self.is_fitted = True
 
         return self
@@ -391,54 +307,6 @@ class CatBoostModel(BaseModel):
         
         return self.model.predict(X)
 
-class RandomForestModel(BaseModel):
-    """
-    Random Forest 模型封装
-    
-    特点:
-    - 鲁棒性强
-    - 不易过拟合
-    - 可解释性好
-    - 并行化训练
-    """
-    
-    def __init__(self, params: Dict[str, Any], log_prefix: str="RandomForestModel"):
-        super().__init__(params)
-        # 设置默认参数
-        default_params = {
-            'n_estimators': 100,
-            'max_depth': None,
-            'min_samples_split': 2,
-            'min_samples_leaf': 1,
-            'n_jobs': -1,
-            'random_state': 42,
-        }
-        # 参数合并（用户参数优先，避免被默认值覆盖）
-        merged_params = {**default_params, **(params or {})}
-        # 模型参数
-        self.params = _filter_valid_params(merged_params, RandomForestRegressor)
-        logger.info(f"{log_prefix} model parameters: \n{self.params}")
-        # 模型构建
-        self.model = RandomForestRegressor(**self.params)
-        self.log_prefix = log_prefix
-    
-    def fit(self, X: pd.DataFrame, y: pd.Series, **kwargs):
-        """
-        训练 Random Forest 模型
-        """
-        self.model.fit(X, y)
-        self.is_fitted = True
-
-        return self
-    
-    def predict(self, X: pd.DataFrame) -> np.ndarray:
-        """
-        预测
-        """
-        if not self.is_fitted:
-            raise ValueError(f"{self.log_prefix} 模型尚未训练")
-        
-        return self.model.predict(X)
 # ##############################
 # 模型工厂
 # ##############################
@@ -452,12 +320,8 @@ class ModelFactory:
     _models = {
         "lightgbm": LightGBMModel,
         "lgb": LightGBMModel,
-        "xgboost": XGBoostModel,
-        "xgb": XGBoostModel,
         "catboost": CatBoostModel,
         "cat": CatBoostModel,
-        "randomforest": RandomForestModel,
-        "rf": RandomForestModel,
     }
 
     def __init__(self, log_prefix: str = "ModelFactory"):
@@ -493,7 +357,7 @@ class ModelFactory:
         创建模型实例
         
         Args:
-            model_type: 模型类型 ('lightgbm', 'xgboost', 'catboost', 'randomforest')
+            model_type: 模型类型 ('lightgbm', 'catboost')
             params: 模型参数字典
         
         Returns:
@@ -528,47 +392,8 @@ class ModelFactory:
 
 # 测试代码 main 函数
 def main():
-    import numpy as np
-    import pandas as pd
-    from sklearn.model_selection import train_test_split
-    
-    # 创建示例数据
-    np.random.seed(42)
-    X = pd.DataFrame(np.random.randn(1000, 10), columns=[f'feature_{i}' for i in range(10)])
-    y = pd.Series(np.random.randn(1000), name='target')
-    
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
-    
-    # 测试不同模型
-    for model_type in ['lightgbm', 'xgboost', 'catboost']:
-        print(f"\n测试 {model_type} 模型:")
-        print("=" * 50)
-        
-        # 创建模型
-        params = {'n_estimators': 100, 'learning_rate': 0.1}
-        model = ModelFactory.create_model(model_type, params)
-        
-        # 训练
-        model.fit(X_train, y_train, eval_set=(X_test, y_test))
-        
-        # 预测
-        y_pred = model.predict(X_test)
-        
-        # 评估
-        from sklearn.metrics import mean_squared_error, mean_absolute_error
-        mse = mean_squared_error(y_test, y_pred)
-        mae = mean_absolute_error(y_test, y_pred)
-        
-        print(f"MSE: {mse:.4f}")
-        print(f"MAE: {mae:.4f}")
-        
-        # 特征重要性
-        importance = model.get_feature_importance()
-        if importance is not None:
-            print(f"前5个重要特征:")
-            top_features = np.argsort(importance)[-5:][::-1]
-            for i, idx in enumerate(top_features, 1):
-                print(f"  {i}. {X.columns[idx]}: {importance[idx]:.4f}")
+    pass
+
 
 if __name__ == "__main__":
     main()

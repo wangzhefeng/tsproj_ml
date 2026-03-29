@@ -492,8 +492,8 @@ def main():
     # from config.multivariate_config import ModelConfig
     # lightgbm
     # from config.model_config_lgbm_usmdo_A import ModelConfig
-    from config.model_config_lgbm_usmr_A import ModelConfig
-    # from config.model_config_lgbm_usmd_A import ModelConfig
+    # from config.model_config_lgbm_usmr_A import ModelConfig
+    from config.model_config_lgbm_usmd_A import ModelConfig
     # from config.model_config_lgbm_usmdr_A import ModelConfig
     # xgboost
     # from config.model_config_xgb_usmdo_A import ModelConfig

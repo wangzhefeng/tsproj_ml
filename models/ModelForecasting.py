@@ -32,19 +32,19 @@ class Forecaster:
     预测辅助类-所有预测方法的公共逻辑
     """
     
-    def __init__(self, 
+    def __init__(self,
                  args: Dict,
                  horizon: int,
-                 model: Any, 
+                 model: Any,
                  feature_scaler,
                  target_scaler,
-                 df_history: pd.DataFrame, 
-                 df_future: pd.DataFrame, 
+                 df_history: pd.DataFrame,
+                 df_future: pd.DataFrame,
                  df_date_future: pd.DataFrame,
                  df_weather_future: pd.DataFrame,
-                 endogenous_features: List[str], 
-                 target_feature: str, 
-                 target_output_features: List[str], 
+                 endogenous_features: List[str],
+                 target_feature: str,
+                 target_output_features: List[str],
                  categorical_features: List[str],
                  selected_features: List[str] = None,
                  log_prefix: str = "[Forecaster]"):
@@ -287,22 +287,22 @@ class Forecaster:
     def univariate_single_multi_step_direct_output_forecast(self):
         """
         单变量(内生变量/目标变量)预测单变量(目标变量)多步直接输出预测(USMDO)
-        """        
+        """
         # 多步预测值收集器
         Y_preds = np.array([])
         # 预测阶段始终使用未来日期/天气进行特征工程，避免被 is_testing 分支误跳过
-        (df_future_featured, 
-         predictor_features, 
-         target_output_features, 
+        (df_future_featured,
+         predictor_features,
+         target_output_features,
          categorical_features) = self.feature_engineer.create_features(
-            df_series = self.df_future,
-            df_date_history = None,
-            df_date_future = self.df_date_future,
-            df_weather_history = None,
-            df_weather_future = self.df_weather_future,
-            endogenous_features_with_target = self.endogenous_features,
-            target_feature = self.target_feature,
-            horizon = self.horizon,
+            df_series=self.df_future,
+            df_date_history=None,
+            df_date_future=self.df_date_future,
+            df_weather_history=None,
+            df_weather_future=self.df_weather_future,
+            endogenous_features_with_target=self.endogenous_features,
+            target_feature=self.target_feature,
+            horizon=self.horizon,
         )
         if predictor_features:
             X_test_future = df_future_featured[predictor_features].copy()

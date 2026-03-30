@@ -18,7 +18,7 @@ class ModelConfig:
     # ------------------------------
     # 模型运行模式
     # ------------------------------
-    is_testing: bool = False  # 模型测试
+    is_testing: bool = True  # 模型测试
     is_forecasting: bool = True  # 模型预测
     history_days: int = 92  # 历史数据天数
     predict_days: int = 1  # 预测未来 1 天的数据
@@ -128,20 +128,18 @@ class ModelConfig:
     model_type: str = "lightgbm"
     model_params: Dict = field(default_factory=lambda: {
         "boosting_type": "gbdt",
-        "objective": "regression",
-        "metric": "rmse",
+        "objective": "regression_l1",
+        "metric": "mae",
         "n_estimators": 300,
-        "max_depth": 6,
+        "learning_rate": 0.05,
         "max_bin": 63,
-        "num_leaves": 15,
-        "learning_rate": 0.03,
+        "num_leaves": 31,
+        "max_depth": -1,
         "feature_fraction": 0.8,
         "bagging_fraction": 0.8,
-        "bagging_freq": 5,
-        "min_child_samples": 30,
-        "lambda_l1": 1.0,
-        "lambda_l2": 1.0,
+        "bagging_freq": 1,
         "verbose": -1,
+        "force_col_wise": True,
     })
 
     # 可选预测方法:
@@ -152,7 +150,7 @@ class ModelConfig:
     multi_output_strategy: str = "multioutput"
 
     # Direct 方法是否使用 horizon-aware 外生特征展开
-    use_horizon_exogenous_for_direct: bool = True
+    use_horizon_exogenous_for_direct: bool = False
 
     # Direct-Recursive 方法的分块大小
     block_size: int = 0

@@ -16,8 +16,8 @@ import numpy as np
 import pandas as pd
 
 from tsproj_ml_prod.data_provider.data_loader import DataLoader
-from tsproj_ml_prod.config.model_config_lgbm_usmdo import ModelConfig
-# from tsproj_ml_prod.config.model_config_lgbm_usmd import ModelConfig
+# from tsproj_ml_prod.config.model_config_lgbm_usmdo import ModelConfig
+from tsproj_ml_prod.config.model_config_lgbm_usmd import ModelConfig
 # from tsproj_ml_prod.config.model_config_lgbm_usmr import ModelConfig
 # from tsproj_ml_prod.config.model_config_lgbm_usmdr import ModelConfig
 # from tsproj_ml_prod.config.model_config_cab_usmdo import ModelConfig
@@ -354,7 +354,7 @@ class ModelMainClass:
         logger.info(f"{self.log_prefix} Model history data feature engineering...")
         logger.info(f"{self.log_prefix} {'=' * 87}")
         # 特征预处理器
-        feature_engineer_history = FeatureEngineer(self.args, self.log_prefix, verbose=True)
+        feature_engineer_history = FeatureEngineer(self.args, self.log_prefix, verbose=False)
         (
             df_history_featured,
             predictor_features,

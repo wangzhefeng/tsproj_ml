@@ -94,38 +94,38 @@ class ModelConfig:
         lags: List[int] = field(default_factory=lambda: [])
     # 高级特征工程配置
     # --------------
-    enable_advanced_features: bool = True
+    enable_advanced_features: bool = False
 
-    enable_rolling_features: bool = True
+    enable_rolling_features: bool = False
     rolling_columns: List[str] = field(default_factory=lambda: ["y"])
     rolling_windows: List[int] = field(default_factory=lambda: [3, 7, 14, 28])
     rolling_stats: List[str] = field(default_factory=lambda: ["mean", "std", "min", "max"])
 
-    enable_expanding_features: bool = True
+    enable_expanding_features: bool = False
     expanding_columns: List[str] = field(default_factory=lambda: ["y"])
     expanding_stats: List[str] = field(default_factory=lambda: ["mean", "std", "min", "max"])
 
-    enable_diff_features: bool = True
+    enable_diff_features: bool = False
     diff_columns: List[str] = field(default_factory=lambda: ["y"])
     diff_periods: List[int] = field(default_factory=lambda: [1, 7, 24])
 
-    enable_pct_change_features: bool = True
+    enable_pct_change_features: bool = False
     pct_change_columns: List[str] = field(default_factory=lambda: ["y"])
     pct_change_periods: List[int] = field(default_factory=lambda: [1, 7])
 
-    enable_time_since_features: bool = True
+    enable_time_since_features: bool = False
     time_since_columns: List[str] = field(default_factory=lambda: ["y"])
     time_since_events: List[str] = field(default_factory=lambda: ["peak", "trough"])
 
-    enable_cyclical_features: bool = True
+    enable_cyclical_features: bool = False
     cyclical_columns: List[str] = field(default_factory=lambda: ["minute"])
     cyclical_period: int = 15
 
-    enable_interaction_features: bool = True
+    enable_interaction_features: bool = False
     interaction_column_pairs: List[tuple] = field(default_factory=lambda: [("y", "dt_hour")])
     interaction_operations: List[str] = field(default_factory=lambda: ["add", "subtract", "multiply", "divide"])
 
-    enable_polynomial_features: bool = True
+    enable_polynomial_features: bool = False
     polynomial_columns: List[str] = field(default_factory=lambda: ["y"])
     polynomial_degree: int = 2
     # ------------------------------
@@ -135,20 +135,18 @@ class ModelConfig:
     model_type: str = "lightgbm"
     model_params: Dict = field(default_factory=lambda: {
         "boosting_type": "gbdt",
-        "objective": "regression",
-        "metric": "rmse",
+        "objective": "regression_l1",
+        "metric": "mae",
         "n_estimators": 300,
-        "max_depth": 6,
+        "learning_rate": 0.05,
         "max_bin": 63,
-        "num_leaves": 15,
-        "learning_rate": 0.03,
+        "num_leaves": 31,
+        "max_depth": -1,
         "feature_fraction": 0.8,
         "bagging_fraction": 0.8,
-        "bagging_freq": 5,
-        "min_child_samples": 30,
-        "lambda_l1": 1.0,
-        "lambda_l2": 1.0,
+        "bagging_freq": 1,
         "verbose": -1,
+        "force_col_wise": True,
     })
 
     # 可选预测方法:

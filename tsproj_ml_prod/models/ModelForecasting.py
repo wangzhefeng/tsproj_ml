@@ -83,17 +83,12 @@ class Forecaster:
             return predictor_features, categorical_features
 
         selected_set = set(self.selected_features)
-        selected_predictor_features = [f for f in self.selected_features]
-        overlap_features = [f for f in predictor_features if f in selected_set]
-        if not overlap_features:
+        selected_predictor_features = [f for f in predictor_features if f in selected_set]
+        if not selected_predictor_features:
             logger.warning(
                 f"{self.log_prefix} selected_features does not overlap current predictor_features, fallback to all predictors."
             )
             selected_predictor_features = predictor_features
-        elif len(overlap_features) != len(selected_predictor_features):
-            logger.warning(
-                f"{self.log_prefix} current predictor_features missing {len(selected_predictor_features) - len(overlap_features)} selected features, reindex with training feature schema."
-            )
         selected_categorical_features = [f for f in categorical_features if f in selected_predictor_features]
         return selected_predictor_features, selected_categorical_features
 

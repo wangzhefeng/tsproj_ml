@@ -39,6 +39,8 @@ class ModelConfig:
     # ------------------------------
     # 特征工程配置
     # ------------------------------
+    # 日期类型数据配置
+    # --------------
     enable_date_features: bool = True
     if enable_date_features:
         date_ts_feat: Optional[str] = "date"
@@ -48,7 +50,8 @@ class ModelConfig:
         date_ts_feat: Optional[str] = None
         datetype_features: List[str] = field(default_factory=lambda: [])
         datetype_categorical_features: List[str] = field(default_factory=lambda: [])
-
+    # 气象数据配置
+    # --------------
     enable_weather_features: bool = True
     if enable_weather_features:
         weather_ts_feat: Optional[str] = "ts"
@@ -65,7 +68,8 @@ class ModelConfig:
         weather_ts_feat: Optional[str] = None
         weather_features: List[str] = field(default_factory=lambda: [])
         weather_categorical_features: List[str] = field(default_factory=lambda: [])
-
+    # 日期时间特征
+    # --------------
     enable_datetime_features: bool = True
     if enable_datetime_features:
         datetime_features: List[str] = field(default_factory=lambda: [
@@ -77,7 +81,8 @@ class ModelConfig:
     else:
         datetime_features: List[str] = field(default_factory=lambda: [])
         datetime_categorical_features: List[str] = field(default_factory=lambda: [])
-
+    # 特征滞后数列表
+    # --------------
     enable_lags_features: bool = True
     if enable_lags_features:
         lags: List[int] = field(default_factory=lambda: [
@@ -87,32 +92,40 @@ class ModelConfig:
         ])
     else:
         lags: List[int] = field(default_factory=lambda: [])
+    # 高级特征工程配置
+    # --------------
+    enable_advanced_features: bool = False
 
-    enable_advanced_features: bool = True
-
-    enable_rolling_features: bool = True
+    enable_rolling_features: bool = False
     rolling_columns: List[str] = field(default_factory=lambda: ["y"])
     rolling_windows: List[int] = field(default_factory=lambda: [3, 7, 14, 28])
     rolling_stats: List[str] = field(default_factory=lambda: ["mean", "std", "min", "max"])
-    enable_expanding_features: bool = True
+
+    enable_expanding_features: bool = False
     expanding_columns: List[str] = field(default_factory=lambda: ["y"])
     expanding_stats: List[str] = field(default_factory=lambda: ["mean", "std", "min", "max"])
-    enable_diff_features: bool = True
+
+    enable_diff_features: bool = False
     diff_columns: List[str] = field(default_factory=lambda: ["y"])
     diff_periods: List[int] = field(default_factory=lambda: [1, 7, 24])
-    enable_pct_change_features: bool = True
+
+    enable_pct_change_features: bool = False
     pct_change_columns: List[str] = field(default_factory=lambda: ["y"])
     pct_change_periods: List[int] = field(default_factory=lambda: [1, 7])
-    enable_time_since_features: bool = True
+
+    enable_time_since_features: bool = False
     time_since_columns: List[str] = field(default_factory=lambda: ["y"])
     time_since_events: List[str] = field(default_factory=lambda: ["peak", "trough"])
-    enable_cyclical_features: bool = True
+
+    enable_cyclical_features: bool = False
     cyclical_columns: List[str] = field(default_factory=lambda: ["minute"])
     cyclical_period: int = 15
-    enable_interaction_features: bool = True
+
+    enable_interaction_features: bool = False
     interaction_column_pairs: List[tuple] = field(default_factory=lambda: [("y", "dt_hour")])
     interaction_operations: List[str] = field(default_factory=lambda: ["add", "subtract", "multiply", "divide"])
-    enable_polynomial_features: bool = True
+
+    enable_polynomial_features: bool = False
     polynomial_columns: List[str] = field(default_factory=lambda: ["y"])
     polynomial_degree: int = 2
     # ------------------------------

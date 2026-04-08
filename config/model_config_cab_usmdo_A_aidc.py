@@ -18,15 +18,15 @@ class ModelConfig:
     predict_days: int = 1  # 预测未来 1 天的数据
     window_days: int = 15  # 滑动窗口天数
     # 预测推理开始的时间
-    now_time: datetime.datetime = field(default_factory=lambda: datetime.datetime(2026, 3, 12, 0, 0, 0))
+    now_time: datetime.datetime = field(default_factory=lambda: datetime.datetime(2026, 4, 3, 0, 0, 0))
     # ------------------------------
     # 目标时间序列配置
     # ------------------------------
-    data_dir: str = "./dataset/electricity_work/2026-03-12/demand_load/lingang_A"
-    data_path: str = "df_power.csv"
+    data_dir: str = "./dataset/electricity_work/2026-04-03/demand_load/both"
+    data_path: str = "aidc_df.csv"
     freq: str = "5min"
-    target_ts_feat: str = "count_data_time"
-    target: str = "h_total_use"
+    target_ts_feat: str = "time"
+    target: str = "y"
     target_series_numeric_features: List[str] = field(default_factory=list)
     target_series_categorical_features: List[str] = field(default_factory=list)
     target_series_drop_features: List[str] = field(default_factory=list)
@@ -89,15 +89,15 @@ class ModelConfig:
         datetime_categorical_features: List[str] = field(default_factory=lambda: [])
     # 特征滞后数列表
     # --------------
-    enable_lags_features: bool = True
+    enable_lags_features: bool = False
     if enable_lags_features:
         lags: List[int] = field(default_factory=lambda: [
             1 * 288,  # Daily lag
             2 * 288,
-            3 * 288,
-            4 * 288,
-            5 * 288,
-            6 * 288,
+            # 3 * 288,
+            # 4 * 288,
+            # 5 * 288,
+            # 6 * 288,
             7 * 288,  # Weekly lag
         ])
     else:
@@ -164,9 +164,9 @@ class ModelConfig:
 
     # 可选预测方法:
     # - 单变量预测单变量
-    # pred_method: str = "univariate-single-multistep-direct-output"       # USMDO [单变量(包含目标变量的所有内生变量)->单变量(目标内生变量)]多步直接输出预测
+    pred_method: str = "univariate-single-multistep-direct-output"       # USMDO [单变量(包含目标变量的所有内生变量)->单变量(目标内生变量)]多步直接输出预测
     # pred_method: str = "univariate-single-multistep-direct"              # USMD [单变量(包含目标变量的所有内生变量)->单变量(目标内生变量)]多步直接预测
-    pred_method: str = "univariate-single-multistep-recursive"           # USMR [单变量(包含目标变量的所有内生变量)->单变量(目标内生变量)]多步递归预测
+    # pred_method: str = "univariate-single-multistep-recursive"           # USMR [单变量(包含目标变量的所有内生变量)->单变量(目标内生变量)]多步递归预测
     # pred_method: str = "univariate-single-multistep-direct-recursive"    # USMDR [单变量(包含目标变量的所有内生变量)->单变量(目标内生变量)]多步直接递归预测
     # - 多变量预测单变量
     # pred_method: str = "multivariate-single-multistep-direct"            # MSMD [多变量(包含目标变量的所有内生变量)->单变量(目标内生变量)]多步直接预测

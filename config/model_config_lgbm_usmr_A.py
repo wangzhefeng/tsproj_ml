@@ -12,7 +12,7 @@ class ModelConfig:
     # ------------------------------
     # 模型运行模式
     # ------------------------------
-    is_testing: bool = True  # 模型测试
+    is_testing: bool = False  # 模型测试
     is_forecasting: bool = True  # 模型预测
     history_days: int = 31  # 历史数据天数
     predict_days: int = 1  # 预测未来 1 天的数据
@@ -188,7 +188,7 @@ class ModelConfig:
     quantiles: List[float] = field(default_factory=lambda: [0.1, 0.5, 0.9])
 
     # Direct 方法是否使用 horizon-aware 外生特征展开
-    use_horizon_exogenous_for_direct: bool = True
+    use_horizon_exogenous_for_direct: bool = False
 
     # 全局训练模式（跨序列联合）
     enable_global_training: bool = False

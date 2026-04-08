@@ -172,7 +172,7 @@ class ModelConfig:
     # pred_method: str = "multivariate-single-multistep-recursive"         # MSMR [多变量(包含目标变量的所有内生变量)->单变量(目标内生变量)]多步递归预测
     # pred_method: str = "multivariate-single-multistep-direct-recursive"  # MSMDR [多变量(包含目标变量的所有内生变量)->单变量(目标内生变量)]多步直接递归预测
     # 早停步数
-    patience: int = 30
+    patience: int = 100
     # 是否对类别特征进行编码
     encode_categorical_features: bool = False
     # 多输出策略: multioutput / regressor_chain

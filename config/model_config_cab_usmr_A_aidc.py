@@ -18,15 +18,15 @@ class ModelConfig:
     predict_days: int = 1  # 预测未来 1 天的数据
     window_days: int = 15  # 滑动窗口天数
     # 预测推理开始的时间
-    now_time: datetime.datetime = field(default_factory=lambda: datetime.datetime(2026, 3, 12, 0, 0, 0))
+    now_time: datetime.datetime = field(default_factory=lambda: datetime.datetime(2026, 4, 3, 0, 0, 0))
     # ------------------------------
     # 目标时间序列配置
     # ------------------------------
-    data_dir: str = "./dataset/electricity_work/2026-03-12/demand_load/lingang_A"
-    data_path: str = "df_power.csv"
+    data_dir: str = "./dataset/electricity_work/2026-04-03/demand_load/both"
+    data_path: str = "aidc_df.csv"
     freq: str = "5min"
-    target_ts_feat: str = "count_data_time"
-    target: str = "h_total_use"
+    target_ts_feat: str = "time"
+    target: str = "y"
     target_series_numeric_features: List[str] = field(default_factory=list)
     target_series_categorical_features: List[str] = field(default_factory=list)
     target_series_drop_features: List[str] = field(default_factory=list)

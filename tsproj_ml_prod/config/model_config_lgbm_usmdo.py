@@ -18,7 +18,7 @@ class ModelConfig:
     # ------------------------------
     # 模型运行模式
     # ------------------------------
-    is_testing: bool = True  # 模型测试
+    is_testing: bool = False  # 模型测试
     is_forecasting: bool = True  # 模型预测
     history_days: int = 92  # 历史数据天数
     predict_days: int = 1  # 预测未来 1 天的数据

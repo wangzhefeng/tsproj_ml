@@ -163,3 +163,8 @@ checkpoints/
 time-series-features/
 time-series-forecast/
 results/
+catboost_info/
+config/gaoweichao*/
+config/aidc*/
+tests/
+tsproj_ml_prod/

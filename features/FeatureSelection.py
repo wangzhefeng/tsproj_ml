@@ -46,8 +46,10 @@ class FeatureSelector:
     def _y_for_selection(self, y: pd.DataFrame) -> np.ndarray:
         if isinstance(y, pd.Series):
             return y.values
-        # 多输出场景默认用第一列作为筛选目标，避免信息泄露和复杂度膨胀
-        return y.iloc[:, 0].values
+        if y.shape[1] == 1:
+            return y.iloc[:, 0].values
+        # 多输出场景使用各 horizon 的行均值作为筛选信号，避免只偏向第一个预测步。
+        return y.mean(axis=1).values
 
     def _prepare_numeric(self, X: pd.DataFrame) -> pd.DataFrame:
         X_num = X.copy()

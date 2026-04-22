@@ -17,7 +17,6 @@ from typing import List
 
 import numpy as np
 import pandas as pd
-import matplotlib.pyplot as plt
 # model evaluation
 from sklearn.metrics import (
     r2_score,                        # R2
@@ -336,6 +335,7 @@ class Tester:
         if len(cv_plot_df["Y_preds"].values) == 0 or len(cv_plot_df["Y_trues"].values) == 0:
             logger.warning(f"{log_prefix} No data to visualize for test prediction.")
             return
+        import matplotlib.pyplot as plt
         # 画布
         plt.figure(figsize=(25, 8))
         # 创建折线图

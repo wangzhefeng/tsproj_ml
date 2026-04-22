@@ -15,10 +15,12 @@
 import copy
 import os
 from pathlib import Path
-from typing import Dict
+import math
+from typing import Any, Dict, List, Optional
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import numpy as np
+import pandas as pd
 from sklearn.multioutput import MultiOutputRegressor, RegressorChain
 from sklearn.model_selection import (
     TimeSeriesSplit, 
@@ -38,6 +40,78 @@ from utils.log_util import logger
 
 # global variable
 LOGGING_LABEL = Path(__file__).name[:-3]
+
+
+class DirectMultiOutputRegressor:
+    """
+    为 Direct 多步预测定制的多输出训练器。
+
+    - 每个 horizon 单独训练一个回归器
+    - 支持为每个输出传入独立 eval_set / early stopping
+    - 支持按输出维度并行训练
+    """
+
+    def __init__(self, estimator_factory, n_jobs: int = 1, log_prefix: str = "[DirectMultiOutputRegressor]"):
+        self.estimator_factory = estimator_factory
+        self.n_jobs = max(1, int(n_jobs or 1))
+        self.log_prefix = log_prefix
+        self.estimators_: List[Any] = []
+
+    @staticmethod
+    def _to_1d(values: Any) -> np.ndarray:
+        return np.asarray(values).reshape(-1)
+
+    def _fit_single_output(self, output_idx: int, X_train, y_train, fit_kwargs: Optional[Dict[str, Any]] = None):
+        estimator = self.estimator_factory()
+        estimator.fit(X_train, self._to_1d(y_train), **(fit_kwargs or {}))
+        return output_idx, estimator
+
+    def fit(self, X_train, Y_train, fit_kwargs_list: Optional[List[Dict[str, Any]]] = None):
+        y_frame = Y_train if isinstance(Y_train, pd.DataFrame) else pd.DataFrame(Y_train)
+        n_outputs = y_frame.shape[1]
+        fit_kwargs_list = fit_kwargs_list or [{} for _ in range(n_outputs)]
+        if len(fit_kwargs_list) != n_outputs:
+            raise ValueError(
+                f"{self.log_prefix} fit_kwargs_list length ({len(fit_kwargs_list)}) "
+                f"does not match n_outputs ({n_outputs})."
+            )
+
+        estimators = [None] * n_outputs
+        if self.n_jobs > 1 and n_outputs > 1:
+            with ThreadPoolExecutor(max_workers=self.n_jobs) as executor:
+                futures = [
+                    executor.submit(
+                        self._fit_single_output,
+                        output_idx,
+                        X_train,
+                        y_frame.iloc[:, output_idx],
+                        fit_kwargs_list[output_idx],
+                    )
+                    for output_idx in range(n_outputs)
+                ]
+                for future in as_completed(futures):
+                    output_idx, estimator = future.result()
+                    estimators[output_idx] = estimator
+        else:
+            for output_idx in range(n_outputs):
+                _, estimator = self._fit_single_output(
+                    output_idx,
+                    X_train,
+                    y_frame.iloc[:, output_idx],
+                    fit_kwargs_list[output_idx],
+                )
+                estimators[output_idx] = estimator
+
+        self.estimators_ = estimators
+        # 训练完成后不再依赖工厂，清空以避免模型保存时因闭包/lambda 无法 pickle。
+        self.estimator_factory = None
+        return self
+
+    def predict(self, X) -> np.ndarray:
+        if not self.estimators_:
+            raise ValueError(f"{self.log_prefix} multi-output estimators are not fitted yet.")
+        preds = [self._to_1d(estimator.predict(X)) for estimator in self.estimators_]
+        return np.column_stack(preds)
 
 
 class Trainer:
@@ -126,6 +200,19 @@ class Trainer:
         logger.info(f"{self.log_prefix} Multi-output strategy: MultiOutputRegressor")
         return MultiOutputRegressor(estimator=base_estimator, n_jobs=multi_output_n_jobs)
 
+    def _create_model_instance(self, model_type: str, model_params: Dict[str, Any], log_params: bool = True):
+        try:
+            return self.model_factory.create_model(
+                model_type=model_type,
+                model_params=model_params,
+                log_params=log_params,
+            )
+        except TypeError:
+            return self.model_factory.create_model(
+                model_type=model_type,
+                model_params=model_params,
+            )
+
     def _train_quantile_single_model(
         self,
         quantile: float,
@@ -135,7 +222,7 @@ class Trainer:
         lgbm_categorical,
     ):
         params_q = self._inject_quantile_params(model_type=model_type, params=self.model_params, quantile=quantile)
-        estimator_wrapper_q = self.model_factory.create_model(
+        estimator_wrapper_q = self._create_model_instance(
             model_type=model_type,
             model_params=params_q,
         )
@@ -216,6 +303,87 @@ class Trainer:
             )
         return native_bundle
 
+    def _prepare_single_output_fit_data(self, X_train_df_processed, Y_train_df_processed, categorical_features):
+        """
+        为单输出回归器准备训练/验证切分与 fit kwargs。
+        目前仅对 LightGBM 点预测接入 early stopping。
+        """
+        fit_kwargs = {}
+        y_values = np.ravel(Y_train_df_processed.values)
+        model_type = str(self.model_type).lower()
+        if model_type not in ["lightgbm", "lgb"]:
+            return X_train_df_processed, y_values, fit_kwargs
+
+        total_rows = len(X_train_df_processed)
+        horizon = int(getattr(self.args, "horizon", 1) or 1)
+        val_size = max(horizon, int(math.floor(total_rows * 0.1)))
+        if total_rows <= (val_size + 1):
+            logger.info(f"{self.log_prefix} Skip early stopping: insufficient rows ({total_rows}) for val_size={val_size}.")
+            return X_train_df_processed, y_values, fit_kwargs
+
+        X_fit = X_train_df_processed.iloc[:-val_size].copy()
+        y_fit = y_values[:-val_size]
+        X_val = X_train_df_processed.iloc[-val_size:].copy()
+        y_val = y_values[-val_size:]
+        fit_kwargs["eval_set"] = [(X_val, y_val)]
+        fit_kwargs["eval_metric"] = "mae"
+        fit_kwargs["early_stopping_rounds"] = int(getattr(self.args, "patience", 100) or 100)
+        logger.info(
+            f"{self.log_prefix} Early stopping enabled: "
+            f"train_rows={len(X_fit)}, val_rows={len(X_val)}, patience={fit_kwargs['early_stopping_rounds']}"
+        )
+        return X_fit, y_fit, fit_kwargs
+
+    def _prepare_multi_output_fit_data(
+        self,
+        X_train_df_processed,
+        Y_train_df_processed,
+        categorical_features,
+        native_data_bundle,
+    ):
+        """
+        为 Direct 多输出模型准备共享训练集和按输出拆分的验证集参数。
+        """
+        fit_kwargs_list = [{} for _ in range(Y_train_df_processed.shape[1])]
+        model_type = str(self.model_type).lower()
+        if model_type not in ["lightgbm", "lgb", "xgboost", "xgb", "catboost", "cat"]:
+            return X_train_df_processed, Y_train_df_processed, fit_kwargs_list
+
+        total_rows = len(X_train_df_processed)
+        horizon = int(getattr(self.args, "horizon", 1) or 1)
+        val_size = max(horizon, int(math.floor(total_rows * 0.1)))
+        if total_rows <= (val_size + 1):
+            logger.info(
+                f"{self.log_prefix} Skip multi-output early stopping: "
+                f"insufficient rows ({total_rows}) for val_size={val_size}."
+            )
+            return X_train_df_processed, Y_train_df_processed, fit_kwargs_list
+
+        X_fit = X_train_df_processed.iloc[:-val_size].copy()
+        Y_fit = Y_train_df_processed.iloc[:-val_size].copy()
+        X_val = X_train_df_processed.iloc[-val_size:].copy()
+        Y_val = Y_train_df_processed.iloc[-val_size:].copy()
+        patience = int(getattr(self.args, "patience", 100) or 100)
+
+        for output_idx in range(Y_train_df_processed.shape[1]):
+            fit_kwargs = {
+                "eval_set": [(X_val, np.ravel(Y_val.iloc[:, output_idx].values))],
+                "eval_metric": "mae",
+                "early_stopping_rounds": patience,
+            }
+            if model_type in ["lightgbm", "lgb"] and categorical_features:
+                fit_kwargs["categorical_feature"] = categorical_features
+            if model_type in ["catboost", "cat"] and native_data_bundle.get("enabled"):
+                fit_kwargs["native_train_data"] = native_data_bundle.get("train_native")
+            fit_kwargs_list[output_idx] = fit_kwargs
+
+        logger.info(
+            f"{self.log_prefix} Multi-output early stopping enabled: "
+            f"train_rows={len(X_fit)}, val_rows={len(X_val)}, outputs={Y_train_df_processed.shape[1]}, "
+            f"patience={patience}"
+        )
+        return X_fit, Y_fit, fit_kwargs_list
+
     def _hyperparameters_tuning(self, X_train, Y_train):
         """
         模型超参数调优 (Grid Search / Randomized Search with TimeSeriesSplit)
@@ -227,6 +395,7 @@ class Trainer:
             raise ValueError(f"Unsupported model_type for hyperparameter tuning: {self.model_type}")
 
         base_estimator = self.model_factory.create_model(
+            # 调参阶段保留日志，便于确认真实搜索空间
             model_type=self.model_type,
             model_params=self.model_params
         )
@@ -375,25 +544,55 @@ class Trainer:
             # 单模型 - 点预测
             # ------------------------------
             if predict_type == "point":
-                estimator_wrapper = self.model_factory.create_model(
-                    model_type=model_type,
-                    model_params=self.model_params,
-                )
                 if Y_train_df_processed.shape[1] == 1:
                     logger.info(f"{self.log_prefix} Training single-output regressor...")
                     logger.info(f"{self.log_prefix} {'-' * 71}")
+                    estimator_wrapper = self.model_factory.create_model(
+                        model_type=model_type,
+                        model_params=self.model_params,
+                    )
                     model = estimator_wrapper
-                    fit_kwargs = {}
+                    X_fit, y_fit, fit_kwargs = self._prepare_single_output_fit_data(
+                        X_train_df_processed,
+                        Y_train_df_processed,
+                        actual_categorical,
+                    )
                     if str(model_type).lower() in ["lightgbm", "lgb"] and lgbm_categorical is not None:
                         fit_kwargs["categorical_feature"] = lgbm_categorical
                     if str(model_type).lower() in ["catboost", "cat"] and native_data_bundle.get("enabled"):
                         fit_kwargs["native_train_data"] = native_data_bundle.get("train_native")
-                    model.fit(X_train_df_processed, np.ravel(Y_train_df_processed.values), **fit_kwargs)
+                    model.fit(X_fit, y_fit, **fit_kwargs)
                 else:
                     logger.info(f"{self.log_prefix} Training multi-output regressor with {Y_train_df_processed.shape[1]} outputs...")
                     logger.info(f"{self.log_prefix} {'-' * 71}")
-                    model = self._build_multi_output_model(estimator_wrapper.model, n_outputs=Y_train_df_processed.shape[1])
-                    model.fit(X_train_df_processed, Y_train_df_processed)
+                    strategy = str(getattr(self.args, "multi_output_strategy", "multioutput")).lower()
+                    if strategy == "regressor_chain":
+                        estimator_wrapper = self.model_factory.create_model(
+                            model_type=model_type,
+                            model_params=self.model_params,
+                        )
+                        model = self._build_multi_output_model(
+                            estimator_wrapper.model,
+                            n_outputs=Y_train_df_processed.shape[1],
+                        )
+                        model.fit(X_train_df_processed, Y_train_df_processed)
+                    else:
+                        X_fit, Y_fit, fit_kwargs_list = self._prepare_multi_output_fit_data(
+                            X_train_df_processed,
+                            Y_train_df_processed,
+                            actual_categorical,
+                            native_data_bundle,
+                        )
+                        model = DirectMultiOutputRegressor(
+                            estimator_factory=lambda: self._create_model_instance(
+                                model_type=model_type,
+                                model_params=self.model_params,
+                                log_params=False,
+                            ),
+                            n_jobs=self._resolve_worker_count("multi_output_n_jobs", default=1),
+                            log_prefix=self.log_prefix,
+                        )
+                        model.fit(X_fit, Y_fit, fit_kwargs_list=fit_kwargs_list)
                 logger.info(f"{self.log_prefix} Model training completed!")
                 return model, feature_scaler, target_scaler, selected_features
             # ------------------------------

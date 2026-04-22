@@ -13,10 +13,10 @@
 
 # python libraries
 import copy
-from pathlib import Path
-from abc import ABC, abstractmethod
-from typing import Dict, Any, Optional
 import inspect
+from abc import ABC, abstractmethod
+from pathlib import Path
+from typing import Any, Dict, Optional
 
 import numpy as np
 import pandas as pd
@@ -71,7 +71,7 @@ class BaseModel(ABC):
     所有具体模型必须继承此类并实现抽象方法
     """
     
-    def __init__(self, params: Dict[str, Any], log_prefix: str="BaseModel"):
+    def __init__(self, params: Dict[str, Any], log_prefix: str="BaseModel", log_params: bool = True):
         """
         初始化模型
         
@@ -82,6 +82,7 @@ class BaseModel(ABC):
         self.params = params
         self.model = None
         self.is_fitted = False
+        self.log_params = log_params
     
     @abstractmethod
     def fit(self, X: pd.DataFrame, y: pd.Series, **kwargs):
@@ -134,7 +135,7 @@ class BaseModel(ABC):
 # TODO 这个函数的作用是什么？
 def _filter_valid_params(params: Dict[str, Any], estimator_cls) -> Dict[str, Any]:
     signature = inspect.signature(estimator_cls.__init__)
-    # 部分 sklearn 风格封装（如 XGBoost）通过 **kwargs 接收额外原生参数，
+    # 部分 sklearn 风格封装通过 **kwargs 接收额外原生参数，
     # 这类模型不能用显式签名做白名单过滤，否则会错误丢弃合法配置。
     if any(param.kind == inspect.Parameter.VAR_KEYWORD for param in signature.parameters.values()):
         return dict(params)
@@ -174,12 +175,13 @@ class LightGBMModel(BaseModel):
         "force_col_wise": True,
     }
 
-    def __init__(self, params: Dict[str, Any], log_prefix: str="LightGBMModel"):
-        super().__init__(params)
+    def __init__(self, params: Dict[str, Any], log_prefix: str="LightGBMModel", log_params: bool = True):
+        super().__init__(params, log_prefix=log_prefix, log_params=log_params)
         merged_params = {**copy.deepcopy(self.DEFAULT_PARAMS), **(params or {})}
         # 模型参数
         self.params = merged_params
-        logger.info(f"{log_prefix} model parameters: \n{self.params}")
+        if self.log_params:
+            logger.info(f"{log_prefix} model parameters: \n{self.params}")
         # 模型构建
         self.model = lgb.LGBMRegressor(**self.params)
     
@@ -254,12 +256,13 @@ class XGBoostModel(BaseModel):
         "random_state": 42,
     }
 
-    def __init__(self, params: Dict[str, Any], log_prefix: str="XGBoostModel"):
-        super().__init__(params)
+    def __init__(self, params: Dict[str, Any], log_prefix: str="XGBoostModel", log_params: bool = True):
+        super().__init__(params, log_prefix=log_prefix, log_params=log_params)
         merged_params = {**copy.deepcopy(self.DEFAULT_PARAMS), **(params or {})}
         # 模型参数
         self.params = _filter_valid_params(merged_params, xgb.XGBRegressor)
-        logger.info(f"{log_prefix} model parameters: \n{self.params}")
+        if self.log_params:
+            logger.info(f"{log_prefix} model parameters: \n{self.params}")
         # 模型构建
         self.model = xgb.XGBRegressor(**self.params)
         self.log_prefix = log_prefix
@@ -325,23 +328,28 @@ class CatBoostModel(BaseModel):
         "verbose": False,
         "random_state": 42,
         "thread_count": -1,
+        "allow_writing_files": False,
     }
 
-    def __init__(self, params: Dict[str, Any], log_prefix: str="CatBoostModel"):
-        super().__init__(params)
+    def __init__(self, params: Dict[str, Any], log_prefix: str="CatBoostModel", log_params: bool = True):
+        super().__init__(params, log_prefix=log_prefix, log_params=log_params)
         merged_params = {**copy.deepcopy(self.DEFAULT_PARAMS), **(params or {})}
         # CatBoost 的 iterations / n_estimators / num_boost_round / num_trees 是同义参数，只能保留一个
         iteration_aliases = ["n_estimators", "num_boost_round", "num_trees"]
         for alias in iteration_aliases:
             if alias in merged_params:
                 merged_params["iterations"] = merged_params.pop(alias)
+        # CatBoost 的 random_seed / random_state 是同义参数，只能保留一个
+        if "random_seed" in merged_params and "random_state" in merged_params:
+            merged_params.pop("random_state", None)
         # 清理从其他树模型配置复用过来的不兼容参数
-        incompatible_params = ["num_leaves", "feature_fraction", "bagging_fraction", "bagging_freq"]
+        incompatible_params = ["num_leaves", "feature_fraction", "bagging_fraction", "bagging_freq", "force_col_wise"]
         for param in incompatible_params:
             merged_params.pop(param, None)
         # 模型参数
         self.params = _filter_valid_params(merged_params, cab.CatBoostRegressor)
-        logger.info(f"{log_prefix} model parameters: \n{self.params}")
+        if self.log_params:
+            logger.info(f"{log_prefix} model parameters: \n{self.params}")
         # 模型构建
         self.model = cab.CatBoostRegressor(**self.params)
         self.log_prefix = log_prefix
@@ -370,10 +378,11 @@ class CatBoostModel(BaseModel):
         fit_params = {}
         if eval_set is not None:
             fit_params["eval_set"] = native_eval_data if native_eval_data is not None else eval_set
-            fit_params["eval_metric"] = eval_metric
             fit_params["early_stopping_rounds"] = early_stopping_rounds
         if categorical_feature is not None and native_train_data is None:
             fit_params["cat_features"] = categorical_feature
+        supported_fit_params = set(inspect.signature(self.model.fit).parameters.keys())
+        fit_params = {k: v for k, v in fit_params.items() if k in supported_fit_params}
         # 模型训练
         fit_input = native_train_data if native_train_data is not None else X
         fit_target = None if native_train_data is not None else y
@@ -402,8 +411,8 @@ class RandomForestModel(BaseModel):
     - 并行化训练
     """
     
-    def __init__(self, params: Dict[str, Any], log_prefix: str="RandomForestModel"):
-        super().__init__(params)
+    def __init__(self, params: Dict[str, Any], log_prefix: str="RandomForestModel", log_params: bool = True):
+        super().__init__(params, log_prefix=log_prefix, log_params=log_params)
         # 设置默认参数
         default_params = {
             'n_estimators': 100,
@@ -417,7 +426,8 @@ class RandomForestModel(BaseModel):
         merged_params = {**default_params, **(params or {})}
         # 模型参数
         self.params = _filter_valid_params(merged_params, RandomForestRegressor)
-        logger.info(f"{log_prefix} model parameters: \n{self.params}")
+        if self.log_params:
+            logger.info(f"{log_prefix} model parameters: \n{self.params}")
         # 模型构建
         self.model = RandomForestRegressor(**self.params)
         self.log_prefix = log_prefix
@@ -488,7 +498,7 @@ class ModelFactory:
 
         return resolved
     
-    def create_model(self, model_type: str, model_params: Dict[str, Any]) -> BaseModel:
+    def create_model(self, model_type: str, model_params: Dict[str, Any], log_params: bool = True) -> BaseModel:
         """
         创建模型实例
         
@@ -514,7 +524,11 @@ class ModelFactory:
         model_class = ModelFactory._models[model_type]
         resolved_params = self.resolve_model_params(model_type, model_params)
         
-        return model_class(resolved_params, log_prefix=f"{self.log_prefix} {model_type.capitalize()}")
+        return model_class(
+            resolved_params,
+            log_prefix=f"{self.log_prefix} {model_type.capitalize()}",
+            log_params=log_params,
+        )
     
     @staticmethod
     def list_models() -> list:

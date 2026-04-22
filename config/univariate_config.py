@@ -3,6 +3,7 @@ import datetime
 from typing import List, Dict, Optional
 from dataclasses import dataclass, field
 
+
 @dataclass
 class ModelConfig:
     """
@@ -40,12 +41,8 @@ class ModelConfig:
         date_history_path: Optional[str] = "df_date.csv"
         date_future_path: Optional[str] = "df_date_future.csv"
         date_ts_feat: Optional[str] = "date"
-        datetype_features: List[str] = field(default_factory=lambda: [
-            "date_type"
-        ])
-        datetype_categorical_features: List[str] = field(default_factory=lambda: [
-            "date_type"
-        ])
+        datetype_features: List[str] = field(default_factory=lambda: ["date_type"])
+        datetype_categorical_features: List[str] = field(default_factory=lambda: [])
     else:
         date_history_path: Optional[str] = None
         date_future_path: Optional[str] = None
@@ -93,16 +90,16 @@ class ModelConfig:
         datetime_categorical_features: List[str] = field(default_factory=lambda: [])
     # 特征滞后数列表
     # --------------
-    enable_lags_features: bool = True
+    enable_lags_features: bool = False
     if enable_lags_features:
         lags: List[int] = field(default_factory=lambda: [
             1 * 288,  # Daily lag
             2 * 288,
-            # 3 * 288,
-            # 4 * 288,
-            # 5 * 288,
-            # 6 * 288,
-            # 7 * 288,  # Weekly lag
+            3 * 288,
+            4 * 288,
+            5 * 288,
+            6 * 288,
+            7 * 288,  # Weekly lag
         ])
     else:
         lags: List[int] = field(default_factory=lambda: [])
@@ -169,7 +166,7 @@ class ModelConfig:
     # 可选预测方法:
     # - 单变量预测单变量
     # pred_method: str = "univariate-single-multistep-direct-output"       # USMDO [单变量(包含目标变量的所有内生变量)->单变量(目标内生变量)]多步直接输出预测
-    pred_method: str = "univariate-single-multistep-direct"              # USMD [单变量(包含目标变量的所有内生变量)->单变量(目标内生变量)]多步直接预测
+    # pred_method: str = "univariate-single-multistep-direct"              # USMD [单变量(包含目标变量的所有内生变量)->单变量(目标内生变量)]多步直接预测
     # pred_method: str = "univariate-single-multistep-recursive"           # USMR [单变量(包含目标变量的所有内生变量)->单变量(目标内生变量)]多步递归预测
     # pred_method: str = "univariate-single-multistep-direct-recursive"    # USMDR [单变量(包含目标变量的所有内生变量)->单变量(目标内生变量)]多步直接递归预测
     # - 多变量预测单变量
@@ -212,7 +209,9 @@ class ModelConfig:
     auto_lr_max: float = 0.2
     # 鲁棒损失参数（用于 huber scorer）
     huber_delta: float = 1.0
+    # ------------------------------
     # 性能与并行配置
+    # ------------------------------
     window_parallel_workers: int = 1
     multi_output_n_jobs: int = 1
     quantile_parallel_workers: int = 1

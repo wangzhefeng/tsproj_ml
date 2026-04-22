@@ -19,15 +19,19 @@
 # ***************************************************
 
 # python libraries
+import argparse
+import copy
+import importlib
 import os
 import sys
 import time
+import tempfile
 from pathlib import Path
 ROOT = str(Path.cwd())
 if ROOT not in sys.path:
     sys.path.append(ROOT)
 import datetime
-from concurrent.futures import ProcessPoolExecutor, as_completed
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_completed
 import warnings
 warnings.filterwarnings("ignore")
 from typing import List
@@ -55,6 +59,36 @@ from utils.frequency import resolve_freq_step_minutes, resolve_samples_per_day
 LOGGING_LABEL = Path(__file__).name[:-3]
 os.environ['LOG_NAME'] = LOGGING_LABEL
 from utils.log_util import logger
+
+
+DEFAULT_CONFIG_MODULE = "config.model_config_cab_usmd_A_aidc"
+
+
+def ensure_runtime_environment():
+    mpl_dir = Path(tempfile.gettempdir()).joinpath("tsproj_ml_matplotlib")
+    mpl_dir.mkdir(parents=True, exist_ok=True)
+    os.environ.setdefault("MPLCONFIGDIR", str(mpl_dir))
+
+
+def build_arg_parser():
+    parser = argparse.ArgumentParser(description="Time series forecasting runner")
+    parser.add_argument(
+        "--config-module",
+        default=DEFAULT_CONFIG_MODULE,
+        help="Python module path that exposes ModelConfig",
+    )
+    return parser
+
+
+def load_model_config(config_module: str = DEFAULT_CONFIG_MODULE):
+    module = importlib.import_module(config_module)
+    model_config = getattr(module, "ModelConfig", None)
+    if model_config is None:
+        raise ImportError(f"ModelConfig not found in module: {config_module}")
+    return model_config
+
+
+ensure_runtime_environment()
 
 
 class Model:
@@ -97,6 +131,9 @@ class Model:
         self.window_len = int(self.args.window_days * self.n_per_day)
         # 测试滑动窗口数量, >=1, 1: 单个窗口
         self.n_windows = int(self.args.history_days * self.n_per_day - self.window_len - self.horizon + 1) // self.horizon
+        self.args.horizon = self.horizon
+        self.args.n_windows = self.n_windows
+        self.args.n_per_day = self.n_per_day
         # ------------------------------
         # 模型训练、测试、预测结果保存路径
         # ------------------------------
@@ -133,6 +170,12 @@ class Model:
         logger.info(f"{self.log_prefix} 分位数并行数: {int(getattr(self.args, 'quantile_parallel_workers', 1) or 1)}")
         logger.info(f"{self.log_prefix} 集成并行数: {int(getattr(self.args, 'ensemble_parallel_workers', 1) or 1)}")
         logger.info(f"{self.log_prefix} 模型线程数: {int(getattr(self.args, 'model_thread_count', 1) or 1)}")
+        logger.info(f"{self.log_prefix} 分块大小: {int(getattr(self.args, 'block_size', 0) or 0)}")
+        logger.info(f"{self.log_prefix} 快速测试窗口上限: {getattr(self.args, 'max_test_windows', None)}")
+        logger.info(f"{self.log_prefix} 测试窗口步长: {int(getattr(self.args, 'test_window_stride', 1) or 1)}")
+        logger.info(f"{self.log_prefix} Horizon: {self.horizon}")
+        logger.info(f"{self.log_prefix} Window length: {self.window_len}")
+        logger.info(f"{self.log_prefix} Number of windows: {self.n_windows}")
 
     def train(self, X_train: pd.DataFrame, Y_train: pd.DataFrame, categorical_features: List, mode: str="forecast", verbose: bool=False):
         """
@@ -199,9 +242,21 @@ class Model:
         # ------------------------------
         # 模型滑窗测试过程
         # ------------------------------
+        window_stride = max(1, int(getattr(self.args, "test_window_stride", 1) or 1))
+        window_indices = list(range(1, int(self.n_windows + 1), window_stride))
+        max_test_windows = getattr(self.args, "max_test_windows", None)
+        if max_test_windows is not None:
+            max_test_windows = max(1, int(max_test_windows))
+            window_indices = window_indices[:max_test_windows]
+        logger.info(f"{self.log_prefix} Testing windows selected: {window_indices}")
+        window_workers = int(getattr(self.args, "window_parallel_workers", 1) or 1)
+        payload_args = copy.copy(self.args)
+        if window_workers > 1:
+            payload_args.multi_output_n_jobs = 1
+            payload_args.model_thread_count = 1
         payloads = [
             {
-                "args": self.args,
+                "args": payload_args,
                 "log_prefix": self.log_prefix,
                 "horizon": self.horizon,
                 "window_len": self.window_len,
@@ -218,13 +273,24 @@ class Model:
                 "train_start_time": self.train_start_time,
                 "train_end_time": self.train_end_time,
             }
-            for window in range(1, int(self.n_windows + 1))
+            for window in window_indices
         ]
-        window_workers = int(getattr(self.args, "window_parallel_workers", 1) or 1)
         window_results = []
         if window_workers > 1 and len(payloads) > 1:
             logger.info(f"{self.log_prefix} Model Testing window parallel workers: {window_workers}")
-            with ProcessPoolExecutor(max_workers=window_workers) as executor:
+            executor_cls = ProcessPoolExecutor
+            executor_name = "process"
+            try:
+                executor = executor_cls(max_workers=window_workers)
+            except (PermissionError, OSError) as exc:
+                executor_cls = ThreadPoolExecutor
+                executor_name = "thread"
+                logger.warning(
+                    f"{self.log_prefix} ProcessPoolExecutor unavailable, fallback to ThreadPoolExecutor: {exc}"
+                )
+                executor = executor_cls(max_workers=window_workers)
+            with executor:
+                logger.info(f"{self.log_prefix} Model Testing executor backend: {executor_name}")
                 futures = [executor.submit(Tester._window_test, payload) for payload in payloads]
                 for future in as_completed(futures):
                     window_results.append(future.result())
@@ -386,7 +452,8 @@ class Model:
         logger.info(f"{self.log_prefix} Model history data feature engineering...")
         logger.info(f"{self.log_prefix} {'=' * 87}")
         # 特征预处理器
-        feature_engineer_history = FeatureEngineer(self.args, self.log_prefix, verbose=True)
+        verbose_logging = bool(getattr(self.args, "enable_step_logging", False))
+        feature_engineer_history = FeatureEngineer(self.args, self.log_prefix, verbose=verbose_logging)
         (df_history_featured, 
          predictor_features, 
          target_output_features, 
@@ -457,7 +524,7 @@ class Model:
                 Y_train = Y_train_history, 
                 categorical_features = categorical_features,
                 mode = "forecast",
-                verbose = True
+                verbose = verbose_logging
             )
             
             # 模型预测
@@ -484,34 +551,12 @@ class Model:
 
 
 # 测试代码 main 函数
-def main():
+def main(argv=None):
     """
     主函数入口
     """
-    # from config.univariate_config import ModelConfig
-    # from config.multivariate_config import ModelConfig
-    # lightgbm
-    # from config.model_config_lgbm_usmdo_A import ModelConfig
-    # from config.model_config_lgbm_usmr_A import ModelConfig
-    # from config.model_config_lgbm_usmd_A import ModelConfig
-    # from config.model_config_lgbm_usmdr_A import ModelConfig
-    # xgboost
-    # from config.model_config_xgb_usmdo_A import ModelConfig
-    # from config.model_config_xgb_usmr_A import ModelConfig
-    # from config.model_config_xgb_usmd_A import ModelConfig
-    # from config.model_config_xgb_usmdr_A import ModelConfig
-    # catboost
-    # from config.model_config_cab_usmdo_A import ModelConfig
-    # from config.model_config_cab_usmr_A import ModelConfig
-    # from config.model_config_cab_usmd_A import ModelConfig
-    # from config.model_config_cab_usmdr_A import ModelConfig
-
-    # test
-    # from config.model_config_cab_usmdo_A_aidc import ModelConfig
-    # from config.model_config_cab_usmr_A_aidc import ModelConfig
-    # from config.model_config_cab_usmd_A_aidc import ModelConfig
-    from config.model_config_cab_usmdr_A_aidc import ModelConfig
-    
+    parsed_args = build_arg_parser().parse_args(argv)
+    ModelConfig = load_model_config(parsed_args.config_module)
     # 模型配置
     args = ModelConfig()
     # 创建模型实例

@@ -9,6 +9,12 @@ class ModelConfig:
     模型配置类
     包含数据路径、特征设置、模型参数等所有配置项
     """
+    model_cfgs: Optional[Dict] = field(default=None, repr=False)
+    # ------------------------------
+    # 项目配置
+    # ------------------------------
+    node_id: Optional[int] = None
+    out_system_id: Optional[str] = None
     # ------------------------------
     # 模型运行模式
     # ------------------------------
@@ -19,6 +25,8 @@ class ModelConfig:
     window_days: int = 15  # 滑动窗口天数
     # 预测推理开始的时间
     now_time: datetime.datetime = field(default_factory=lambda: datetime.datetime(2018, 6, 26, 19, 45, 0))
+    start_time: Optional[datetime.datetime] = None
+    future_time: Optional[datetime.datetime] = None
     # ------------------------------
     # 目标时间序列配置
     # ------------------------------
@@ -136,7 +144,21 @@ class ModelConfig:
     # ------------------------------
     # 单模型预测
     model_type: str = "lightgbm"
-    model_params: Dict = field(default_factory=dict)
+    model_params: Dict = field(default_factory=lambda: {
+        "boosting_type": "gbdt",
+        "objective": "regression_l1",
+        "metric": "mae",
+        "n_estimators": 300,
+        "learning_rate": 0.05,
+        "max_bin": 63,
+        "num_leaves": 31,
+        "max_depth": -1,
+        "feature_fraction": 0.8,
+        "bagging_fraction": 0.8,
+        "bagging_freq": 1,
+        "verbose": -1,
+        "force_col_wise": True,
+    })
     # 模型融合预测
     enable_ensemble: bool = False
     ensemble_models: List = field(default_factory=lambda: ["lgb", "xgb", "cat"])
@@ -157,6 +179,19 @@ class ModelConfig:
     patience: int = 100
     # 是否对类别特征进行编码
     encode_categorical_features: bool = False
+    # 多输出策略: multioutput / regressor_chain
+    multi_output_strategy: str = "multioutput"
+    # 预测类型: point / quantile
+    predict_type: str = "point"
+    # 分位数预测配置（predict_type=quantile 时生效）
+    quantiles: List[float] = field(default_factory=lambda: [0.1, 0.5, 0.9])
+    # Direct 方法是否使用 horizon-aware 外生特征展开
+    use_horizon_exogenous_for_direct: bool = False
+    # Direct-Recursive 方法的分块大小
+    block_size: int = 0
+    # 全局训练模式（跨序列联合）
+    enable_global_training: bool = False
+    series_id_feature: str = "series_id"
     # 模型超参数调优
     perform_tuning: bool = False
     tuning_metric: str = "neg_mean_absolute_error"
@@ -191,4 +226,26 @@ class ModelConfig:
     # ------------------------------
     checkpoints_dir: str = "./saved_results/pretrained_models/"
     test_results_dir: str = "./saved_results/results_test/"
-    pred_results_dir = "./saved_results/results_forecast/"
+    pred_results_dir: str = "./saved_results/results_forecast/"
+
+    def __post_init__(self):
+        self._apply_model_cfgs(self.model_cfgs or {})
+
+    def _apply_model_cfgs(self, model_cfgs: Dict):
+        if not model_cfgs:
+            return
+
+        nodes_cfg = model_cfgs.get("nodes", {})
+        if isinstance(nodes_cfg, dict):
+            node_cfg = nodes_cfg.get("node", nodes_cfg)
+            if isinstance(node_cfg, dict):
+                self.node_id = node_cfg.get("node_id", self.node_id)
+                self.out_system_id = node_cfg.get("out_system_id", self.out_system_id)
+
+        time_range = model_cfgs.get("time_range", {})
+        if isinstance(time_range, dict):
+            self.history_days = int(time_range.get("before_days", self.history_days))
+            self.predict_days = int(time_range.get("after_days", self.predict_days))
+            self.now_time = time_range.get("now_time", self.now_time)
+            self.start_time = time_range.get("start_time", self.start_time)
+            self.future_time = time_range.get("future_time", self.future_time)

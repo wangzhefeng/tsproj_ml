@@ -42,6 +42,14 @@ from utils.log_util import logger
 LOGGING_LABEL = Path(__file__).name[:-3]
 
 
+UNIVARIATE_PRED_METHODS = {
+    "univariate-single-multistep-direct-output",
+    "univariate-single-multistep-direct",
+    "univariate-single-multistep-recursive",
+    "univariate-single-multistep-direct-recursive",
+}
+
+
 class DirectMultiOutputRegressor:
     """
     为 Direct 多步预测定制的多输出训练器。
@@ -115,7 +123,7 @@ class DirectMultiOutputRegressor:
 
 
 class Trainer:
-    
+
     def __init__(self, args: Dict, log_prefix: str):
         self.args = args
         self.log_prefix = log_prefix
@@ -141,6 +149,7 @@ class Trainer:
         if value <= 0:
             cpu_count = os.cpu_count() or 1
             return max(1, cpu_count)
+
         return value
 
     def _apply_model_thread_limits(self):
@@ -198,7 +207,89 @@ class Trainer:
             return RegressorChain(estimator=base_estimator)
         multi_output_n_jobs = self._resolve_worker_count("multi_output_n_jobs", default=1)
         logger.info(f"{self.log_prefix} Multi-output strategy: MultiOutputRegressor")
+
         return MultiOutputRegressor(estimator=base_estimator, n_jobs=multi_output_n_jobs)
+
+    def _is_fourmethods_univariate_method(self) -> bool:
+        return str(getattr(self.args, "pred_method", "")).lower() in UNIVARIATE_PRED_METHODS
+
+    def _should_use_fourmethods_baseline_training(self) -> bool:
+        """
+        四种单变量方法在增强能力全关闭时，自动采用 FourMethods 的训练语义。
+        """
+        if not self._is_fourmethods_univariate_method():
+            return False
+
+        enhancement_flags = [
+            "scale_features",
+            "scale_target",
+            "enable_feature_selection",
+            "enable_data_augmentation",
+            "enable_ensemble",
+            "perform_tuning",
+            "enable_auto_learning_rate",
+        ]
+        if any(bool(getattr(self.args, flag, False)) for flag in enhancement_flags):
+            return False
+
+        return str(getattr(self.args, "predict_type", "point")).lower() == "point"
+
+    @staticmethod
+    def _ensure_target_frame(Y_train) -> pd.DataFrame:
+        if isinstance(Y_train, pd.DataFrame):
+            return Y_train.copy()
+        if isinstance(Y_train, pd.Series):
+            return Y_train.to_frame()
+        y_arr = np.asarray(Y_train)
+        if y_arr.ndim == 1:
+            return pd.DataFrame({"y": y_arr})
+        return pd.DataFrame(y_arr)
+
+    def _train_fourmethods_baseline(self, X_train_df, Y_train_df, categorical_features):
+        """
+        复刻 FourMethods 的无增强训练路径：原始特征、原始目标、无早停、无调参。
+        """
+        selected_features = X_train_df.columns.tolist()
+        X_train_df_processed = X_train_df.copy()
+        Y_train_df_processed = self._ensure_target_frame(Y_train_df)
+        lgbm_categorical = list(categorical_features or [])
+        model_type = self.model_type
+        estimator_wrapper = self.model_factory.create_model(
+            model_type=model_type,
+            model_params=self.model_params,
+        )
+
+        if Y_train_df_processed.shape[1] == 1:
+            logger.info(f"{self.log_prefix} FourMethods baseline training single-output regressor...")
+            logger.info(f"{self.log_prefix} {'-' * 71}")
+            model = estimator_wrapper
+            fit_kwargs = {}
+            if str(model_type).lower() in ["lightgbm", "lgb"] and lgbm_categorical is not None:
+                fit_kwargs["categorical_feature"] = lgbm_categorical
+            if str(model_type).lower() in ["catboost", "cat"] and lgbm_categorical is not None:
+                fit_kwargs["categorical_feature"] = lgbm_categorical
+            model.fit(X_train_df_processed, np.ravel(Y_train_df_processed.values), **fit_kwargs)
+        else:
+            logger.info(
+                f"{self.log_prefix} FourMethods baseline training multi-output regressor "
+                f"with {Y_train_df_processed.shape[1]} outputs..."
+            )
+            logger.info(f"{self.log_prefix} {'-' * 71}")
+            model = self._build_multi_output_model(estimator_wrapper.model, n_outputs=Y_train_df_processed.shape[1])
+            try:
+                model.fit(X_train_df_processed, Y_train_df_processed)
+            except PermissionError as e:
+                if hasattr(model, "n_jobs") and getattr(model, "n_jobs", 1) != 1:
+                    logger.warning(
+                        f"{self.log_prefix} Multi-output parallel training failed, fallback to n_jobs=1. error: {e}"
+                    )
+                    model.set_params(n_jobs=1)
+                    model.fit(X_train_df_processed, Y_train_df_processed)
+                else:
+                    raise
+
+        logger.info(f"{self.log_prefix} FourMethods baseline model training completed!")
+        return model, None, None, selected_features
 
     def _create_model_instance(self, model_type: str, model_params: Dict[str, Any], log_params: bool = True):
         try:
@@ -453,6 +544,12 @@ class Trainer:
         # 训练集
         X_train_df = X_train.copy()
         Y_train_df = Y_train.copy()
+        if self._should_use_fourmethods_baseline_training():
+            return self._train_fourmethods_baseline(
+                X_train_df=X_train_df,
+                Y_train_df=Y_train_df,
+                categorical_features=categorical_features,
+            )
         # ------------------------------
         # 数据增强 + 特征选择
         # ------------------------------

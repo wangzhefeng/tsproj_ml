@@ -38,7 +38,7 @@ def resolve_freq_step_minutes(freq: str) -> float:
     if step_minutes > 24 * 60:
         raise ValueError(f"Frequency '{freq}' must not exceed 1 day for this project.")
 
-    return float(step_minutes)
+    return int(step_minutes)
 
 
 def resolve_samples_per_day(freq: str) -> int:
@@ -62,3 +62,22 @@ def resolve_samples_per_day(freq: str) -> int:
         )
 
     return int(quotient)
+
+
+
+
+# 测试代码 main 函数
+def main():
+    res = resolve_freq_step_minutes(freq="1min")
+    print(res)
+    res = resolve_freq_step_minutes(freq="5min")
+    print(res)
+    res = resolve_freq_step_minutes(freq="10min")
+    print(res)
+    res = resolve_freq_step_minutes(freq="1h")
+    print(res)
+    res = resolve_freq_step_minutes(freq="1d")
+    print(res)
+
+if __name__ == "__main__":
+    main()

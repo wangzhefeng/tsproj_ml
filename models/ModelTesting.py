@@ -4,11 +4,11 @@
 # * File        : ModelTesting.py
 # * Author      : Zhefeng Wang
 # * Email       : zfwang7@gmail.com
-# * Date        : 2026-02-25
-# * Version     : 1.0.022509
-# * Description : description
+# * Date        : 2026-03-29
+# * Version     : 1.0.032909
+# * Description : 生产环境滑窗测试模块
 # * Link        : link
-# * Requirement : 相关模块版本需求(例如: numpy >= 2.1.0)
+# * Requirement : pandas, numpy, scikit-learn
 # ***************************************************
 
 # python libraries
@@ -26,6 +26,7 @@ from sklearn.metrics import (
     mean_absolute_percentage_error,  # MAPE
 )
 
+from features.FeatureEngineering import FeatureEngineer
 from features.FeatureScalering import (
     FeatureScaler,
     TargetScaler,
@@ -59,23 +60,33 @@ class Tester:
         window_len = payload["window_len"]
         window = payload["window"]
 
-        # 滑窗数据分割
-        (X_train, Y_train,
-         X_test, Y_test,
-         df_history_train, df_history_test) = Tester._evaluate_split(
-            payload["X_train_history"],
-            payload["Y_train_history"],
+        # 滑窗数据分割：先切原始历史，再在窗口内构造训练标签，避免 Direct 标签跨入测试期
+        split_result = Tester._evaluate_split(
             payload["df_history"],
             window,
             horizon=horizon,
             window_len=window_len,
             log_prefix=log_prefix,
         )
-        if X_train is None:
+        if split_result is None:
             return {"window": window, "test_scores_df": None, "cv_plot_df": None}
+        df_history_train, df_history_test = split_result
+        build_result = Tester._build_window_train_xy(
+            args=args,
+            log_prefix=log_prefix,
+            df_history_train=df_history_train,
+            df_date_history=payload["df_date_history"],
+            df_weather_history=payload["df_weather_history"],
+            endogenous_features_with_target=payload["endogenous_features_with_target"],
+            target_feature=payload["target_feature"],
+            horizon=horizon,
+        )
+        if build_result is None:
+            return {"window": window, "test_scores_df": None, "cv_plot_df": None}
+        X_train, Y_train, target_output_features, categorical_features = build_result
         # 窗口目标特征处理
         Y_train = Y_train.to_frame() if isinstance(Y_train, pd.Series) else Y_train
-        Y_test = Y_test.to_frame() if isinstance(Y_test, pd.Series) else Y_test
+        y_test_raw = df_history_test[payload["target_feature"]].to_numpy()
         # ------------------------------
         # 窗口训练
         # ------------------------------
@@ -97,25 +108,26 @@ class Tester:
             Y_train=Y_train,
             feature_scaler=scaler,
             target_scaler=target_scaler,
-            categorical_features=payload["categorical_features"],
+            categorical_features=categorical_features,
         )
         # ------------------------------
         # 窗口预测
         # ------------------------------
+        df_future_for_test = Tester._build_test_future_frame(df_history_test)
         predictor = Forecaster(
             args=args,
-            horizon=min(horizon, len(X_test)),
+            horizon=min(horizon, len(df_future_for_test)),
             model=model,
             feature_scaler=scaler_testing,
             target_scaler=target_scaler_testing,
             df_history=df_history_train,
-            df_future=df_history_test.copy(),
+            df_future=df_future_for_test,
             df_date_future=payload["df_date_history"],
             df_weather_future=payload["df_weather_history"],
             endogenous_features=payload["endogenous_features_with_target"],
             target_feature=payload["target_feature"],
-            target_output_features=payload["target_output_features"],
-            categorical_features=payload["categorical_features"],
+            target_output_features=target_output_features,
+            categorical_features=categorical_features,
             selected_features=selected_features,
             log_prefix=log_prefix,
         )
@@ -126,42 +138,34 @@ class Tester:
         if len(y_pred) == 0:
             return {"window": window, "test_scores_df": None, "cv_plot_df": None}
         # 预测结果恢复到目标空间，用于评估
-        pred_target_columns = target_scaler_testing.get_prediction_target_columns(
-            args.pred_method,
-            payload["target_output_features"],
-        )
-        y_pred = target_scaler_testing.restore_predictions(y_pred, pred_target_columns)
-        # 始终评估主目标的一步预测
-        y_test_for_eval = target_scaler_testing.prepare_eval_target(
-            Y_test.iloc[:, 0].values,
-            [payload["target_output_features"][0]],
-        )
+        if target_scaler_testing is not None:
+            pred_target_columns = target_scaler_testing.get_prediction_target_columns(
+                args.pred_method,
+                target_output_features,
+            )
+            y_pred = target_scaler_testing.restore_predictions(
+                y_pred,
+                pred_target_columns,
+            )
+            # 始终评估主目标的一步预测
+            y_test_for_eval = target_scaler_testing.prepare_eval_target(
+                y_test_raw,
+                [target_output_features[0]],
+            )
+        else:
+            y_test_for_eval = np.asarray(y_test_raw).reshape(-1)
         # 对齐预测结果与评估标签长度
         if len(y_pred) != len(y_test_for_eval):
             min_len = min(len(y_pred), len(y_test_for_eval))
             y_pred = np.asarray(y_pred)[:min_len]
             y_test_for_eval = np.asarray(y_test_for_eval)[:min_len]
-        # 完整时间戳索引，用于窗口结果回填
-        cv_timestamp_full_df = pd.DataFrame(
-            {
-                "time": pd.date_range(
-                    payload["train_start_time"],
-                    payload["train_end_time"],
-                    freq=args.freq,
-                    inclusive="left",
-                )
-            }
-        )
         # 测试集评价指标
         eval_scores_window = Tester._evaluate_score(y_test_for_eval, y_pred, window, df_history_test, log_prefix=log_prefix)
         # 测试集预测数据
         cv_plot_df_window = Tester._evaluate_result(
             y_test_for_eval,
             y_pred,
-            window,
-            cv_timestamp_full_df,
-            horizon=horizon,
-            window_len=window_len,
+            df_history_test,
             log_prefix=log_prefix,
         )
 
@@ -187,8 +191,6 @@ class Tester:
 
     @staticmethod
     def _evaluate_split(
-        data_X: pd.DataFrame,
-        data_Y: pd.Series,
         df_history: pd.DataFrame,
         window: int,
         horizon: int,
@@ -199,7 +201,7 @@ class Tester:
         训练、测试数据集分割
         """
         # 滑窗数据分割索引
-        total_data_points = len(data_X)
+        total_data_points = len(df_history)
         train_start, train_end, test_start, test_end = Tester._evaluate_split_index(
             window, total_data_points, horizon, window_len
         )
@@ -212,24 +214,71 @@ class Tester:
                 f"test_start={test_start}, test_end={test_end}). "
                 f"Skipping this window."
             )
-            return None, None, None, None, None, None
+            return None
 
         # 滑窗数据分割
-        X_train = data_X.iloc[train_start:train_end]
-        Y_train = data_Y.iloc[train_start:train_end]
-        X_test = data_X.iloc[test_start:test_end+1]
-        Y_test = data_Y.iloc[test_start:test_end+1]
         df_history_train = df_history.iloc[train_start:train_end]
         df_history_test = df_history.iloc[test_start:test_end+1]
-        logger.info(f"{log_prefix} X_train.shape: {X_train.shape}, Y_train.shape: {Y_train.shape}")
-        logger.info(f"{log_prefix} X_test.shape: {X_test.shape}, Y_test.shape: {Y_test.shape}")
         logger.info(f"{log_prefix} df_history_train.shape: {df_history_train.shape}, df_history_test.shape: {df_history_test.shape}")
 
-        if X_train.empty or Y_train.empty or X_test.empty or Y_test.empty:
+        if df_history_train.empty or df_history_test.empty:
             logger.warning(f"{log_prefix} Empty dataframe in window {window} split. Skipping.")
-            return None, None, None, None, None, None
+            return None
         
-        return X_train, Y_train, X_test, Y_test, df_history_train, df_history_test
+        return df_history_train, df_history_test
+
+    @staticmethod
+    def _build_window_train_xy(
+        args,
+        log_prefix: str,
+        df_history_train: pd.DataFrame,
+        df_date_history: pd.DataFrame,
+        df_weather_history: pd.DataFrame,
+        endogenous_features_with_target: List[str],
+        target_feature: str,
+        horizon: int,
+    ):
+        """
+        在单个训练窗口内部构造特征和多步标签，避免标签跨入测试窗口。
+        """
+        feature_engineer = FeatureEngineer(args, log_prefix, verbose=False)
+        (
+            df_history_featured,
+            predictor_features,
+            target_output_features,
+            categorical_features,
+        ) = feature_engineer.create_features(
+            df_series=df_history_train,
+            df_date_history=df_date_history,
+            df_date_future=None,
+            df_weather_history=df_weather_history,
+            df_weather_future=None,
+            endogenous_features_with_target=endogenous_features_with_target,
+            target_feature=target_feature,
+            horizon=horizon,
+        )
+        df_history_featured = df_history_featured.dropna(subset=target_output_features)
+        if df_history_featured.empty:
+            logger.warning(f"{log_prefix} Empty featured training dataframe after target dropna. Skipping.")
+            return None
+
+        X_train, Y_train = feature_engineer.predictor_target_split(
+            df_series_featured=df_history_featured,
+            predictor_features=predictor_features,
+            target_output_features=target_output_features,
+        )
+        if X_train.empty or Y_train.empty:
+            logger.warning(f"{log_prefix} Empty X/Y after window feature split. Skipping.")
+            return None
+
+        return X_train, Y_train, target_output_features, categorical_features
+
+    @staticmethod
+    def _build_test_future_frame(df_history_test: pd.DataFrame):
+        """
+        测试预测阶段只能看到未来时间模板，不透传测试期真实 y。
+        """
+        return df_history_test[["time"]].copy()
 
     @staticmethod
     def _evaluate_score(
@@ -268,10 +317,7 @@ class Tester:
     def _evaluate_result(
         y_test: np.ndarray,
         y_pred: np.ndarray,
-        window: int,
-        cv_timestamp_df: pd.DataFrame,
-        horizon: int,
-        window_len: int,
+        df_history_test: pd.DataFrame,
         log_prefix: str,
     ):
         """
@@ -284,13 +330,8 @@ class Tester:
         # Data collection for plot
         cv_plot_df_window = pd.DataFrame()
         
-        total_data_points_ts_df = len(cv_timestamp_df)
-        _, _, test_start_ts_idx, test_end_ts_idx = Tester._evaluate_split_index(
-            window, total_data_points_ts_df, horizon, window_len
-        )
-        
         # Ensure the slice is valid and matches the length of y_pred/y_test
-        time_slice = cv_timestamp_df["time"].iloc[test_start_ts_idx:test_end_ts_idx + 1]
+        time_slice = df_history_test["time"]
         if len(time_slice) != len(y_pred):
             logger.warning(f"{log_prefix} Length mismatch for plotting data: time_slice ({len(time_slice)}) vs y_pred ({len(y_pred)}). Adjusting to min length.")
             min_len = min(len(time_slice), len(y_pred))

@@ -114,7 +114,7 @@ class ModelConfig:
 
     enable_time_since_features: bool = False
     time_since_columns: List[str] = field(default_factory=lambda: ["y"])
-    time_since_events: List[str] = field(default_factory=lambda: ["peak", "thoughl"])
+    time_since_events: List[str] = field(default_factory=lambda: ["peak", "trough"])
 
     enable_cyclical_features: bool = False
     cyclical_columns: List[str] = field(default_factory=lambda: ["minute"])

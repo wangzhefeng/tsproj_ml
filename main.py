@@ -124,19 +124,31 @@ class Model:
         self.forecast_end_time = future_time
         # ------------------------------
         # 模型测试、预测
-        # ------------------------------ 
+        # ------------------------------
         # 预测未来 1 天(24小时)的数据/数据划分长度/预测数据长度
         self.horizon = int(self.args.predict_days * self.n_per_day)
         # 测试窗口数据长度(训练+测试)
         self.window_len = int(self.args.window_days * self.n_per_day)
         # 测试滑动窗口数量, >=1, 1: 单个窗口
-        self.n_windows = int(self.args.history_days * self.n_per_day - self.window_len - self.horizon + 1) // self.horizon
+        # self.n_windows = int(self.args.history_days * self.n_per_day - self.window_len - self.horizon + 1) // self.horizon
+        self.n_windows = int(self.args.history_days * self.n_per_day - self.window_len) // self.horizon + 1
         self.args.horizon = self.horizon
         self.args.n_windows = self.n_windows
         self.args.n_per_day = self.n_per_day
         # ------------------------------
         # 模型训练、测试、预测结果保存路径
         # ------------------------------
+        pred_method_code_map = {
+            "univariate-single-multistep-direct-output": "usmdo",
+            "univariate-single-multistep-direct": "usmd",
+            "univariate-single-multistep-recursive": "usmr",
+            "univariate-single-multistep-direct-recursive": "usmdr",
+            "multivariate-single-multistep-recursive": "msmr",
+            "multivariate-single-multistep-direct": "msmd",
+            "multivariate-single-multistep-direct-recursive": "msmdr",
+        }
+        pred_method_code = pred_method_code_map.get(self.args.pred_method, str(self.args.pred_method).lower())
+        self.setting = f"{self.args.model_type}-{pred_method_code}"
         self.args.checkpoints_dir = Path(self.args.checkpoints_dir).joinpath(self.setting)
         self.args.checkpoints_dir.mkdir(parents=True, exist_ok=True)
         self.args.test_results_dir = Path(self.args.test_results_dir).joinpath(self.setting)
@@ -145,7 +157,7 @@ class Model:
         self.args.pred_results_dir.mkdir(parents=True, exist_ok=True)
         # ------------------------------
         # 日志打印
-        # ------------------------------ 
+        # ------------------------------
         logger.info(f"{self.log_prefix} {'#' * 85}")
         logger.info(f"{self.log_prefix} Prepare params...")
         logger.info(f"{self.log_prefix} {'#' * 85}")
@@ -199,9 +211,9 @@ class Model:
         model_trainer = Trainer(args=self.args, log_prefix=self.log_prefix)
         # 模型训练
         model, scaler, target_scaler, selected_features = model_trainer.train(
-            X_train = X_train, 
-            Y_train = Y_train, 
-            feature_scaler = scaler, 
+            X_train = X_train,
+            Y_train = Y_train,
+            feature_scaler = scaler,
             target_scaler = target_scaler,
             categorical_features = categorical_features,
         )
@@ -212,16 +224,12 @@ class Model:
 
         return model, scaler, target_scaler, selected_features
 
-    def test(self, 
-             df_history, 
-             X_train_history, 
-             Y_train_history, 
+    def test(self,
+             df_history,
              df_date_history,
              df_weather_history,
-             endogenous_features_with_target, 
-             target_feature, 
-             predictor_features,
-             target_output_features, 
+             endogenous_features_with_target,
+             target_feature,
              categorical_features):
         """
         模型滑窗测试
@@ -236,7 +244,7 @@ class Model:
         # 判断是否有足够的历史数据保证至少一个完整的测试窗口
         # ------------------------------
         if self.n_windows <= 0:
-            logger.warning(f"{self.log_prefix} Not enough data for testing with current window configuration (Total X points: {len(X_train_history)}")
+            logger.warning(f"{self.log_prefix} Not enough data for testing with current window configuration (Total history points: {len(df_history)}")
             logger.warning(f"{self.log_prefix} Window length: {self.window_len}, Horizon: {self.horizon}). No tests will be performed.")
             return test_scores_df, cv_plot_df
         # ------------------------------
@@ -261,14 +269,11 @@ class Model:
                 "horizon": self.horizon,
                 "window_len": self.window_len,
                 "window": window,
-                "X_train_history": X_train_history,
-                "Y_train_history": Y_train_history,
                 "df_history": df_history,
                 "df_date_history": df_date_history,
                 "df_weather_history": df_weather_history,
                 "endogenous_features_with_target": endogenous_features_with_target,
                 "target_feature": target_feature,
-                "target_output_features": target_output_features,
                 "categorical_features": categorical_features,
                 "train_start_time": self.train_start_time,
                 "train_end_time": self.train_end_time,
@@ -322,20 +327,20 @@ class Model:
         Tester.test_results_save(self.args, self.log_prefix, test_scores_df, cv_plot_df)
         logger.info(f"{self.log_prefix} Model Testing result saved in: {self.args.test_results_dir}")
         logger.info(f"{self.log_prefix} Model Testing runtime: {time.perf_counter() - test_start:.3f}s")
-        
-        return test_scores_df, cv_plot_df 
 
-    def forecast(self, 
-                 model, 
+        return test_scores_df, cv_plot_df
+
+    def forecast(self,
+                 model,
                  scaler_forecasting,
                  target_scaler_forecasting,
-                 df_history, 
-                 df_future, 
+                 df_history,
+                 df_future,
                  df_date_future,
                  df_weather_future,
-                 endogenous_features_with_target, 
-                 target_feature, 
-                 target_output_features, 
+                 endogenous_features_with_target,
+                 target_feature,
+                 target_output_features,
                  categorical_features,
                  selected_features=None):
         """
@@ -353,21 +358,21 @@ class Model:
                     df_future_prediction[series_id_col] = last_series_id.iloc[-1]
         # 模型预测
         predictor = Forecaster(
-            args = self.args,
-            horizon = self.horizon,
-            model = model, 
-            feature_scaler = scaler_forecasting,
-            target_scaler = target_scaler_forecasting,
-            df_history = df_history, 
-            df_future = df_future_prediction, 
-            df_date_future = df_date_future,
-            df_weather_future = df_weather_future,
-            endogenous_features = endogenous_features_with_target, 
-            target_feature = target_feature, 
-            target_output_features = target_output_features, 
-            categorical_features = categorical_features,
-            selected_features = selected_features,
-            log_prefix = self.log_prefix,
+            args=self.args,
+            horizon=self.horizon,
+            model=model,
+            feature_scaler=scaler_forecasting,
+            target_scaler=target_scaler_forecasting,
+            df_history=df_history,
+            df_future=df_future_prediction,
+            df_date_future=df_date_future,
+            df_weather_future=df_weather_future,
+            endogenous_features=endogenous_features_with_target,
+            target_feature=target_feature,
+            target_output_features=target_output_features,
+            categorical_features=categorical_features,
+            selected_features=selected_features,
+            log_prefix=self.log_prefix,
         )
         Y_pred = predictor._predict_by_method()
         # ------------------------------
@@ -377,20 +382,27 @@ class Model:
         logger.info(f"{self.log_prefix} Model Forecasting result save...")
         logger.info(f"{self.log_prefix} {'=' * 87}")
         # 模型预测结果收集
-        pred_target_columns = target_scaler_forecasting.get_prediction_target_columns(
-            self.args.pred_method,
-            target_output_features,
-        )
-        Y_pred = target_scaler_forecasting.restore_predictions(Y_pred, pred_target_columns)
-        df_future_prediction["predict_value"] = Y_pred
+        if target_scaler_forecasting is None:
+            pred_target_columns = list(target_output_features or [target_feature])
+            Y_pred = np.asarray(Y_pred).reshape(-1)[:len(df_future_prediction)]
+        else:
+            pred_target_columns = target_scaler_forecasting.get_prediction_target_columns(
+                self.args.pred_method,
+                target_output_features,
+            )
+            Y_pred = target_scaler_forecasting.restore_predictions(Y_pred, pred_target_columns)
+        df_future_prediction["predict_value"] = np.asarray(Y_pred).reshape(-1)[:len(df_future_prediction)]
         # 分位数预测结果（若启用）
         if getattr(predictor, "quantile_outputs", None):
             for q, q_pred in sorted(predictor.quantile_outputs.items(), key=lambda x: float(x[0])):
                 q_col = f"predict_q{int(round(float(q) * 100)):02d}"
-                q_arr = target_scaler_forecasting.restore_predictions(
-                    np.asarray(q_pred).reshape(-1),
-                    pred_target_columns,
-                ).reshape(-1)
+                if target_scaler_forecasting is None:
+                    q_arr = np.asarray(q_pred).reshape(-1)
+                else:
+                    q_arr = target_scaler_forecasting.restore_predictions(
+                        np.asarray(q_pred).reshape(-1),
+                        pred_target_columns,
+                    ).reshape(-1)
                 if len(q_arr) != len(df_future_prediction):
                     min_len = min(len(q_arr), len(df_future_prediction))
                     df_future_prediction.loc[df_future_prediction.index[:min_len], q_col] = q_arr[:min_len]
@@ -404,14 +416,18 @@ class Model:
         logger.info(f"{self.log_prefix} after forecast df_future_prediction: \n{df_future_prediction.head()}")
         logger.info(f"{self.log_prefix} after forecast df_future_prediction.shape: {df_future_prediction.shape}")
         # 模型预测结果保存
-        df_history_for_plot = target_scaler_forecasting.prepare_history_target_for_plot(
-            df_history,
-            [target_output_features[0]],
-        )
+        if target_scaler_forecasting is None:
+            history_target = target_feature if target_feature in df_history.columns else "y"
+            df_history_for_plot = df_history[["time", history_target]].rename(columns={history_target: "y"}).copy()
+        else:
+            df_history_for_plot = target_scaler_forecasting.prepare_history_target_for_plot(
+                df_history,
+                [target_output_features[0]],
+            )
         predictor.forecast_results_save(df_history_for_plot, df_future_prediction, self.n_per_day)
         logger.info(f"{self.log_prefix} Model Forecasting result saved in: {self.args.pred_results_dir}")
         logger.info(f"{self.log_prefix} Model Forecasting runtime: {time.perf_counter() - forecast_start:.3f}s")
-        
+
         return df_future_prediction
 
     def run(self):
@@ -422,8 +438,9 @@ class Model:
         logger.info(f"{self.log_prefix} {'#' * 90}")
         logger.info(f"{self.log_prefix} Model history and future data loading...")
         logger.info(f"{self.log_prefix} {'#' * 90}")
+        # 数据加载
         dataloader = DataLoader(
-            args=self.args, 
+            args=self.args,
             train_start_time=self.train_start_time,
             train_end_time=self.train_end_time,
             forecast_start_time=self.forecast_start_time,
@@ -437,11 +454,11 @@ class Model:
         logger.info(f"{self.log_prefix} {'#' * 90}")
         logger.info(f"{self.log_prefix} Model history data preprocessing...")
         logger.info(f"{self.log_prefix} {'#' * 90}")
-        (df_history, 
-         df_date_history, 
-         df_weather_history, 
-         endogenous_features_with_target, 
-         target_feature) = dataloader.process_history_data(input_data = input_data)
+        (df_history,
+         df_date_history,
+         df_weather_history,
+         endogenous_features_with_target,
+         target_feature) = dataloader.process_history_data(input_data=input_data)
         # ------------------------------
         # 特征工程
         # ------------------------------
@@ -454,32 +471,31 @@ class Model:
         # 特征预处理器
         verbose_logging = bool(getattr(self.args, "enable_step_logging", False))
         feature_engineer_history = FeatureEngineer(self.args, self.log_prefix, verbose=verbose_logging)
-        (df_history_featured, 
-         predictor_features, 
-         target_output_features, 
+        (df_history_featured,
+         predictor_features,
+         target_output_features,
          categorical_features) = feature_engineer_history.create_features(
-            df_series = df_history,
+            df_series=df_history,
             df_date_history=df_date_history,
             df_date_future=None,
             df_weather_history=df_weather_history,
             df_weather_future=None,
-            endogenous_features_with_target = endogenous_features_with_target,
-            target_feature = target_feature,
-            horizon = self.horizon,
+            endogenous_features_with_target=endogenous_features_with_target,
+            target_feature=target_feature,
+            horizon=self.horizon,
         )
         # 删除在构建目标输出时产生的缺失值（仅按目标列过滤，避免外生缺失导致样本被清空）
         df_history_featured = df_history_featured.dropna(subset=target_output_features)
         logger.info(f"{self.log_prefix} after dropna df_history_featured: \n{df_history_featured.head()}")
         logger.info(f"{self.log_prefix} after dropna df_history_featured.shape: {df_history_featured.shape}")
-        
         # 历史数据预测特征、目标特征分离
         logger.info(f"{self.log_prefix} {'=' * 87}")
         logger.info(f"{self.log_prefix} Model history data feature split...")
         logger.info(f"{self.log_prefix} {'=' * 87}")
         X_train_history, Y_train_history = feature_engineer_history.predictor_target_split(
-            df_series_featured = df_history_featured, 
-            predictor_features = predictor_features, 
-            target_output_features = target_output_features, 
+            df_series_featured=df_history_featured,
+            predictor_features=predictor_features,
+            target_output_features=target_output_features,
         )
         # ------------------------------
         # 模型测试
@@ -489,16 +505,12 @@ class Model:
             logger.info(f"{self.log_prefix} Model Testing...")
             logger.info(f"{self.log_prefix} {'#' * 90}")
             test_scores_df, cv_plot_df = self.test(
-                df_history = df_history,
-                X_train_history = X_train_history,
-                Y_train_history = Y_train_history,
-                df_date_history = df_date_history,
-                df_weather_history = df_weather_history,
-                endogenous_features_with_target = endogenous_features_with_target,
-                target_feature = target_feature,
-                predictor_features = predictor_features,
-                target_output_features = target_output_features,
-                categorical_features = categorical_features,
+                df_history=df_history,
+                df_date_history=df_date_history,
+                df_weather_history=df_weather_history,
+                endogenous_features_with_target=endogenous_features_with_target,
+                target_feature=target_feature,
+                categorical_features=categorical_features,
             )
         # ------------------------------
         # 模型预测
@@ -511,39 +523,39 @@ class Model:
             logger.info(f"{self.log_prefix} {'=' * 87}")
             logger.info(f"{self.log_prefix} Model Forecasting future data preprocessing...")
             logger.info(f"{self.log_prefix} {'=' * 87}")
-            (df_future, \
-             df_date_future, 
-             df_weather_future) = dataloader.process_future_data(input_data = input_data)
-            
+            (df_future,
+             df_date_future,
+             df_weather_future) = dataloader.process_future_data(input_data=input_data)
+
             # 模型训练
             logger.info(f"{self.log_prefix} {'=' * 87}")
             logger.info(f"{self.log_prefix} Model Training start...")
             logger.info(f"{self.log_prefix} {'=' * 87}")
             model, scaler_forecasting, target_scaler_forecasting, selected_features = self.train(
-                X_train = X_train_history, 
-                Y_train = Y_train_history, 
-                categorical_features = categorical_features,
-                mode = "forecast",
-                verbose = verbose_logging
+                X_train=X_train_history,
+                Y_train=Y_train_history,
+                categorical_features=categorical_features,
+                mode="forecast",
+                verbose=verbose_logging,
             )
-            
+
             # 模型预测
             logger.info(f"{self.log_prefix} {'=' * 87}")
             logger.info(f"{self.log_prefix} Model Forecasting start...")
             logger.info(f"{self.log_prefix} {'=' * 87}")
             df_future_predicted = self.forecast(
-                model = model,
-                scaler_forecasting = scaler_forecasting,
-                target_scaler_forecasting = target_scaler_forecasting,
-                df_history = df_history,
-                df_future = df_future,
-                df_date_future = df_date_future,
-                df_weather_future = df_weather_future,
-                endogenous_features_with_target = endogenous_features_with_target,
-                target_feature = target_feature,
-                target_output_features = target_output_features,
-                categorical_features = categorical_features, 
-                selected_features = selected_features,
+                model=model,
+                scaler_forecasting=scaler_forecasting,
+                target_scaler_forecasting=target_scaler_forecasting,
+                df_history=df_history,
+                df_future=df_future,
+                df_date_future=df_date_future,
+                df_weather_future=df_weather_future,
+                endogenous_features_with_target=endogenous_features_with_target,
+                target_feature=target_feature,
+                target_output_features=target_output_features,
+                categorical_features=categorical_features,
+                selected_features=selected_features,
             )
         logger.info(f"{self.log_prefix} Total runtime: {time.perf_counter() - run_start:.3f}s")
 

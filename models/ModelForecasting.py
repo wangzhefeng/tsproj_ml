@@ -199,6 +199,14 @@ class Forecaster:
         selected_categorical_features = [f for f in categorical_features if f in selected_predictor_features]
         return selected_predictor_features, selected_categorical_features
 
+    def _transform_features(self, X: pd.DataFrame, categorical_features: List[str]):
+        """
+        baseline 训练路径没有 feature scaler；此时预测阶段直接使用原始特征。
+        """
+        if self.feature_scaler is None:
+            return X.copy()
+        return self.feature_scaler.transform(X, categorical_features)
+
     @staticmethod
     def _resolve_block_size(args) -> int:
         explicit_block_size = int(getattr(args, "block_size", 0) or 0)
@@ -542,7 +550,7 @@ class Forecaster:
         logger.info(f"{self.log_prefix} after feature engineering X_test_future shape: {X_test_future.shape}")
         logger.info(f"{self.log_prefix} after feature engineering categorical_features: {categorical_features}")
         # 特征预处理
-        X_test_processed = self.feature_scaler.transform(X_test_future, categorical_features)
+        X_test_processed = self._transform_features(X_test_future, categorical_features)
         # 模型推理
         if len(X_test_processed) > 0:
             point_pred, quantile_preds = self._predict_point_and_quantiles(X_test_processed)
@@ -568,7 +576,7 @@ class Forecaster:
         X_forecast_input, categorical_features = self._build_direct_forecast_input(
             endogenous_features=self.endogenous_features
         )
-        X_test_processed = self.feature_scaler.transform(X_forecast_input, categorical_features)
+        X_test_processed = self._transform_features(X_forecast_input, categorical_features)
         point_pred, quantile_preds = self._predict_point_and_quantiles(X_test_processed)
         y_pred_multi_step = self._to_1d(point_pred[0] if np.asarray(point_pred).ndim > 1 else point_pred)
         if len(y_pred_multi_step) >= len(self.df_future):
@@ -625,7 +633,7 @@ class Forecaster:
             # 4.提取出当前预测步所需要的特征（最后一行）
             X_forecast_input = df_forecast_featured.reindex(columns=predictor_features).iloc[-1:]
             # 5.特征预处理（预测模式）
-            X_forecast_processed = self.feature_scaler.transform(X_forecast_input, categorical_features)
+            X_forecast_processed = self._transform_features(X_forecast_input, categorical_features)
             # self.feature_scaler.validate_features(X_forecast_processed, stage="prediction")
             # 6.模型预测
             point_pred, quantile_preds = self._predict_point_and_quantiles(X_forecast_processed)
@@ -664,7 +672,7 @@ class Forecaster:
             预测结果数组，形状为 (horizon,)
         """
         # 严格分块直接：每个块仅调用一次模型，取块长输出
-        block_size = min(self.args.lags) if self.args.lags else 1
+        block_size = self._resolve_block_size(self.args)
         logger.info(f"{self.log_prefix} block_size: {block_size}")
         y_preds = []
         quantile_store = {}
@@ -692,7 +700,7 @@ class Forecaster:
             )
             anchor_idx = max(len(self.df_history_for_lags) - 1, 0)
             X_forecast_input = df_forecast_featured.reindex(columns=predictor_features).iloc[anchor_idx:anchor_idx + 1]
-            X_forecast_processed = self.feature_scaler.transform(X_forecast_input, categorical_features)
+            X_forecast_processed = self._transform_features(X_forecast_input, categorical_features)
             point_pred, quantile_preds = self._predict_point_and_quantiles(X_forecast_processed)
             pred_vec = self._to_1d(point_pred[0] if np.asarray(point_pred).ndim > 1 else point_pred)
             take = min(block_size, remain, len(pred_vec))
@@ -944,7 +952,7 @@ class Forecaster:
             raw_pred = self.univariate_single_multi_step_recursive_forecast()
             logger.info(f"{self.log_prefix} USMR forecast completed, predicted {len(raw_pred)} steps.")
         elif self.args.pred_method == "univariate-single-multistep-direct-recursive":
-            logger.info(f"{self.log_prefix} Forecast method univariate_single_multi_step_direct_recursive_forecast(USMDR)")
+            logger.info(f"{self.log_prefix} Forecast method: univariate_single_multi_step_direct_recursive_forecast(USMDR)")
             logger.info(f"{self.log_prefix} {'-' * 60}")
             raw_pred = self.univariate_single_multi_step_direct_recursive_forecast()
             logger.info(f"{self.log_prefix} USMDR forecast completed, predicted {len(raw_pred)} steps.")
@@ -1012,6 +1020,13 @@ class Forecaster:
                     y_trues_df_plot = history_before_future.tail(2 * n_per_day).copy()
             else:
                 y_trues_df_plot = df_history_plot.tail(2 * n_per_day).copy()
+        # 保留历史上下文，便于生产问题定位
+        if df_history is not None and not df_history.empty:
+            df_history.copy().to_csv(
+                self.args.pred_results_dir.joinpath("history_context.csv"),
+                encoding="utf_8_sig",
+                index=False,
+            )
         # 拼接可视化数据：最近两天历史 + 未来一天预测
         history_part = pd.DataFrame()
         if not y_trues_df_plot.empty:
@@ -1031,10 +1046,10 @@ class Forecaster:
             )
         import matplotlib.pyplot as plt
         plt.figure(figsize=(25, 8))
-        if not y_trues_df_plot.empty and 'y' in y_trues_df_plot.columns:
-            plt.plot(y_trues_df_plot["time"], y_trues_df_plot["y"], label='Trues', lw=2.0)
-        if not df_future.empty and 'predict_value' in df_future.columns:
-            plt.plot(df_future["time"], df_future["predict_value"], label='Preds', lw=2.0, ls="-.")
+        if not y_trues_df_plot.empty and "y" in y_trues_df_plot.columns:
+            plt.plot(y_trues_df_plot["time"], y_trues_df_plot["y"], label="Trues", lw=2.0)
+        if not df_future.empty and "predict_value" in df_future.columns:
+            plt.plot(df_future["time"], df_future["predict_value"], label="Preds", lw=2.0, ls="-.")
         plt.xlabel("Time", fontsize=12)
         plt.ylabel("Value", fontsize=12)
         plt.title(f"模型预测预测--{self.args.pred_method}", fontsize=14)
@@ -1042,8 +1057,8 @@ class Forecaster:
         plt.grid(True, alpha=1.0)
         plt.tight_layout()
         # plt.xticks(rotation=45)
-        plt.savefig(self.args.pred_results_dir.joinpath('prediction.png'), dpi=300, bbox_inches='tight')
-        # plt.show();
+        plt.savefig(self.args.pred_results_dir.joinpath("prediction.png"), dpi=300, bbox_inches="tight")
+        plt.close()
 
 
 

@@ -28,6 +28,14 @@ from utils.log_util import logger
 LOGGING_LABEL = Path(__file__).name[:-3]
 
 
+UNIVARIATE_PRED_METHODS = {
+    "univariate-single-multistep-direct-output",
+    "univariate-single-multistep-direct",
+    "univariate-single-multistep-recursive",
+    "univariate-single-multistep-direct-recursive",
+}
+
+
 class DataLoader:
     
     def __init__(self, 
@@ -43,6 +51,9 @@ class DataLoader:
         self.forecast_start_time = forecast_start_time
         self.forecast_end_time = forecast_end_time
         self.log_prefix = log_prefix
+
+    def _is_univariate_method(self) -> bool:
+        return str(getattr(self.args, "pred_method", "")).lower() in UNIVARIATE_PRED_METHODS
 
     def load_data(self) -> Dict:
         """
@@ -136,17 +147,21 @@ class DataLoader:
             df (pd.DataFrame): 时间序列数据
             col_ts (str): 原时间戳列
         """
-        if df is not None:
-            # 数据拷贝
-            df_processed = copy.deepcopy(df)
-            # 转换时间戳类型
-            df_processed[col_ts] = pd.to_datetime(df_processed[col_ts])
-            # del df_processed[ts_col]
-            # 去除重复时间戳
-            df_processed.drop_duplicates(subset=col_ts, keep="last", inplace=True, ignore_index=True)
-            return df_processed
-        else:
+        if df is None:
             return df
+        if col_ts is None:
+            raise ValueError(f"{self.log_prefix} timestamp column is required for time series preprocessing.")
+        if col_ts not in df.columns:
+            raise ValueError(f"{self.log_prefix} timestamp column '{col_ts}' does not exist in dataframe.")
+
+        # 数据拷贝
+        df_processed = copy.deepcopy(df)
+        # 转换时间戳类型
+        df_processed[col_ts] = pd.to_datetime(df_processed[col_ts])
+        # del df_processed[ts_col]
+        # 去除重复时间戳
+        df_processed.drop_duplicates(subset=col_ts, keep="last", inplace=True, ignore_index=True)
+        return df_processed
 
     def __process_target_series(self, df_template: pd.DataFrame, df_series: pd.DataFrame, col_ts: str, col_numeric: List, col_categorical: List, col_drop: List):
         """
@@ -206,6 +221,13 @@ class DataLoader:
         logger.info(f"{self.log_prefix} df_history_template shape: {df_history_template.shape}")
         # 数据预处理：目标时间序列特征
         df_history_series = self.__process_df_timestamp(df=input_data["target_series"], col_ts=self.args.target_ts_feat)
+        self.args.target_series_numeric_features = [
+            col 
+            for col in df_history_series.columns 
+            if col not in [self.args.target, self.args.target_ts_feat] + \
+            self.args.target_series_categorical_features + \
+            self.args.target_series_drop_features
+        ]
         logger.info(f"{self.log_prefix} after __process_df_timestamp df_history_series: \n{df_history_series.head()}")
         logger.info(f"{self.log_prefix} after __process_df_timestamp df_history_series shape: {df_history_series.shape}")
         df_history, other_endogenous_features, target_feature = self.__process_target_series(
@@ -247,6 +269,17 @@ class DataLoader:
         logger.info(f"{self.log_prefix} after __process_target_series df_history shape: {df_history.shape}")
         # 所有内生变量(包含目标特征 y)
         endogenous_features_with_target = other_endogenous_features + [target_feature] if target_feature else other_endogenous_features
+        if self._is_univariate_method():
+            if not target_feature or target_feature not in df_history.columns:
+                raise ValueError(f"{self.log_prefix} univariate prediction requires target feature in history data.")
+            df_history = df_history[["time", target_feature]].copy()
+            if target_feature != "y":
+                df_history = df_history.rename(columns={target_feature: "y"})
+            target_feature = "y"
+            endogenous_features_with_target = ["y"]
+            logger.info(
+                f"{self.log_prefix} univariate pred_method detected; history data restricted to ['time', 'y']."
+            )
         logger.info(f"{self.log_prefix} endogenous_features_with_target: {endogenous_features_with_target}")
         logger.info(f"{self.log_prefix}                  target_feature: {target_feature}")
         # 特征工程：日期类型(节假日、特殊事件)特征

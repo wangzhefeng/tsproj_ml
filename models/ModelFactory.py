@@ -6,9 +6,9 @@
 # * Email       : zfwang7@gmail.com
 # * Date        : 2026-02-11
 # * Version     : 1.0.021110
-# * Description : description
+# * Description : 生产环境模型工厂
 # * Link        : link
-# * Requirement : 相关模块版本需求(例如: numpy >= 2.1.0)
+# * Requirement : lightgbm, catboost, pandas, numpy
 # ***************************************************
 
 # python libraries
@@ -326,8 +326,8 @@ class CatBoostModel(BaseModel):
         "learning_rate": 0.05,
         "depth": 6,
         "verbose": False,
-        "random_state": 42,
-        "thread_count": -1,
+        "random_seed": 42,
+        "thread_count": 1,
         "allow_writing_files": False,
     }
 
@@ -542,47 +542,7 @@ class ModelFactory:
 
 # 测试代码 main 函数
 def main():
-    import numpy as np
-    import pandas as pd
-    from sklearn.model_selection import train_test_split
-    
-    # 创建示例数据
-    np.random.seed(42)
-    X = pd.DataFrame(np.random.randn(1000, 10), columns=[f'feature_{i}' for i in range(10)])
-    y = pd.Series(np.random.randn(1000), name='target')
-    
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
-    
-    # 测试不同模型
-    for model_type in ['lightgbm', 'xgboost', 'catboost']:
-        print(f"\n测试 {model_type} 模型:")
-        print("=" * 50)
-        
-        # 创建模型
-        params = {'n_estimators': 100, 'learning_rate': 0.1}
-        model = ModelFactory.create_model(model_type, params)
-        
-        # 训练
-        model.fit(X_train, y_train, eval_set=(X_test, y_test))
-        
-        # 预测
-        y_pred = model.predict(X_test)
-        
-        # 评估
-        from sklearn.metrics import mean_squared_error, mean_absolute_error
-        mse = mean_squared_error(y_test, y_pred)
-        mae = mean_absolute_error(y_test, y_pred)
-        
-        print(f"MSE: {mse:.4f}")
-        print(f"MAE: {mae:.4f}")
-        
-        # 特征重要性
-        importance = model.get_feature_importance()
-        if importance is not None:
-            print(f"前5个重要特征:")
-            top_features = np.argsort(importance)[-5:][::-1]
-            for i, idx in enumerate(top_features, 1):
-                print(f"  {i}. {X.columns[idx]}: {importance[idx]:.4f}")
+    pass
 
 if __name__ == "__main__":
     main()

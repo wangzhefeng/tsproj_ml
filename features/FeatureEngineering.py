@@ -338,7 +338,7 @@ class EndogenousFeatureEngineer:
         # 生成的多步预测目标
         self.target_output_features = []
     
-    def extend_direct_multi_step_targets(self, df: pd.DataFrame, target: str, horizon: int):
+    def extend_direct_multi_step_targets(self, df: pd.DataFrame, target: str, horizon: int, start_step: int = 0):
         """
         为多步直接预测创建未来多步目标
         
@@ -354,7 +354,7 @@ class EndogenousFeatureEngineer:
         if target in df_copy.columns:
             # shift features building
             shift_target_features = []
-            for h in range(0, horizon):
+            for h in range(start_step, start_step + horizon):
                 shifted_col_name = f"{target}_shift_{h}"
                 df_copy[shifted_col_name] = df_copy[target].shift(-h)
                 shift_target_features.append(shifted_col_name)
@@ -1010,6 +1010,7 @@ class FeatureEngineer:
                 df = df_series_featured,
                 target = target_feature,
                 horizon = horizon,
+                start_step = 1,
             )
             if self.verbose:
                 logger.info(f"{self.log_prefix} after extend_direct_multi_step_targets df_series_featured: \n{df_series_featured.head()}")
@@ -1044,6 +1045,7 @@ class FeatureEngineer:
                 df = df_series_featured,
                 target = target_feature,
                 horizon = horizon,
+                start_step = 1,
             )
             if self.verbose:
                 logger.info(f"{self.log_prefix} after extend_direct_multi_step_targets df_series_featured: \n{df_series_featured.head()}")

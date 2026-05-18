@@ -472,6 +472,8 @@ class FeatureScaler:
                     continue
                 # 为每组创建独立的归一化器
                 self.feature_groups_scalers[group_name] = clone(self.scaler)
+                for col in existing_features:
+                    X_processed[col] = X_processed[col].astype(float)
                 X_processed.loc[:, existing_features] = self.feature_groups_scalers[group_name].fit_transform(X_processed[existing_features])
                 logger.info(f"{self.log_prefix} Scaled {group_name}: {len(existing_features)} features")
         else:
@@ -479,6 +481,8 @@ class FeatureScaler:
             logger.info(f"{self.log_prefix} Using unified scaling strategy...")
             numeric_features = [col for col in X_processed.columns if col not in categorical_features]
             if numeric_features:
+                for col in numeric_features:
+                    X_processed[col] = X_processed[col].astype(float)
                 X_processed.loc[:, numeric_features] = self.scaler.fit_transform(X_processed[numeric_features])
                 logger.info(f"{self.log_prefix} Scaled {len(numeric_features)} numeric features")
         
@@ -500,12 +504,16 @@ class FeatureScaler:
                 existing_features = [f for f in features if f in X_processed.columns]
                 if not existing_features:
                     continue
+                for col in existing_features:
+                    X_processed[col] = X_processed[col].astype(float)
                 X_processed.loc[:, existing_features] = self.feature_groups_scalers[group_name].transform(X_processed[existing_features])
         else:
             # 统一归一化
             if self.scaler is not None:
                 numeric_features = [col for col in X_processed.columns if col not in categorical_features]
                 if numeric_features:
+                    for col in numeric_features:
+                        X_processed[col] = X_processed[col].astype(float)
                     X_processed.loc[:, numeric_features] = self.scaler.transform(X_processed[numeric_features])
         
         return X_processed

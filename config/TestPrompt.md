@@ -4,7 +4,7 @@
 
 ### 数据目录
 
-* `./dataset/electricity_work/demand_load/lingang_A`
+* `./dataset/aidc_electricity/demand_load/lingang_A`
 
 ### 数据预处理
 

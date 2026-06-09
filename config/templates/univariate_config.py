@@ -23,7 +23,7 @@ class ModelConfig:
     # ------------------------------
     # 目标时间序列配置
     # ------------------------------
-    data_dir: str = "./dataset/electricity_work/2026-03-11/demand_load/lingang_A"
+    data_dir: str = "./dataset/aidc_electricity/2026-03-11/demand_load/lingang_A"
     data_path: str = "AIDC_A_dataset.csv"
     freq: str = "5min"
     target_ts_feat: str = "count_data_time"

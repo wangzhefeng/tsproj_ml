@@ -31,7 +31,7 @@ class ModelConfig:
     # ------------------------------
     # 目标时间序列配置
     # ------------------------------
-    data_dir: str = "./dataset/aidc_electricity_computility"
+    data_dir: str = "./dataset/aidc_electricity_computility/electricity_computility/add_training_jobs/"
     data_path: str = "A3_F2_201_A_dataset_new.csv"
     freq: str = "5min"
     target_ts_feat: str = "time"

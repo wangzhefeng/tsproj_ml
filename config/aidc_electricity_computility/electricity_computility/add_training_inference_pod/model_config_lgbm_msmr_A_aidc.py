@@ -30,7 +30,7 @@ class ModelConfig:
     # ------------------------------
     # 目标时间序列配置
     # ------------------------------
-    data_dir: str = "./dataset/aidc_electricity_computility/add_training_inference_pod/"
+    data_dir: str = "./dataset/aidc_electricity_computility/electricity_computility/add_training_inference_pod/"
     data_path: str = "dataset_electricity_with_computility_A.csv"
     freq: str = "5min"
     target_ts_feat: str = "time"

@@ -1,109 +1,107 @@
 # tsproj-ml
 
-基于机器学习模型（LightGBM / XGBoost / CatBoost）的时间序列预测项目，支持单变量/多变量、多步直接/递归/混合递归预测。
+基于机器学习回归器的时间序列多步预测项目。当前主链路围绕
+LightGBM / XGBoost / CatBoost 构建，同时在模型工厂层保留 RandomForest
+支持；支持单变量/多变量、多步直接输出、direct、recursive 和
+direct-recursive 分块预测。
 
-项目核心目标：
-- 用统一的数据与特征工程流程，支持多种预测策略快速切换。
-- 同时支持离线测试（滑窗验证）和未来区间预测（forecast）。
-- 支持日期特征、天气特征、滞后特征和可选高级统计特征。
+本文档按当前代码整理，未使用 `docs/` 和 `logs/` 目录中的历史材料作为事实来源。
 
-## 1. 项目能力概览
+## 当前能力
 
-当前实现的预测方法（`pred_method`）共 7 种：
+预测策略由 `pred_method` 控制：
 
-1. `univariate-single-multistep-direct-output` (USMDO)
-2. `univariate-single-multistep-direct` (USMD)
-3. `univariate-single-multistep-recursive` (USMR)
-4. `univariate-single-multistep-direct-recursive` (USMDR)
-5. `multivariate-single-multistep-direct` (MSMD)
-6. `multivariate-single-multistep-recursive` (MSMR)
-7. `multivariate-single-multistep-direct-recursive` (MSMDR)
+| 缩写 | `pred_method` | 说明 |
+|---|---|---|
+| USMDO | `univariate-single-multistep-direct-output` | 单变量，每个未来时间点直接输出一步预测 |
+| USMD | `univariate-single-multistep-direct` | 单变量，一个多输出模型直接预测整个 horizon |
+| USMR | `univariate-single-multistep-recursive` | 单变量，一步模型递归回填 |
+| USMDR | `univariate-single-multistep-direct-recursive` | 单变量，按块 direct，块间递归回填 |
+| MSMD | `multivariate-single-multistep-direct` | 多变量，一个多输出模型直接预测目标 horizon |
+| MSMR | `multivariate-single-multistep-recursive` | 多变量递归预测目标，其他内生变量默认持久性回填 |
+| MSMDR | `multivariate-single-multistep-direct-recursive` | 多变量按块 direct，块间递归回填 |
 
-支持模型：
-- LightGBM（默认）
-- XGBoost
-- CatBoost
-- 可选集成（stacking/averaging/weighted/blending）
+主要能力：
 
-## 2. 项目结构
+- 树模型主链路：`lightgbm` / `xgboost` / `catboost`。
+- 工厂层额外支持：`randomforest` / `rf`。
+- 点预测与分位数预测：`predict_type="point"` 或 `"quantile"`。
+- 多输出训练策略：`multioutput`、`regressor_chain`，以及 direct 专用的逐 horizon 训练器。
+- 可选模型融合：`averaging`、`weighted`、`stacking`、`blending`。
+- 可选数据增强、特征选择、目标/特征缩放、自动学习率、`RandomizedSearchCV` + `TimeSeriesSplit` 调参。
+- 滑窗测试支持训练窗口异常值局部修复，测试真实值不被清洗。
+- 预测输出保存历史上下文和预测绘图拼接数据，便于生产问题定位。
+
+## 项目结构
 
 ```text
 tsproj_ml/
-├── main.py                      # 本地开发入口（VSCode 直接运行）
-├── run.py                       # CLI 入口（支持 config + 参数覆盖）
-├── pyproject.toml               # 项目依赖定义（uv）
+├── main.py                      # 主流程入口，包含 Model.run()
+├── run.py                       # CLI 入口，加载配置并应用参数覆盖
+├── pyproject.toml               # uv 依赖定义，Python == 3.10.11
 ├── config/
-│   ├── model_config.py          # 通用配置
-│   └── model_config_*           # 不同模型/策略配置变体
+│   ├── templates/               # 单变量/多变量配置模板
+│   ├── aidc_electricity_computility/
+│   └── ETT-small/
 ├── data_provider/
-│   ├── data_loader.py           # 数据加载与历史/未来时间轴对齐
-│   └── outlier_process.py       # 异常值处理工具
+│   ├── data_loader.py           # 数据读取、时间轴构造、历史/未来切片
+│   ├── outlier_handling.py      # 滑窗训练段异常处理
+│   └── outlier_process.py
 ├── features/
-│   ├── FeatureEngineering.py    # 外生/内生/高级特征工程
-│   ├── FeatureScalering.py      # 数值缩放与类别特征处理
-│   ├── FeatureSelection.py      # 特征选择工具
-│   └── DataAugment.py           # 数据增强占位
+│   ├── FeatureEngineering.py    # 日期时间、日期类型、天气、滞后、高级特征
+│   ├── FeatureScalering.py      # 特征/目标缩放与逆变换
+│   ├── FeatureSelection.py      # 训练集特征选择
+│   └── DataAugment.py           # 训练集数据增强
 ├── models/
-│   ├── ModelFactory.py          # 模型工厂
-│   ├── ModelTraining.py         # 训练与可选调参
-│   ├── ModelTesting.py          # 滑窗评估与指标计算
-│   ├── ModelForecasting.py      # 多策略预测逻辑
-│   ├── ModelEnsemble*.py        # 集成模型逻辑
-│   └── ModelSaveLoad.py         # 模型保存/加载
-├── utils/
-│   └── log_util.py              # 日志工具
-└── saved_results/               # 输出目录（模型、测试、预测结果）
+│   ├── ModelFactory.py          # 模型工厂和模型封装
+│   ├── ModelTraining.py         # 训练、调参、分位数、融合
+│   ├── ModelTesting.py          # 滑窗测试与指标保存
+│   ├── ModelForecasting.py      # 7 种预测策略
+│   ├── ModelEnsemble.py         # 融合模型
+│   ├── ModelSaveLoad.py         # pickle 保存/加载
+│   └── losses.py, learning_rate.py
+├── scripts/                     # 批量配置生成和运行脚本
+└── utils/
+    ├── frequency.py             # pandas 频率解析
+    └── log_util.py              # 日志器
 ```
 
-## 3. 数据要求
+运行产物默认写入 `saved_results/`，日志默认写入 `logs/`；这两个目录通常不作为源码事实来源。
 
-在配置中由以下参数定义输入：
-- `data_dir`: 数据目录
-- `data_path`: 目标序列文件
-- `target_ts_feat`: 时间列名
-- `target`: 预测目标列名
-- `freq`: 时间频率，使用 pandas 固定频率字符串，例如 `5min`、`15min`、`1h`、`1D`
+## 核心流程
 
-可选外生数据：
-- 日期类型数据：`date_history_path`, `date_future_path`
-- 气象数据：`weather_history_path`, `weather_future_path`
+`main.Model.run()` 是当前主线：
 
-## 4. 核心流程
+1. `DataLoader.load_data()` 读取目标序列、日期外生、天气外生。
+2. `DataLoader.process_history_data()` 根据 `now_time/history_days/freq` 构造历史时间轴，并把目标列统一映射为 `y`。
+3. 单变量策略只保留 `time + y`；多变量策略保留配置中的其他内生变量。
+4. `FeatureEngineer.create_features()` 生成外生、滞后和可选高级特征，并构造多步目标列。
+5. 若 `is_testing=True`，`Tester._window_test()` 做滑窗验证，可按窗口并行。
+6. 若 `is_forecasting=True`，`Trainer.train()` 用全历史训练，`Forecaster._predict_by_method()` 推理未来区间。
+7. 测试、模型、预测结果分别保存到配置指定目录。
 
-`main.py` 中主流程：
+未来预测阶段只构造未来时间模板和未来外生特征，不读取未来真实目标值；递归类策略需要的目标值由预测结果逐步回填。
 
-1. 读取配置（`config/model_config.py` 或变体）
-2. 加载并对齐历史/未来数据（`DataLoader`）
-3. 特征工程（`FeatureEngineer`）
-4. 训练集特征/目标拆分
-5. 可选滑窗测试（`is_testing=True`）
-6. 可选未来预测（`is_forecasting=True`）
-7. 输出结果到 `saved_results/`
+## 快速开始
 
-## 5. 快速开始（推荐使用 uv）
-
-### 5.1 安装依赖并创建虚拟环境
+安装依赖：
 
 ```bash
 uv sync
 ```
 
-> `uv sync` 会根据 `pyproject.toml` 和 `uv.lock` 同步当前项目环境。
-
-### 5.2 运行方式
-
-方式 A：本地开发（VSCode）
+本地开发入口：
 
 ```bash
-uv run python main.py
+uv run python main.py --config-module config.templates.univariate_config
 ```
 
-方式 B：CLI 运行（基于配置模块）
+CLI 入口：
 
 ```bash
 uv run python run.py \
-  --config-module config.model_config_lgbm_usmd_A \
-  --config-class ModelConfig_univariate \
+  --config-module config.templates.univariate_config \
+  --config-class ModelConfig \
   --model-type lightgbm \
   --pred-method univariate-single-multistep-direct \
   --is-testing 1 \
@@ -111,77 +109,140 @@ uv run python run.py \
   --now-time 2025-12-27T00:00:00
 ```
 
-方式 C：脚本运行（模型测试）
+运行真实项目配置时，优先从 `config/README.md` 选择具体配置模块。注意：
+`scripts/run_model_test.sh` 和 `scripts/template.sh` 当前默认值仍指向旧模块名
+`config.univariate_config` / `ModelConfig_univariate`，直接运行前建议通过环境变量覆盖：
 
 ```bash
+CONFIG_MODULE=config.templates.univariate_config \
+CONFIG_CLASS=ModelConfig \
+MODEL_TYPE=lightgbm \
+PRED_METHOD=univariate-single-multistep-direct \
 bash scripts/run_model_test.sh
 ```
 
-切换模型/配置示例：
+## 数据契约
 
-```bash
-CONFIG_MODULE=config.model_config_xgb_usmd_A MODEL_TYPE=xgboost bash scripts/run_model_test.sh
+核心配置字段：
+
+| 字段 | 含义 |
+|---|---|
+| `data_dir` | 数据目录，会在运行时转为 `Path` |
+| `data_path` | 目标序列 CSV 文件名 |
+| `target_ts_feat` | 目标序列时间列 |
+| `target` | 目标值列，进入主链路后映射为 `y` |
+| `freq` | pandas 固定频率，如 `5min`、`15min`、`1h` |
+| `now_time` | 预测基准时间 |
+| `history_days` | 历史窗口天数 |
+| `predict_days` | 预测未来天数 |
+| `window_days` | 滑窗测试的训练+测试窗口天数 |
+
+可选外生输入：
+
+- 日期类型：`date_history_path`、`date_future_path`、`date_ts_feat`、`datetype_features`
+- 天气：`weather_history_path`、`weather_future_path`、`weather_ts_feat`、`weather_features`
+- 其他内生变量：由 `target_series_numeric_features` / `target_series_categorical_features` / `target_series_drop_features` 控制；历史处理时会自动排除时间列、目标列和 drop 列。
+
+## 关键配置
+
+运行模式：
+
+- `is_testing`: 是否执行滑窗测试。
+- `is_forecasting`: 是否训练全历史并预测未来。
+- `max_test_windows`: 可选，只跑前 N 个测试窗口做快速验证。
+- `test_window_stride`: 可选，滑窗抽样步长。
+
+特征与预处理：
+
+- `enable_datetime_features`
+- `enable_date_features`
+- `enable_weather_features`
+- `enable_lags_features`
+- `enable_advanced_features`
+- `scale_features` / `feature_scaler_type`
+- `scale_target` / `target_scaler_type` / `inverse_target`
+- `encode_categorical_features`
+
+训练增强：
+
+- `enable_data_augmentation`
+- `enable_feature_selection`
+- `enable_auto_learning_rate`
+- `perform_tuning`
+- `enable_ensemble`
+- `predict_type="quantile"` + `quantiles`
+- `enable_global_training` + `series_id_feature`
+
+并行与性能：
+
+- `window_parallel_workers`
+- `multi_output_n_jobs`
+- `quantile_parallel_workers`
+- `ensemble_parallel_workers`
+- `model_thread_count`
+- `block_size`
+
+## 输出结构
+
+`<setting>` 当前由 `{model_type}-{pred_method_code}` 组成，例如 `lightgbm-usmd`。
+
+```text
+saved_results/
+  pretrained_models/<setting>/
+    model.pkl
+    target_scaler.pkl              # 仅目标缩放器已 fit 时保存
+  results_test/<setting>/
+    test_scores_df.csv
+    cv_plot_df.csv
+    train_outlier_report.csv
+    test_prediction.png            # 有有效预测列时保存
+  results_forecast/<setting>/
+    prediction.csv
+    prediction.png
+    history_context.csv
+    prediction_plot_concat.csv
 ```
 
-## 6. 关键配置说明（`config/model_config.py`）
+`prediction.csv` 基础列为 `time,predict_value`；分位数预测会额外输出
+`predict_q10`、`predict_q50`、`predict_q90` 这类列，实际列由 `quantiles` 决定。
 
-重点字段：
-- 时间与窗口：`history_days`, `predict_days`, `window_days`
-- 预测策略：`pred_method`
-- 模型类型：`model_type`（`lightgbm`/`xgboost`/`catboost`）
-- 特征开关：
-  - `enable_datetime_features`
-  - `enable_date_features`
-  - `enable_weather_features`
-  - `enable_lags_features`
-  - `enable_advanced_features`
-- 训练模式：
-  - `is_testing`
-  - `is_forecasting`
-- 滑窗测试训练集异常处理：
-  - `enable_train_outlier_handling`：默认 `False`，开启后只清洗每个滑窗的训练段目标列。
-  - `high_outlier_threshold` / `high_outlier_max_run_points`：识别短连续高值异常。
-  - `drop_outlier_max_run_points` / `drop_rebound_min_abs_diff`：识别短时下探后快速回弹异常。
+## 常见边界
 
-训练集异常处理不会修改测试段真实 `y`，因此 `test_scores_df.csv` 的指标仍基于原始测试目标。
+- 当前没有 `tests/` 目录，文档变更可用编译检查和脚本 dry-run 类方式验证。
+- `main.py` 的默认配置模块是 `config.model_config_cab_usmd_A_aidc`，该路径在当前源码树中不一定存在；日常运行建议显式传 `--config-module`。
+- `run.py` 的默认配置模块和类名也是旧值，实际使用时应显式传 `config.templates.*` 或具体项目配置。
+- 配置文件是 Python dataclass，不是 JSON/YAML；新增配置优先复制 `config/templates/`。
+- `now_time` 会被规整到整点作为历史结束/预测开始，历史区间为 `[now_time - history_days, now_time)`，预测区间为 `[now_time, now_time + predict_days)`。
+- 分位数预测训练多个子模型；点预测融合只在 `predict_type="point"` 时生效。
+- 多变量递归类方法对非目标内生变量目前主要采用持久性回填，不等同于为每个内生变量单独建模。
 
-示例（常用组合）：
-- 只做滑窗验证：`is_testing=True`, `is_forecasting=False`
-- 只做未来预测：`is_testing=False`, `is_forecasting=True`
-- 都执行：`is_testing=True`, `is_forecasting=True`
+## 开发与维护注意事项
 
-## 7. 输出说明
+- 项目事实以当前代码为准；更新文档时不要把 `docs/` 或 `logs/` 中的历史内容当作当前实现。
+- 运行入口、配置模块名、输出目录和脚本默认值容易漂移，修改前应重新核对 `main.py`、`run.py`、`config/templates/`、`scripts/`。
+- 配置字段、命令参数、模型类型和预测策略名保持英文；中文用于解释语义和边界。
+- 如果发现脚本、README、配置和代码不一致，优先按代码写清楚现状，不要为了文档一致性假定代码已经修好。
 
-默认输出目录：
-- 模型：`saved_results/pretrained_models/<setting>/model.pkl`
-- 测试：`saved_results/results_test/<setting>/`
-  - `test_scores_df.csv`
-  - `cv_plot_df.csv`
-  - `train_outlier_report.csv`
-  - `test_prediction.png`
-- 预测：`saved_results/results_forecast/<setting>/`
-  - `prediction.csv`
-  - `prediction.png`
+## 日志
 
-其中 `<setting>` 由 `model_type-data-pred_method` 组成。
+日志由 `utils/log_util.py` 创建。调用方通常先设置 `LOG_NAME`，日志写入
+`logs/<LOG_NAME>/`；日志级别由 `SERVICE_LOG_LEVEL` 控制，默认 `INFO`。
 
-## 8. 常见问题
+## 验证建议
 
-1. `main.py` 和 `run.py` 有什么区别？
-- `main.py`：本地开发入口，适合在 VSCode 里直接修改配置后运行。
-- `run.py`：CLI 入口，适合脚本化运行和参数覆盖。
+文档更新后可用核心文件编译检查确认代码仍可加载：
 
-2. 如何切换模型？
-- 在配置里改 `model_type` 为 `lightgbm`、`xgboost` 或 `catboost`。
+```bash
+uv run python -m py_compile main.py run.py \
+  data_provider/data_loader.py \
+  features/FeatureEngineering.py features/FeatureScalering.py \
+  models/ModelFactory.py models/ModelTraining.py models/ModelTesting.py models/ModelForecasting.py
+```
 
-3. 如何切换预测策略？
-- 在配置里修改 `pred_method` 为上述 7 种之一。
+如果改了运行脚本或配置默认值，再用显式配置模块跑一次项目允许的轻量命令。
 
-4. 如何启用天气/日期特征？
-- 打开相应开关，并配置好对应数据路径与时间列。
+## 版本与依赖
 
-## 9. 版本与依赖
-
-- Python: `>=3.10`
-- 依赖以 `pyproject.toml` 和 `uv.lock` 为准。
-- 推荐统一使用 `uv` 管理环境，避免 `pip` 与锁文件漂移。
+- Python: `==3.10.11`
+- 依赖来源：`pyproject.toml` 和 `uv.lock`
+- 推荐使用 `uv sync` / `uv run`，避免手工 `pip install` 造成锁文件漂移。

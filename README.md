@@ -138,6 +138,12 @@ CONFIG_MODULE=config.model_config_xgb_usmd_A MODEL_TYPE=xgboost bash scripts/run
 - 训练模式：
   - `is_testing`
   - `is_forecasting`
+- 滑窗测试训练集异常处理：
+  - `enable_train_outlier_handling`：默认 `False`，开启后只清洗每个滑窗的训练段目标列。
+  - `high_outlier_threshold` / `high_outlier_max_run_points`：识别短连续高值异常。
+  - `drop_outlier_max_run_points` / `drop_rebound_min_abs_diff`：识别短时下探后快速回弹异常。
+
+训练集异常处理不会修改测试段真实 `y`，因此 `test_scores_df.csv` 的指标仍基于原始测试目标。
 
 示例（常用组合）：
 - 只做滑窗验证：`is_testing=True`, `is_forecasting=False`
@@ -151,6 +157,7 @@ CONFIG_MODULE=config.model_config_xgb_usmd_A MODEL_TYPE=xgboost bash scripts/run
 - 测试：`saved_results/results_test/<setting>/`
   - `test_scores_df.csv`
   - `cv_plot_df.csv`
+  - `train_outlier_report.csv`
   - `test_prediction.png`
 - 预测：`saved_results/results_forecast/<setting>/`
   - `prediction.csv`

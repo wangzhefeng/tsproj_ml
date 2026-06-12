@@ -35,6 +35,10 @@ from features.FeatureScalering import (
 )
 from models.ModelTraining import Trainer
 from models.ModelForecasting import Forecaster
+from data_provider.outlier_handling import (
+    empty_train_outlier_report,
+    handle_train_outliers,
+)
 from utils.log_util import logger
 
 # global variable
@@ -59,6 +63,7 @@ class Tester:
         horizon = payload["horizon"]
         window_len = payload["window_len"]
         window = payload["window"]
+        train_outlier_report = empty_train_outlier_report()
 
         # 滑窗数据分割：先切原始历史，再在窗口内构造训练标签，避免 Direct 标签跨入测试期
         split_result = Tester._evaluate_split(
@@ -69,8 +74,20 @@ class Tester:
             log_prefix=log_prefix,
         )
         if split_result is None:
-            return {"window": window, "test_scores_df": None, "cv_plot_df": None}
+            return {
+                "window": window,
+                "test_scores_df": None,
+                "cv_plot_df": None,
+                "train_outlier_report": train_outlier_report,
+            }
         df_history_train, df_history_test = split_result
+        df_history_train, train_outlier_report = handle_train_outliers(
+            args=args,
+            df_history_train=df_history_train,
+            target_feature=payload["target_feature"],
+            window=window,
+            log_prefix=log_prefix,
+        )
         build_result = Tester._build_window_train_xy(
             args=args,
             log_prefix=log_prefix,
@@ -82,7 +99,12 @@ class Tester:
             horizon=horizon,
         )
         if build_result is None:
-            return {"window": window, "test_scores_df": None, "cv_plot_df": None}
+            return {
+                "window": window,
+                "test_scores_df": None,
+                "cv_plot_df": None,
+                "train_outlier_report": train_outlier_report,
+            }
         X_train, Y_train, target_output_features, categorical_features = build_result
         # 窗口目标特征处理
         Y_train = Y_train.to_frame() if isinstance(Y_train, pd.Series) else Y_train
@@ -136,7 +158,12 @@ class Tester:
         # 模型滑窗预测结果收集
         # ------------------------------
         if len(y_pred) == 0:
-            return {"window": window, "test_scores_df": None, "cv_plot_df": None}
+            return {
+                "window": window,
+                "test_scores_df": None,
+                "cv_plot_df": None,
+                "train_outlier_report": train_outlier_report,
+            }
         # 预测结果恢复到目标空间，用于评估
         if target_scaler_testing is not None:
             pred_target_columns = target_scaler_testing.get_prediction_target_columns(
@@ -169,7 +196,12 @@ class Tester:
             log_prefix=log_prefix,
         )
 
-        return {"window": window, "test_scores_df": eval_scores_window, "cv_plot_df": cv_plot_df_window}
+        return {
+            "window": window,
+            "test_scores_df": eval_scores_window,
+            "cv_plot_df": cv_plot_df_window,
+            "train_outlier_report": train_outlier_report,
+        }
 
     # ------------------------------
     # Model sliding window testing
@@ -361,10 +393,17 @@ class Tester:
     # Model results save
     # ------------------------------
     @staticmethod
-    def test_results_save(args, log_prefix: str, test_scores_df, cv_plot_df):
+    def test_results_save(args, log_prefix: str, test_scores_df, cv_plot_df, train_outlier_report=None):
         # 测试结果数据保存
         test_scores_df.to_csv(args.test_results_dir.joinpath("test_scores_df.csv"), index=False, encoding="utf-8")
         cv_plot_df.to_csv(args.test_results_dir.joinpath("cv_plot_df.csv"), index=False, encoding="utf-8")
+        if train_outlier_report is None:
+            train_outlier_report = empty_train_outlier_report()
+        train_outlier_report.to_csv(
+            args.test_results_dir.joinpath("train_outlier_report.csv"),
+            index=False,
+            encoding="utf-8",
+        )
         # if getattr(self.args, "disable_plotting", False):
         #     logger.info(f"{log_prefix} Skip plotting because disable_plotting=True.")
         #     return

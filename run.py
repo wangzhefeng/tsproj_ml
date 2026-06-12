@@ -119,6 +119,18 @@ def _apply_overrides(cfg, args):
         cfg.auto_lr_max = args.auto_lr_max
     if args.huber_delta is not None:
         cfg.huber_delta = args.huber_delta
+    if args.enable_train_outlier_handling is not None:
+        cfg.enable_train_outlier_handling = _parse_bool_flag(args.enable_train_outlier_handling)
+    if args.train_outlier_method is not None:
+        cfg.train_outlier_method = args.train_outlier_method
+    if args.high_outlier_threshold is not None:
+        cfg.high_outlier_threshold = args.high_outlier_threshold
+    if args.high_outlier_max_run_points is not None:
+        cfg.high_outlier_max_run_points = args.high_outlier_max_run_points
+    if args.drop_outlier_max_run_points is not None:
+        cfg.drop_outlier_max_run_points = args.drop_outlier_max_run_points
+    if args.drop_rebound_min_abs_diff is not None:
+        cfg.drop_rebound_min_abs_diff = args.drop_rebound_min_abs_diff
 
     if args.patience is not None:
         cfg.patience = args.patience
@@ -197,6 +209,12 @@ def args_parse():
     parser.add_argument("--auto-lr-min", type=float, default=None)
     parser.add_argument("--auto-lr-max", type=float, default=None)
     parser.add_argument("--huber-delta", type=float, default=None)
+    parser.add_argument("--enable-train-outlier-handling", default=None, help="bool flag")
+    parser.add_argument("--train-outlier-method", type=str, default=None)
+    parser.add_argument("--high-outlier-threshold", type=float, default=None)
+    parser.add_argument("--high-outlier-max-run-points", type=int, default=None)
+    parser.add_argument("--drop-outlier-max-run-points", type=int, default=None)
+    parser.add_argument("--drop-rebound-min-abs-diff", type=float, default=None)
     parser.add_argument("--patience", type=int, default=None)
 
     parser.add_argument("--now-time", type=str, default=None, help="ISO datetime, e.g. 2025-12-27T00:00:00")

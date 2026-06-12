@@ -139,6 +139,36 @@ dataset/
 
 ---
 
+## 滑窗测试训练集异常处理
+
+项目支持在滑窗测试中只清洗训练窗口目标列，测试窗口保持原始真实值用于指标评估。该能力默认关闭，旧配置文件无需补字段也能继续运行。
+
+新增配置项：
+
+| 参数 | 默认值 | 说明 |
+|---|---:|---|
+| `enable_train_outlier_handling` | `False` | 是否启用滑窗训练段异常处理 |
+| `train_outlier_method` | `local_interpolate` | 当前支持局部插值修复 |
+| `high_outlier_threshold` | `15000.0` | 短连续高值异常阈值 |
+| `high_outlier_max_run_points` | `4` | 高值异常最大连续点数 |
+| `drop_outlier_max_run_points` | `2` | 下探回弹异常最大连续点数 |
+| `drop_rebound_min_abs_diff` | `900.0` | 下探和回弹的最小绝对差 |
+
+CLI 示例：
+
+```bash
+uv run python run.py \
+  --config-module config.aidc_electricity_computility.it_electricity_computility.A3_01e.model_config_lgbm_usmdo \
+  --config-class ModelConfig \
+  --is-testing 1 \
+  --is-forecasting 0 \
+  --enable-train-outlier-handling 1
+```
+
+启用后测试结果目录会额外输出 `train_outlier_report.csv`，记录每个训练窗口被修复的点位、原值、修复值和规则。
+
+---
+
 ## 配置命名规范
 
 ```

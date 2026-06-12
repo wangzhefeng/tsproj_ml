@@ -53,6 +53,7 @@ from features.FeatureEngineering import FeatureEngineer
 from models.ModelTraining import Trainer
 from models.ModelTesting import Tester
 from models.ModelForecasting import Forecaster
+from data_provider.outlier_handling import empty_train_outlier_report
 from utils.frequency import resolve_freq_step_minutes, resolve_samples_per_day
 
 # global variable
@@ -240,6 +241,7 @@ class Model:
         # ------------------------------
         test_scores_df = pd.DataFrame()
         cv_plot_df = pd.DataFrame()
+        train_outlier_report = empty_train_outlier_report()
         # ------------------------------
         # 判断是否有足够的历史数据保证至少一个完整的测试窗口
         # ------------------------------
@@ -304,6 +306,8 @@ class Model:
                 window_results.append(Tester._window_test(payload))
         # 滑窗测试结果解析
         for result in sorted(window_results, key=lambda x: x["window"]):
+            if "train_outlier_report" in result and not result["train_outlier_report"].empty:
+                train_outlier_report = pd.concat([train_outlier_report, result["train_outlier_report"]], axis=0)
             if result["test_scores_df"] is None or result["cv_plot_df"] is None:
                 continue
             test_scores_df = pd.concat([test_scores_df, result["test_scores_df"]], axis=0)
@@ -323,8 +327,9 @@ class Model:
         logger.info(f"{self.log_prefix} Model Testing test_scores_df: \n{test_scores_df}")
         logger.info(f"{self.log_prefix} Model Testing cv_plot_df: \n{cv_plot_df.head()}")
         logger.info(f"{self.log_prefix} Model Testing cv_plot_df shape: {cv_plot_df.shape}")
+        logger.info(f"{self.log_prefix} Model Testing train_outlier_report shape: {train_outlier_report.shape}")
         # 模型测试结果保存
-        Tester.test_results_save(self.args, self.log_prefix, test_scores_df, cv_plot_df)
+        Tester.test_results_save(self.args, self.log_prefix, test_scores_df, cv_plot_df, train_outlier_report)
         logger.info(f"{self.log_prefix} Model Testing result saved in: {self.args.test_results_dir}")
         logger.info(f"{self.log_prefix} Model Testing runtime: {time.perf_counter() - test_start:.3f}s")
 

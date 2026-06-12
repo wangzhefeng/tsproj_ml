@@ -210,6 +210,15 @@ class ModelConfig:
     # 鲁棒损失参数（用于 huber scorer）
     huber_delta: float = 1.0
     # ------------------------------
+    # 滑窗测试训练集异常处理
+    # ------------------------------
+    enable_train_outlier_handling: bool = False
+    train_outlier_method: str = "local_interpolate"
+    high_outlier_threshold: float = 15000.0
+    high_outlier_max_run_points: int = 4
+    drop_outlier_max_run_points: int = 2
+    drop_rebound_min_abs_diff: float = 900.0
+    # ------------------------------
     # 性能与并行配置
     # ------------------------------
     window_parallel_workers: int = 1

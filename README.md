@@ -1,9 +1,6 @@
 # tsproj-ml
 
-基于机器学习回归器的时间序列多步预测项目。当前主链路围绕
-LightGBM / XGBoost / CatBoost 构建，同时在模型工厂层保留 RandomForest
-支持；支持单变量/多变量、多步直接输出、direct、recursive 和
-direct-recursive 分块预测。
+基于机器学习回归器的时间序列多步预测项目。当前主链路围绕 LightGBM / XGBoost / CatBoost 构建，同时在模型工厂层保留 RandomForest 支持；支持单变量/多变量、多步直接输出、direct、recursive 和 direct-recursive 分块预测。
 
 本文档按当前代码整理，未使用 `docs/` 和 `logs/` 目录中的历史材料作为事实来源。
 
@@ -46,7 +43,7 @@ tsproj_ml/
 ├── data_provider/
 │   ├── data_loader.py           # 数据读取、时间轴构造、历史/未来切片
 │   ├── outlier_handling.py      # 滑窗训练段异常处理
-│   └── outlier_process.py
+│   └── outlier_process.py       # 原始负荷数据异常标记、清洗与可视化
 ├── features/
 │   ├── FeatureEngineering.py    # 日期时间、日期类型、天气、滞后、高级特征
 │   ├── FeatureScalering.py      # 特征/目标缩放与逆变换
@@ -60,7 +57,13 @@ tsproj_ml/
 │   ├── ModelEnsemble.py         # 融合模型
 │   ├── ModelSaveLoad.py         # pickle 保存/加载
 │   └── losses.py, learning_rate.py
-├── scripts/                     # 批量配置生成和运行脚本
+├── scripts/                     # 批量配置生成、运行模板和维护脚本
+│   ├── generate_configs.py      # 根据 dataset 自动检测字段并批量生成模型配置
+│   ├── production_sync.md       # 生产包同步边界、可迁移模块和同步记录
+│   ├── run_model_test.sh        # 通过环境变量覆盖配置的模型测试启动脚本
+│   ├── template.sh              # run.py 标准命令模板，可复制后按场景调整
+│   ├── rm_dsstore.sh            # 清理项目中已跟踪的 .DS_Store 文件
+│   └── update_codes.sh          # 旧式 git 提交/拉取/推送脚本，使用前需谨慎核对
 └── utils/
     ├── frequency.py             # pandas 频率解析
     └── log_util.py              # 日志器
@@ -120,6 +123,81 @@ MODEL_TYPE=lightgbm \
 PRED_METHOD=univariate-single-multistep-direct \
 bash scripts/run_model_test.sh
 ```
+
+## 配置生成
+
+`scripts/generate_configs.py` 是批量生成 Python dataclass 配置文件的工具，不是
+模型运行入口。它从一个 dataset 叶子目录读取目标 CSV，自动检测数据文件、时间列、
+频率、预测基准时间和外生文件，然后按模型 × 策略矩阵写入 `config/`。
+
+默认模型矩阵是 3 个树模型：
+
+- `lightgbm` -> 文件名缩写 `lgbm`
+- `xgboost` -> 文件名缩写 `xgb`
+- `catboost` -> 文件名缩写 `cab`
+
+默认单变量策略矩阵是 4 种方法：
+
+- `usmdo`: `univariate-single-multistep-direct-output`
+- `usmd`: `univariate-single-multistep-direct`
+- `usmr`: `univariate-single-multistep-recursive`
+- `usmdr`: `univariate-single-multistep-direct-recursive`
+
+脚本的关键输入：
+
+| 参数 | 说明 |
+|---|---|
+| `--dataset` | 一个具体数据集叶子目录，目录内应包含目标 CSV |
+| `--target` | 目标列名，例如 `h_total_use` |
+| `--data-file` | 可选；不传时选目录中第一个非外生 CSV |
+| `--target-ts-feat` | 可选；不传时使用目标 CSV 第一列 |
+| `--models` | 逗号分隔模型列表，默认 `lightgbm,xgboost,catboost` |
+| `--strategies` | 逗号分隔策略列表，默认 `usmdo,usmd,usmr,usmdr` |
+| `--variant` | 文件名后缀，例如 `A1_201`、`A`、`B` |
+| `--config-dir` | 输出目录；建议显式传入，避免默认路径和项目约定漂移 |
+| `--dry-run` | 只打印将生成的文件，不写入磁盘 |
+
+自动检测规则：
+
+- 目标数据文件默认排除 `df_date.csv`、`df_date_future.csv`、`df_weather.csv`、
+  `df_weather_future.csv` 后取第一个 CSV。
+- `target_ts_feat` 默认取目标 CSV 第一列。
+- `freq` 优先用 `pandas.infer_freq` 推断，失败时按前两个时间戳间隔回退到
+  `1min`、`5min`、`15min`、`30min`、`1h`、`1D` 等固定频率。
+- `now_time` 默认取目标 CSV 最后一行时间戳。
+- 同时存在 `df_date.csv` 和 `df_date_future.csv` 时启用日期外生特征。
+- 同时存在 `df_weather.csv` 和 `df_weather_future.csv` 时启用天气外生特征。
+- 日期时间特征和滞后特征默认启用，分别可用 `--no-datetime`、`--no-lags` 关闭。
+
+例如为 `2026-06-11` 的一个 demand load 数据集预览配置：
+
+```bash
+uv run python scripts/generate_configs.py \
+  --dataset dataset/aidc_electricity_computility/electricity/2026-06-11/demand_load/A1_201 \
+  --target h_total_use \
+  --models lightgbm,xgboost,catboost \
+  --strategies usmdo,usmd,usmr,usmdr \
+  --variant A1_201 \
+  --config-dir config/aidc_electricity_computility/electricity/2026-06-11/A1_201 \
+  --dry-run
+```
+
+确认输出路径后去掉 `--dry-run` 即可生成实际配置。当前
+`2026-06-11/demand_load` 已按 6 个叶子数据集生成 72 个配置文件：
+
+| 数据集 | 配置目录 | 文件数 |
+|---|---|---:|
+| `A1_201` | `config/aidc_electricity_computility/electricity/2026-06-11/A1_201` | 12 |
+| `A1_01a` | `config/aidc_electricity_computility/electricity/2026-06-11/A1_01a` | 12 |
+| `A1_IT` | `config/aidc_electricity_computility/electricity/2026-06-11/A1_IT` | 12 |
+| `A3_01e` | `config/aidc_electricity_computility/electricity/2026-06-11/A3_01e` | 12 |
+| `AIDC/route_A` | `config/aidc_electricity_computility/electricity/2026-06-11/AIDC/route_A` | 12 |
+| `AIDC/route_B` | `config/aidc_electricity_computility/electricity/2026-06-11/AIDC/route_B` | 12 |
+
+这些配置的目标文件均为 `df_power.csv`，时间列为 `count_data_time`，目标列为
+`h_total_use`，频率为 `5min`，默认 `now_time` 为数据最后时间戳
+`2026-06-11T23:55:00`。运行时仍建议通过 `run.py --config-module ... --config-class ModelConfig`
+显式指定具体配置模块。
 
 ## 数据契约
 
@@ -215,6 +293,38 @@ saved_results/
 - `now_time` 会被规整到整点作为历史结束/预测开始，历史区间为 `[now_time - history_days, now_time)`，预测区间为 `[now_time, now_time + predict_days)`。
 - 分位数预测训练多个子模型；点预测融合只在 `predict_type="point"` 时生效。
 - 多变量递归类方法对非目标内生变量目前主要采用持久性回填，不等同于为每个内生变量单独建模。
+
+## 生产同步边界
+
+`scripts/production_sync.md` 是生产包同步边界和同步记录文档，不是运行脚本。
+本仓库 `tsproj_ml` 是时间序列预测核心库，生产包只作为 adapter。核心算法、
+特征工程、评估、损失函数和通用数据质量逻辑应先在本仓库优化，再按需同步到生产包。
+
+允许从本仓库向生产包迁移的核心模块包括：
+
+- `models/ModelTesting.py`
+- `models/ModelForecasting.py`
+- `features/FeatureEngineering.py`
+- `features/FeatureScalering.py`
+- `models/losses.py`
+- `models/learning_rate.py`
+- `data_provider/outlier_handling.py`
+
+禁止直接回迁或反向污染本仓库的内容包括：
+
+- 生产 API main class
+- `BaseModelMainClass`
+- 算力数据预处理
+- 生产输出字段
+- 生产路径 import
+- dataset 和 results 文件
+
+维护方式：
+
+- 涉及生产同步时先更新或查阅 `scripts/production_sync.md`，不要靠临时复制代码。
+- 每次同步记录使用文档中的模板，说明变更摘要、是否需要迁移项目 2、项目 2 适配点和验证结果。
+- 如果生产包中只有部署入口、平台父类、生产字段或路径适配变化，不应回迁到本仓库。
+- 如果生产包中出现可复用的预测、评估、特征或数据质量逻辑，应先抽象成本仓库核心模块，再由生产包做最小 adapter 适配。
 
 ## 开发与维护注意事项
 

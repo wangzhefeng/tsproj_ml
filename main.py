@@ -6,7 +6,7 @@
 # * Email       : zfwang7@gmail.com
 # * Date        : 2024-12-11
 # * Version     : 2.0
-# * Description : 基于LightGBM的时间序列预测框架
+# * Description : 基于机器学习回归器的时间序列预测框架
 # *               支持以下预测方法:
 # *               1. USMDO - 单变量多步直接输出预测
 # *               2. USMD  - 单变量多步直接预测
@@ -19,26 +19,23 @@
 # ***************************************************
 
 # python libraries
-import argparse
-import copy
-import importlib
 import os
 import sys
+import copy
 import time
-import tempfile
+import datetime
+import warnings
+from typing import List
 from pathlib import Path
 ROOT = str(Path.cwd())
 if ROOT not in sys.path:
     sys.path.append(ROOT)
-import datetime
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_completed
-import warnings
-warnings.filterwarnings("ignore")
-from typing import List
 
 import numpy as np
 import pandas as pd
 
+from config.config_loader import ModelConfig
 from data_provider.data_loader import DataLoader
 from features.FeatureScalering import (
     FeatureScaler,
@@ -56,40 +53,12 @@ from models.ModelForecasting import Forecaster
 from data_provider.outlier_handling import empty_train_outlier_report
 from utils.frequency import resolve_freq_step_minutes, resolve_samples_per_day
 
+warnings.filterwarnings("ignore")
+
 # global variable
 LOGGING_LABEL = Path(__file__).name[:-3]
 os.environ['LOG_NAME'] = LOGGING_LABEL
 from utils.log_util import logger
-
-
-DEFAULT_CONFIG_MODULE = "config.model_config_cab_usmd_A_aidc"
-
-
-def ensure_runtime_environment():
-    mpl_dir = Path(tempfile.gettempdir()).joinpath("tsproj_ml_matplotlib")
-    mpl_dir.mkdir(parents=True, exist_ok=True)
-    os.environ.setdefault("MPLCONFIGDIR", str(mpl_dir))
-
-
-def build_arg_parser():
-    parser = argparse.ArgumentParser(description="Time series forecasting runner")
-    parser.add_argument(
-        "--config-module",
-        default=DEFAULT_CONFIG_MODULE,
-        help="Python module path that exposes ModelConfig",
-    )
-    return parser
-
-
-def load_model_config(config_module: str = DEFAULT_CONFIG_MODULE):
-    module = importlib.import_module(config_module)
-    model_config = getattr(module, "ModelConfig", None)
-    if model_config is None:
-        raise ImportError(f"ModelConfig not found in module: {config_module}")
-    return model_config
-
-
-ensure_runtime_environment()
 
 
 class Model:
@@ -568,13 +537,14 @@ class Model:
 
 
 # 测试代码 main 函数
-def main(argv=None):
+def main():
     """
     主函数入口
     """
-    parsed_args = build_arg_parser().parse_args(argv)
-    ModelConfig = load_model_config(parsed_args.config_module)
-    # 模型配置
+    # ensuer runtime environment
+    from utils.runtime_env import ensure_runtime_environment
+    ensure_runtime_environment()
+    # 模型配置参数实例
     args = ModelConfig()
     # 创建模型实例
     model = Model(args)

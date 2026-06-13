@@ -225,13 +225,17 @@ class DataLoader:
         logger.info(f"{self.log_prefix} df_history_template shape: {df_history_template.shape}")
         # 数据预处理：目标时间序列特征
         df_history_series = self.__process_df_timestamp(df=input_data["target_series"], col_ts=self.args.target_ts_feat)
-        self.args.target_series_numeric_features = [
-            col 
-            for col in df_history_series.columns 
-            if col not in [self.args.target, self.args.target_ts_feat] + \
-            self.args.target_series_categorical_features + \
-            self.args.target_series_drop_features
-        ]
+        configured_numeric_features = list(getattr(self.args, "target_series_numeric_features", []) or [])
+        if configured_numeric_features:
+            self.args.target_series_numeric_features = configured_numeric_features
+        else:
+            self.args.target_series_numeric_features = [
+                col
+                for col in df_history_series.columns
+                if col not in [self.args.target, self.args.target_ts_feat] + \
+                self.args.target_series_categorical_features + \
+                self.args.target_series_drop_features
+            ]
         logger.info(f"{self.log_prefix} after __process_df_timestamp df_history_series: \n{df_history_series.head()}")
         logger.info(f"{self.log_prefix} after __process_df_timestamp df_history_series shape: {df_history_series.shape}")
         df_history, other_endogenous_features, target_feature = self.__process_target_series(

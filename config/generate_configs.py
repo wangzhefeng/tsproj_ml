@@ -6,12 +6,12 @@
 
 用法:
     # 最简用法（自动检测 freq、now_time、外生文件等）
-    uv run python scripts/generate_configs.py \
+    uv run python config/generate_configs.py \
         --dataset ./dataset/aidc_electricity_computility/electricity/2026-01-01/demand_load/lingang_A \
         --target h_total_use
 
     # 完整参数
-    uv run python scripts/generate_configs.py \
+    uv run python config/generate_configs.py \
         --dataset ./dataset/aidc_electricity_computility/electricity/2026-01-01/demand_load/lingang_A \
         --target h_total_use \
         --target-ts-feat count_data_time \
@@ -23,7 +23,7 @@
         --config-dir config/aidc_electricity_computility/electricity/2026-01-01/route_A
 
     # 预览模式（不实际创建文件）
-    uv run python scripts/generate_configs.py \
+    uv run python config/generate_configs.py \
         --dataset ./dataset/ETT-small/ \
         --data-file ETTm1.csv \
         --target OT \
@@ -34,7 +34,6 @@ import argparse
 import datetime
 import os
 import sys
-from dataclasses import fields, is_dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -45,9 +44,6 @@ import yaml
 ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
-
-from config.config_loader import load_model_config
-
 
 # ---------------------------------------------------------------------------
 # 策略缩写映射
@@ -61,6 +57,16 @@ METHOD_SHORT = {
     "msmd": "multivariate-single-multistep-direct",
     "msmr": "multivariate-single-multistep-recursive",
     "msmdr": "multivariate-single-multistep-direct-recursive",
+}
+
+METHOD_DESCRIPTION = {
+    "univariate-single-multistep-direct-output": ("USMDO", "单变量输入，多步直接输出"),
+    "univariate-single-multistep-direct": ("USMD", "单变量输入，多步直接预测"),
+    "univariate-single-multistep-recursive": ("USMR", "单变量输入，多步递归预测"),
+    "univariate-single-multistep-direct-recursive": ("USMDR", "单变量输入，多步直接递归预测"),
+    "multivariate-single-multistep-direct": ("MSMD", "多变量输入，多步直接预测"),
+    "multivariate-single-multistep-recursive": ("MSMR", "多变量输入，多步递归预测"),
+    "multivariate-single-multistep-direct-recursive": ("MSMDR", "多变量输入，多步直接递归预测"),
 }
 
 MODEL_SHORT = {
@@ -93,10 +99,8 @@ YAML_OVERRIDE_GROUPS = {
         "predict_days",
         "window_days",
         "now_time",
-        "start_time",
-        "future_time",
     ],
-    "data": [
+    "target_series": [
         "data_dir",
         "data_path",
         "freq",
@@ -106,7 +110,7 @@ YAML_OVERRIDE_GROUPS = {
         "target_series_categorical_features",
         "target_series_drop_features",
     ],
-    "features": [
+    "exogenous_features": [
         "enable_date_features",
         "date_history_path",
         "date_future_path",
@@ -122,8 +126,12 @@ YAML_OVERRIDE_GROUPS = {
         "enable_datetime_features",
         "datetime_features",
         "datetime_categorical_features",
+    ],
+    "time_lag_features": [
         "enable_lags_features",
         "lags",
+    ],
+    "advanced_features": [
         "enable_advanced_features",
         "enable_rolling_features",
         "rolling_columns",
@@ -160,7 +168,7 @@ YAML_OVERRIDE_GROUPS = {
         "use_grouped_scaling",
         "encode_categorical_features",
     ],
-    "model": [
+    "model_strategy": [
         "model_type",
         "model_params",
         "enable_ensemble",
@@ -176,7 +184,7 @@ YAML_OVERRIDE_GROUPS = {
         "enable_global_training",
         "series_id_feature",
     ],
-    "training": [
+    "training_enhancement": [
         "patience",
         "perform_tuning",
         "tuning_metric",
@@ -195,7 +203,7 @@ YAML_OVERRIDE_GROUPS = {
         "auto_lr_max",
         "huber_delta",
     ],
-    "outlier": [
+    "train_outlier": [
         "enable_train_outlier_handling",
         "train_outlier_method",
         "high_outlier_threshold",
@@ -228,240 +236,54 @@ YAML_OVERRIDE_GROUPS = {
 
 _BASELINE_CONFIG = '''# -*- coding: utf-8 -*-
 import datetime
-from typing import List, Dict, Optional
 from dataclasses import dataclass, field
 
+from config.config_sections import BaseModelConfig
+
+
 @dataclass
-class ModelConfig:
+class ModelConfig(BaseModelConfig):
+    """自动生成的扁平模型配置。
+
+    BaseModelConfig 在共享模块中维护完整字段和分组说明；本类只覆盖
+    数据集和模型策略相关默认值。
     """
-    模型配置类
-    包含数据路径、特征设置、模型参数等所有配置项
-    """
-    # ------------------------------
-    # 模型运行模式
-    # ------------------------------
-    is_testing: bool = False  # 模型测试
-    is_forecasting: bool = True  # 模型预测
-    history_days: int = {history_days}  # 历史数据天数
-    predict_days: int = {predict_days}  # 预测未来天数
-    window_days: int = {window_days}  # 滑动窗口天数
-    # 预测推理开始的时间
+
+    history_days: int = {history_days}
+    predict_days: int = {predict_days}
+    window_days: int = {window_days}
     now_time: datetime.datetime = {now_time}
-    # ------------------------------
-    # 目标时间序列配置
-    # ------------------------------
-    data_dir: str = "{data_dir}"
-    data_path: str = "{data_path}"
-    freq: str = "{freq}"
-    target_ts_feat: str = "{target_ts_feat}"
-    target: str = "{target}"
-    target_series_numeric_features: List[str] = field(default_factory=lambda: {target_series_numeric_features})
-    target_series_categorical_features: List[str] = field(default_factory=lambda: {target_series_categorical_features})
-    target_series_drop_features: List[str] = field(default_factory=list)
-    # ------------------------------
-    # 特征工程配置
-    # ------------------------------
-    # 日期类型数据配置
-    # --------------
+
+    data_dir: str = {data_dir!r}
+    data_path: str = {data_path!r}
+    freq: str = {freq!r}
+    target_ts_feat: str = {target_ts_feat!r}
+    target: str = {target!r}
+    target_series_numeric_features: list[str] = field(default_factory=lambda: {target_series_numeric_features!r})
+    target_series_categorical_features: list[str] = field(default_factory=lambda: {target_series_categorical_features!r})
+    target_series_drop_features: list[str] = field(default_factory=lambda: {target_series_drop_features!r})
+
     enable_date_features: bool = {enable_date_features}
-    if enable_date_features:
-        date_history_path: Optional[str] = "df_date.csv"
-        date_future_path: Optional[str] = "df_date_future.csv"
-        date_ts_feat: Optional[str] = "date"
-        datetype_features: List[str] = field(default_factory=lambda: ["date_type"])
-        datetype_categorical_features: List[str] = field(default_factory=lambda: [])
-    else:
-        date_history_path: Optional[str] = None
-        date_future_path: Optional[str] = None
-        date_ts_feat: Optional[str] = None
-        datetype_features: List[str] = field(default_factory=lambda: [])
-        datetype_categorical_features: List[str] = field(default_factory=lambda: [])
-    # 气象数据配置
-    # --------------
+    date_history_path: str | None = {date_history_path!r}
+    date_future_path: str | None = {date_future_path!r}
+    date_ts_feat: str | None = {date_ts_feat!r}
+    datetype_features: list[str] = field(default_factory=lambda: {datetype_features!r})
+    datetype_categorical_features: list[str] = field(default_factory=lambda: {datetype_categorical_features!r})
+
     enable_weather_features: bool = {enable_weather_features}
-    if enable_weather_features:
-        weather_history_path: Optional[str] = "df_weather.csv"
-        weather_future_path: Optional[str] = "df_weather_future.csv"
-        weather_ts_feat: Optional[str] = "ts"
-        weather_features: List[str] = field(default_factory=lambda: [
-            "rt_ssr",   # 太阳总辐射
-            "rt_ws10",  # 10m 风速
-            "rt_tt2",   # 2M 气温
-            "cal_rh",   # 相对湿度
-            "rt_ps",    # 气压
-            "rt_rain",  # 降雨量
-        ])
-        weather_categorical_features: List[str] = field(default_factory=lambda: [])
-    else:
-        weather_history_path: Optional[str] = None
-        weather_future_path: Optional[str] = None
-        weather_ts_feat: Optional[str] = None
-        weather_features: List[str] = field(default_factory=lambda: [])
-        weather_categorical_features: List[str] = field(default_factory=lambda: [])
-    # 日期时间特征
-    # --------------
+    weather_history_path: str | None = {weather_history_path!r}
+    weather_future_path: str | None = {weather_future_path!r}
+    weather_ts_feat: str | None = {weather_ts_feat!r}
+    weather_features: list[str] = field(default_factory=lambda: {weather_features!r})
+    weather_categorical_features: list[str] = field(default_factory=lambda: {weather_categorical_features!r})
+
     enable_datetime_features: bool = {enable_datetime_features}
-    if enable_datetime_features:
-        datetime_features: List[str] = field(default_factory=lambda: [
-            'minute', 'hour', 'day', 'weekday', 'week',
-            'day_of_week', 'week_of_year', 'month', 'days_in_month',
-            'quarter', 'day_of_year', 'year',
-        ])
-        datetime_categorical_features: List[str] = field(default_factory=lambda: [
-            # "dt_hour", "dt_day", "dt_weekday", "dt_week",
-            # "dt_day_of_week", "dt_week_of_year", "dt_month", "dt_days_in_month",
-            # "dt_quarter", "dt_day_of_year", "dt_year",
-        ])
-    else:
-        datetime_features: List[str] = field(default_factory=lambda: [])
-        datetime_categorical_features: List[str] = field(default_factory=lambda: [])
-    # 特征滞后数列表
-    # --------------
     enable_lags_features: bool = {enable_lags_features}
-    if enable_lags_features:
-        lags: List[int] = field(default_factory=lambda: [
-            1 * 288,  # Daily lag
-            2 * 288,
-            3 * 288,
-            4 * 288,
-            5 * 288,
-            6 * 288,
-            7 * 288,  # Weekly lag
-        ])
-    else:
-        lags: List[int] = field(default_factory=lambda: [])
-    # 高级特征工程配置
-    # --------------
-    enable_advanced_features: bool = False
+    lags: list[int] = field(default_factory=lambda: {lags!r})
 
-    enable_rolling_features: bool = False
-    rolling_columns: List[str] = field(default_factory=lambda: ["y"])
-    rolling_windows: List[int] = field(default_factory=lambda: [3, 7, 14, 28])
-    rolling_stats: List[str] = field(default_factory=lambda: ["mean", "std", "min", "max", "skew", "kurt"])
-
-    enable_expanding_features: bool = False
-    expanding_columns: List[str] = field(default_factory=lambda: ["y"])
-    expanding_stats: List[str] = field(default_factory=lambda: ["mean", "std", "min", "max", "skew", "kurt"])
-
-    enable_diff_features: bool = False
-    diff_columns: List[str] = field(default_factory=lambda: ["y"])
-    diff_periods: List[int] = field(default_factory=lambda: [1, 7, 24])
-
-    enable_pct_change_features: bool = False
-    pct_change_columns: List[str] = field(default_factory=lambda: ["y"])
-    pct_change_periods: List[int] = field(default_factory=lambda: [1, 7])
-
-    enable_time_since_features: bool = False
-    time_since_columns: List[str] = field(default_factory=lambda: ["y"])
-    time_since_events: List[str] = field(default_factory=lambda: ["peak", "trough"])
-
-    enable_cyclical_features: bool = False
-    cyclical_columns: List[str] = field(default_factory=lambda: ["minute"])
-    cyclical_period: int = field(default_factory=lambda: 15)
-
-    enable_interaction_features: bool = False
-    interaction_column_pairs: List[tuple] = field(default_factory=lambda: [("y", "dt_hour")])
-    interaction_operations: List[str] = field(default_factory=lambda: ["add", "subtract", "multiply", "divide"])
-
-    enable_polynomial_features: bool = False
-    polynomial_columns: List[str] = field(default_factory=lambda: ["y"])
-    polynomial_degree: int = field(default_factory=lambda: 2)
-    # ------------------------------
-    # 数据预处理
-    # ------------------------------
-    # 预测特征
-    scale_features: bool = False  # 是否对预测特征 X 进行归一化/标准化
-    feature_scaler_type: str = "minmax"  # 预测特征 X 的缩放方法: "standard" 或 "minmax"
-    # 目标特征
-    scale_target: bool = False  # 是否对目标变量 Y 进行归一化/标准化
-    inverse_target: bool = False  # 预测结果是否对目标变量 Y 进行逆变换
-    target_scaler_type: str = "minmax"  # 目标变量 Y 的缩放方法: "none"、"standard"、"minmax"、"log1p"、"robust" 或 "yeo-johnson"
-    # 是否对特征使用分组归一化/标准化
-    use_grouped_scaling: str = False
-    # ------------------------------
-    # 模型配置
-    # ------------------------------
-    # 单模型预测
-    model_type: str = "{model_type}"
-    model_params: Dict = field(default_factory=dict)
-    # 模型融合预测
-    enable_ensemble: bool = False
-    ensemble_models: List = field(default_factory=lambda: ["lgb", "xgb", "cat"])
-    ensemble_method: str = "stacking"  # 'averaging', 'weighted', 'stacking', "blending"
-    ensemble_val_ratio: float = 0.2
-
-    # 可选预测方法:
-    # - 单变量预测单变量
-    # pred_method: str = "univariate-single-multistep-direct-output"       # USMDO
-    # pred_method: str = "univariate-single-multistep-direct"              # USMD
-    # pred_method: str = "univariate-single-multistep-recursive"           # USMR
-    # pred_method: str = "univariate-single-multistep-direct-recursive"    # USMDR
-    # - 多变量预测单变量
-    # pred_method: str = "multivariate-single-multistep-direct"            # MSMD
-    # pred_method: str = "multivariate-single-multistep-recursive"         # MSMR
-    # pred_method: str = "multivariate-single-multistep-direct-recursive"  # MSMDR
-    pred_method: str = "{pred_method}"
-    # 早停步数
-    patience: int = 100
-    # 是否对类别特征进行编码
-    encode_categorical_features: bool = False
-    # 多输出策略: multioutput / regressor_chain
-    multi_output_strategy: str = "multioutput"
-    # 预测类型: point / quantile
-    predict_type: str = "point"
-    # 分位数预测配置（predict_type=quantile 时生效）
-    quantiles: List[float] = field(default_factory=lambda: [0.1, 0.5, 0.9])
-    # Direct 方法是否使用 horizon-aware 外生特征展开
-    use_horizon_exogenous_for_direct: bool = False
-    # 全局训练模式（跨序列联合）
-    enable_global_training: bool = False
-    series_id_feature: str = "series_id"
-    # 模型超参数调优
-    perform_tuning: bool = False
-    tuning_metric: str = "neg_mean_absolute_error"
-    tuning_n_splits: int = 3
-    # 数据增强（训练集）
-    enable_data_augmentation: bool = False
-    augmentation_ratio: float = 0.2
-    augmentation_feature_noise_std: float = 0.01
-    augmentation_target_noise_std: float = 0.005
-    augmentation_random_state: int = 42
-    # 特征选择（fit on train, reuse on test/forecast）
-    enable_feature_selection: bool = False
-    feature_selection_method: str = "f_regression"  # f_regression / mutual_info
-    feature_selection_max_features: int = 80
-    feature_selection_min_features: int = 10
-    # 学习率策略
-    enable_auto_learning_rate: bool = False
-    auto_lr_min: float = 0.005
-    auto_lr_max: float = 0.2
-    # 鲁棒损失参数（用于 huber scorer）
-    huber_delta: float = 1.0
-    # ------------------------------
-    # 滑窗测试训练集异常处理
-    # ------------------------------
-    enable_train_outlier_handling: bool = False
-    train_outlier_method: str = "local_interpolate"
-    high_outlier_threshold: float = 15000.0
-    high_outlier_max_run_points: int = 4
-    drop_outlier_max_run_points: int = 2
-    drop_rebound_min_abs_diff: float = 900.0
-    # ------------------------------
-    # 性能与并行配置
-    # ------------------------------
-    window_parallel_workers: int = 1
-    multi_output_n_jobs: int = 1
-    quantile_parallel_workers: int = 1
-    ensemble_parallel_workers: int = 1
-    model_thread_count: int = 1
-    enable_step_logging: bool = False
-    forecast_log_interval: int = 24
-    # ------------------------------
-    # 结果保存路径
-    # ------------------------------
-    checkpoints_dir: str = "./saved_results/pretrained_models/"
-    test_results_dir: str = "./saved_results/results_test/"
-    pred_results_dir: str = "./saved_results/results_forecast/"
+    model_type: str = {model_type!r}
+    # {pred_method_short}: {pred_method_description}
+    pred_method: str = {pred_method!r}
 '''
 
 
@@ -617,7 +439,7 @@ def parse_args(argv: Optional[List[str]] = None):
     parser.add_argument("--format", choices=["yaml", "python"], default="yaml",
                         help="配置文件格式 (默认: yaml；python 为 legacy 兼容模式)")
     parser.add_argument("--base-config", type=str, default=None,
-                        help="YAML base_config。默认按策略自动选择 config.univariate_config 或 config.multivariate_config")
+                        help="YAML base_config。默认按策略和内生特征自动选择标准配置")
     parser.add_argument("--dry-run", action="store_true",
                         help="仅打印将生成的文件, 不实际创建")
 
@@ -647,8 +469,9 @@ def generate_python_config(params: dict, output_path: Path, dry_run: bool = Fals
         print(f"  Created: {output_path}")
 
 
-def default_base_config(strategy: str) -> str:
-    if strategy.startswith("ms"):
+def default_base_config(strategy: str, target_series_numeric_features: Optional[List[str]] = None) -> str:
+    """按数据集形态和预测策略选择标准配置入口。"""
+    if strategy.startswith("ms") or target_series_numeric_features:
         return "config.multivariate_config"
     return "config.univariate_config"
 
@@ -665,70 +488,58 @@ def _to_yaml_value(value: Any) -> Any:
     return value
 
 
-def _config_to_dict(cfg) -> dict:
-    if not is_dataclass(cfg):
-        raise TypeError(f"Config object must be a dataclass instance: {type(cfg)}")
-    return {field.name: _to_yaml_value(getattr(cfg, field.name)) for field in fields(cfg)}
-
-
-def _apply_generation_overrides(config_values: dict, params: dict) -> dict:
-    config_values.update(
-        {
-            "history_days": params["history_days"],
-            "predict_days": params["predict_days"],
-            "window_days": params["window_days"],
-            "now_time": params["now_time_iso"],
-            "start_time": None,
-            "future_time": None,
-            "data_dir": params["data_dir"],
-            "data_path": params["data_path"],
-            "freq": params["freq"],
-            "target_ts_feat": params["target_ts_feat"],
-            "target": params["target"],
-            "target_series_numeric_features": params["target_series_numeric_features"],
-            "target_series_categorical_features": params["target_series_categorical_features"],
-            "target_series_drop_features": params["target_series_drop_features"],
-            "enable_date_features": params["enable_date_features"],
-            "date_history_path": "df_date.csv" if params["enable_date_features"] else None,
-            "date_future_path": "df_date_future.csv" if params["enable_date_features"] else None,
-            "date_ts_feat": "date" if params["enable_date_features"] else None,
-            "datetype_features": ["date_type"] if params["enable_date_features"] else [],
-            "datetype_categorical_features": [],
-            "enable_weather_features": params["enable_weather_features"],
-            "weather_history_path": "df_weather.csv" if params["enable_weather_features"] else None,
-            "weather_future_path": "df_weather_future.csv" if params["enable_weather_features"] else None,
-            "weather_ts_feat": "ts" if params["enable_weather_features"] else None,
-            "weather_features": [
-                "rt_ssr",
-                "rt_ws10",
-                "rt_tt2",
-                "cal_rh",
-                "rt_ps",
-                "rt_rain",
-            ] if params["enable_weather_features"] else [],
-            "weather_categorical_features": [],
-            "enable_datetime_features": params["enable_datetime_features"],
-            "enable_lags_features": params["enable_lags_features"],
-            "lags": [
-                288,
-                576,
-                864,
-                1152,
-                1440,
-                1728,
-                2016,
-            ] if params["enable_lags_features"] else [],
-            "model_type": params["model_type"],
-            "pred_method": params["pred_method"],
-        }
-    )
-    return config_values
+def _build_generation_overrides(params: dict) -> dict:
+    """只写生成场景显式覆盖的字段，避免 YAML 重复完整基类默认值。"""
+    return {
+        "history_days": params["history_days"],
+        "predict_days": params["predict_days"],
+        "window_days": params["window_days"],
+        "now_time": params["now_time_iso"],
+        "data_dir": params["data_dir"],
+        "data_path": params["data_path"],
+        "freq": params["freq"],
+        "target_ts_feat": params["target_ts_feat"],
+        "target": params["target"],
+        "target_series_numeric_features": params["target_series_numeric_features"],
+        "target_series_categorical_features": params["target_series_categorical_features"],
+        "target_series_drop_features": params["target_series_drop_features"],
+        "enable_date_features": params["enable_date_features"],
+        "date_history_path": "df_date.csv" if params["enable_date_features"] else None,
+        "date_future_path": "df_date_future.csv" if params["enable_date_features"] else None,
+        "date_ts_feat": "date" if params["enable_date_features"] else None,
+        "datetype_features": ["date_type"] if params["enable_date_features"] else [],
+        "datetype_categorical_features": [],
+        "enable_weather_features": params["enable_weather_features"],
+        "weather_history_path": "df_weather.csv" if params["enable_weather_features"] else None,
+        "weather_future_path": "df_weather_future.csv" if params["enable_weather_features"] else None,
+        "weather_ts_feat": "ts" if params["enable_weather_features"] else None,
+        "weather_features": [
+            "rt_ssr",
+            "rt_ws10",
+            "rt_tt2",
+            "cal_rh",
+            "rt_ps",
+            "rt_rain",
+        ] if params["enable_weather_features"] else [],
+        "weather_categorical_features": [],
+        "enable_datetime_features": params["enable_datetime_features"],
+        "enable_lags_features": params["enable_lags_features"],
+        "lags": [
+            288,
+            576,
+            864,
+            1152,
+            1440,
+            1728,
+            2016,
+        ] if params["enable_lags_features"] else [],
+        "model_type": params["model_type"],
+        "pred_method": params["pred_method"],
+    }
 
 
 def build_yaml_config(params: dict) -> dict:
-    config_cls = load_model_config(params["base_config"], "ModelConfig")
-    config_values = _config_to_dict(config_cls())
-    config_values = _apply_generation_overrides(config_values, params)
+    config_values = _build_generation_overrides(params)
     overrides = {}
     used_fields = set()
     for group_name, field_names in YAML_OVERRIDE_GROUPS.items():
@@ -739,10 +550,6 @@ def build_yaml_config(params: dict) -> dict:
                 used_fields.add(field_name)
         if group_values:
             overrides[group_name] = group_values
-
-    remaining_fields = sorted(set(config_values) - used_fields)
-    if remaining_fields:
-        overrides["other"] = {field_name: config_values[field_name] for field_name in remaining_fields}
 
     return {
         "base_config": params["base_config"],
@@ -874,11 +681,29 @@ def main(argv: Optional[List[str]] = None):
                 "enable_lags_features": enable_lags,
                 "model_type": model_full,
                 "pred_method": method_full,
-                "base_config": args.base_config or default_base_config(strategy),
+                "base_config": args.base_config or default_base_config(strategy, target_series_numeric_features),
             }
             python_params = params | {
-                "target_series_numeric_features": repr(target_series_numeric_features),
-                "target_series_categorical_features": repr(target_series_categorical_features),
+                "date_history_path": "df_date.csv" if has_date else None,
+                "date_future_path": "df_date_future.csv" if has_date else None,
+                "date_ts_feat": "date" if has_date else None,
+                "datetype_features": ["date_type"] if has_date else [],
+                "datetype_categorical_features": [],
+                "weather_history_path": "df_weather.csv" if has_weather else None,
+                "weather_future_path": "df_weather_future.csv" if has_weather else None,
+                "weather_ts_feat": "ts" if has_weather else None,
+                "weather_features": [
+                    "rt_ssr",
+                    "rt_ws10",
+                    "rt_tt2",
+                    "cal_rh",
+                    "rt_ps",
+                    "rt_rain",
+                ] if has_weather else [],
+                "weather_categorical_features": [],
+                "lags": [288, 576, 864, 1152, 1440, 1728, 2016] if enable_lags else [],
+                "pred_method_short": METHOD_DESCRIPTION[method_full][0],
+                "pred_method_description": METHOD_DESCRIPTION[method_full][1],
             }
 
             # 构建文件名

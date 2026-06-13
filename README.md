@@ -37,12 +37,14 @@ tsproj_ml/
 ├── run.py                       # 推荐 CLI 入口，加载配置并应用参数覆盖
 ├── pyproject.toml               # uv 依赖定义，Python == 3.10.11
 ├── config/
+│   ├── config_sections.py       # 共享分组 dataclass 和预测策略说明
 │   ├── config_loader.py         # 无 import-time argparse 副作用的配置加载器
-│   ├── univariate_config.py     # 单变量标准配置模板
-│   ├── multivariate_config.py   # 多变量标准配置模板
+│   ├── generate_configs.py      # 根据 dataset 自动检测字段并批量生成模型配置
+│   ├── univariate_config.py     # electricity_univariate 单变量示例配置
+│   ├── multivariate_config.py   # ETTm1 多变量示例配置
 │   ├── aidc_electricity_computility/
 │   └── ETT-small/
-├── dataset/                     # ETT-small 和 AIDC electricity 数据
+├── dataset/                     # ETT-small、electricity_univariate 和 AIDC electricity 数据
 ├── data_provider/
 │   ├── data_loader.py           # 数据读取、时间轴构造、历史/未来切片
 │   ├── outlier_handling.py      # 滑窗训练段异常处理
@@ -60,13 +62,10 @@ tsproj_ml/
 │   ├── ModelEnsemble.py         # 融合模型
 │   ├── ModelSaveLoad.py         # pickle 保存/加载
 │   └── losses.py, learning_rate.py
-├── scripts/                     # 批量配置生成、运行模板和维护脚本
-│   ├── generate_configs.py      # 根据 dataset 自动检测字段并批量生成模型配置
+├── scripts/                     # 运行模板和维护说明
 │   ├── production_sync.md       # 生产包同步边界、可迁移模块和同步记录
 │   ├── run_model_test.sh        # 通过环境变量覆盖配置的模型测试启动脚本
-│   ├── template.sh              # run.py 标准命令模板，可复制后按场景调整
-│   ├── rm_dsstore.sh            # 清理项目中已跟踪的 .DS_Store 文件
-│   └── update_codes.sh          # 旧式 git 提交/拉取/推送脚本，使用前需谨慎核对
+│   └── template.sh              # run.py 标准命令模板，可复制后按场景调整
 ├── tests/                       # unittest 回归测试
 └── utils/
     ├── frequency.py             # pandas 频率解析
@@ -133,9 +132,9 @@ bash scripts/run_model_test.sh
 
 ## 配置生成
 
-`scripts/generate_configs.py` 是批量生成分组 YAML 配置文件的工具，不是模型运行入口。它从一个 dataset 叶子目录读取目标 CSV，自动检测数据文件、时间列、频率、预测基准时间、内生特征列和外生文件，然后按模型 × 策略矩阵写入 `config/`。
+`config/generate_configs.py` 是批量生成分组 YAML 配置文件的工具，不是模型运行入口。它从一个 dataset 叶子目录读取目标 CSV，自动检测数据文件、时间列、频率、预测基准时间、内生特征列和外生文件，然后按模型 × 策略矩阵写入 `config/`。
 
-YAML 按语义分组保存具体数据、任务、特征、预处理、模型、训练、异常处理、性能和输出等可配置项；标准默认值仍由 `config/univariate_config.py` 和 `config/multivariate_config.py` 提供。需要旧式 Python dataclass 配置时可显式传 `--format python`。
+YAML 按 `config_sections.py` 的分组语义保存覆盖项，例如 `target_series`、`exogenous_features`、`time_lag_features`、`model_strategy`。标准默认值仍由 `config/univariate_config.py` 和 `config/multivariate_config.py` 提供。需要旧式 Python dataclass 配置时可显式传 `--format python`。
 
 默认模型矩阵是 3 个树模型：
 
@@ -163,7 +162,7 @@ YAML 按语义分组保存具体数据、任务、特征、预处理、模型、
 | `--variant` | 文件名后缀，例如 `A1_201`、`A`、`B` |
 | `--config-dir` | 输出目录；建议显式传入，避免默认路径和项目约定漂移 |
 | `--format` | 输出格式，默认 `yaml`；`python` 为 legacy 兼容模式 |
-| `--base-config` | 可选；不传时按策略自动选择 `config.univariate_config` 或 `config.multivariate_config` |
+| `--base-config` | 可选；不传时按策略和内生特征自动选择 `config.univariate_config` 或 `config.multivariate_config` |
 | `--dry-run` | 只打印将生成的文件，不写入磁盘 |
 
 自动检测规则：
@@ -179,7 +178,7 @@ YAML 按语义分组保存具体数据、任务、特征、预处理、模型、
 例如为 `2026-06-11` 的一个 demand load 数据集预览配置：
 
 ```bash
-uv run python scripts/generate_configs.py \
+uv run python config/generate_configs.py \
   --dataset dataset/aidc_electricity_computility/electricity/2026-06-11/demand_load/A1_201 \
   --target h_total_use \
   --models lightgbm,xgboost,catboost \
@@ -245,10 +244,10 @@ uv run python run.py \
 
 当前模板说明：
 
-- `config/univariate_config.py` 默认指向 `dataset/aidc_electricity_computility/electricity/2026-06-11/demand_load/A1_201`。
-- `config/multivariate_config.py` 默认指向 `dataset/ETT-small/ETTm1.csv`。
-- 默认目标文件为 `df_power.csv`，时间列为 `count_data_time`，目标列为 `h_total_use`。
-- 默认 `pred_method` 为 `univariate-single-multistep-direct`。
+- `config/univariate_config.py` 默认指向 `dataset/electricity_univariate/`，目标文件为 `df_power.csv`，时间列为 `count_data_time`，目标列为 `h_total_use`。
+- `config/multivariate_config.py` 默认指向 `dataset/ETT-small/ETTm1.csv`，目标列为 `OT`，多变量输入列为 `HUFL`、`HULL`、`MUFL`、`MULL`、`LUFL`、`LULL`。
+- `config/multivariate_config.py` 默认启用 `dataset/ETT-small/ETTm1_exogenous/` 下的仿真日期类型和天气外生数据。
+- 单变量默认 `pred_method` 为 `univariate-single-multistep-direct`；多变量默认 `pred_method` 为 `multivariate-single-multistep-direct-recursive`。
 
 ## 关键配置
 
@@ -404,7 +403,7 @@ uv run python run.py \
 静态和测试检查：
 
 ```bash
-uv run python -m py_compile main.py run.py config/config_loader.py config/univariate_config.py config/multivariate_config.py scripts/generate_configs.py
+uv run python -m py_compile main.py run.py config/config_loader.py config/config_sections.py config/univariate_config.py config/multivariate_config.py config/generate_configs.py
 uv run python -m unittest discover -s tests -p "test_*.py"
 ```
 

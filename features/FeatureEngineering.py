@@ -885,7 +885,7 @@ class FeatureEngineer:
         self.exogenous_feature_engineer.reset()
         
         # 特征工程: 日期类型(节假日、特殊事件)特征
-        if df_date_history is not None:
+        if getattr(self.args, "enable_date_features", True) and df_date_history is not None:
             df_featured = self.exogenous_feature_engineer.extend_datetype_feature(
                 df=df_featured,
                 df_date=df_date_history,
@@ -894,7 +894,7 @@ class FeatureEngineer:
             if self.verbose:
                 logger.info(f"{self.log_prefix} after extend_datetype_feature df_featured: \n{df_featured.head()}")
                 logger.info(f"{self.log_prefix} after extend_datetype_feature df_featured shape: {df_featured.shape}")
-        elif df_date_future is not None:
+        elif getattr(self.args, "enable_date_features", True) and df_date_future is not None:
             df_featured = self.exogenous_feature_engineer.extend_datetype_feature(
                 df=df_featured,
                 df_date=df_date_future,
@@ -904,7 +904,7 @@ class FeatureEngineer:
                 logger.info(f"{self.log_prefix} after extend_datetype_feature df_featured: \n{df_featured.head()}")
                 logger.info(f"{self.log_prefix} after extend_datetype_feature df_featured shape: {df_featured.shape}")
         # 特征工程: 天气特征
-        if df_weather_history is not None:
+        if getattr(self.args, "enable_weather_features", True) and df_weather_history is not None:
             df_featured = self.exogenous_feature_engineer.extend_weather_feature(
                 df=df_featured,
                 df_weather=df_weather_history,
@@ -913,7 +913,7 @@ class FeatureEngineer:
             if self.verbose:
                 logger.info(f"{self.log_prefix} after extend_weather_feature df_featured: \n{df_featured.head()}")
                 logger.info(f"{self.log_prefix} after extend_weather_feature df_featured shape: {df_featured.shape}")
-        elif df_weather_future is not None:
+        elif getattr(self.args, "enable_weather_features", True) and df_weather_future is not None:
             df_featured = self.exogenous_feature_engineer.extend_future_weather_feature(
                 df=df_featured,
                 df_weather=df_weather_future,
@@ -923,15 +923,16 @@ class FeatureEngineer:
                 logger.info(f"{self.log_prefix} after extend_future_weather_feature df_featured: \n{df_featured.head()}")
                 logger.info(f"{self.log_prefix} after extend_future_weather_feature df_featured shape: {df_featured.shape}")
         # 特征工程: 日期时间特征
-        df_featured = self.exogenous_feature_engineer.extend_datetime_feature(
-            df=df_featured,
-            step_minutes=resolve_freq_step_minutes(self.args.freq),
-            n_per_day=resolve_samples_per_day(self.args.freq),
-        )
-        if self.verbose:
-            logger.info(f"{self.log_prefix} after extend_datetime_feature df_featured: \n{df_featured.head()}")
-            # logger.info(f"{self.log_prefix} after extend_datetime_feature df_featured.columns: \n{df_featured.columns}")
-            logger.info(f"{self.log_prefix} after extend_datetime_feature df_featured shape: {df_featured.shape}")
+        if getattr(self.args, "enable_datetime_features", True):
+            df_featured = self.exogenous_feature_engineer.extend_datetime_feature(
+                df=df_featured,
+                step_minutes=resolve_freq_step_minutes(self.args.freq),
+                n_per_day=resolve_samples_per_day(self.args.freq),
+            )
+            if self.verbose:
+                logger.info(f"{self.log_prefix} after extend_datetime_feature df_featured: \n{df_featured.head()}")
+                # logger.info(f"{self.log_prefix} after extend_datetime_feature df_featured.columns: \n{df_featured.columns}")
+                logger.info(f"{self.log_prefix} after extend_datetime_feature df_featured shape: {df_featured.shape}")
         
         # 插值填充预测缺失值
         df_featured = df_featured.interpolate(method="linear", limit_direction="both")
@@ -986,6 +987,7 @@ class FeatureEngineer:
         """
         df_series_featured = df_series.copy()
         self.endogenous_feature_engineer.reset()
+        lags = self.args.lags if getattr(self.args, "enable_lags_features", True) else []
 
         if self.args.pred_method == "univariate-single-multistep-direct-output":
             df_series_featured = self.endogenous_feature_engineer.extend_direct_multi_step_targets(
@@ -1000,7 +1002,7 @@ class FeatureEngineer:
             df_series_featured = self.endogenous_feature_engineer.extend_lag_feature_univariate(
                 df = df_series_featured,
                 target = target_feature,
-                lags = self.args.lags,
+                lags = lags,
             )
             if self.verbose:
                 logger.info(f"{self.log_prefix} after extend_lag_feature_univariate df_series_featured: \n{df_series_featured.head()}")
@@ -1019,7 +1021,7 @@ class FeatureEngineer:
             df_series_featured = self.endogenous_feature_engineer.extend_lag_feature_univariate(
                 df = df_series_featured,
                 target = target_feature,
-                lags = self.args.lags,
+                lags = lags,
             )
             if self.verbose:
                 logger.info(f"{self.log_prefix} after extend_lag_feature_univariate df_series_featured: \n{df_series_featured.head()}")
@@ -1036,7 +1038,7 @@ class FeatureEngineer:
             df_series_featured = self.endogenous_feature_engineer.extend_lag_feature_univariate(
                 df = df_series_featured,
                 target = target_feature,
-                lags = self.args.lags,
+                lags = lags,
             )
             if self.verbose:
                 logger.info(f"{self.log_prefix} after extend_lag_feature_univariate df_series_featured: \n{df_series_featured.head()}")
@@ -1054,7 +1056,7 @@ class FeatureEngineer:
             df_series_featured = self.endogenous_feature_engineer.extend_lag_feature_multivariate(
                 df = df_series_featured,
                 endogenous_cols = endogenous_features_with_target,
-                lags = self.args.lags,
+                lags = lags,
             )
             if self.verbose:
                 logger.info(f"{self.log_prefix} after extend_lag_feature_multivariate df_series_featured: \n{df_series_featured.head()}")
@@ -1071,7 +1073,7 @@ class FeatureEngineer:
             df_series_featured = self.endogenous_feature_engineer.extend_lag_feature_multivariate(
                 df = df_series_featured,
                 endogenous_cols = endogenous_features_with_target,
-                lags = self.args.lags,
+                lags = lags,
             )
             if self.verbose:
                 logger.info(f"{self.log_prefix} after extend_lag_feature_multivariate df_series_featured: \n{df_series_featured.head()}")
@@ -1088,7 +1090,7 @@ class FeatureEngineer:
             df_series_featured = self.endogenous_feature_engineer.extend_lag_feature_multivariate(
                 df = df_series_featured,
                 endogenous_cols = endogenous_features_with_target,
-                lags = self.args.lags,
+                lags = lags,
             )
             if self.verbose:
                 logger.info(f"{self.log_prefix} after extend_lag_feature_multivariate df_series_featured: \n{df_series_featured.head()}")

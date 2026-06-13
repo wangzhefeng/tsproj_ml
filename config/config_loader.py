@@ -22,6 +22,9 @@ except ImportError:  # pragma: no cover - exercised only in incomplete envs
     yaml = None
 
 
+DEPRECATED_NOOP_CONFIG_FIELDS = {"start_time", "future_time"}
+
+
 def load_model_config(
     config_module: str = "config.univariate_config",
     config_class: str = "ModelConfig",
@@ -55,13 +58,15 @@ def _coerce_override_value(field_name: str, current_value: Any, new_value: Any) 
         return None
     if isinstance(current_value, datetime.datetime) and isinstance(new_value, str):
         return datetime.datetime.fromisoformat(new_value)
-    if field_name in {"now_time", "start_time", "future_time"} and isinstance(new_value, str):
+    if field_name == "now_time" and isinstance(new_value, str):
         return datetime.datetime.fromisoformat(new_value)
     return new_value
 
 
 def apply_config_overrides(cfg: Any, overrides: Mapping[str, Any], source: str = "YAML config") -> Any:
     for key, value in overrides.items():
+        if key in DEPRECATED_NOOP_CONFIG_FIELDS:
+            continue
         if not hasattr(cfg, key):
             raise AttributeError(f"Unknown config override '{key}' in {source}")
         current_value = getattr(cfg, key)

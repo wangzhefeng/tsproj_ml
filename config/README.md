@@ -1,6 +1,6 @@
 # Config 说明
 
-`config/` 保存模型运行配置、标准 Python 模板、分组 YAML 配置和配置加载器。标准默认值由 Python `@dataclass` 提供，具体数据和任务参数优先用 YAML 覆盖。
+`config/` 保存模型运行配置、共享配置分组、分组 YAML 配置、配置加载器和配置生成器。标准默认值由 Python `@dataclass` 提供，具体数据和任务参数优先用 YAML 覆盖。
 
 ## 加载规则
 
@@ -24,29 +24,33 @@ YAML 基本结构：
 ```yaml
 base_config: config.multivariate_config
 overrides:
-  runtime:
-    history_days: 365
-    predict_days: 1
-    window_days: 30
-    now_time: '2018-06-26T19:45:00'
-  data:
+  target_series:
     data_dir: ./dataset/ETT-small/
     data_path: ETTm1.csv
     freq: 15min
     target_ts_feat: date
     target: OT
-  model:
+  exogenous_features:
+    enable_date_features: true
+    date_history_path: ETTm1_exogenous/df_date.csv
+    date_future_path: ETTm1_exogenous/df_date_future.csv
+    enable_weather_features: true
+    weather_history_path: ETTm1_exogenous/df_weather.csv
+    weather_future_path: ETTm1_exogenous/df_weather_future.csv
+  model_strategy:
     model_type: lightgbm
     pred_method: multivariate-single-multistep-recursive
 ```
 
-`config_class` 不写入 YAML；加载器默认使用 `ModelConfig`。`overrides` 可按语义分组，也兼容旧的平铺写法；最终叶子字段必须存在于模板中，未知字段会报错，避免拼写错误静默失效。
+`config_class` 不写入 YAML；加载器默认使用 `ModelConfig`。`overrides` 可按 `config_sections.py` 的配置类语义分组，也兼容旧的平铺写法；最终叶子字段必须存在于模板中，未知字段会报错，避免拼写错误静默失效。
 
 ## 目录
 
 ```text
 config/
+├── config_sections.py
 ├── config_loader.py
+├── generate_configs.py
 ├── univariate_config.py
 ├── multivariate_config.py
 ├── ETT-small/
@@ -60,7 +64,7 @@ config/
 
 | 配置目录 | 配置数 |
 |---|---:|
-| `ETT-small/ETTm1` | 21 Python + 21 YAML |
+| `ETT-small/ETTm1` | 21 YAML |
 | `aidc_electricity_computility/electricity/2026-01-01/route_A` | 12 |
 | `aidc_electricity_computility/electricity/2026-01-01/route_B` | 12 |
 | `aidc_electricity_computility/electricity/2026-01-07/route_A` | 12 |
@@ -86,6 +90,19 @@ config/
 - 时间列：`date`
 - 目标列：`OT`
 - 频率：`15min`
+- 示例外生目录：`dataset/ETT-small/ETTm1_exogenous`
+- 示例日期外生：`ETTm1_exogenous/df_date.csv`、`ETTm1_exogenous/df_date_future.csv`
+- 示例天气外生：`ETTm1_exogenous/df_weather.csv`、`ETTm1_exogenous/df_weather_future.csv`
+
+### electricity_univariate
+
+- 数据目录：`dataset/electricity_univariate`
+- 目标文件：`df_power.csv`
+- 时间列：`count_data_time`
+- 目标列：`h_total_use`
+- 频率：`5min`
+- 日期外生：`df_date.csv`、`df_date_future.csv`
+- 天气外生：`df_weather.csv`、`df_weather_future.csv`
 
 ### AIDC electricity
 
@@ -130,8 +147,15 @@ dataset/aidc_electricity_computility/electricity/2026-06-11/demand_load/AIDC/rou
 
 ## 配置生成
 
-`scripts/generate_configs.py` 用于从 dataset 叶子目录批量生成分组 YAML 配置。生成前建议使用
+`config/generate_configs.py` 用于从 dataset 叶子目录批量生成分组 YAML 配置。生成前建议使用
 `--dry-run` 检查输出路径和文件名。
+
+```bash
+uv run python config/generate_configs.py \
+  --dataset dataset/electricity_univariate \
+  --target h_total_use \
+  --dry-run
+```
 
 默认模型矩阵：
 

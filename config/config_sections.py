@@ -1,0 +1,299 @@
+# -*- coding: utf-8 -*-
+"""机器学习时间序列配置的共享分组定义。
+
+本模块按职责拆分配置字段，提升阅读和维护效率；组合后的
+`BaseModelConfig` 仍然暴露扁平 dataclass 字段。因此现有运行代码、
+YAML 覆盖、CLI 覆盖和 `dataclasses.fields()` 仍然继续使用
+`cfg.data_path`、`cfg.pred_method`、`cfg.pred_results_dir` 这类属性。
+"""
+
+import datetime
+from dataclasses import dataclass, field
+from typing import Dict, List, Optional
+
+
+PRED_METHOD_HELP = {
+    "univariate-single-multistep-direct-output": "USMDO: 单变量输入，多步直接输出",
+    "univariate-single-multistep-direct": "USMD: 单变量输入，多步直接预测",
+    "univariate-single-multistep-recursive": "USMR: 单变量输入，多步递归预测",
+    "univariate-single-multistep-direct-recursive": "USMDR: 单变量输入，多步直接递归预测",
+    "multivariate-single-multistep-direct": "MSMD: 多变量输入，多步直接预测",
+    "multivariate-single-multistep-recursive": "MSMR: 多变量输入，多步递归预测",
+    "multivariate-single-multistep-direct-recursive": "MSMDR: 多变量输入，多步直接递归预测",
+}
+
+
+@dataclass
+class RuntimeConfig:
+    """运行模式和时间窗口配置。
+
+    `now_time` 是预测锚点；运行时根据 `history_days`、`predict_days`
+    和 `window_days` 推导历史窗口、预测窗口和滑窗长度。
+    """
+
+    is_testing: bool = False  # 模型测试
+    is_forecasting: bool = True  # 模型预测
+    history_days: int = 31  # 历史数据天数
+    predict_days: int = 1  # 预测未来数据天数
+    window_days: int = 15  # 滑动窗口天数
+    now_time: datetime.datetime = field(default_factory=lambda: datetime.datetime(2026, 6, 11, 23, 55, 0))  # 预测推理开始时间
+
+
+@dataclass
+class TargetSeriesConfig:
+    """目标序列和内生变量列配置。
+
+    `target_series_numeric_features` 为空时自动推断数值内生变量；
+    非空时作为显式白名单。
+    """
+
+    data_dir: str = "./dataset/aidc_electricity_computility/electricity/2026-06-11/demand_load/A1_201"
+    data_path: str = "df_power.csv"
+    freq: str = "5min"
+    target_ts_feat: str = "count_data_time"
+    target: str = "h_total_use"
+    target_series_numeric_features: List[str] = field(default_factory=list)
+    target_series_categorical_features: List[str] = field(default_factory=list)
+    target_series_drop_features: List[str] = field(default_factory=list)
+
+
+@dataclass
+class ExogenousFeatureConfig:
+    """外生特征配置。
+
+    日期类型、气象、日期时间衍生特征都属于不由目标序列自身滞后直接生成的
+    外生信息。`enable_*` 字段是运行时开关；路径字段决定开关启用时是否加载
+    对应外部文件。
+    """
+
+    # 日期类型数据配置
+    enable_date_features: bool = True
+    date_history_path: Optional[str] = "df_date.csv"
+    date_future_path: Optional[str] = "df_date_future.csv"
+    date_ts_feat: Optional[str] = "date"
+    datetype_features: List[str] = field(default_factory=lambda: ["date_type"])
+    datetype_categorical_features: List[str] = field(default_factory=list)
+
+    # 气象数据配置
+    enable_weather_features: bool = True
+    weather_history_path: Optional[str] = "df_weather.csv"
+    weather_future_path: Optional[str] = "df_weather_future.csv"
+    weather_ts_feat: Optional[str] = "ts"
+    weather_features: List[str] = field(
+        default_factory=lambda: [
+            "rt_ssr",   # 太阳总辐射
+            "rt_ws10",  # 10m 风速
+            "rt_tt2",   # 2M 气温
+            "cal_rh",   # 相对湿度
+            "rt_ps",    # 气压
+            "rt_rain",  # 降雨量
+        ]
+    )
+    weather_categorical_features: List[str] = field(default_factory=list)
+
+    # 日期时间特征：从时间戳直接派生，作为可预知外生变量使用。
+    enable_datetime_features: bool = True
+    datetime_features: List[str] = field(
+        default_factory=lambda: [
+            "minute",
+            "hour",
+            "day",
+            "weekday",
+            "week",
+            "day_of_week",
+            "week_of_year",
+            "month",
+            "days_in_month",
+            "quarter",
+            "day_of_year",
+            "year",
+        ]
+    )
+    datetime_categorical_features: List[str] = field(default_factory=list)
+
+
+@dataclass
+class TimeLagFeatureConfig:
+    """特征滞后数配置。
+
+    滞后特征由目标序列或内生变量的历史值生成，不再与日期时间外生特征混放。
+    """
+
+    # 特征滞后数列表
+    enable_lags_features: bool = True
+    lags: List[int] = field(
+        default_factory=lambda: [
+            1 * 288,  # 日滞后
+            2 * 288,
+            3 * 288,
+            4 * 288,
+            5 * 288,
+            6 * 288,
+            7 * 288,  # 周滞后
+        ]
+    )
+
+
+@dataclass
+class AdvancedFeatureConfig:
+    """可选的内生统计特征、周期特征和交互特征配置。"""
+
+    enable_advanced_features: bool = False
+
+    enable_rolling_features: bool = False
+    rolling_columns: List[str] = field(default_factory=lambda: ["y"])
+    rolling_windows: List[int] = field(default_factory=lambda: [3, 7, 14, 28])
+    rolling_stats: List[str] = field(default_factory=lambda: ["mean", "std", "min", "max", "skew", "kurt"])
+
+    enable_expanding_features: bool = False
+    expanding_columns: List[str] = field(default_factory=lambda: ["y"])
+    expanding_stats: List[str] = field(default_factory=lambda: ["mean", "std", "min", "max", "skew", "kurt"])
+
+    enable_diff_features: bool = False
+    diff_columns: List[str] = field(default_factory=lambda: ["y"])
+    diff_periods: List[int] = field(default_factory=lambda: [1, 7, 24])
+
+    enable_pct_change_features: bool = False
+    pct_change_columns: List[str] = field(default_factory=lambda: ["y"])
+    pct_change_periods: List[int] = field(default_factory=lambda: [1, 7])
+
+    enable_time_since_features: bool = False
+    time_since_columns: List[str] = field(default_factory=lambda: ["y"])
+    time_since_events: List[str] = field(default_factory=lambda: ["peak", "trough"])
+
+    enable_cyclical_features: bool = False
+    cyclical_columns: List[str] = field(default_factory=lambda: ["minute"])
+    cyclical_period: int = 15
+
+    enable_interaction_features: bool = False
+    interaction_column_pairs: List[tuple] = field(default_factory=lambda: [("y", "dt_hour")])
+    interaction_operations: List[str] = field(default_factory=lambda: ["add", "subtract", "multiply", "divide"])
+
+    enable_polynomial_features: bool = False
+    polynomial_columns: List[str] = field(default_factory=lambda: ["y"])
+    polynomial_degree: int = 2
+
+
+@dataclass
+class PreprocessingConfig:
+    """特征缩放、目标缩放和类别编码配置。"""
+
+    # 预测特征
+    scale_features: bool = False  # 是否对预测特征 X 进行归一化/标准化
+    feature_scaler_type: str = "minmax"  # 预测特征 X 的缩放方法: "standard" 或 "minmax"
+    # 目标特征
+    scale_target: bool = False  # 是否对目标变量 Y 进行归一化/标准化
+    inverse_target: bool = False  # 预测结果是否对目标变量 Y 进行逆变换
+    target_scaler_type: str = "minmax"  # 目标变量 Y 的缩放方法: "none"、"standard"、"minmax"、"log1p"、"robust" 或 "yeo-johnson"
+    use_grouped_scaling: bool = False  # 是否对特征使用分组归一化/标准化
+    encode_categorical_features: bool = False  # 是否对类别特征进行编码
+
+
+@dataclass
+class ModelStrategyConfig:
+    """模型类型、融合模式和预测策略配置。"""
+
+    # 单模型预测
+    model_type: str = "lightgbm"
+    model_params: Dict = field(default_factory=dict)
+
+    # 模型融合预测
+    enable_ensemble: bool = False
+    ensemble_models: List[str] = field(default_factory=lambda: ["lgb", "xgb", "cat"])
+    ensemble_method: str = "stacking"  # "averaging"、"weighted"、"stacking" 或 "blending"
+    ensemble_val_ratio: float = 0.2
+
+    # 可选预测方法详见 PRED_METHOD_HELP。
+    pred_method: str = "univariate-single-multistep-direct"
+    multi_output_strategy: str = "multioutput"  # 多输出策略: multioutput / regressor_chain
+    predict_type: str = "point"  # 预测类型: point / quantile
+    quantiles: List[float] = field(default_factory=lambda: [0.1, 0.5, 0.9])  # 分位数预测配置，predict_type=quantile 时生效
+    use_horizon_exogenous_for_direct: bool = False  # Direct 方法是否使用 horizon-aware 外生特征展开
+    block_size: int = 0  # Direct-Recursive 方法的分块大小
+
+    enable_global_training: bool = False  # 全局训练模式，跨序列联合训练
+    series_id_feature: str = "series_id"
+
+
+@dataclass
+class TrainingEnhancementConfig:
+    """训练阶段的调参、增强、特征选择和损失函数配置。"""
+
+    patience: int = 100  # 早停步数
+
+    # 模型超参数调优
+    perform_tuning: bool = False
+    tuning_metric: str = "neg_mean_absolute_error"
+    tuning_n_splits: int = 3
+
+    # 数据增强，fit 训练集时生效。
+    enable_data_augmentation: bool = False
+    augmentation_ratio: float = 0.2
+    augmentation_feature_noise_std: float = 0.01
+    augmentation_target_noise_std: float = 0.005
+    augmentation_random_state: int = 42
+
+    # 特征选择：在训练集上拟合，并复用于测试和预测阶段。
+    enable_feature_selection: bool = False
+    feature_selection_method: str = "f_regression"  # f_regression / mutual_info
+    feature_selection_max_features: int = 80
+    feature_selection_min_features: int = 10
+
+    # 学习率策略
+    enable_auto_learning_rate: bool = False
+    auto_lr_min: float = 0.005
+    auto_lr_max: float = 0.2
+    huber_delta: float = 1.0  # 鲁棒损失参数，用于 huber scorer
+
+
+@dataclass
+class TrainOutlierConfig:
+    """滑窗测试阶段训练窗口异常处理配置。"""
+
+    enable_train_outlier_handling: bool = False
+    train_outlier_method: str = "local_interpolate"
+    high_outlier_threshold: float = 15000.0
+    high_outlier_max_run_points: int = 4
+    drop_outlier_max_run_points: int = 2
+    drop_rebound_min_abs_diff: float = 900.0
+
+
+@dataclass
+class PerformanceConfig:
+    """并行度和过程日志配置。"""
+
+    window_parallel_workers: int = 1
+    max_test_windows: Optional[int] = None
+    test_window_stride: int = 1
+    multi_output_n_jobs: int = 1
+    quantile_parallel_workers: int = 1
+    ensemble_parallel_workers: int = 1
+    model_thread_count: int = 1
+    enable_step_logging: bool = False
+    forecast_log_interval: int = 24
+
+
+@dataclass
+class OutputConfig:
+    """模型、测试结果和预测结果的输出目录配置。"""
+
+    checkpoints_dir: str = "./saved_results/pretrained_models/"
+    test_results_dir: str = "./saved_results/results_test/"
+    pred_results_dir: str = "./saved_results/results_forecast/"
+
+
+@dataclass
+class BaseModelConfig(
+    RuntimeConfig,
+    TargetSeriesConfig,
+    ExogenousFeatureConfig,
+    TimeLagFeatureConfig,
+    AdvancedFeatureConfig,
+    PreprocessingConfig,
+    ModelStrategyConfig,
+    TrainingEnhancementConfig,
+    TrainOutlierConfig,
+    PerformanceConfig,
+    OutputConfig,
+):
+    """供公开 `ModelConfig` 继承的扁平组合配置基类。"""

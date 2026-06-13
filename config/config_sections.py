@@ -23,6 +23,40 @@ PRED_METHOD_HELP = {
 }
 
 
+# 标准频率 → 每天样本数映射，用于生成与频率匹配的滞后步数。
+_FREQ_SAMPLES_PER_DAY: Dict[str, int] = {
+    "1min": 1440, "5min": 288, "15min": 96, "30min": 48,
+    "1h": 24, "2h": 12, "4h": 6, "6h": 4, "8h": 3,
+    "12h": 2, "1D": 1, "1W": 1,
+}
+
+
+def default_lags_for_freq(freq: str, days: int = 7) -> List[int]:
+    """根据频率返回 1~N 天的滞后步数列表。
+
+    Args:
+        freq: pandas 频率字符串，如 ``"5min"``、``"15min"``、``"1h"``。
+        days: 滞后天数，默认 7。
+
+    Returns:
+        滞后步数列表，例如 ``"15min"`` 返回 ``[96, 192, 288, 384, 480, 576, 672]``。
+        无法识别频率时回退到 5min 基准（``n=288``）。
+    """
+    n = _FREQ_SAMPLES_PER_DAY.get(freq)
+    if n is not None:
+        return [n * d for d in range(1, days + 1)]
+
+    # 回退：尝试从 "Nmin" 格式解析
+    import re
+    match = re.match(r"^(\d+)\s*min$", str(freq))
+    if match:
+        n = 24 * 60 // int(match.group(1))
+        return [n * d for d in range(1, days + 1)]
+
+    # 最终回退：5min 基准
+    return [288 * d for d in range(1, days + 1)]
+
+
 @dataclass
 class RuntimeConfig:
     """运行模式和时间窗口配置。
@@ -119,18 +153,10 @@ class TimeLagFeatureConfig:
     滞后特征由目标序列或内生变量的历史值生成，不再与日期时间外生特征混放。
     """
 
-    # 特征滞后数列表
+    # 特征滞后数列表；优先由具体配置根据 freq 显式覆盖，基类默认以 5min 为基准。
     enable_lags_features: bool = True
     lags: List[int] = field(
-        default_factory=lambda: [
-            1 * 288,  # 日滞后
-            2 * 288,
-            3 * 288,
-            4 * 288,
-            5 * 288,
-            6 * 288,
-            7 * 288,  # 周滞后
-        ]
+        default_factory=lambda: default_lags_for_freq("5min")
     )
 
 

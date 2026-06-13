@@ -40,6 +40,8 @@ from typing import Any, Dict, List, Optional
 import pandas as pd
 import yaml
 
+from config.config_sections import default_lags_for_freq
+
 # 项目根路径
 ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
@@ -524,15 +526,11 @@ def _build_generation_overrides(params: dict) -> dict:
         "weather_categorical_features": [],
         "enable_datetime_features": params["enable_datetime_features"],
         "enable_lags_features": params["enable_lags_features"],
-        "lags": [
-            288,
-            576,
-            864,
-            1152,
-            1440,
-            1728,
-            2016,
-        ] if params["enable_lags_features"] else [],
+        "lags": (
+            default_lags_for_freq(params["freq"])
+            if params["enable_lags_features"]
+            else []
+        ),
         "model_type": params["model_type"],
         "pred_method": params["pred_method"],
     }
@@ -701,7 +699,7 @@ def main(argv: Optional[List[str]] = None):
                     "rt_rain",
                 ] if has_weather else [],
                 "weather_categorical_features": [],
-                "lags": [288, 576, 864, 1152, 1440, 1728, 2016] if enable_lags else [],
+                "lags": default_lags_for_freq(freq) if enable_lags else [],
                 "pred_method_short": METHOD_DESCRIPTION[method_full][0],
                 "pred_method_description": METHOD_DESCRIPTION[method_full][1],
             }

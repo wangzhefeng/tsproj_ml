@@ -1,9 +1,8 @@
 # -*- coding: utf-8 -*-
 import datetime
 from dataclasses import dataclass, field
-from typing import Dict
 
-from config.config_sections import BaseModelConfig
+from config.config_sections import BaseModelConfig, default_lags_for_freq
 
 
 @dataclass
@@ -54,24 +53,8 @@ class ModelConfig(BaseModelConfig):
         ]
     )
 
-    # LightGBM 默认参数沿用 ETTm1 实验设置。
-    model_params: Dict = field(
-        default_factory=lambda: {
-            "boosting_type": "gbdt",
-            "objective": "regression_l1",
-            "metric": "mae",
-            "n_estimators": 300,
-            "learning_rate": 0.05,
-            "max_bin": 63,
-            "num_leaves": 31,
-            "max_depth": -1,
-            "feature_fraction": 0.8,
-            "bagging_fraction": 0.8,
-            "bagging_freq": 1,
-            "verbose": -1,
-            "force_col_wise": True,
-        }
-    )
+    # 滞后步数：15min 频率下 1~7 天 = 96~672 步。
+    lags: list[int] = field(default_factory=lambda: default_lags_for_freq("15min"))
 
     # 预测策略：USMD = 单变量输入，多步直接预测。
     pred_method: str = "univariate-single-multistep-direct"

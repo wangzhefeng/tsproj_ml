@@ -66,13 +66,13 @@ overrides:
   time_lag_features:
     enable_lags_features: true
     lags:
+    - 96
+    - 192
     - 288
+    - 384
+    - 480
     - 576
-    - 864
-    - 1152
-    - 1440
-    - 1728
-    - 2016
+    - 672
   advanced_features:
     enable_advanced_features: false
     enable_rolling_features: false
@@ -146,20 +146,7 @@ overrides:
     encode_categorical_features: false
   model_strategy:
     model_type: catboost
-    model_params:
-      boosting_type: gbdt
-      objective: regression_l1
-      metric: mae
-      n_estimators: 300
-      learning_rate: 0.05
-      max_bin: 63
-      num_leaves: 31
-      max_depth: -1
-      feature_fraction: 0.8
-      bagging_fraction: 0.8
-      bagging_freq: 1
-      verbose: -1
-      force_col_wise: true
+    model_params: {}
     enable_ensemble: false
     ensemble_models:
     - lgb

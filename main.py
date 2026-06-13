@@ -25,7 +25,6 @@ import copy
 import time
 import datetime
 import warnings
-import argparse
 from typing import List
 from pathlib import Path
 ROOT = str(Path.cwd())
@@ -36,7 +35,7 @@ from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_compl
 import numpy as np
 import pandas as pd
 
-from config.config_loader import load_model_config, load_yaml_config
+from config.config_loader import load_yaml_config
 from data_provider.data_loader import DataLoader
 from features.FeatureScalering import (
     FeatureScaler,
@@ -537,48 +536,25 @@ class Model:
 
 
 
-def args_parse():
-    parser = argparse.ArgumentParser(description="Minimal local entry for time series forecasting")
-    parser.add_argument(
-        "--config-module",
-        type=str,
-        default="config.univariate_config",
-        help="Python module path for config, e.g. config.univariate_config",
-    )
-    parser.add_argument(
-        "--config-class",
-        type=str,
-        default="ModelConfig",
-        help="Config class name in config module",
-    )
-    parser.add_argument(
-        "--config-yaml",
-        type=str,
-        default=None,
-        help="Sparse YAML config path. YAML overrides are applied over the selected config module.",
-    )
-    return parser.parse_args()
-
-
 # 测试代码 main 函数
 def main():
     """
     主函数入口
+
+    配置文件切换：修改 CONFIG_YAML 即可切换不同的模型配置。
+    YAML 内部的 base_config 字段指定基础 Python 配置模块入口。
     """
     # ensuer runtime environment
     from utils.runtime_env import ensure_runtime_environment
     ensure_runtime_environment()
-    # 模型配置参数实例
-    cli_args = args_parse()
-    if cli_args.config_yaml:
-        args = load_yaml_config(
-            cli_args.config_yaml,
-            config_module=cli_args.config_module,
-            config_class=cli_args.config_class,
-        )
-    else:
-        model_config = load_model_config(cli_args.config_module, cli_args.config_class)
-        args = model_config()
+    # ------------------------------
+    # 配置文件切换区域
+    # ------------------------------
+    CONFIG_YAML = "config/aidc_electricity_computility/electricity/2026-06-11/A1_01a/model_config_xgb_usmd_A1_01a.yaml"
+    # ------------------------------
+    # 创建模型配置参数
+    # ------------------------------
+    args = load_yaml_config(CONFIG_YAML)
     # 创建模型实例
     model = Model(args)
     # 运行模型

@@ -33,8 +33,8 @@
 
 ```text
 tsproj_ml/
-├── main.py                      # 主流程入口，包含 Model.run() 和轻量直跑入口
-├── run.py                       # 推荐 CLI 入口，加载配置并应用参数覆盖
+├── main.py                      # 主流程入口，包含 Model.run()，通过硬编码 CONFIG_YAML 切换配置
+├── run.py                       # 推荐 CLI 入口，通过 --config-yaml 加载配置并应用 CLI 参数覆盖
 ├── pyproject.toml               # uv 依赖定义，Python == 3.10.11
 ├── config/
 │   ├── config_sections.py       # 共享分组 dataclass 和预测策略说明
@@ -107,19 +107,15 @@ uv run python run.py \
   --is-forecasting 0
 ```
 
-`run.py` 是正式运行入口，负责完整 CLI 覆盖；配置优先级为：Python 模板默认值 < YAML `overrides` < `run.py` CLI 覆盖。默认 Python 配置模块和类名为：
-
-- `config.univariate_config`
-- `ModelConfig`
+`run.py` 是正式运行入口，负责完整 CLI 覆盖；配置优先级为：Python 模板默认值（YAML 内 `base_config` 指定）< YAML `overrides` < `run.py` CLI 覆盖。`--config-yaml` 为必填参数。
 
 轻量本地入口：
 
 ```bash
-uv run python main.py \
-  --config-yaml config/ETT-small/ETTm1/model_config_lgbm_usmd.yaml
+uv run python main.py
 ```
 
-`main.py` 只支持 `--config-yaml`、`--config-module` 和 `--config-class`，不承担模型、数据、时间窗口等完整覆盖参数。运行真实项目配置时，优先从 `config/README.md` 选择具体 YAML。
+`main.py` 通过 `CONFIG_YAML` 常量直接指定配置文件路径，适合快速切换单配置测试。运行真实项目配置时，优先使用 `run.py` 并从 `config/README.md` 选择具体 YAML。
 
 脚本入口默认值也已对齐到当前模板：
 
@@ -134,7 +130,7 @@ bash scripts/run_model_test.sh
 
 `config/generate_configs.py` 是批量生成分组 YAML 配置文件的工具，不是模型运行入口。它从一个 dataset 叶子目录读取目标 CSV，自动检测数据文件、时间列、频率、预测基准时间、内生特征列和外生文件，然后按模型 × 策略矩阵写入 `config/`。
 
-YAML 按 `config_sections.py` 的分组语义保存覆盖项，例如 `target_series`、`exogenous_features`、`time_lag_features`、`model_strategy`。标准默认值仍由 `config/univariate_config.py` 和 `config/multivariate_config.py` 提供。需要旧式 Python dataclass 配置时可显式传 `--format python`。
+YAML 按 `config_sections.py` 的分组语义保存覆盖项，例如 `target_series`、`exogenous_features`、`time_lag_features`、`model_strategy`。标准默认值由 YAML 内的 `base_config` 字段指定（通常为 `config.univariate_config` 或 `config.multivariate_config`）。
 
 默认模型矩阵是 3 个树模型：
 
@@ -161,7 +157,6 @@ YAML 按 `config_sections.py` 的分组语义保存覆盖项，例如 `target_se
 | `--strategies` | 逗号分隔策略列表，默认 `usmdo,usmd,usmr,usmdr` |
 | `--variant` | 文件名后缀，例如 `A1_201`、`A`、`B` |
 | `--config-dir` | 输出目录；建议显式传入，避免默认路径和项目约定漂移 |
-| `--format` | 输出格式，默认 `yaml`；`python` 为 legacy 兼容模式 |
 | `--base-config` | 可选；不传时按策略和内生特征自动选择 `config.univariate_config` 或 `config.multivariate_config` |
 | `--dry-run` | 只打印将生成的文件，不写入磁盘 |
 
@@ -188,7 +183,7 @@ uv run python config/generate_configs.py \
   --dry-run
 ```
 
-确认输出路径后去掉 `--dry-run` 即可生成实际配置。当前 `2026-06-11/demand_load` 已按 6 个叶子数据集保留 72 个 legacy Python 配置文件：
+确认输出路径后去掉 `--dry-run` 即可生成实际配置。当前 `2026-06-11/demand_load` 已按 6 个叶子数据集生成了 72 个 YAML 配置文件：
 
 | 数据集 | 配置目录 | 文件数 |
 |---|---|---:|
@@ -199,26 +194,7 @@ uv run python config/generate_configs.py \
 | `AIDC/route_A` | `config/aidc_electricity_computility/electricity/2026-06-11/AIDC/route_A` | 12 |
 | `AIDC/route_B` | `config/aidc_electricity_computility/electricity/2026-06-11/AIDC/route_B` | 12 |
 
-这些配置的目标文件均为 `df_power.csv`，时间列为 `count_data_time`，目标列为 `h_total_use`，频率为 `5min`，默认 `now_time` 为数据最后时间戳 `2026-06-11T23:55:00`。新配置优先生成 YAML；旧 Python 配置仍可通过 `--config-module ... --config-class ModelConfig` 运行。
-
-YAML 示例：
-
-```bash
-uv run python run.py \
-  --config-yaml config/ETT-small/ETTm1/model_config_lgbm_usmd.yaml \
-  --is-testing 1 \
-  --is-forecasting 0
-```
-
-legacy Python 配置示例：
-
-```bash
-uv run python run.py \
-  --config-module config.aidc_electricity_computility.electricity.2026-06-11.A1_201.model_config_lgbm_usmd_A1_201 \
-  --config-class ModelConfig \
-  --is-testing 1 \
-  --is-forecasting 0
-```
+这些配置的目标文件均为 `df_power.csv`，时间列为 `count_data_time`，目标列为 `h_total_use`，频率为 `5min`，`now_time` 为 `2026-06-11T23:55:00`。所有 YAML 均以 `config.univariate_config` 作为 `base_config`。
 
 ## 数据契约
 
@@ -290,10 +266,10 @@ uv run python run.py \
 
 配置加载：
 
-- `config/config_loader.py` 提供 `load_model_config(config_module, config_class="ModelConfig", instantiate=False)`。
-- `config/config_loader.py` 同时提供 `load_yaml_config(config_yaml, config_module=None, config_class=None)`，按 YAML 的 `base_config` 加载 `ModelConfig` 并应用分组或平铺 `overrides`。
+- `config/config_loader.py` 提供 `load_yaml_config(config_yaml)`，按 YAML 的 `base_config` 加载对应的 Python 模板并应用分组 `overrides`。
+- `load_model_config()` 为内部工具函数，由 `load_yaml_config` 调用以实例化 `base_config` 指定的模板，不对外直接使用。
 - 该加载器导入时不会解析 `sys.argv`，避免 `run.py` 导入 `main.Model` 时发生二次参数解析。
-- `run.py` 在加载配置实例后应用 CLI 覆盖；布尔参数支持 `1/0`、`true/false`、`yes/no`、`on/off`。
+- `run.py` 在加载配置实例后应用 CLI 覆盖；`--config-yaml` 为必填参数。布尔 CLI 参数支持 `1/0`、`true/false`、`yes/no`、`on/off`。
 
 ## 输出结构
 

@@ -1,6 +1,6 @@
 # Config 说明
 
-`config/` 保存模型运行配置、共享配置分组、分组 YAML 配置、配置加载器和配置生成器。标准默认值由 Python `@dataclass` 提供，具体数据和任务参数优先用 YAML 覆盖。
+`config/` 保存模型运行配置、共享配置分组、YAML 配置、配置加载器和配置生成器。标准默认值由 Python `@dataclass`（`config/univariate_config.py` 或 `config/multivariate_config.py`）提供；具体数据和任务参数通过 YAML 覆盖。
 
 ## 加载规则
 
@@ -13,11 +13,10 @@ uv run python run.py \
 
 加载边界：
 
-- `config/config_loader.py` 提供 `load_model_config()` 和 `load_yaml_config()`，导入时不解析命令行。
+- `config/config_loader.py` 提供 `load_yaml_config()`；`load_model_config()` 为内部工具函数，供 YAML 加载器读取 `base_config` 指定的 Python 模板。
 - YAML 的 `base_config` 指向标准模板，例如 `config.univariate_config` 或 `config.multivariate_config`。
-- `run.py` 加载配置实例后再应用 CLI 覆盖，优先级为：模板默认值 < YAML `overrides` < CLI 参数。
-- `main.py` 只支持 `--config-yaml` / `--config-module` / `--config-class` 三个最小参数。
-- `--config-module` 是传给 `importlib.import_module()` 的字符串模块路径。
+- `run.py` 加载配置实例后再应用 CLI 覆盖，优先级为：Python 模板默认值 < YAML `overrides` < CLI 参数。
+- `main.py` 通过 `CONFIG_YAML` 常量直接硬编码配置文件路径，仅提供轻量直跑入口。
 
 YAML 基本结构：
 
@@ -177,4 +176,4 @@ uv run python config/generate_configs.py \
 - `msmr`
 - `msmdr`
 
-需要旧 Python 配置时使用 `--format python`；默认输出为 YAML。
+默认输出格式为 YAML。

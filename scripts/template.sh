@@ -10,10 +10,8 @@ set -euo pipefail
 
 export LOG_NAME="${LOG_NAME:-run-template}"
 
-# 配置模块
-CONFIG_YAML="${CONFIG_YAML:-}"
-CONFIG_MODULE="${CONFIG_MODULE:-config.univariate_config}"
-CONFIG_CLASS="${CONFIG_CLASS:-ModelConfig}"
+# 配置模块（YAML 为必填，base_config 从 YAML 内部读取）
+CONFIG_YAML="${CONFIG_YAML:-config/ETT-small/ETTm1/model_config_lgbm_usmd.yaml}"
 
 # 基本运行参数
 SEED="${SEED:-2025}"
@@ -42,8 +40,7 @@ AUTO_LR_MIN="${AUTO_LR_MIN:-0.005}"
 AUTO_LR_MAX="${AUTO_LR_MAX:-0.2}"
 
 cmd=(python3 -u run.py
-  --config-module "${CONFIG_MODULE}"
-  --config-class "${CONFIG_CLASS}"
+  --config-yaml "${CONFIG_YAML}"
   --seed "${SEED}"
   --model-type "${MODEL_TYPE}"
   --pred-method "${PRED_METHOD}"
@@ -60,10 +57,6 @@ cmd=(python3 -u run.py
   --auto-lr-min "${AUTO_LR_MIN}"
   --auto-lr-max "${AUTO_LR_MAX}"
 )
-
-if [[ -n "${CONFIG_YAML}" ]]; then
-  cmd+=(--config-yaml "${CONFIG_YAML}")
-fi
 
 # 仅在传值时附加，避免覆盖 config 默认值
 if [[ -n "${HISTORY_DAYS}" ]]; then

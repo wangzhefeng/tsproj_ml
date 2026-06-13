@@ -61,16 +61,6 @@ METHOD_SHORT = {
     "msmdr": "multivariate-single-multistep-direct-recursive",
 }
 
-METHOD_DESCRIPTION = {
-    "univariate-single-multistep-direct-output": ("USMDO", "单变量输入，多步直接输出"),
-    "univariate-single-multistep-direct": ("USMD", "单变量输入，多步直接预测"),
-    "univariate-single-multistep-recursive": ("USMR", "单变量输入，多步递归预测"),
-    "univariate-single-multistep-direct-recursive": ("USMDR", "单变量输入，多步直接递归预测"),
-    "multivariate-single-multistep-direct": ("MSMD", "多变量输入，多步直接预测"),
-    "multivariate-single-multistep-recursive": ("MSMR", "多变量输入，多步递归预测"),
-    "multivariate-single-multistep-direct-recursive": ("MSMDR", "多变量输入，多步直接递归预测"),
-}
-
 MODEL_SHORT = {
     "lightgbm": "lgbm",
     "lgbm": "lgbm",
@@ -233,62 +223,8 @@ YAML_OVERRIDE_GROUPS = {
 
 
 # ---------------------------------------------------------------------------
-# 配置模板
+# 配置生成
 # ---------------------------------------------------------------------------
-
-_BASELINE_CONFIG = '''# -*- coding: utf-8 -*-
-import datetime
-from dataclasses import dataclass, field
-
-from config.config_sections import BaseModelConfig
-
-
-@dataclass
-class ModelConfig(BaseModelConfig):
-    """自动生成的扁平模型配置。
-
-    BaseModelConfig 在共享模块中维护完整字段和分组说明；本类只覆盖
-    数据集和模型策略相关默认值。
-    """
-
-    history_days: int = {history_days}
-    predict_days: int = {predict_days}
-    window_days: int = {window_days}
-    now_time: datetime.datetime = {now_time}
-
-    data_dir: str = {data_dir!r}
-    data_path: str = {data_path!r}
-    freq: str = {freq!r}
-    target_ts_feat: str = {target_ts_feat!r}
-    target: str = {target!r}
-    target_series_numeric_features: list[str] = field(default_factory=lambda: {target_series_numeric_features!r})
-    target_series_categorical_features: list[str] = field(default_factory=lambda: {target_series_categorical_features!r})
-    target_series_drop_features: list[str] = field(default_factory=lambda: {target_series_drop_features!r})
-
-    enable_date_features: bool = {enable_date_features}
-    date_history_path: str | None = {date_history_path!r}
-    date_future_path: str | None = {date_future_path!r}
-    date_ts_feat: str | None = {date_ts_feat!r}
-    datetype_features: list[str] = field(default_factory=lambda: {datetype_features!r})
-    datetype_categorical_features: list[str] = field(default_factory=lambda: {datetype_categorical_features!r})
-
-    enable_weather_features: bool = {enable_weather_features}
-    weather_history_path: str | None = {weather_history_path!r}
-    weather_future_path: str | None = {weather_future_path!r}
-    weather_ts_feat: str | None = {weather_ts_feat!r}
-    weather_features: list[str] = field(default_factory=lambda: {weather_features!r})
-    weather_categorical_features: list[str] = field(default_factory=lambda: {weather_categorical_features!r})
-
-    enable_datetime_features: bool = {enable_datetime_features}
-    enable_lags_features: bool = {enable_lags_features}
-    lags: list[int] = field(default_factory=lambda: {lags!r})
-
-    model_type: str = {model_type!r}
-    # {pred_method_short}: {pred_method_description}
-    pred_method: str = {pred_method!r}
-'''
-
-
 # ---------------------------------------------------------------------------
 # 自动检测
 # ---------------------------------------------------------------------------
@@ -438,8 +374,6 @@ def parse_args(argv: Optional[List[str]] = None):
                         help="配置文件输出目录 (默认从 --dataset 路径推导)")
     parser.add_argument("--variant", type=str, default=None,
                         help="文件名后缀, 如 A / B (默认无)")
-    parser.add_argument("--format", choices=["yaml", "python"], default="yaml",
-                        help="配置文件格式 (默认: yaml；python 为 legacy 兼容模式)")
     parser.add_argument("--base-config", type=str, default=None,
                         help="YAML base_config。默认按策略和内生特征自动选择标准配置")
     parser.add_argument("--dry-run", action="store_true",
@@ -459,17 +393,6 @@ def parse_args(argv: Optional[List[str]] = None):
 # ---------------------------------------------------------------------------
 # 生成
 # ---------------------------------------------------------------------------
-
-def generate_python_config(params: dict, output_path: Path, dry_run: bool = False) -> None:
-    """生成 legacy Python 配置文件。"""
-    content = _BASELINE_CONFIG.format(**params)
-    if dry_run:
-        print(f"  [DRY-RUN] Would create: {output_path}")
-    else:
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-        output_path.write_text(content, encoding="utf-8")
-        print(f"  Created: {output_path}")
-
 
 def default_base_config(strategy: str, target_series_numeric_features: Optional[List[str]] = None) -> str:
     """按数据集形态和预测策略选择标准配置入口。"""
@@ -601,7 +524,6 @@ def main(argv: Optional[List[str]] = None):
         now_time_val = pd.Timestamp(args.now_time)
     else:
         now_time_val = detected.get("now_time_raw", pd.Timestamp("2025-01-01"))
-    now_time_str = f"datetime.datetime({now_time_val.year}, {now_time_val.month}, {now_time_val.day}, {now_time_val.hour}, {now_time_val.minute}, {now_time_val.second})"
     now_time_iso = now_time_val.to_pydatetime().isoformat()
 
     # ---- 解析模型和策略 ----
@@ -644,7 +566,6 @@ def main(argv: Optional[List[str]] = None):
     print(f"模型:         {', '.join(models)}")
     print(f"策略:         {', '.join(strategies)}")
     print(f"输出目录:     {config_base}")
-    print(f"配置格式:     {args.format}")
     print(f"模式:         {'DRY-RUN (预览)' if args.dry_run else '实际生成'}")
     print("-" * 50)
 
@@ -663,7 +584,6 @@ def main(argv: Optional[List[str]] = None):
                 "history_days": args.history_days,
                 "predict_days": args.predict_days,
                 "window_days": args.window_days,
-                "now_time": now_time_str,
                 "now_time_iso": now_time_iso,
                 "data_dir": data_dir_rel,
                 "data_path": data_path,
@@ -681,41 +601,15 @@ def main(argv: Optional[List[str]] = None):
                 "pred_method": method_full,
                 "base_config": args.base_config or default_base_config(strategy, target_series_numeric_features),
             }
-            python_params = params | {
-                "date_history_path": "df_date.csv" if has_date else None,
-                "date_future_path": "df_date_future.csv" if has_date else None,
-                "date_ts_feat": "date" if has_date else None,
-                "datetype_features": ["date_type"] if has_date else [],
-                "datetype_categorical_features": [],
-                "weather_history_path": "df_weather.csv" if has_weather else None,
-                "weather_future_path": "df_weather_future.csv" if has_weather else None,
-                "weather_ts_feat": "ts" if has_weather else None,
-                "weather_features": [
-                    "rt_ssr",
-                    "rt_ws10",
-                    "rt_tt2",
-                    "cal_rh",
-                    "rt_ps",
-                    "rt_rain",
-                ] if has_weather else [],
-                "weather_categorical_features": [],
-                "lags": default_lags_for_freq(freq) if enable_lags else [],
-                "pred_method_short": METHOD_DESCRIPTION[method_full][0],
-                "pred_method_description": METHOD_DESCRIPTION[method_full][1],
-            }
 
             # 构建文件名
-            suffix = "py" if args.format == "python" else "yaml"
             if variant:
-                filename = f"model_config_{model_short}_{strategy}_{variant}.{suffix}"
+                filename = f"model_config_{model_short}_{strategy}_{variant}.yaml"
             else:
-                filename = f"model_config_{model_short}_{strategy}.{suffix}"
+                filename = f"model_config_{model_short}_{strategy}.yaml"
 
             output_path = config_base / filename
-            if args.format == "python":
-                generate_python_config(python_params, output_path, dry_run=args.dry_run)
-            else:
-                generate_yaml_config(params, output_path, dry_run=args.dry_run)
+            generate_yaml_config(params, output_path, dry_run=args.dry_run)
             count += 1
 
     print("-" * 50)

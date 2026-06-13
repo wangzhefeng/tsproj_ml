@@ -19,12 +19,12 @@ class ModelConfig:
     predict_days: int = 1  # 预测未来 1 天的数据
     window_days: int = 15  # 滑动窗口天数
     # 预测推理开始的时间
-    now_time: datetime.datetime = field(default_factory=lambda: datetime.datetime(2025, 12, 27, 0, 0, 0))
+    now_time: datetime.datetime = field(default_factory=lambda: datetime.datetime(2026, 6, 11, 23, 55, 0))
     # ------------------------------
     # 目标时间序列配置
     # ------------------------------
-    data_dir: str = "./dataset/aidc_electricity/2026-03-11/demand_load/lingang_A"
-    data_path: str = "AIDC_A_dataset.csv"
+    data_dir: str = "./dataset/aidc_electricity_computility/electricity/2026-06-11/demand_load/A1_201"
+    data_path: str = "df_power.csv"
     freq: str = "5min"
     target_ts_feat: str = "count_data_time"
     target: str = "h_total_use"
@@ -36,7 +36,7 @@ class ModelConfig:
     # ------------------------------
     # 日期类型数据配置
     # --------------
-    enable_date_features: bool = False
+    enable_date_features: bool = True
     if enable_date_features:
         date_history_path: Optional[str] = "df_date.csv"
         date_future_path: Optional[str] = "df_date_future.csv"
@@ -51,7 +51,7 @@ class ModelConfig:
         datetype_categorical_features: List[str] = field(default_factory=lambda: [])
     # 气象数据配置
     # --------------
-    enable_weather_features: bool = False
+    enable_weather_features: bool = True
     if enable_weather_features:
         weather_history_path: Optional[str] = "df_weather.csv"
         weather_future_path: Optional[str] = "df_weather_future.csv"
@@ -90,7 +90,7 @@ class ModelConfig:
         datetime_categorical_features: List[str] = field(default_factory=lambda: [])
     # 特征滞后数列表
     # --------------
-    enable_lags_features: bool = False
+    enable_lags_features: bool = True
     if enable_lags_features:
         lags: List[int] = field(default_factory=lambda: [
             1 * 288,  # Daily lag
@@ -173,6 +173,7 @@ class ModelConfig:
     # pred_method: str = "multivariate-single-multistep-direct"            # MSMD [多变量(包含目标变量的所有内生变量)->单变量(目标内生变量)]多步直接预测
     # pred_method: str = "multivariate-single-multistep-recursive"         # MSMR [多变量(包含目标变量的所有内生变量)->单变量(目标内生变量)]多步递归预测
     # pred_method: str = "multivariate-single-multistep-direct-recursive"  # MSMDR [多变量(包含目标变量的所有内生变量)->单变量(目标内生变量)]多步直接递归预测
+    pred_method: str = "univariate-single-multistep-direct"
     # 早停步数
     patience: int = 100
     # 是否对类别特征进行编码

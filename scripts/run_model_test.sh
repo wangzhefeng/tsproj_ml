@@ -2,18 +2,18 @@
 set -euo pipefail
 
 # 参考 config 目录中的配置文件：
-#   config/univariate_config.py
-#   config/multivariate_config.py
+#   config/templates/univariate_config.py
+#   config/templates/multivariate_config.py
 #
 # 使用方式：
 #   bash scripts/run_model_test.sh
 # 或覆盖变量：
-#   CONFIG_MODULE=config.multivariate_config CONFIG_CLASS=ModelConfig_multivariate MODEL_TYPE=xgboost bash scripts/run_model_test.sh
+#   CONFIG_MODULE=config.templates.multivariate_config CONFIG_CLASS=ModelConfig MODEL_TYPE=xgboost bash scripts/run_model_test.sh
 
 export LOG_NAME="${LOG_NAME:-run-model-test}"
 
-CONFIG_MODULE="${CONFIG_MODULE:-config.univariate_config}"
-CONFIG_CLASS="${CONFIG_CLASS:-ModelConfig_univariate}"
+CONFIG_MODULE="${CONFIG_MODULE:-config.templates.univariate_config}"
+CONFIG_CLASS="${CONFIG_CLASS:-ModelConfig}"
 
 MODEL_TYPE="${MODEL_TYPE:-lightgbm}"
 PRED_METHOD="${PRED_METHOD:-univariate-single-multistep-direct}"

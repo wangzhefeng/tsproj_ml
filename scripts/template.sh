@@ -11,8 +11,8 @@ set -euo pipefail
 export LOG_NAME="${LOG_NAME:-run-template}"
 
 # 配置模块
-CONFIG_MODULE="${CONFIG_MODULE:-config.univariate_config}"
-CONFIG_CLASS="${CONFIG_CLASS:-ModelConfig_univariate}"
+CONFIG_MODULE="${CONFIG_MODULE:-config.templates.univariate_config}"
+CONFIG_CLASS="${CONFIG_CLASS:-ModelConfig}"
 
 # 基本运行参数
 SEED="${SEED:-2025}"

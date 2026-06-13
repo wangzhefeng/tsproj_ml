@@ -17,10 +17,10 @@ if ROOT not in sys.path:
     sys.path.append(ROOT)
 import argparse
 import datetime
-import importlib
 import json
 import random
 from typing import Any
+from config.config_loader import load_model_config
 
 # global variable
 LOGGING_LABEL = Path(__file__).name[:-3]
@@ -51,11 +51,7 @@ def _set_seed(seed: int) -> None:
 
 
 def _load_config(config_module: str, config_class: str):
-    module = importlib.import_module(config_module)
-    if not hasattr(module, config_class):
-        raise AttributeError(f"Config class '{config_class}' not found in module '{config_module}'.")
-    config_cls = getattr(module, config_class)
-    return config_cls()
+    return load_model_config(config_module, config_class, instantiate=True)
 
 
 def _apply_overrides(cfg, args):
@@ -163,13 +159,13 @@ def args_parse():
     parser.add_argument(
         "--config-module",
         type=str,
-        default="config.univariate_config",
-        help="Python module path for config, e.g. config.univariate_config",
+        default="config.templates.univariate_config",
+        help="Python module path for config, e.g. config.templates.univariate_config",
     )
     parser.add_argument(
         "--config-class",
         type=str,
-        default="ModelConfig_univariate",
+        default="ModelConfig",
         help="Config class name in config module",
     )
 

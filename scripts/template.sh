@@ -11,7 +11,8 @@ set -euo pipefail
 export LOG_NAME="${LOG_NAME:-run-template}"
 
 # 配置模块
-CONFIG_MODULE="${CONFIG_MODULE:-config.templates.univariate_config}"
+CONFIG_YAML="${CONFIG_YAML:-}"
+CONFIG_MODULE="${CONFIG_MODULE:-config.univariate_config}"
 CONFIG_CLASS="${CONFIG_CLASS:-ModelConfig}"
 
 # 基本运行参数
@@ -59,6 +60,10 @@ cmd=(python3 -u run.py
   --auto-lr-min "${AUTO_LR_MIN}"
   --auto-lr-max "${AUTO_LR_MAX}"
 )
+
+if [[ -n "${CONFIG_YAML}" ]]; then
+  cmd+=(--config-yaml "${CONFIG_YAML}")
+fi
 
 # 仅在传值时附加，避免覆盖 config 默认值
 if [[ -n "${HISTORY_DAYS}" ]]; then

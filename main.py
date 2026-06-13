@@ -36,7 +36,7 @@ from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_compl
 import numpy as np
 import pandas as pd
 
-from config.config_loader import load_model_config
+from config.config_loader import load_model_config, load_yaml_config
 from data_provider.data_loader import DataLoader
 from features.FeatureScalering import (
     FeatureScaler,
@@ -542,14 +542,20 @@ def args_parse():
     parser.add_argument(
         "--config-module",
         type=str,
-        default="config.templates.univariate_config",
-        help="Python module path for config, e.g. config.templates.univariate_config",
+        default="config.univariate_config",
+        help="Python module path for config, e.g. config.univariate_config",
     )
     parser.add_argument(
         "--config-class",
         type=str,
         default="ModelConfig",
         help="Config class name in config module",
+    )
+    parser.add_argument(
+        "--config-yaml",
+        type=str,
+        default=None,
+        help="Sparse YAML config path. YAML overrides are applied over the selected config module.",
     )
     return parser.parse_args()
 
@@ -564,8 +570,15 @@ def main():
     ensure_runtime_environment()
     # 模型配置参数实例
     cli_args = args_parse()
-    model_config = load_model_config(cli_args.config_module, cli_args.config_class)
-    args = model_config()
+    if cli_args.config_yaml:
+        args = load_yaml_config(
+            cli_args.config_yaml,
+            config_module=cli_args.config_module,
+            config_class=cli_args.config_class,
+        )
+    else:
+        model_config = load_model_config(cli_args.config_module, cli_args.config_class)
+        args = model_config()
     # 创建模型实例
     model = Model(args)
     # 运行模型

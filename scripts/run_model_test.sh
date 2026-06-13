@@ -2,17 +2,18 @@
 set -euo pipefail
 
 # 参考 config 目录中的配置文件：
-#   config/templates/univariate_config.py
-#   config/templates/multivariate_config.py
+#   config/univariate_config.py
+#   config/multivariate_config.py
 #
 # 使用方式：
 #   bash scripts/run_model_test.sh
 # 或覆盖变量：
-#   CONFIG_MODULE=config.templates.multivariate_config CONFIG_CLASS=ModelConfig MODEL_TYPE=xgboost bash scripts/run_model_test.sh
+#   CONFIG_YAML=config/ETT-small/ETTm1/model_config_lgbm_usmd.yaml MODEL_TYPE=xgboost bash scripts/run_model_test.sh
 
 export LOG_NAME="${LOG_NAME:-run-model-test}"
 
-CONFIG_MODULE="${CONFIG_MODULE:-config.templates.univariate_config}"
+CONFIG_YAML="${CONFIG_YAML:-}"
+CONFIG_MODULE="${CONFIG_MODULE:-config.univariate_config}"
 CONFIG_CLASS="${CONFIG_CLASS:-ModelConfig}"
 
 MODEL_TYPE="${MODEL_TYPE:-lightgbm}"
@@ -30,7 +31,7 @@ FEATURE_SELECTION_METHOD="${FEATURE_SELECTION_METHOD:-f_regression}"
 FEATURE_SELECTION_MAX_FEATURES="${FEATURE_SELECTION_MAX_FEATURES:-80}"
 FEATURE_SELECTION_MIN_FEATURES="${FEATURE_SELECTION_MIN_FEATURES:-10}"
 
-python3 -u run.py \
+cmd=(python3 -u run.py
   --config-module "${CONFIG_MODULE}" \
   --config-class "${CONFIG_CLASS}" \
   --seed "${SEED}" \
@@ -45,3 +46,10 @@ python3 -u run.py \
   --feature-selection-method "${FEATURE_SELECTION_METHOD}" \
   --feature-selection-max-features "${FEATURE_SELECTION_MAX_FEATURES}" \
   --feature-selection-min-features "${FEATURE_SELECTION_MIN_FEATURES}"
+)
+
+if [[ -n "${CONFIG_YAML}" ]]; then
+  cmd+=(--config-yaml "${CONFIG_YAML}")
+fi
+
+"${cmd[@]}"

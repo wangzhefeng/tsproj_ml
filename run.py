@@ -20,7 +20,7 @@ import datetime
 import json
 import random
 from typing import Any
-from config.config_loader import load_model_config
+from config.config_loader import load_model_config, load_yaml_config
 
 # global variable
 LOGGING_LABEL = Path(__file__).name[:-3]
@@ -50,7 +50,9 @@ def _set_seed(seed: int) -> None:
         logger.warning("[run.py] numpy is not installed, only Python random seed is set.")
 
 
-def _load_config(config_module: str, config_class: str):
+def _load_config(config_yaml: str | None, config_module: str, config_class: str):
+    if config_yaml:
+        return load_yaml_config(config_yaml, config_module=config_module, config_class=config_class)
     return load_model_config(config_module, config_class, instantiate=True)
 
 
@@ -159,14 +161,20 @@ def args_parse():
     parser.add_argument(
         "--config-module",
         type=str,
-        default="config.templates.univariate_config",
-        help="Python module path for config, e.g. config.templates.univariate_config",
+        default="config.univariate_config",
+        help="Python module path for config, e.g. config.univariate_config",
     )
     parser.add_argument(
         "--config-class",
         type=str,
         default="ModelConfig",
         help="Config class name in config module",
+    )
+    parser.add_argument(
+        "--config-yaml",
+        type=str,
+        default=None,
+        help="Sparse YAML config path. YAML overrides are applied before CLI overrides.",
     )
 
     parser.add_argument("--seed", type=int, default=2025)
@@ -223,12 +231,12 @@ def args_parse():
 
 
 def run(args):
-    cfg = _load_config(args.config_module, args.config_class)
+    cfg = _load_config(args.config_yaml, args.config_module, args.config_class)
     cfg = _apply_overrides(cfg, args)
 
     logger.info(
-        "[run.py] config=%s.%s, model_type=%s, pred_method=%s, is_testing=%s, is_forecasting=%s",
-        args.config_module,
+        "[run.py] config=%s, class=%s, model_type=%s, pred_method=%s, is_testing=%s, is_forecasting=%s",
+        args.config_yaml or args.config_module,
         args.config_class,
         cfg.model_type,
         cfg.pred_method,

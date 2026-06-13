@@ -38,7 +38,8 @@ tsproj_ml/
 ├── pyproject.toml               # uv 依赖定义，Python == 3.10.11
 ├── config/
 │   ├── config_loader.py         # 无 import-time argparse 副作用的配置加载器
-│   ├── templates/               # 单变量/多变量配置模板
+│   ├── univariate_config.py     # 单变量标准配置模板
+│   ├── multivariate_config.py   # 多变量标准配置模板
 │   ├── aidc_electricity_computility/
 │   └── ETT-small/
 ├── dataset/                     # ETT-small 和 AIDC electricity 数据
@@ -101,43 +102,40 @@ uv sync
 
 ```bash
 uv run python run.py \
-  --config-module config.templates.univariate_config \
-  --config-class ModelConfig \
+  --config-yaml config/ETT-small/ETTm1/model_config_lgbm_usmd.yaml \
   --model-type lightgbm \
-  --pred-method univariate-single-multistep-direct \
   --is-testing 1 \
-  --is-forecasting 0 \
-  --now-time 2026-06-11T23:55:00
+  --is-forecasting 0
 ```
 
-`run.py` 是正式运行入口，负责完整 CLI 覆盖；默认配置模块和类名为：
+`run.py` 是正式运行入口，负责完整 CLI 覆盖；配置优先级为：Python 模板默认值 < YAML `overrides` < `run.py` CLI 覆盖。默认 Python 配置模块和类名为：
 
-- `config.templates.univariate_config`
+- `config.univariate_config`
 - `ModelConfig`
 
 轻量本地入口：
 
 ```bash
 uv run python main.py \
-  --config-module config.templates.univariate_config \
-  --config-class ModelConfig
+  --config-yaml config/ETT-small/ETTm1/model_config_lgbm_usmd.yaml
 ```
 
-`main.py` 只支持 `--config-module` 和 `--config-class`，不承担模型、数据、时间窗口等完整覆盖参数。运行真实项目配置时，优先从 `config/README.md` 选择具体配置模块。
+`main.py` 只支持 `--config-yaml`、`--config-module` 和 `--config-class`，不承担模型、数据、时间窗口等完整覆盖参数。运行真实项目配置时，优先从 `config/README.md` 选择具体 YAML。
 
 脚本入口默认值也已对齐到当前模板：
 
 ```bash
-CONFIG_MODULE=config.templates.univariate_config \
+CONFIG_YAML=config/ETT-small/ETTm1/model_config_lgbm_usmd.yaml \
 CONFIG_CLASS=ModelConfig \
 MODEL_TYPE=lightgbm \
-PRED_METHOD=univariate-single-multistep-direct \
 bash scripts/run_model_test.sh
 ```
 
 ## 配置生成
 
-`scripts/generate_configs.py` 是批量生成 Python dataclass 配置文件的工具，不是模型运行入口。它从一个 dataset 叶子目录读取目标 CSV，自动检测数据文件、时间列、频率、预测基准时间和外生文件，然后按模型 × 策略矩阵写入 `config/`。
+`scripts/generate_configs.py` 是批量生成分组 YAML 配置文件的工具，不是模型运行入口。它从一个 dataset 叶子目录读取目标 CSV，自动检测数据文件、时间列、频率、预测基准时间、内生特征列和外生文件，然后按模型 × 策略矩阵写入 `config/`。
+
+YAML 按语义分组保存具体数据、任务、特征、预处理、模型、训练、异常处理、性能和输出等可配置项；标准默认值仍由 `config/univariate_config.py` 和 `config/multivariate_config.py` 提供。需要旧式 Python dataclass 配置时可显式传 `--format python`。
 
 默认模型矩阵是 3 个树模型：
 
@@ -164,6 +162,8 @@ bash scripts/run_model_test.sh
 | `--strategies` | 逗号分隔策略列表，默认 `usmdo,usmd,usmr,usmdr` |
 | `--variant` | 文件名后缀，例如 `A1_201`、`A`、`B` |
 | `--config-dir` | 输出目录；建议显式传入，避免默认路径和项目约定漂移 |
+| `--format` | 输出格式，默认 `yaml`；`python` 为 legacy 兼容模式 |
+| `--base-config` | 可选；不传时按策略自动选择 `config.univariate_config` 或 `config.multivariate_config` |
 | `--dry-run` | 只打印将生成的文件，不写入磁盘 |
 
 自动检测规则：
@@ -189,7 +189,7 @@ uv run python scripts/generate_configs.py \
   --dry-run
 ```
 
-确认输出路径后去掉 `--dry-run` 即可生成实际配置。当前 `2026-06-11/demand_load` 已按 6 个叶子数据集生成 72 个配置文件：
+确认输出路径后去掉 `--dry-run` 即可生成实际配置。当前 `2026-06-11/demand_load` 已按 6 个叶子数据集保留 72 个 legacy Python 配置文件：
 
 | 数据集 | 配置目录 | 文件数 |
 |---|---|---:|
@@ -200,9 +200,18 @@ uv run python scripts/generate_configs.py \
 | `AIDC/route_A` | `config/aidc_electricity_computility/electricity/2026-06-11/AIDC/route_A` | 12 |
 | `AIDC/route_B` | `config/aidc_electricity_computility/electricity/2026-06-11/AIDC/route_B` | 12 |
 
-这些配置的目标文件均为 `df_power.csv`，时间列为 `count_data_time`，目标列为 `h_total_use`，频率为 `5min`，默认 `now_time` 为数据最后时间戳 `2026-06-11T23:55:00`。运行时仍建议通过 `run.py --config-module ... --config-class ModelConfig` 显式指定具体配置模块。
+这些配置的目标文件均为 `df_power.csv`，时间列为 `count_data_time`，目标列为 `h_total_use`，频率为 `5min`，默认 `now_time` 为数据最后时间戳 `2026-06-11T23:55:00`。新配置优先生成 YAML；旧 Python 配置仍可通过 `--config-module ... --config-class ModelConfig` 运行。
 
-示例：
+YAML 示例：
+
+```bash
+uv run python run.py \
+  --config-yaml config/ETT-small/ETTm1/model_config_lgbm_usmd.yaml \
+  --is-testing 1 \
+  --is-forecasting 0
+```
+
+legacy Python 配置示例：
 
 ```bash
 uv run python run.py \
@@ -236,7 +245,8 @@ uv run python run.py \
 
 当前模板说明：
 
-- `config/templates/univariate_config.py` 默认指向 `dataset/aidc_electricity_computility/electricity/2026-06-11/demand_load/A1_201`。
+- `config/univariate_config.py` 默认指向 `dataset/aidc_electricity_computility/electricity/2026-06-11/demand_load/A1_201`。
+- `config/multivariate_config.py` 默认指向 `dataset/ETT-small/ETTm1.csv`。
 - 默认目标文件为 `df_power.csv`，时间列为 `count_data_time`，目标列为 `h_total_use`。
 - 默认 `pred_method` 为 `univariate-single-multistep-direct`。
 
@@ -282,6 +292,7 @@ uv run python run.py \
 配置加载：
 
 - `config/config_loader.py` 提供 `load_model_config(config_module, config_class="ModelConfig", instantiate=False)`。
+- `config/config_loader.py` 同时提供 `load_yaml_config(config_yaml, config_module=None, config_class=None)`，按 YAML 的 `base_config` 加载 `ModelConfig` 并应用分组或平铺 `overrides`。
 - 该加载器导入时不会解析 `sys.argv`，避免 `run.py` 导入 `main.Model` 时发生二次参数解析。
 - `run.py` 在加载配置实例后应用 CLI 覆盖；布尔参数支持 `1/0`、`true/false`、`yes/no`、`on/off`。
 
@@ -319,9 +330,9 @@ df_power_anomalies.png
 ## 常见边界
 
 - 根 README 只做项目总览和主流程说明；配置映射、数据目录、目录职责请以对应子目录 README 为准。
-- 配置文件是 Python dataclass，不是 JSON/YAML；新增配置优先复制 `config/templates/` 或用 `scripts/generate_configs.py` 生成。
+- 标准默认值由 Python dataclass 模板提供；新增具体数据配置优先用分组 YAML 管理。
 - `main.py` 是轻量入口，不负责完整 CLI 覆盖；日常运行和脚本运行优先使用 `run.py`。
-- `run.py` 和脚本默认值已对齐当前有效模板；如果运行具体项目配置，仍建议显式传 `--config-module` 和 `--config-class`。
+- `run.py` 和脚本默认值已对齐当前有效模板；如果运行具体项目配置，优先显式传 `--config-yaml`。
 - `now_time` 会被规整到整点作为历史结束/预测开始，历史区间为 `[now_time - history_days, now_time)`，预测区间为 `[now_time, now_time + predict_days)`。
 - 分位数预测训练多个子模型；点预测融合只在 `predict_type="point"` 时生效。
 - 多变量递归类方法对非目标内生变量目前主要采用持久性回填，不等同于为每个内生变量单独建模。
@@ -360,7 +371,7 @@ df_power_anomalies.png
 ## 开发与维护注意事项
 
 - 项目事实以当前代码为准；更新文档时不要把 `docs/` 或 `logs/` 中的历史内容当作当前实现。
-- 运行入口、配置模块名、输出目录和脚本默认值容易漂移，修改前应重新核对 `main.py`、`run.py`、`config/templates/`、`scripts/`。
+- 运行入口、配置模块名、输出目录和脚本默认值容易漂移，修改前应重新核对 `main.py`、`run.py`、`config/`、`scripts/`。
 - 配置字段、命令参数、模型类型和预测策略名保持英文；中文用于解释语义和边界。
 - 如果发现脚本、README、配置和代码不一致，优先按代码写清楚现状，不要为了文档一致性假定代码已经修好。
 - 修改 README 时避免重复目录级 README 的全部细节；根 README 只保留全局流程、关键契约和常用命令。
@@ -378,15 +389,14 @@ df_power_anomalies.png
 入口导入回归检查：
 
 ```bash
-uv run python -c "import sys; sys.argv=['run.py','--config-module','config.templates.univariate_config','--config-class','ModelConfig','--model-type','lightgbm']; import main; print('imported')"
+uv run python -c "import sys; sys.argv=['run.py','--config-yaml','config/ETT-small/ETTm1/model_config_lgbm_usmd.yaml','--model-type','lightgbm']; import main; print('imported')"
 ```
 
 轻量入口运行检查：
 
 ```bash
 uv run python run.py \
-  --config-module config.templates.univariate_config \
-  --config-class ModelConfig \
+  --config-yaml config/ETT-small/ETTm1/model_config_lgbm_usmd.yaml \
   --is-testing 0 \
   --is-forecasting 0
 ```
@@ -394,7 +404,7 @@ uv run python run.py \
 静态和测试检查：
 
 ```bash
-uv run python -m py_compile main.py run.py config/config_loader.py config/templates/univariate_config.py scripts/generate_configs.py
+uv run python -m py_compile main.py run.py config/config_loader.py config/univariate_config.py config/multivariate_config.py scripts/generate_configs.py
 uv run python -m unittest discover -s tests -p "test_*.py"
 ```
 

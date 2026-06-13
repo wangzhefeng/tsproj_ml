@@ -2,7 +2,7 @@
 """
 通用配置文件生成工具。
 
-根据 dataset 目录中的数据自动检测特征，生成对应的模型配置文件。
+根据 dataset 目录中的数据自动检测特征，生成对应的分组 YAML 配置文件。
 
 用法:
     # 最简用法（自动检测 freq、now_time、外生文件等）
@@ -31,17 +31,22 @@
 """
 
 import argparse
+import datetime
 import os
 import sys
+from dataclasses import fields, is_dataclass
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 import pandas as pd
+import yaml
 
 # 项目根路径
 ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
+
+from config.config_loader import load_model_config
 
 
 # ---------------------------------------------------------------------------
@@ -79,6 +84,142 @@ EXOGENOUS_FILE_PATTERNS = [
     "df_weather.csv",
     "df_weather_future.csv",
 ]
+
+YAML_OVERRIDE_GROUPS = {
+    "runtime": [
+        "is_testing",
+        "is_forecasting",
+        "history_days",
+        "predict_days",
+        "window_days",
+        "now_time",
+        "start_time",
+        "future_time",
+    ],
+    "data": [
+        "data_dir",
+        "data_path",
+        "freq",
+        "target_ts_feat",
+        "target",
+        "target_series_numeric_features",
+        "target_series_categorical_features",
+        "target_series_drop_features",
+    ],
+    "features": [
+        "enable_date_features",
+        "date_history_path",
+        "date_future_path",
+        "date_ts_feat",
+        "datetype_features",
+        "datetype_categorical_features",
+        "enable_weather_features",
+        "weather_history_path",
+        "weather_future_path",
+        "weather_ts_feat",
+        "weather_features",
+        "weather_categorical_features",
+        "enable_datetime_features",
+        "datetime_features",
+        "datetime_categorical_features",
+        "enable_lags_features",
+        "lags",
+        "enable_advanced_features",
+        "enable_rolling_features",
+        "rolling_columns",
+        "rolling_windows",
+        "rolling_stats",
+        "enable_expanding_features",
+        "expanding_columns",
+        "expanding_stats",
+        "enable_diff_features",
+        "diff_columns",
+        "diff_periods",
+        "enable_pct_change_features",
+        "pct_change_columns",
+        "pct_change_periods",
+        "enable_time_since_features",
+        "time_since_columns",
+        "time_since_events",
+        "enable_cyclical_features",
+        "cyclical_columns",
+        "cyclical_period",
+        "enable_interaction_features",
+        "interaction_column_pairs",
+        "interaction_operations",
+        "enable_polynomial_features",
+        "polynomial_columns",
+        "polynomial_degree",
+    ],
+    "preprocessing": [
+        "scale_features",
+        "feature_scaler_type",
+        "scale_target",
+        "inverse_target",
+        "target_scaler_type",
+        "use_grouped_scaling",
+        "encode_categorical_features",
+    ],
+    "model": [
+        "model_type",
+        "model_params",
+        "enable_ensemble",
+        "ensemble_models",
+        "ensemble_method",
+        "ensemble_val_ratio",
+        "pred_method",
+        "multi_output_strategy",
+        "predict_type",
+        "quantiles",
+        "use_horizon_exogenous_for_direct",
+        "block_size",
+        "enable_global_training",
+        "series_id_feature",
+    ],
+    "training": [
+        "patience",
+        "perform_tuning",
+        "tuning_metric",
+        "tuning_n_splits",
+        "enable_data_augmentation",
+        "augmentation_ratio",
+        "augmentation_feature_noise_std",
+        "augmentation_target_noise_std",
+        "augmentation_random_state",
+        "enable_feature_selection",
+        "feature_selection_method",
+        "feature_selection_max_features",
+        "feature_selection_min_features",
+        "enable_auto_learning_rate",
+        "auto_lr_min",
+        "auto_lr_max",
+        "huber_delta",
+    ],
+    "outlier": [
+        "enable_train_outlier_handling",
+        "train_outlier_method",
+        "high_outlier_threshold",
+        "high_outlier_max_run_points",
+        "drop_outlier_max_run_points",
+        "drop_rebound_min_abs_diff",
+    ],
+    "performance": [
+        "window_parallel_workers",
+        "max_test_windows",
+        "test_window_stride",
+        "multi_output_n_jobs",
+        "quantile_parallel_workers",
+        "ensemble_parallel_workers",
+        "model_thread_count",
+        "enable_step_logging",
+        "forecast_log_interval",
+    ],
+    "output": [
+        "checkpoints_dir",
+        "test_results_dir",
+        "pred_results_dir",
+    ],
+}
 
 
 # ---------------------------------------------------------------------------
@@ -358,6 +499,8 @@ def detect_data_params(dataset_dir: Path, data_file: Optional[str] = None) -> di
     # 先读少量行探测格式
     sample = pd.read_csv(csv_path, nrows=5)
     column_names = list(sample.columns)
+    result["column_names"] = column_names
+    result["sample_dtypes"] = {col: str(dtype) for col, dtype in sample.dtypes.items()}
 
     if len(column_names) < 2:
         raise ValueError(f"CSV 列数不足 ({len(column_names)}), 至少需要时间列 + 目标列")
@@ -471,6 +614,10 @@ def parse_args(argv: Optional[List[str]] = None):
                         help="配置文件输出目录 (默认从 --dataset 路径推导)")
     parser.add_argument("--variant", type=str, default=None,
                         help="文件名后缀, 如 A / B (默认无)")
+    parser.add_argument("--format", choices=["yaml", "python"], default="yaml",
+                        help="配置文件格式 (默认: yaml；python 为 legacy 兼容模式)")
+    parser.add_argument("--base-config", type=str, default=None,
+                        help="YAML base_config。默认按策略自动选择 config.univariate_config 或 config.multivariate_config")
     parser.add_argument("--dry-run", action="store_true",
                         help="仅打印将生成的文件, 不实际创建")
 
@@ -489,9 +636,123 @@ def parse_args(argv: Optional[List[str]] = None):
 # 生成
 # ---------------------------------------------------------------------------
 
-def generate_config(params: dict, output_path: Path, dry_run: bool = False) -> None:
-    """生成单个配置文件。"""
+def generate_python_config(params: dict, output_path: Path, dry_run: bool = False) -> None:
+    """生成 legacy Python 配置文件。"""
     content = _BASELINE_CONFIG.format(**params)
+    if dry_run:
+        print(f"  [DRY-RUN] Would create: {output_path}")
+    else:
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_text(content, encoding="utf-8")
+        print(f"  Created: {output_path}")
+
+
+def default_base_config(strategy: str) -> str:
+    if strategy.startswith("ms"):
+        return "config.multivariate_config"
+    return "config.univariate_config"
+
+
+def _to_yaml_value(value: Any) -> Any:
+    if isinstance(value, datetime.datetime):
+        return value.isoformat()
+    if isinstance(value, tuple):
+        return [_to_yaml_value(item) for item in value]
+    if isinstance(value, list):
+        return [_to_yaml_value(item) for item in value]
+    if isinstance(value, dict):
+        return {key: _to_yaml_value(item) for key, item in value.items()}
+    return value
+
+
+def _config_to_dict(cfg) -> dict:
+    if not is_dataclass(cfg):
+        raise TypeError(f"Config object must be a dataclass instance: {type(cfg)}")
+    return {field.name: _to_yaml_value(getattr(cfg, field.name)) for field in fields(cfg)}
+
+
+def _apply_generation_overrides(config_values: dict, params: dict) -> dict:
+    config_values.update(
+        {
+            "history_days": params["history_days"],
+            "predict_days": params["predict_days"],
+            "window_days": params["window_days"],
+            "now_time": params["now_time_iso"],
+            "start_time": None,
+            "future_time": None,
+            "data_dir": params["data_dir"],
+            "data_path": params["data_path"],
+            "freq": params["freq"],
+            "target_ts_feat": params["target_ts_feat"],
+            "target": params["target"],
+            "target_series_numeric_features": params["target_series_numeric_features"],
+            "target_series_categorical_features": params["target_series_categorical_features"],
+            "target_series_drop_features": params["target_series_drop_features"],
+            "enable_date_features": params["enable_date_features"],
+            "date_history_path": "df_date.csv" if params["enable_date_features"] else None,
+            "date_future_path": "df_date_future.csv" if params["enable_date_features"] else None,
+            "date_ts_feat": "date" if params["enable_date_features"] else None,
+            "datetype_features": ["date_type"] if params["enable_date_features"] else [],
+            "datetype_categorical_features": [],
+            "enable_weather_features": params["enable_weather_features"],
+            "weather_history_path": "df_weather.csv" if params["enable_weather_features"] else None,
+            "weather_future_path": "df_weather_future.csv" if params["enable_weather_features"] else None,
+            "weather_ts_feat": "ts" if params["enable_weather_features"] else None,
+            "weather_features": [
+                "rt_ssr",
+                "rt_ws10",
+                "rt_tt2",
+                "cal_rh",
+                "rt_ps",
+                "rt_rain",
+            ] if params["enable_weather_features"] else [],
+            "weather_categorical_features": [],
+            "enable_datetime_features": params["enable_datetime_features"],
+            "enable_lags_features": params["enable_lags_features"],
+            "lags": [
+                288,
+                576,
+                864,
+                1152,
+                1440,
+                1728,
+                2016,
+            ] if params["enable_lags_features"] else [],
+            "model_type": params["model_type"],
+            "pred_method": params["pred_method"],
+        }
+    )
+    return config_values
+
+
+def build_yaml_config(params: dict) -> dict:
+    config_cls = load_model_config(params["base_config"], "ModelConfig")
+    config_values = _config_to_dict(config_cls())
+    config_values = _apply_generation_overrides(config_values, params)
+    overrides = {}
+    used_fields = set()
+    for group_name, field_names in YAML_OVERRIDE_GROUPS.items():
+        group_values = {}
+        for field_name in field_names:
+            if field_name in config_values:
+                group_values[field_name] = config_values[field_name]
+                used_fields.add(field_name)
+        if group_values:
+            overrides[group_name] = group_values
+
+    remaining_fields = sorted(set(config_values) - used_fields)
+    if remaining_fields:
+        overrides["other"] = {field_name: config_values[field_name] for field_name in remaining_fields}
+
+    return {
+        "base_config": params["base_config"],
+        "overrides": overrides,
+    }
+
+
+def generate_yaml_config(params: dict, output_path: Path, dry_run: bool = False) -> None:
+    """生成分组 YAML 配置文件。"""
+    content = yaml.safe_dump(build_yaml_config(params), sort_keys=False, allow_unicode=True)
     if dry_run:
         print(f"  [DRY-RUN] Would create: {output_path}")
     else:
@@ -519,6 +780,16 @@ def main(argv: Optional[List[str]] = None):
     has_weather = args.no_weather is False and detected["has_weather_exog"]
     enable_datetime = not args.no_datetime
     enable_lags = not args.no_lags
+    sample_dtypes = detected["sample_dtypes"]
+    column_names = detected["column_names"]
+    target_series_numeric_features = [
+        col for col in column_names
+        if col not in {target_ts_feat, args.target} and sample_dtypes.get(col, "").startswith(("int", "float"))
+    ]
+    target_series_categorical_features = [
+        col for col in column_names
+        if col not in {target_ts_feat, args.target} and col not in target_series_numeric_features
+    ]
 
     # now_time 处理
     if args.now_time:
@@ -526,6 +797,7 @@ def main(argv: Optional[List[str]] = None):
     else:
         now_time_val = detected.get("now_time_raw", pd.Timestamp("2025-01-01"))
     now_time_str = f"datetime.datetime({now_time_val.year}, {now_time_val.month}, {now_time_val.day}, {now_time_val.hour}, {now_time_val.minute}, {now_time_val.second})"
+    now_time_iso = now_time_val.to_pydatetime().isoformat()
 
     # ---- 解析模型和策略 ----
     models = [m.strip() for m in args.models.split(",") if m.strip()]
@@ -567,6 +839,7 @@ def main(argv: Optional[List[str]] = None):
     print(f"模型:         {', '.join(models)}")
     print(f"策略:         {', '.join(strategies)}")
     print(f"输出目录:     {config_base}")
+    print(f"配置格式:     {args.format}")
     print(f"模式:         {'DRY-RUN (预览)' if args.dry_run else '实际生成'}")
     print("-" * 50)
 
@@ -586,29 +859,40 @@ def main(argv: Optional[List[str]] = None):
                 "predict_days": args.predict_days,
                 "window_days": args.window_days,
                 "now_time": now_time_str,
+                "now_time_iso": now_time_iso,
                 "data_dir": data_dir_rel,
                 "data_path": data_path,
                 "freq": freq,
                 "target_ts_feat": target_ts_feat,
                 "target": args.target,
-                "target_series_numeric_features": "[]",
-                "target_series_categorical_features": "[]",
+                "target_series_numeric_features": target_series_numeric_features,
+                "target_series_categorical_features": target_series_categorical_features,
+                "target_series_drop_features": [],
                 "enable_date_features": has_date,
                 "enable_weather_features": has_weather,
                 "enable_datetime_features": enable_datetime,
                 "enable_lags_features": enable_lags,
                 "model_type": model_full,
                 "pred_method": method_full,
+                "base_config": args.base_config or default_base_config(strategy),
+            }
+            python_params = params | {
+                "target_series_numeric_features": repr(target_series_numeric_features),
+                "target_series_categorical_features": repr(target_series_categorical_features),
             }
 
             # 构建文件名
+            suffix = "py" if args.format == "python" else "yaml"
             if variant:
-                filename = f"model_config_{model_short}_{strategy}_{variant}.py"
+                filename = f"model_config_{model_short}_{strategy}_{variant}.{suffix}"
             else:
-                filename = f"model_config_{model_short}_{strategy}.py"
+                filename = f"model_config_{model_short}_{strategy}.{suffix}"
 
             output_path = config_base / filename
-            generate_config(params, output_path, dry_run=args.dry_run)
+            if args.format == "python":
+                generate_python_config(python_params, output_path, dry_run=args.dry_run)
+            else:
+                generate_yaml_config(params, output_path, dry_run=args.dry_run)
             count += 1
 
     print("-" * 50)

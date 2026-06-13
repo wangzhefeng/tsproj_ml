@@ -14,11 +14,13 @@ class ModelConfig:
     # ------------------------------
     is_testing: bool = False  # 模型测试
     is_forecasting: bool = True  # 模型预测
-    history_days: int = 365  # 历史数据天数
+    history_days: int = 31  # 历史数据天数
     predict_days: int = 1  # 预测未来 1 天的数据
-    window_days: int = 30  # 滑动窗口天数
+    window_days: int = 15  # 滑动窗口天数
     # 预测推理开始的时间
     now_time: datetime.datetime = field(default_factory=lambda: datetime.datetime(2018, 6, 26, 19, 45, 0))
+    start_time: Optional[datetime.datetime] = None
+    future_time: Optional[datetime.datetime] = None
     # ------------------------------
     # 目标时间序列配置
     # ------------------------------
@@ -27,9 +29,11 @@ class ModelConfig:
     freq: str = "15min"
     target_ts_feat: str = "date"
     target: str = "OT"
-    target_series_numeric_features: List[str] = field(default_factory=lambda: ["HUFL", "HULL", "MUFL", "MULL", "LUFL", "LULL"])
+    target_series_numeric_features: List[str] = field(default_factory=lambda: [
+        "HUFL", "HULL", "MUFL", "MULL", "LUFL", "LULL",
+    ])
     target_series_categorical_features: List[str] = field(default_factory=lambda: [])
-    target_series_drop_features: List[str] = field(default_factory=list)
+    target_series_drop_features: List[str] = field(default_factory=lambda: [])
     # ------------------------------
     # 特征工程配置
     # ------------------------------
@@ -56,12 +60,12 @@ class ModelConfig:
         weather_future_path: Optional[str] = "df_weather_future.csv"
         weather_ts_feat: Optional[str] = "ts"
         weather_features: List[str] = field(default_factory=lambda: [
-            "rt_ssr",   # 太阳总辐射
-            "rt_ws10",  # 10m 风速
-            "rt_tt2",   # 2M 气温
-            "cal_rh",   # 相对湿度
-            "rt_ps",    # 气压
-            "rt_rain",  # 降雨量
+            "rt_ssr",
+            "rt_ws10",
+            "rt_tt2",
+            "cal_rh",
+            "rt_ps",
+            "rt_rain",
         ])
         weather_categorical_features: List[str] = field(default_factory=lambda: [])
     else:
@@ -80,9 +84,9 @@ class ModelConfig:
             'quarter', 'day_of_year', 'year',
         ])
         datetime_categorical_features: List[str] = field(default_factory=lambda: [
-            # "dt_hour", "dt_day", "dt_weekday", "dt_week",
-            # "dt_day_of_week", "dt_week_of_year", "dt_month", "dt_days_in_month",
-            # "dt_quarter", "dt_day_of_year", "dt_year",
+            "dt_hour", "dt_day", "dt_weekday", "dt_week",
+            "dt_day_of_week", "dt_week_of_year", "dt_month", "dt_days_in_month",
+            "dt_quarter", "dt_day_of_year", "dt_year",
         ])
     else:
         datetime_features: List[str] = field(default_factory=lambda: [])
@@ -154,8 +158,22 @@ class ModelConfig:
     # 模型配置
     # ------------------------------
     # 单模型预测
-    model_type: str = "xgboost"
-    model_params: Dict = field(default_factory=dict)
+    model_type: str = "lightgbm"
+    model_params: Dict = field(default_factory=lambda: {
+        "boosting_type": "gbdt",
+        "objective": "regression_l1",
+        "metric": "mae",
+        "n_estimators": 300,
+        "learning_rate": 0.05,
+        "max_bin": 63,
+        "num_leaves": 31,
+        "max_depth": -1,
+        "feature_fraction": 0.8,
+        "bagging_fraction": 0.8,
+        "bagging_freq": 1,
+        "verbose": -1,
+        "force_col_wise": True,
+    })
     # 模型融合预测
     enable_ensemble: bool = False
     ensemble_models: List = field(default_factory=lambda: ["lgb", "xgb", "cat"])
@@ -171,8 +189,7 @@ class ModelConfig:
     # - 多变量预测单变量
     # pred_method: str = "multivariate-single-multistep-direct"            # MSMD [多变量(包含目标变量的所有内生变量)->单变量(目标内生变量)]多步直接预测
     # pred_method: str = "multivariate-single-multistep-recursive"         # MSMR [多变量(包含目标变量的所有内生变量)->单变量(目标内生变量)]多步递归预测
-    # pred_method: str = "multivariate-single-multistep-direct-recursive"  # MSMDR [多变量(包含目标变量的所有内生变量)->单变量(目标内生变量)]多步直接递归预测
-    pred_method: str = "univariate-single-multistep-direct-recursive"
+    pred_method: str = "multivariate-single-multistep-direct-recursive"  # MSMDR [多变量(包含目标变量的所有内生变量)->单变量(目标内生变量)]多步直接递归预测
     # 早停步数
     patience: int = 100
     # 是否对类别特征进行编码
@@ -185,6 +202,8 @@ class ModelConfig:
     quantiles: List[float] = field(default_factory=lambda: [0.1, 0.5, 0.9])
     # Direct 方法是否使用 horizon-aware 外生特征展开
     use_horizon_exogenous_for_direct: bool = False
+    # Direct-Recursive 方法的分块大小
+    block_size: int = 0
     # 全局训练模式（跨序列联合）
     enable_global_training: bool = False
     series_id_feature: str = "series_id"
@@ -209,10 +228,17 @@ class ModelConfig:
     auto_lr_max: float = 0.2
     # 鲁棒损失参数（用于 huber scorer）
     huber_delta: float = 1.0
-    # ------------------------------
+    # 滑窗测试训练集异常处理
+    enable_train_outlier_handling: bool = False
+    train_outlier_method: str = "local_interpolate"
+    high_outlier_threshold: float = 15000.0
+    high_outlier_max_run_points: int = 4
+    drop_outlier_max_run_points: int = 2
+    drop_rebound_min_abs_diff: float = 900.0
     # 性能与并行配置
-    # ------------------------------
     window_parallel_workers: int = 1
+    max_test_windows: Optional[int] = None
+    test_window_stride: int = 1
     multi_output_n_jobs: int = 1
     quantile_parallel_workers: int = 1
     ensemble_parallel_workers: int = 1

@@ -6,7 +6,7 @@
 
 | 文件 | 职责 |
 |---|---|
-| `generate_configs.py` | 从 dataset 叶子目录批量生成 Python 配置 |
+| `generate_configs.py` | 从 dataset 叶子目录批量生成分组 YAML 配置 |
 | `run_model_test.sh` | 通过环境变量覆盖配置并启动一次测试运行 |
 | `template.sh` | 可复制修改的 `run.py` 命令模板 |
 | `production_sync.md` | 项目 1 与生产包同步边界记录 |
@@ -30,17 +30,20 @@ uv run python scripts/generate_configs.py \
 
 确认后去掉 `--dry-run`。
 
+默认输出为 YAML；需要旧 Python dataclass 配置时显式传 `--format python`。
+
 ## 运行模板
 
 `run_model_test.sh` 和 `template.sh` 的默认配置为：
 
-- `CONFIG_MODULE=config.templates.univariate_config`
+- `CONFIG_YAML=`（为空时使用 `CONFIG_MODULE`）
+- `CONFIG_MODULE=config.univariate_config`
 - `CONFIG_CLASS=ModelConfig`
 
 可用环境变量覆盖：
 
 ```bash
-CONFIG_MODULE=config.templates.multivariate_config \
+CONFIG_YAML=config/ETT-small/ETTm1/model_config_lgbm_msmr.yaml \
 CONFIG_CLASS=ModelConfig \
 MODEL_TYPE=xgboost \
 PRED_METHOD=multivariate-single-multistep-direct \

@@ -3,6 +3,7 @@ import datetime
 from typing import List, Dict, Optional
 from dataclasses import dataclass, field
 
+
 @dataclass
 class ModelConfig:
     """
@@ -14,28 +15,30 @@ class ModelConfig:
     # ------------------------------
     is_testing: bool = False  # 模型测试
     is_forecasting: bool = True  # 模型预测
-    history_days: int = 365  # 历史数据天数
+    history_days: int = 31  # 历史数据天数
     predict_days: int = 1  # 预测未来 1 天的数据
-    window_days: int = 30  # 滑动窗口天数
+    window_days: int = 15  # 滑动窗口天数
     # 预测推理开始的时间
-    now_time: datetime.datetime = field(default_factory=lambda: datetime.datetime(2018, 6, 26, 19, 45, 0))
+    now_time: datetime.datetime = field(default_factory=lambda: datetime.datetime(2026, 6, 11, 23, 55, 0))
+    start_time: Optional[datetime.datetime] = None
+    future_time: Optional[datetime.datetime] = None
     # ------------------------------
     # 目标时间序列配置
     # ------------------------------
-    data_dir: str = "./dataset/ETT-small/"
-    data_path: str = "ETTm1.csv"
-    freq: str = "15min"
-    target_ts_feat: str = "date"
-    target: str = "OT"
-    target_series_numeric_features: List[str] = field(default_factory=lambda: ["HUFL", "HULL", "MUFL", "MULL", "LUFL", "LULL"])
-    target_series_categorical_features: List[str] = field(default_factory=lambda: [])
+    data_dir: str = "./dataset/aidc_electricity_computility/electricity/2026-06-11/demand_load/A1_201"
+    data_path: str = "df_power.csv"
+    freq: str = "5min"
+    target_ts_feat: str = "count_data_time"
+    target: str = "h_total_use"
+    target_series_numeric_features: List[str] = field(default_factory=list)
+    target_series_categorical_features: List[str] = field(default_factory=list)
     target_series_drop_features: List[str] = field(default_factory=list)
     # ------------------------------
     # 特征工程配置
     # ------------------------------
     # 日期类型数据配置
     # --------------
-    enable_date_features: bool = False
+    enable_date_features: bool = True
     if enable_date_features:
         date_history_path: Optional[str] = "df_date.csv"
         date_future_path: Optional[str] = "df_date_future.csv"
@@ -50,7 +53,7 @@ class ModelConfig:
         datetype_categorical_features: List[str] = field(default_factory=lambda: [])
     # 气象数据配置
     # --------------
-    enable_weather_features: bool = False
+    enable_weather_features: bool = True
     if enable_weather_features:
         weather_history_path: Optional[str] = "df_weather.csv"
         weather_future_path: Optional[str] = "df_weather_future.csv"
@@ -154,7 +157,7 @@ class ModelConfig:
     # 模型配置
     # ------------------------------
     # 单模型预测
-    model_type: str = "catboost"
+    model_type: str = "lightgbm"
     model_params: Dict = field(default_factory=dict)
     # 模型融合预测
     enable_ensemble: bool = False
@@ -172,7 +175,7 @@ class ModelConfig:
     # pred_method: str = "multivariate-single-multistep-direct"            # MSMD [多变量(包含目标变量的所有内生变量)->单变量(目标内生变量)]多步直接预测
     # pred_method: str = "multivariate-single-multistep-recursive"         # MSMR [多变量(包含目标变量的所有内生变量)->单变量(目标内生变量)]多步递归预测
     # pred_method: str = "multivariate-single-multistep-direct-recursive"  # MSMDR [多变量(包含目标变量的所有内生变量)->单变量(目标内生变量)]多步直接递归预测
-    pred_method: str = "multivariate-single-multistep-direct-recursive"
+    pred_method: str = "univariate-single-multistep-direct"
     # 早停步数
     patience: int = 100
     # 是否对类别特征进行编码
@@ -185,6 +188,8 @@ class ModelConfig:
     quantiles: List[float] = field(default_factory=lambda: [0.1, 0.5, 0.9])
     # Direct 方法是否使用 horizon-aware 外生特征展开
     use_horizon_exogenous_for_direct: bool = False
+    # Direct-Recursive 方法的分块大小
+    block_size: int = 0
     # 全局训练模式（跨序列联合）
     enable_global_training: bool = False
     series_id_feature: str = "series_id"
@@ -210,9 +215,20 @@ class ModelConfig:
     # 鲁棒损失参数（用于 huber scorer）
     huber_delta: float = 1.0
     # ------------------------------
+    # 滑窗测试训练集异常处理
+    # ------------------------------
+    enable_train_outlier_handling: bool = False
+    train_outlier_method: str = "local_interpolate"
+    high_outlier_threshold: float = 15000.0
+    high_outlier_max_run_points: int = 4
+    drop_outlier_max_run_points: int = 2
+    drop_rebound_min_abs_diff: float = 900.0
+    # ------------------------------
     # 性能与并行配置
     # ------------------------------
     window_parallel_workers: int = 1
+    max_test_windows: Optional[int] = None
+    test_window_stride: int = 1
     multi_output_n_jobs: int = 1
     quantile_parallel_workers: int = 1
     ensemble_parallel_workers: int = 1

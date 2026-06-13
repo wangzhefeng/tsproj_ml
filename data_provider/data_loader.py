@@ -85,6 +85,8 @@ class DataLoader:
         # ------------------------------
         # 加载日期类型数据
         # ------------------------------
+        df_date_history = None
+        df_date_future = None
         # 加载历史日期类型数据
         if self.args.date_history_path:
             date_history_path = self.args.data_dir / self.args.date_history_path
@@ -102,7 +104,7 @@ class DataLoader:
                 logger.info(f"{self.log_prefix} Date future loaded: {df_date_future.shape}")
                 logger.info(f"{self.log_prefix} Date future missing values: \n{df_date_future.isna().sum()}")
         # date 历史和未来数据拼接
-        if self.args.date_history_path and self.args.date_future_path:
+        if df_date_history is not None and df_date_future is not None:
             df_date_all = pd.concat([df_date_history.iloc[:-1,], df_date_future], axis=0)
         else:
             df_date_all = None
@@ -112,6 +114,8 @@ class DataLoader:
         # ------------------------------
         # 加载气象数据
         # ------------------------------
+        df_weather_history = None
+        df_weather_future = None
         # 加载历史气象数据
         if self.args.weather_history_path:
             weather_history_path = self.args.data_dir / self.args.weather_history_path
@@ -129,7 +133,7 @@ class DataLoader:
                 logger.info(f"{self.log_prefix} Weather future loaded: {df_weather_future.shape}")
                 logger.info(f"{self.log_prefix} Weather future missing values: \n{df_weather_future.isna().sum()}")
         # weather 历史和未来数据拼接
-        if self.args.weather_history_path and self.args.weather_future_path:
+        if df_weather_history is not None and df_weather_future is not None:
             df_weather_all = pd.concat([df_weather_history.iloc[:-1,], df_weather_future], axis=0)
         else:
             df_weather_all = None

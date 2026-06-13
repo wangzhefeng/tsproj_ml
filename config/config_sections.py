@@ -307,9 +307,9 @@ class PerformanceConfig:
 class OutputConfig:
     """模型、测试结果和预测结果的输出目录配置。"""
 
-    checkpoints_dir: str = "./saved_results/pretrained_models/"
-    test_results_dir: str = "./saved_results/results_test/"
-    pred_results_dir: str = "./saved_results/results_forecast/"
+    checkpoints_dir: str = "./results/pretrained_models/"
+    test_results_dir: str = "./results/results_test/"
+    pred_results_dir: str = "./results/results_forecast/"
 
 
 @dataclass

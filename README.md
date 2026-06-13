@@ -73,7 +73,7 @@ tsproj_ml/
     └── log_util.py              # 日志器
 ```
 
-运行产物默认写入 `saved_results/`，日志默认写入 `logs/`；这两个目录通常不作为源码事实来源。
+运行产物默认写入 `results/`，日志默认写入 `logs/`；这两个目录通常不作为源码事实来源。
 
 ## 核心流程
 
@@ -275,7 +275,7 @@ uv run python config/generate_configs.py \
 `<setting>` 当前由 `{model_type}-{data_name}-{pred_method_code}` 组成，例如 `lightgbm-df_power-usmd`。
 
 ```text
-saved_results/
+results/
   pretrained_models/<setting>/
     model.pkl
     target_scaler.pkl              # 仅目标缩放器已 fit 时保存
@@ -310,7 +310,7 @@ df_power_anomalies.png
 - `now_time` 会被规整到整点作为历史结束/预测开始，历史区间为 `[now_time - history_days, now_time)`，预测区间为 `[now_time, now_time + predict_days)`。
 - 分位数预测训练多个子模型；点预测融合只在 `predict_type="point"` 时生效。
 - 多变量递归类方法对非目标内生变量目前主要采用持久性回填，不等同于为每个内生变量单独建模。
-- `.DS_Store`、`__pycache__/`、`logs/`、`saved_results/` 不是源码或数据契约。
+- `.DS_Store`、`__pycache__/`、`logs/`、`results/` 不是源码或数据契约。
 
 ## 生产同步边界
 

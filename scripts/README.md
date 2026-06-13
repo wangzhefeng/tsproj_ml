@@ -31,5 +31,5 @@ bash scripts/run_model_test.sh
 ## 注意事项
 
 - `config/generate_configs.py` 会写入配置文件；生成前优先使用 `--dry-run`。
-- `run_model_test.sh` 和 `template.sh` 会产生 `logs/`、`saved_results/` 等运行产物。
+- `run_model_test.sh` 和 `template.sh` 会产生 `logs/`、`results/` 等运行产物。
 - `.DS_Store` 和 `__pycache__/` 不是源码或数据契约。

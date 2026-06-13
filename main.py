@@ -27,7 +27,7 @@ import datetime
 import warnings
 from typing import List
 from pathlib import Path
-ROOT = str(Path.cwd())
+ROOT = str(Path(__file__).resolve().parent)
 if ROOT not in sys.path:
     sys.path.append(ROOT)
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_completed
@@ -58,7 +58,7 @@ warnings.filterwarnings("ignore")
 
 # global variable
 LOGGING_LABEL = Path(__file__).name[:-3]
-os.environ['LOG_NAME'] = LOGGING_LABEL
+os.environ.setdefault('LOG_NAME', LOGGING_LABEL)
 from utils.log_util import logger
 
 
@@ -83,12 +83,12 @@ class Model:
         self.step_minutes = resolve_freq_step_minutes(self.args.freq)
         # 目标时间序列每天样本数量
         self.n_per_day = resolve_samples_per_day(self.args.freq)
-        # 时间序列历史数据开始时刻
-        start_time = self.args.now_time.replace(hour=0) - datetime.timedelta(days=self.args.history_days)
-        # 时间序列当前时刻(模型预测的日期时间)
-        now_time = self.args.now_time.replace(tzinfo=None, minute=0, second=0, microsecond=0)
-        # 时间序列未来结束时刻
-        future_time = self.args.now_time + datetime.timedelta(days=self.args.predict_days)
+        # 时间序列当前时刻（历史/未来分界点 = 次日 00:00:00）
+        now_time = pd.Timestamp(self.args.now_time).replace(tzinfo=None).floor("1D") + datetime.timedelta(days=1)
+        # 时间序列历史数据开始时刻（= now_time - history_days）
+        start_time = now_time - datetime.timedelta(days=self.args.history_days)
+        # 时间序列未来结束时刻（= now_time + predict_days）
+        future_time = now_time + datetime.timedelta(days=self.args.predict_days)
         # 数据划分时间戳
         self.train_start_time = start_time
         self.train_end_time = now_time
@@ -116,6 +116,21 @@ class Model:
         self.args.test_results_dir.mkdir(parents=True, exist_ok=True)
         self.args.pred_results_dir = Path(self.args.pred_results_dir).joinpath(self.setting)
         self.args.pred_results_dir.mkdir(parents=True, exist_ok=True)
+        # ------------------------------
+        # 参数合法性校验
+        # ------------------------------
+        if self.args.window_days >= self.args.history_days:
+            raise ValueError(
+                f"{self.log_prefix} window_days ({self.args.window_days}) must be less than "
+                f"history_days ({self.args.history_days})."
+            )
+        if self.n_windows <= 0:
+            logger.warning(
+                f"{self.log_prefix} n_windows={self.n_windows} (<= 0). Testing will be skipped."
+            )
+        block_size = int(getattr(self.args, 'block_size', 0) or 0)
+        if block_size < 0:
+            raise ValueError(f"{self.log_prefix} block_size ({block_size}) must be >= 0.")
         # ------------------------------
         # 日志打印
         # ------------------------------
@@ -219,8 +234,9 @@ class Model:
             max_test_windows = max(1, int(max_test_windows))
             window_indices = window_indices[:max_test_windows]
         logger.info(f"{self.log_prefix} Testing windows selected: {window_indices}")
+        
         window_workers = int(getattr(self.args, "window_parallel_workers", 1) or 1)
-        payload_args = copy.copy(self.args)
+        payload_args = copy.deepcopy(self.args)
         if window_workers > 1:
             payload_args.multi_output_n_jobs = 1
             payload_args.model_thread_count = 1
@@ -264,33 +280,35 @@ class Model:
         else:
             for payload in payloads:
                 window_results.append(Tester._window_test(payload))
+        # ------------------------------
         # 滑窗测试结果解析
+        # ------------------------------
         for result in sorted(window_results, key=lambda x: x["window"]):
             if "train_outlier_report" in result and not result["train_outlier_report"].empty:
                 train_outlier_report = pd.concat([train_outlier_report, result["train_outlier_report"]], axis=0)
+            
             if result["test_scores_df"] is None or result["cv_plot_df"] is None:
                 continue
             test_scores_df = pd.concat([test_scores_df, result["test_scores_df"]], axis=0)
             cv_plot_df = pd.concat([cv_plot_df, result["cv_plot_df"]], axis=0)
+        # 模型测试评价指标数据处理
+        if not test_scores_df.empty:
+            test_scores_df_median = test_scores_df.drop(columns=["time_range"]).median()
+            test_scores_df_median = test_scores_df_median.to_frame().T.reset_index(drop=True, inplace=False)
+            test_scores_df_median["time_range"] = "中位数"
+            test_scores_df = pd.concat([test_scores_df, test_scores_df_median], axis=0)
+        logger.info(f"{self.log_prefix} Model Testing train_outlier_report shape: {train_outlier_report.shape}")
+        logger.info(f"{self.log_prefix} Model Testing cv_plot_df shape: {cv_plot_df.shape}")
+        logger.info(f"{self.log_prefix} Model Testing test_scores_df: \n{test_scores_df}")
         # ------------------------------
         # 模型测试结果保存
         # ------------------------------
         logger.info(f"{self.log_prefix} {'=' * 48}")
         logger.info(f"{self.log_prefix} Model Testing result saving...")
         logger.info(f"{self.log_prefix} {'=' * 48}")
-        # 模型测试评价指标数据处理
-        if not test_scores_df.empty:
-            test_scores_df_mean = test_scores_df.drop(columns=["time_range"]).mean()
-            test_scores_df_mean = test_scores_df_mean.to_frame().T.reset_index(drop=True, inplace=False)
-            test_scores_df_mean["time_range"] = "均值"
-            test_scores_df = pd.concat([test_scores_df, test_scores_df_mean], axis=0)
-        logger.info(f"{self.log_prefix} Model Testing test_scores_df: \n{test_scores_df}")
-        logger.info(f"{self.log_prefix} Model Testing cv_plot_df: \n{cv_plot_df.head()}")
-        logger.info(f"{self.log_prefix} Model Testing cv_plot_df shape: {cv_plot_df.shape}")
-        logger.info(f"{self.log_prefix} Model Testing train_outlier_report shape: {train_outlier_report.shape}")
-        # 模型测试结果保存
         Tester.test_results_save(self.args, self.log_prefix, test_scores_df, cv_plot_df, train_outlier_report)
         logger.info(f"{self.log_prefix} Model Testing result saved in: {self.args.test_results_dir}")
+
         logger.info(f"{self.log_prefix} Model Testing runtime: {time.perf_counter() - test_start:.3f}s")
 
         return test_scores_df, cv_plot_df
@@ -349,7 +367,13 @@ class Model:
         # 模型预测结果收集
         if target_scaler_forecasting is None:
             pred_target_columns = list(target_output_features or [target_feature])
-            Y_pred = np.asarray(Y_pred).reshape(-1)[:len(df_future_prediction)]
+            Y_pred = np.asarray(Y_pred).reshape(-1)
+            if len(Y_pred) != len(df_future_prediction):
+                logger.warning(
+                    f"{self.log_prefix} Y_pred length ({len(Y_pred)}) "
+                    f"!= df_future_prediction length ({len(df_future_prediction)}); truncating."
+                )
+                Y_pred = Y_pred[:len(df_future_prediction)]
         else:
             pred_target_columns = target_scaler_forecasting.get_prediction_target_columns(
                 self.args.pred_method,
@@ -430,9 +454,6 @@ class Model:
         logger.info(f"{self.log_prefix} {'#' * 90}")
         logger.info(f"{self.log_prefix} Model history data feature engineering...")
         logger.info(f"{self.log_prefix} {'#' * 90}")
-        logger.info(f"{self.log_prefix} {'=' * 87}")
-        logger.info(f"{self.log_prefix} Model history data feature engineering...")
-        logger.info(f"{self.log_prefix} {'=' * 87}")
         # 特征预处理器
         verbose_logging = bool(getattr(self.args, "enable_step_logging", False))
         feature_engineer_history = FeatureEngineer(self.args, self.log_prefix, verbose=verbose_logging)
@@ -541,7 +562,7 @@ def main():
     # ------------------------------
     # 配置文件切换区域
     # ------------------------------
-    CONFIG_YAML = "config/aidc_electricity_computility/electricity/2026-06-11/A1_01a/xgb_usmd.yaml"
+    CONFIG_YAML = "config/aidc_electricity_computility/electricity/2026-06-11/A1_01a/lgbm_usmdo.yaml"
     # ------------------------------
     # 创建模型配置参数
     # ------------------------------
@@ -549,7 +570,14 @@ def main():
     # 创建模型实例
     model = Model(args)
     # 运行模型
-    model.run()
+    try:
+        model.run()
+    except Exception as e:
+        logger.error(
+            f"{model.log_prefix} Pipeline FAILED: {e}",
+            exc_info=True,
+        )
+        raise
     logger.info(f"{model.log_prefix} {'#' * 85}")
     logger.info(f"{model.log_prefix} 模型预测流程完成！")
     logger.info(f"{model.log_prefix} {'#' * 85}")

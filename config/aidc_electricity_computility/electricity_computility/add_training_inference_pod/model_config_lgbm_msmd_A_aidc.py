@@ -252,9 +252,9 @@ class ModelConfig:
     # ------------------------------
     # 结果保存路径
     # ------------------------------
-    checkpoints_dir: str = "./saved_results/pretrained_models/"
-    test_results_dir: str = "./saved_results/results_test/"
-    pred_results_dir: str = "./saved_results/results_forecast/"
+    checkpoints_dir: str = "./results/pretrained_models/"
+    test_results_dir: str = "./results/results_test/"
+    pred_results_dir: str = "./results/results_forecast/"
 
     def __post_init__(self):
         self._apply_model_cfgs(self.model_cfgs or {})

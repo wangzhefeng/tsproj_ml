@@ -201,6 +201,6 @@ overrides:
     enable_step_logging: false
     forecast_log_interval: 24
   output:
-    checkpoints_dir: ./saved_results/pretrained_models/
-    test_results_dir: ./saved_results/results_test/
-    pred_results_dir: ./saved_results/results_forecast/
+    checkpoints_dir: ./results/pretrained_models/
+    test_results_dir: ./results/results_test/
+    pred_results_dir: ./results/results_forecast/

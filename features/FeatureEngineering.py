@@ -1229,10 +1229,12 @@ class FeatureEngineer:
         # ------------------------------
         # Feature engineering
         # ------------------------------
-        logger.info(f"{self.log_prefix} 开始数据特征工程...")
-        
+        if self.verbose:
+            logger.info(f"{self.log_prefix} 开始数据特征工程...")
+
         # 历史、未来数据特征工程: 外生变量特征工程
-        logger.info(f"{self.log_prefix} 数据特征工程: 外生变量特征...")
+        if self.verbose:
+            logger.info(f"{self.log_prefix} 数据特征工程: 外生变量特征...")
         (df_series_featured, exogenous_features, categorical_features) = self.create_exogenouse_features(
             df=df_series_copy, 
             df_date_history=df_date_history, 
@@ -1260,7 +1262,8 @@ class FeatureEngineer:
                     categorical_features.append(series_id_col)
 
         # 历史数据特征工程: 内生变量基本特征工程
-        logger.info(f"{self.log_prefix} 数据特征工程: 内生变量基本特征...")
+        if self.verbose:
+            logger.info(f"{self.log_prefix} 数据特征工程: 内生变量基本特征...")
         (df_series_featured, endogenous_features, target_output_features) = self.create_endogenous_basic_features(
             df_series=df_series_featured, 
             endogenous_features_with_target=endogenous_features_with_target_copy,
@@ -1269,11 +1272,13 @@ class FeatureEngineer:
         )
 
         # 历史数据特征工程: 内生变量高级特征工程
-        logger.info(f"{self.log_prefix} 数据特征工程: 内生变量高级特征...")
+        if self.verbose:
+            logger.info(f"{self.log_prefix} 数据特征工程: 内生变量高级特征...")
         (df_series_featured, endogenous_advanced_features) = self.create_endogenous_advanced_features(
             df_series=df_series_featured
         )
-        logger.info(f"{self.log_prefix} 特征工程结束...")
+        if self.verbose:
+            logger.info(f"{self.log_prefix} 特征工程结束...")
         if self.verbose:
             logger.info(f"{self.log_prefix} after feature engineering exogenous_features: {exogenous_features}")
             logger.info(f"{self.log_prefix} after feature engineering endogenous_basic_features: {endogenous_features}")
@@ -1311,10 +1316,11 @@ class FeatureEngineer:
         combined_xy = combined_xy.dropna(subset=target_output_features)
         X_train_history = combined_xy[X_train_history.columns]
         Y_train_history = combined_xy[Y_train_history.columns]
-        logger.info(f"{self.log_prefix} after predictor_target_split X_train_history: \n{X_train_history.head()}")
-        logger.info(f"{self.log_prefix} after predictor_target_split X_train_history.shape: {X_train_history.shape}")
-        logger.info(f"{self.log_prefix} after predictor_target_split Y_train_history: \n{Y_train_history.head()}")
-        logger.info(f"{self.log_prefix} after predictor_target_split Y_train_history.shape: {Y_train_history.shape}")
+        if self.verbose:
+            logger.info(f"{self.log_prefix} after predictor_target_split X_train_history: \n{X_train_history.head()}")
+            logger.info(f"{self.log_prefix} after predictor_target_split X_train_history.shape: {X_train_history.shape}")
+            logger.info(f"{self.log_prefix} after predictor_target_split Y_train_history: \n{Y_train_history.head()}")
+            logger.info(f"{self.log_prefix} after predictor_target_split Y_train_history.shape: {Y_train_history.shape}")
         
         return X_train_history, Y_train_history
 

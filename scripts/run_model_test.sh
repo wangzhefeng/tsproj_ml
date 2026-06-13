@@ -8,11 +8,11 @@ set -euo pipefail
 # 使用方式：
 #   bash scripts/run_model_test.sh
 # 或覆盖变量：
-#   CONFIG_YAML=config/aidc_electricity_computility/electricity/2026-06-11/A1_01a/model_config_xgb_usmd_A1_01a.yaml bash scripts/run_model_test.sh
+#   CONFIG_YAML=config/aidc_electricity_computility/electricity/2026-06-11/A1_01a/xgb_usmd.yaml bash scripts/run_model_test.sh
 
 export LOG_NAME="${LOG_NAME:-run-model-test}"
 
-CONFIG_YAML="${CONFIG_YAML:-config/ETT-small/ETTm1/model_config_lgbm_usmd.yaml}"
+CONFIG_YAML="${CONFIG_YAML:-config/ETT-small/ETTm1/lgbm_usmd.yaml}"
 
 MODEL_TYPE="${MODEL_TYPE:-lightgbm}"
 PRED_METHOD="${PRED_METHOD:-univariate-single-multistep-direct}"

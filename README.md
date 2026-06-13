@@ -101,7 +101,7 @@ uv sync
 
 ```bash
 uv run python run.py \
-  --config-yaml config/ETT-small/ETTm1/model_config_lgbm_usmd.yaml \
+  --config-yaml config/ETT-small/ETTm1/lgbm_usmd.yaml \
   --model-type lightgbm \
   --is-testing 1 \
   --is-forecasting 0
@@ -120,7 +120,7 @@ uv run python main.py
 脚本入口默认值也已对齐到当前模板：
 
 ```bash
-CONFIG_YAML=config/ETT-small/ETTm1/model_config_lgbm_usmd.yaml \
+CONFIG_YAML=config/ETT-small/ETTm1/lgbm_usmd.yaml \
 CONFIG_CLASS=ModelConfig \
 MODEL_TYPE=lightgbm \
 bash scripts/run_model_test.sh
@@ -155,7 +155,7 @@ YAML 按 `config_sections.py` 的分组语义保存覆盖项，例如 `target_se
 | `--target-ts-feat` | 可选；不传时使用目标 CSV 第一列 |
 | `--models` | 逗号分隔模型列表，默认 `lightgbm,xgboost,catboost` |
 | `--strategies` | 逗号分隔策略列表，默认 `usmdo,usmd,usmr,usmdr` |
-| `--variant` | 文件名后缀，例如 `A1_201`、`A`、`B` |
+| `--variant` | 输出子目录后缀，例如 `A1_201`、`A`、`B`；用于区分同数据集不同场景的配置目录，不写入文件名 |
 | `--config-dir` | 输出目录；建议显式传入，避免默认路径和项目约定漂移 |
 | `--base-config` | 可选；不传时按策略和内生特征自动选择 `config.univariate_config` 或 `config.multivariate_config` |
 | `--dry-run` | 只打印将生成的文件，不写入磁盘 |
@@ -178,7 +178,6 @@ uv run python config/generate_configs.py \
   --target h_total_use \
   --models lightgbm,xgboost,catboost \
   --strategies usmdo,usmd,usmr,usmdr \
-  --variant A1_201 \
   --config-dir config/aidc_electricity_computility/electricity/2026-06-11/A1_201 \
   --dry-run
 ```
@@ -273,7 +272,7 @@ uv run python config/generate_configs.py \
 
 ## 输出结构
 
-`<setting>` 当前由 `{model_type}-{pred_method_code}` 组成，例如 `lightgbm-usmd`。
+`<setting>` 当前由 `{model_type}-{data_name}-{pred_method_code}` 组成，例如 `lightgbm-df_power-usmd`。
 
 ```text
 saved_results/
@@ -364,14 +363,14 @@ df_power_anomalies.png
 入口导入回归检查：
 
 ```bash
-uv run python -c "import sys; sys.argv=['run.py','--config-yaml','config/ETT-small/ETTm1/model_config_lgbm_usmd.yaml','--model-type','lightgbm']; import main; print('imported')"
+uv run python -c "import sys; sys.argv=['run.py','--config-yaml','config/ETT-small/ETTm1/lgbm_usmd.yaml','--model-type','lightgbm']; import main; print('imported')"
 ```
 
 轻量入口运行检查：
 
 ```bash
 uv run python run.py \
-  --config-yaml config/ETT-small/ETTm1/model_config_lgbm_usmd.yaml \
+  --config-yaml config/ETT-small/ETTm1/lgbm_usmd.yaml \
   --is-testing 0 \
   --is-forecasting 0
 ```

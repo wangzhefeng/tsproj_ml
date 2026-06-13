@@ -570,7 +570,6 @@ def main(argv: Optional[List[str]] = None):
     print("-" * 50)
 
     # ---- 生成配置文件 ----
-    variant = args.variant
     count = 0
 
     for model in models:
@@ -603,10 +602,7 @@ def main(argv: Optional[List[str]] = None):
             }
 
             # 构建文件名
-            if variant:
-                filename = f"model_config_{model_short}_{strategy}_{variant}.yaml"
-            else:
-                filename = f"model_config_{model_short}_{strategy}.yaml"
+            filename = f"{model_short}_{strategy}.yaml"
 
             output_path = config_base / filename
             generate_yaml_config(params, output_path, dry_run=args.dry_run)

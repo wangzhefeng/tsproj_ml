@@ -36,6 +36,7 @@ import numpy as np
 import pandas as pd
 
 from config.config_loader import load_yaml_config
+from config.config_sections import PRED_METHOD_CODE
 from data_provider.data_loader import DataLoader
 from features.FeatureScalering import (
     FeatureScaler,
@@ -71,8 +72,9 @@ class Model:
         """
         self.args = args
         data_name = Path(self.args.data_path).stem if getattr(self.args, "data_path", None) else "unknown_data"
-        self.setting = f"{self.args.model_type}-{data_name}-{self.args.pred_method}"
-        self.log_prefix = f"[{self.args.model_type}-{data_name}]"
+        pred_method_code = PRED_METHOD_CODE.get(self.args.pred_method, str(self.args.pred_method).lower())
+        self.setting = f"{self.args.model_type}-{data_name}-{pred_method_code}"
+        self.log_prefix = f"[{self.setting}]"
         # ------------------------------
         # 数据参数
         # ------------------------------
@@ -108,17 +110,6 @@ class Model:
         # ------------------------------
         # 模型训练、测试、预测结果保存路径
         # ------------------------------
-        pred_method_code_map = {
-            "univariate-single-multistep-direct-output": "usmdo",
-            "univariate-single-multistep-direct": "usmd",
-            "univariate-single-multistep-recursive": "usmr",
-            "univariate-single-multistep-direct-recursive": "usmdr",
-            "multivariate-single-multistep-recursive": "msmr",
-            "multivariate-single-multistep-direct": "msmd",
-            "multivariate-single-multistep-direct-recursive": "msmdr",
-        }
-        pred_method_code = pred_method_code_map.get(self.args.pred_method, str(self.args.pred_method).lower())
-        self.setting = f"{self.args.model_type}-{pred_method_code}"
         self.args.checkpoints_dir = Path(self.args.checkpoints_dir).joinpath(self.setting)
         self.args.checkpoints_dir.mkdir(parents=True, exist_ok=True)
         self.args.test_results_dir = Path(self.args.test_results_dir).joinpath(self.setting)
@@ -550,7 +541,7 @@ def main():
     # ------------------------------
     # 配置文件切换区域
     # ------------------------------
-    CONFIG_YAML = "config/aidc_electricity_computility/electricity/2026-06-11/A1_01a/model_config_xgb_usmd_A1_01a.yaml"
+    CONFIG_YAML = "config/aidc_electricity_computility/electricity/2026-06-11/A1_01a/xgb_usmd.yaml"
     # ------------------------------
     # 创建模型配置参数
     # ------------------------------

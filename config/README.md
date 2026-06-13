@@ -8,7 +8,7 @@
 
 ```bash
 uv run python run.py \
-  --config-yaml config/ETT-small/ETTm1/model_config_lgbm_usmd.yaml
+  --config-yaml config/ETT-small/ETTm1/lgbm_usmd.yaml
 ```
 
 加载边界：

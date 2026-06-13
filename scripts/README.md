@@ -21,7 +21,7 @@
 可用环境变量覆盖：
 
 ```bash
-CONFIG_YAML=config/ETT-small/ETTm1/model_config_lgbm_msmr.yaml \
+CONFIG_YAML=config/ETT-small/ETTm1/lgbm_msmr.yaml \
 CONFIG_CLASS=ModelConfig \
 MODEL_TYPE=xgboost \
 PRED_METHOD=multivariate-single-multistep-direct \

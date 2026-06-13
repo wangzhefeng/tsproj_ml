@@ -11,7 +11,7 @@ set -euo pipefail
 export LOG_NAME="${LOG_NAME:-run-template}"
 
 # 配置模块（YAML 为必填，base_config 从 YAML 内部读取）
-CONFIG_YAML="${CONFIG_YAML:-config/ETT-small/ETTm1/model_config_lgbm_usmd.yaml}"
+CONFIG_YAML="${CONFIG_YAML:-config/ETT-small/ETTm1/lgbm_usmd.yaml}"
 
 # 基本运行参数
 SEED="${SEED:-2025}"

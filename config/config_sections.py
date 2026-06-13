@@ -12,15 +12,19 @@ from dataclasses import dataclass, field
 from typing import Dict, List, Optional
 
 
-PRED_METHOD_HELP = {
-    "univariate-single-multistep-direct-output": "USMDO: 单变量输入，多步直接输出",
-    "univariate-single-multistep-direct": "USMD: 单变量输入，多步直接预测",
-    "univariate-single-multistep-recursive": "USMR: 单变量输入，多步递归预测",
-    "univariate-single-multistep-direct-recursive": "USMDR: 单变量输入，多步直接递归预测",
-    "multivariate-single-multistep-direct": "MSMD: 多变量输入，多步直接预测",
-    "multivariate-single-multistep-recursive": "MSMR: 多变量输入，多步递归预测",
-    "multivariate-single-multistep-direct-recursive": "MSMDR: 多变量输入，多步直接递归预测",
-}
+# 预测方法元信息 (full_method, short_code, description)
+_PRED_METHODS = [
+    ("univariate-single-multistep-direct-output", "usmdo", "单变量输入，多步直接输出"),
+    ("univariate-single-multistep-direct", "usmd", "单变量输入，多步直接预测"),
+    ("univariate-single-multistep-recursive", "usmr", "单变量输入，多步递归预测"),
+    ("univariate-single-multistep-direct-recursive", "usmdr", "单变量输入，多步直接递归预测"),
+    ("multivariate-single-multistep-direct", "msmd", "多变量输入，多步直接预测"),
+    ("multivariate-single-multistep-recursive", "msmr", "多变量输入，多步递归预测"),
+    ("multivariate-single-multistep-direct-recursive", "msmdr", "多变量输入，多步直接递归预测"),
+]
+
+# 派生映射：保持向后兼容
+PRED_METHOD_CODE = {full: code for full, code, _ in _PRED_METHODS}  # full name → short code
 
 
 # 标准频率 → 每天样本数映射，用于生成与频率匹配的滞后步数。
@@ -229,7 +233,7 @@ class ModelStrategyConfig:
     ensemble_method: str = "stacking"  # "averaging"、"weighted"、"stacking" 或 "blending"
     ensemble_val_ratio: float = 0.2
 
-    # 可选预测方法详见 PRED_METHOD_HELP。
+    # 可选预测方法详见 _PRED_METHODS。
     pred_method: str = "univariate-single-multistep-direct"
     multi_output_strategy: str = "multioutput"  # 多输出策略: multioutput / regressor_chain
     predict_type: str = "point"  # 预测类型: point / quantile

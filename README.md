@@ -40,11 +40,11 @@ tsproj_ml/
 │   ├── config_sections.py       # 共享分组 dataclass 和预测策略说明
 │   ├── config_loader.py         # 无 import-time argparse 副作用的配置加载器
 │   ├── generate_configs.py      # 根据 dataset 自动检测字段并批量生成模型配置
-│   ├── univariate_config.py     # electricity_univariate 单变量示例配置
+│   ├── univariate_config.py     # ETTm1 单变量示例配置
 │   ├── multivariate_config.py   # ETTm1 多变量示例配置
 │   ├── aidc_electricity_computility/
 │   └── ETT-small/
-├── dataset/                     # ETT-small、electricity_univariate 和 AIDC electricity 数据
+├── dataset/                     # ETT-small 和 AIDC electricity 数据
 ├── data_provider/
 │   ├── data_loader.py           # 数据读取、时间轴构造、历史/未来切片
 │   ├── outlier_handling.py      # 滑窗训练段异常处理
@@ -244,7 +244,7 @@ uv run python run.py \
 
 当前模板说明：
 
-- `config/univariate_config.py` 默认指向 `dataset/electricity_univariate/`，目标文件为 `df_power.csv`，时间列为 `count_data_time`，目标列为 `h_total_use`。
+- `config/univariate_config.py` 和 `config/multivariate_config.py` 均默认指向 `dataset/ETT-small/ETTm1.csv`，目标列为 `OT`，使用 `dataset/ETT-small/ETTm1_exogenous/` 下的仿真外生数据。单变量策略共用同一数据源，区别在于只使用目标列自身历史。
 - `config/multivariate_config.py` 默认指向 `dataset/ETT-small/ETTm1.csv`，目标列为 `OT`，多变量输入列为 `HUFL`、`HULL`、`MUFL`、`MULL`、`LUFL`、`LULL`。
 - `config/multivariate_config.py` 默认启用 `dataset/ETT-small/ETTm1_exogenous/` 下的仿真日期类型和天气外生数据。
 - 单变量默认 `pred_method` 为 `univariate-single-multistep-direct`；多变量默认 `pred_method` 为 `multivariate-single-multistep-direct-recursive`。

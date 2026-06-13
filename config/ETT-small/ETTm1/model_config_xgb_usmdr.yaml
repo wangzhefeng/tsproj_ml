@@ -1,5 +1,219 @@
-base_config: config.multivariate_config
+# ETTm1 单变量预测 — 完整配置 (base: config.univariate_config)
+base_config: config.univariate_config
 overrides:
+  runtime:
+    is_testing: false
+    is_forecasting: true
+    history_days: 31
+    predict_days: 1
+    window_days: 15
+    now_time: '2018-06-26T19:45:00'
+  target_series:
+    data_dir: ./dataset/ETT-small/
+    data_path: ETTm1.csv
+    freq: 15min
+    target_ts_feat: date
+    target: OT
+    target_series_numeric_features: []
+    target_series_categorical_features: []
+    target_series_drop_features: []
+  exogenous_features:
+    enable_date_features: true
+    date_history_path: ETTm1_exogenous/df_date.csv
+    date_future_path: ETTm1_exogenous/df_date_future.csv
+    date_ts_feat: date
+    datetype_features:
+    - date_type
+    datetype_categorical_features: []
+    enable_weather_features: true
+    weather_history_path: ETTm1_exogenous/df_weather.csv
+    weather_future_path: ETTm1_exogenous/df_weather_future.csv
+    weather_ts_feat: ts
+    weather_features:
+    - rt_ssr
+    - rt_ws10
+    - rt_tt2
+    - cal_rh
+    - rt_ps
+    - rt_rain
+    weather_categorical_features: []
+    enable_datetime_features: true
+    datetime_features:
+    - minute
+    - hour
+    - day
+    - weekday
+    - week
+    - day_of_week
+    - week_of_year
+    - month
+    - days_in_month
+    - quarter
+    - day_of_year
+    - year
+    datetime_categorical_features:
+    - dt_hour
+    - dt_day
+    - dt_weekday
+    - dt_week
+    - dt_day_of_week
+    - dt_week_of_year
+    - dt_month
+    - dt_days_in_month
+    - dt_quarter
+    - dt_day_of_year
+    - dt_year
+  time_lag_features:
+    enable_lags_features: true
+    lags:
+    - 288
+    - 576
+    - 864
+    - 1152
+    - 1440
+    - 1728
+    - 2016
+  advanced_features:
+    enable_advanced_features: false
+    enable_rolling_features: false
+    rolling_columns:
+    - y
+    rolling_windows:
+    - 3
+    - 7
+    - 14
+    - 28
+    rolling_stats:
+    - mean
+    - std
+    - min
+    - max
+    - skew
+    - kurt
+    enable_expanding_features: false
+    expanding_columns:
+    - y
+    expanding_stats:
+    - mean
+    - std
+    - min
+    - max
+    - skew
+    - kurt
+    enable_diff_features: false
+    diff_columns:
+    - y
+    diff_periods:
+    - 1
+    - 7
+    - 24
+    enable_pct_change_features: false
+    pct_change_columns:
+    - y
+    pct_change_periods:
+    - 1
+    - 7
+    enable_time_since_features: false
+    time_since_columns:
+    - y
+    time_since_events:
+    - peak
+    - trough
+    enable_cyclical_features: false
+    cyclical_columns:
+    - minute
+    cyclical_period: 15
+    enable_interaction_features: false
+    interaction_column_pairs:
+    - - y
+      - dt_hour
+    interaction_operations:
+    - add
+    - subtract
+    - multiply
+    - divide
+    enable_polynomial_features: false
+    polynomial_columns:
+    - y
+    polynomial_degree: 2
+  preprocessing:
+    scale_features: false
+    feature_scaler_type: minmax
+    scale_target: false
+    inverse_target: false
+    target_scaler_type: minmax
+    use_grouped_scaling: false
+    encode_categorical_features: false
   model_strategy:
     model_type: xgboost
+    model_params:
+      boosting_type: gbdt
+      objective: regression_l1
+      metric: mae
+      n_estimators: 300
+      learning_rate: 0.05
+      max_bin: 63
+      num_leaves: 31
+      max_depth: -1
+      feature_fraction: 0.8
+      bagging_fraction: 0.8
+      bagging_freq: 1
+      verbose: -1
+      force_col_wise: true
+    enable_ensemble: false
+    ensemble_models:
+    - lgb
+    - xgb
+    - cat
+    ensemble_method: stacking
+    ensemble_val_ratio: 0.2
     pred_method: univariate-single-multistep-direct-recursive
+    multi_output_strategy: multioutput
+    predict_type: point
+    quantiles:
+    - 0.1
+    - 0.5
+    - 0.9
+    use_horizon_exogenous_for_direct: false
+    block_size: 0
+    enable_global_training: false
+    series_id_feature: series_id
+  training_enhancement:
+    patience: 100
+    perform_tuning: false
+    tuning_metric: neg_mean_absolute_error
+    tuning_n_splits: 3
+    enable_data_augmentation: false
+    augmentation_ratio: 0.2
+    augmentation_feature_noise_std: 0.01
+    augmentation_target_noise_std: 0.005
+    augmentation_random_state: 42
+    enable_feature_selection: false
+    feature_selection_method: f_regression
+    feature_selection_max_features: 80
+    feature_selection_min_features: 10
+    enable_auto_learning_rate: false
+    auto_lr_min: 0.005
+    auto_lr_max: 0.2
+    huber_delta: 1.0
+  train_outlier:
+    enable_train_outlier_handling: false
+    train_outlier_method: local_interpolate
+    high_outlier_threshold: 15000.0
+    high_outlier_max_run_points: 4
+    drop_outlier_max_run_points: 2
+    drop_rebound_min_abs_diff: 900.0
+  performance:
+    window_parallel_workers: 1
+    max_test_windows: null
+    test_window_stride: 1
+    multi_output_n_jobs: 1
+    quantile_parallel_workers: 1
+    ensemble_parallel_workers: 1
+    model_thread_count: 1
+    enable_step_logging: false
+    forecast_log_interval: 24
+  output:
+    checkpoints_dir: ./saved_results/pretrained_models/
+    test_results_dir: ./saved_results/results_test/
+    pred_results_dir: ./saved_results/results_forecast/

@@ -94,15 +94,15 @@ config/
 - 示例日期外生：`ETTm1_exogenous/df_date.csv`、`ETTm1_exogenous/df_date_future.csv`
 - 示例天气外生：`ETTm1_exogenous/df_weather.csv`、`ETTm1_exogenous/df_weather_future.csv`
 
-### electricity_univariate
+### ETTm1 (单变量 & 多变量)
 
-- 数据目录：`dataset/electricity_univariate`
-- 目标文件：`df_power.csv`
-- 时间列：`count_data_time`
-- 目标列：`h_total_use`
-- 频率：`5min`
-- 日期外生：`df_date.csv`、`df_date_future.csv`
-- 天气外生：`df_weather.csv`、`df_weather_future.csv`
+- 数据目录：`dataset/ETT-small`
+- 目标文件：`ETTm1.csv`
+- 时间列：`date`
+- 目标列：`OT`
+- 频率：`15min`
+- 示例外生目录：`dataset/ETT-small/ETTm1_exogenous`
+- 单变量策略使用 `config.univariate_config` 作为 base，多变量策略使用 `config.multivariate_config`
 
 ### AIDC electricity
 
@@ -152,8 +152,9 @@ dataset/aidc_electricity_computility/electricity/2026-06-11/demand_load/AIDC/rou
 
 ```bash
 uv run python config/generate_configs.py \
-  --dataset dataset/electricity_univariate \
-  --target h_total_use \
+  --dataset dataset/ETT-small \
+  --data-file ETTm1.csv \
+  --target OT \
   --dry-run
 ```
 

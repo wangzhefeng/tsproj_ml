@@ -27,9 +27,9 @@
 - 可选模型融合：`averaging`、`weighted`、`stacking`、`blending`。
 - 可选数据增强、特征选择、目标/特征缩放、自动学习率、`RandomizedSearchCV` + `TimeSeriesSplit` 调参。
 - 滑窗测试支持训练窗口异常值局部修复，测试真实值不被清洗。
-- 滑窗测试中的 `MAPE Accuracy = 1 - MAPE` 按窗口内正样本 `P5` 相对阈值过滤后计算，近零异常点不再制造失真指标。
+- 滑窗测试中的 `MAPE Accuracy = 1 - MAPE` 按 `eval_mask` 掩码过滤后计算（默认 `mode: percentile` 即窗口正样本 `P5`；可设 `min_value`/`max_value` 绝对上下限），近零/越界异常点不再制造失真指标。
 - 预测输出保存历史上下文和预测绘图拼接数据，便于生产问题定位。
-- 未来预测图只对历史上下文复用 `P5` 相对阈值断线显示；未来预测值本身不做裁剪。
+- 未来预测图对历史上下文按 `eval_mask` 掩码断线显示；未来预测值本身不做裁剪。
 
 ## 项目结构
 
@@ -284,8 +284,8 @@ results/
 
 滑窗测试与未来预测图的可视化契约：
 
-- `test_scores_df.csv` 额外记录 `MAPE Threshold`、`MAPE Valid Points`、`MAPE Excluded Points`、`MAPE Excluded Ratio`。
-- `cv_plot_df.csv` 额外记录测试图的有效性标记；低于窗口正样本 `P5` 阈值的点在 `test_prediction.png` 中断线显示。
+- `test_scores_df.csv` 额外记录 `MAPE Threshold`、`MAPE Upper Threshold`、`MAPE Valid Points`、`MAPE Excluded Points`、`MAPE Excluded Ratio`。
+- `cv_plot_df.csv` 额外记录测试图的有效性标记；被 `eval_mask` 判为异常的点在 `test_prediction.png` 中断线显示。
 - `prediction_plot_concat.csv` 保留历史与未来拼接后的原始值 `raw_value`，并额外输出 `plot_value`、`plot_valid`、`series_type`；`prediction.png` 用 `plot_value` 绘制历史上下文，用原始 `predict_value` 绘制未来预测。
 
 离线原始负荷异常处理由 `data_provider/outlier_process.py` 提供，输出默认保存到源数据目录：

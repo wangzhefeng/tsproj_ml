@@ -89,8 +89,9 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 ### 关键约定
 - 输出目录：`results/`（不是 `saved_results/`）；三个子目录（pretrained_models/results_test/results_forecast）按 `<scenario>/<setting>` 嵌套，`<scenario>` 由 `data_dir` 解析得到（与 config 路径对齐），不同场景互不覆盖
 - 测试汇总指标：使用 median（中位数），不是 mean——单窗口 MAPE 爆炸会拖垮均值
-- `MAPE Accuracy` 业务口径：按每个测试窗口内 `y_true > 0` 样本的 `P5` 阈值过滤后计算；无有效点时写 `NaN`
-- `prediction.png` 只掩码历史上下文中的低值异常点；未来预测原值保持在 `prediction.csv` 和 `prediction_plot_concat.csv` 中
+- `MAPE Accuracy` 业务口径：按 `eval_mask` 掩码过滤后计算（默认 `mode: percentile` 即窗口正样本 `P5`；`absolute`/`combined` 模式启用 `min_value` 绝对下限，`max_value` 上限与 mode 正交、三模式均生效）；阈值落 `test_scores_df.csv` 的 `MAPE Threshold`/`MAPE Upper Threshold` 列，无有效点写 `NaN`
+- `prediction.png` 按 `eval_mask` 掩码历史上下文异常点（断线）；未来预测原值保留在 `prediction.csv` 和 `prediction_plot_concat.csv`
+- `EvalMaskConfig`（评估/绘图掩码，不改数据）≠ `TrainOutlierConfig`（滑窗训练窗口清洗，插值改数据）
 - 本地默认入口：修改 `main.py` 中的 `CONFIG_YAML`，再直接运行 `uv run python main.py`
 - `run.py` 保留为兼容入口，但当前文档和脚本不再把它作为推荐运行方式
 - 日志目录：`logs/main/`（直接运行 `main.py`）

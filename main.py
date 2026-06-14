@@ -582,7 +582,7 @@ def main():
     # ------------------------------
     # 配置文件切换区域
     # ------------------------------
-    CONFIG_YAML = "config/aidc_electricity_computility/electricity/2026-06-11/A3_01e/lgbm_usmdp.yaml"
+    CONFIG_YAML = "config/aidc_electricity_computility/electricity/2026-06-11/AIDC/route_B/lgbm_usmdp.yaml"
     # ------------------------------
     # 创建模型配置参数
     # ------------------------------

@@ -21,6 +21,7 @@ import numpy as np
 import pandas as pd
 
 from features.FeatureEngineering import FeatureEngineer
+from utils.eval_mask import build_eval_mask
 from utils.log_util import logger
 
 # global variable
@@ -103,29 +104,6 @@ class Forecaster:
     def _to_scalar(pred: Any) -> float:
         pred_arr = Forecaster._to_1d(pred)
         return float(pred_arr[0]) if pred_arr.size > 0 else np.nan
-
-    @staticmethod
-    def _build_plot_mask(values: Any) -> Dict[str, Any]:
-        values = np.asarray(values).reshape(-1)
-        positive_values = values[values > 0]
-        if positive_values.size == 0:
-            threshold = np.nan
-            valid_mask = np.zeros(len(values), dtype=bool)
-        else:
-            threshold = float(np.percentile(positive_values, 5))
-            valid_mask = values >= threshold
-
-        valid_points = int(valid_mask.sum())
-        excluded_points = int(len(values) - valid_points)
-        excluded_ratio = float(excluded_points / len(values)) if len(values) > 0 else np.nan
-
-        return {
-            "threshold": threshold,
-            "valid_mask": valid_mask,
-            "valid_points": valid_points,
-            "excluded_points": excluded_points,
-            "excluded_ratio": excluded_ratio,
-        }
 
     def _prepare_future_aux_index(self):
         """预处理未来日期/气象数据索引，便于按步快速切片。"""
@@ -1052,7 +1030,13 @@ class Forecaster:
             )
         history_plot_meta = None
         if not y_trues_df_plot.empty and "y" in y_trues_df_plot.columns:
-            history_plot_meta = self._build_plot_mask(y_trues_df_plot["y"].values)
+            history_plot_meta = build_eval_mask(
+                y_trues_df_plot["y"].values,
+                mode=self.args.mode,
+                percentile=self.args.percentile,
+                min_value=self.args.min_value,
+                max_value=self.args.max_value,
+            )
             logger.info(
                 f"{self.log_prefix} History plot mask threshold={history_plot_meta['threshold']}, "
                 f"valid_points={history_plot_meta['valid_points']}, "

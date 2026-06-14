@@ -295,6 +295,20 @@ class TrainOutlierConfig:
 
 
 @dataclass
+class EvalMaskConfig:
+    """
+    评估/绘图阶段对低值异常点的掩码配置。
+
+    MAPE / MAPE Accuracy 计算与预测图历史上下文掩码共用同一套阈值，
+    避免「相对分位数」在不同数据分布上失效（见 utils/eval_mask.build_eval_mask）。
+    """
+    mode: str = "percentile"  # percentile | absolute | combined
+    percentile: float = 5.0  # percentile/combined 模式下的下分位（%）
+    min_value: Optional[float] = None  # 绝对下限：y < 此值视为异常；None 表示不启用绝对过滤（保持默认分位行为）
+    max_value: Optional[float] = None  # 绝对上限：y > 此值视为异常（与 mode 正交，仅用于评估/绘图掩码，不清洗数据）
+
+
+@dataclass
 class PerformanceConfig:
     """
     并行度和过程日志配置。
@@ -332,6 +346,7 @@ class BaseModelConfig(
     ModelStrategyConfig,
     TrainingEnhancementConfig,
     TrainOutlierConfig,
+    EvalMaskConfig,
     PerformanceConfig,
     OutputConfig):
     """

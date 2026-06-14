@@ -33,6 +33,11 @@ overrides:
   model_strategy:
     model_type: lightgbm
     pred_method: univariate-single-multistep-direct-recursive
+  eval_mask:
+    mode: percentile
+    percentile: 5.0
+    min_value: null
+    max_value: null
   performance:
     window_parallel_workers: 8
     multi_output_n_jobs: 8

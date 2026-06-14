@@ -39,6 +39,7 @@ from data_provider.outlier_handling import (
     empty_train_outlier_report,
     handle_train_outliers,
 )
+from utils.eval_mask import build_eval_mask
 from utils.log_util import logger
 
 # global variable
@@ -187,13 +188,27 @@ class Tester:
             y_pred = np.asarray(y_pred)[:min_len]
             y_test_for_eval = np.asarray(y_test_for_eval)[:min_len]
         # 测试集评价指标
-        eval_scores_window = Tester._evaluate_score(y_test_for_eval, y_pred, window, df_history_test, log_prefix=log_prefix)
+        eval_scores_window = Tester._evaluate_score(
+            y_test_for_eval,
+            y_pred,
+            window,
+            df_history_test,
+            log_prefix=log_prefix,
+            mode=args.mode,
+            percentile=args.percentile,
+            min_value=args.min_value,
+            max_value=args.max_value,
+        )
         # 测试集预测数据
         cv_plot_df_window = Tester._evaluate_result(
             y_test_for_eval,
             y_pred,
             df_history_test,
             log_prefix=log_prefix,
+            mode=args.mode,
+            percentile=args.percentile,
+            min_value=args.min_value,
+            max_value=args.max_value,
         )
 
         return {
@@ -313,35 +328,16 @@ class Tester:
         return df_history_test[["time"]].copy()
 
     @staticmethod
-    def _build_relative_mape_mask(y_test: np.ndarray):
-        y_test = np.asarray(y_test).flatten()
-        positive_values = y_test[y_test > 0]
-        if positive_values.size == 0:
-            threshold = np.nan
-            valid_mask = np.zeros(len(y_test), dtype=bool)
-        else:
-            threshold = float(np.percentile(positive_values, 5))
-            valid_mask = y_test >= threshold
-
-        valid_points = int(valid_mask.sum())
-        excluded_points = int(len(y_test) - valid_points)
-        excluded_ratio = float(excluded_points / len(y_test)) if len(y_test) > 0 else np.nan
-
-        return {
-            "threshold": threshold,
-            "valid_mask": valid_mask,
-            "valid_points": valid_points,
-            "excluded_points": excluded_points,
-            "excluded_ratio": excluded_ratio,
-        }
-
-    @staticmethod
     def _evaluate_score(
         y_test: np.ndarray,
         y_pred: np.ndarray,
         window: int,
         df_history_test: pd.DataFrame,
         log_prefix: str,
+        mode: str = "percentile",
+        percentile: float = 5.0,
+        min_value: float = None,
+        max_value: float = None,
     ):
         """
         模型评估
@@ -349,7 +345,9 @@ class Tester:
         """
         y_test = np.array(y_test).flatten()
         y_pred = np.array(y_pred).flatten()
-        mape_meta = Tester._build_relative_mape_mask(y_test)
+        mape_meta = build_eval_mask(
+            y_test, mode=mode, percentile=percentile, min_value=min_value, max_value=max_value
+        )
         valid_mask = mape_meta["valid_mask"]
         if mape_meta["valid_points"] > 0:
             mape_value = mean_absolute_percentage_error(y_test[valid_mask], y_pred[valid_mask])
@@ -366,6 +364,7 @@ class Tester:
             "MAPE": mape_value,
             "MAPE Accuracy": mape_accuracy,
             "MAPE Threshold": mape_meta["threshold"],
+            "MAPE Upper Threshold": mape_meta["upper_threshold"],
             "MAPE Valid Points": mape_meta["valid_points"],
             "MAPE Excluded Points": mape_meta["excluded_points"],
             "MAPE Excluded Ratio": mape_meta["excluded_ratio"],
@@ -383,13 +382,19 @@ class Tester:
         y_pred: np.ndarray,
         df_history_test: pd.DataFrame,
         log_prefix: str,
+        mode: str = "percentile",
+        percentile: float = 5.0,
+        min_value: float = None,
+        max_value: float = None,
     ):
         """
         测试集预测数据
         """
         y_test = np.array(y_test).flatten()
         y_pred = np.array(y_pred).flatten()
-        mape_meta = Tester._build_relative_mape_mask(y_test)
+        mape_meta = build_eval_mask(
+            y_test, mode=mode, percentile=percentile, min_value=min_value, max_value=max_value
+        )
         valid_mask = mape_meta["valid_mask"]
 
         cv_plot_df_window = pd.DataFrame()

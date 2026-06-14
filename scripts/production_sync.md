@@ -44,3 +44,10 @@
 - 是否需要迁移项目 2：需要时从本仓库核心模块同步；项目 2 已有相近逻辑。
 - 项目 2 适配点：保持生产输入输出、算力预处理和部署父类不变，仅同步核心异常处理接口或 `ModelTesting` 调用点。
 - 验证结果：以本仓库 `unittest` 和轻量真实配置测试结果为准。
+
+### 2026-06-14 train-outlier-low-rise-rules
+
+- 变更摘要：`TrainOutlierConfig` 扩展为高/低 × 绝对/相对 四象限——新增「绝对低值」(`low_outlier_threshold`/`low_outlier_max_run_points`，默认关) 和「骤升-回弹」(`rise_outlier_max_run_points`/`rise_rebound_min_abs_diff`，默认开) 两类规则；`outlier_handling.py` 新增 `_detect_rise_rebound_positions`。
+- 是否需要迁移项目 2：需要时同步 `data_provider/outlier_handling.py` 与 `config/config_sections.py` 的 `TrainOutlierConfig`；新规则按需启用。
+- 项目 2 适配点：保持生产输入输出、算力预处理、部署父类不变；注意 low 默认关、rise 默认开。
+- 验证结果：本仓库 `tests/test_outlier_handling.py` 6 用例通过。

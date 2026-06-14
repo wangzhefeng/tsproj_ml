@@ -33,11 +33,22 @@ overrides:
   model_strategy:
     model_type: lightgbm
     pred_method: univariate-single-multistep-direct
+  train_outlier:
+    enable_train_outlier_handling: true
+    train_outlier_method: local_interpolate
+    high_outlier_threshold: 16500.0
+    high_outlier_max_run_points: 4
+    rise_outlier_max_run_points: 2
+    rise_rebound_min_abs_diff: 1000.0
+    low_outlier_threshold: 12000.0
+    low_outlier_max_run_points: 4
+    drop_outlier_max_run_points: 2
+    drop_rebound_min_abs_diff: 1000.0
   eval_mask:
-    mode: percentile
+    mode: absolute
     percentile: 5.0
-    min_value: null
-    max_value: null
+    min_value: 12000.0
+    max_value: 16500.0
   performance:
     window_parallel_workers: 8
     multi_output_n_jobs: 8

@@ -6,7 +6,7 @@ overrides:
     is_forecasting: true
     history_days: 65
     predict_days: 1
-    window_days: 31
+    window_days: 2
     now_time: '2026-06-11T23:55:00'
   target_series:
     data_dir: ./dataset/aidc_electricity_computility/electricity/2026-06-11/demand_load/A3_01e/
@@ -33,10 +33,21 @@ overrides:
   model_strategy:
     model_type: lightgbm
     pred_method: univariate-single-multistep-direct-pointwise
+  train_outlier:
+    enable_train_outlier_handling: true
+    train_outlier_method: local_interpolate
+    high_outlier_threshold: null
+    high_outlier_max_run_points: 4
+    rise_outlier_max_run_points: 2
+    rise_rebound_min_abs_diff: 1000.0
+    low_outlier_threshold: 2000.0
+    low_outlier_max_run_points: 4
+    drop_outlier_max_run_points: 2
+    drop_rebound_min_abs_diff: 1000.0
   eval_mask:
-    mode: percentile
+    mode: absolute
     percentile: 5.0
-    min_value: null
+    min_value: 2000.0
     max_value: null
   performance:
     window_parallel_workers: 8

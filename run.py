@@ -128,6 +128,14 @@ def _apply_overrides(cfg, args):
         cfg.drop_outlier_max_run_points = args.drop_outlier_max_run_points
     if args.drop_rebound_min_abs_diff is not None:
         cfg.drop_rebound_min_abs_diff = args.drop_rebound_min_abs_diff
+    if args.low_outlier_threshold is not None:
+        cfg.low_outlier_threshold = args.low_outlier_threshold
+    if args.low_outlier_max_run_points is not None:
+        cfg.low_outlier_max_run_points = args.low_outlier_max_run_points
+    if args.rise_outlier_max_run_points is not None:
+        cfg.rise_outlier_max_run_points = args.rise_outlier_max_run_points
+    if args.rise_rebound_min_abs_diff is not None:
+        cfg.rise_rebound_min_abs_diff = args.rise_rebound_min_abs_diff
 
     if args.patience is not None:
         cfg.patience = args.patience
@@ -206,6 +214,10 @@ def args_parse():
     parser.add_argument("--high-outlier-max-run-points", type=int, default=None)
     parser.add_argument("--drop-outlier-max-run-points", type=int, default=None)
     parser.add_argument("--drop-rebound-min-abs-diff", type=float, default=None)
+    parser.add_argument("--low-outlier-threshold", type=float, default=None)
+    parser.add_argument("--low-outlier-max-run-points", type=int, default=None)
+    parser.add_argument("--rise-outlier-max-run-points", type=int, default=None)
+    parser.add_argument("--rise-rebound-min-abs-diff", type=float, default=None)
     parser.add_argument("--patience", type=int, default=None)
 
     parser.add_argument("--now-time", type=str, default=None, help="ISO datetime, e.g. 2025-12-27T00:00:00")

@@ -202,6 +202,16 @@ YAML_OVERRIDE_GROUPS = {
         "high_outlier_max_run_points",
         "drop_outlier_max_run_points",
         "drop_rebound_min_abs_diff",
+        "low_outlier_threshold",
+        "low_outlier_max_run_points",
+        "rise_outlier_max_run_points",
+        "rise_rebound_min_abs_diff",
+    ],
+    "eval_mask": [
+        "mode",
+        "percentile",
+        "min_value",
+        "max_value",
     ],
     "performance": [
         "window_parallel_workers",

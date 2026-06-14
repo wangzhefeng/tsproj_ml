@@ -67,6 +67,36 @@ def _detect_drop_rebound_positions(
     return positions
 
 
+def _detect_rise_rebound_positions(
+    y: pd.Series,
+    max_run_points: int,
+    min_abs_diff: float,
+) -> Set[int]:
+    positions = set()
+    values = y.to_numpy(dtype=float)
+    n_values = len(values)
+    for start in range(1, n_values - 1):
+        for run_len in range(1, max_run_points + 1):
+            end = start + run_len - 1
+            next_pos = end + 1
+            if next_pos >= n_values:
+                continue
+            prev_value = values[start - 1]
+            next_value = values[next_pos]
+            run_values = values[start : end + 1]
+            if not np.isfinite(prev_value) or not np.isfinite(next_value) or not np.all(np.isfinite(run_values)):
+                continue
+            rise = run_values[0] - prev_value
+            fallback = run_values[-1] - next_value
+            if (
+                rise >= min_abs_diff
+                and fallback >= min_abs_diff
+                and np.nanmin(run_values) > max(prev_value, next_value)
+            ):
+                positions.update(range(start, end + 1))
+    return positions
+
+
 def _interpolate_target(
     df: pd.DataFrame,
     target_feature: str,
@@ -114,13 +144,17 @@ def handle_train_outliers(
         return df_history_train, report
 
     y = pd.to_numeric(df_history_train[target_feature], errors="coerce")
-    high_threshold = float(getattr(args, "high_outlier_threshold", 15000.0))
+    high_threshold = getattr(args, "high_outlier_threshold", None)
     high_max_run = int(getattr(args, "high_outlier_max_run_points", 4) or 0)
     drop_max_run = int(getattr(args, "drop_outlier_max_run_points", 2) or 0)
     drop_min_abs_diff = float(getattr(args, "drop_rebound_min_abs_diff", 900.0))
+    low_threshold = getattr(args, "low_outlier_threshold", None)
+    low_max_run = int(getattr(args, "low_outlier_max_run_points", 4) or 0)
+    rise_max_run = int(getattr(args, "rise_outlier_max_run_points", 2) or 0)
+    rise_min_abs_diff = float(getattr(args, "rise_rebound_min_abs_diff", 900.0))
 
     outlier_meta = {}
-    if high_max_run > 0:
+    if high_threshold is not None and high_max_run > 0:
         for run in _iter_true_runs(y > high_threshold):
             if len(run) <= high_max_run:
                 for pos in run:
@@ -128,6 +162,16 @@ def handle_train_outliers(
                         "high_short_run",
                         len(run),
                         f"y > {high_threshold:g} and run_length <= {high_max_run}",
+                    )
+
+    if low_threshold is not None and low_max_run > 0:
+        for run in _iter_true_runs(y < low_threshold):
+            if len(run) <= low_max_run:
+                for pos in run:
+                    outlier_meta[pos] = (
+                        "low_short_run",
+                        len(run),
+                        f"y < {low_threshold:g} and run_length <= {low_max_run}",
                     )
 
     if drop_max_run > 0:
@@ -146,6 +190,25 @@ def handle_train_outliers(
                             "drop_rebound",
                             len(run),
                             f"drop and rebound >= {drop_min_abs_diff:g} within {drop_max_run} points",
+                        ),
+                    )
+
+    if rise_max_run > 0:
+        rise_positions = _detect_rise_rebound_positions(
+            y=y,
+            max_run_points=rise_max_run,
+            min_abs_diff=rise_min_abs_diff,
+        )
+        rise_mask = pd.Series([idx in rise_positions for idx in range(len(y))])
+        for run in _iter_true_runs(rise_mask):
+            if len(run) <= rise_max_run:
+                for pos in run:
+                    outlier_meta.setdefault(
+                        pos,
+                        (
+                            "rise_rebound",
+                            len(run),
+                            f"rise and fallback >= {rise_min_abs_diff:g} within {rise_max_run} points",
                         ),
                     )
 

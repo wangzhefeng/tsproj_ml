@@ -192,10 +192,19 @@ overrides:
   train_outlier:
     enable_train_outlier_handling: false
     train_outlier_method: local_interpolate
-    high_outlier_threshold: 15000.0
+    high_outlier_threshold: null
     high_outlier_max_run_points: 4
+    rise_outlier_max_run_points: 2
+    rise_rebound_min_abs_diff: 900.0
+    low_outlier_threshold: null
+    low_outlier_max_run_points: 4
     drop_outlier_max_run_points: 2
     drop_rebound_min_abs_diff: 900.0
+  eval_mask:
+    mode: percentile
+    percentile: 5.0
+    min_value: null
+    max_value: null
   performance:
     window_parallel_workers: 1
     max_test_windows: null

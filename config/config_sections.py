@@ -288,8 +288,12 @@ class TrainOutlierConfig:
     # 仅在滑窗测试阶段的训练窗口内清洗目标异常值，不影响最终预测的推理阶段。
     enable_train_outlier_handling: bool = False  # 总开关
     train_outlier_method: str = "local_interpolate"  # 清洗方法，目前仅支持 local_interpolate（局部插值）
-    high_outlier_threshold: float = 15000.0  # 高值阈值：y 超过此值视为候选异常
+    high_outlier_threshold: Optional[float] = None  # 高值阈值：y 超过此值视为候选异常；None 表示不启用高值规则（默认关闭）
     high_outlier_max_run_points: int = 4  # 高值连续段长度 ≤ 此值才清洗（短尖峰）；更长的高值段视为真实
+    rise_outlier_max_run_points: int = 2  # 骤升-回弹连续段长度上限
+    rise_rebound_min_abs_diff: float = 900.0  # 骤升-回弹判定的最小绝对幅度
+    low_outlier_threshold: Optional[float] = None  # 低值绝对阈值：y 低于此值视为候选异常；None 表示不启用低值规则（默认关闭）
+    low_outlier_max_run_points: int = 4  # 低值连续段长度 ≤ 此值才清洗（短掉零）；更长段视为真实低负荷保留
     drop_outlier_max_run_points: int = 2  # 骤降-回弹连续段长度上限
     drop_rebound_min_abs_diff: float = 900.0  # 骤降-回弹判定的最小绝对幅度
 

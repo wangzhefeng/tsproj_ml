@@ -68,7 +68,6 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 
 ### 配置系统
 - YAML 配置：`base_config` 指向 Python 模块（默认 `config.univariate_config`），`overrides` 为扁平化键值覆盖
-- `lgbm_usmdp.yaml` 是 A1_01a 电负荷场景的当前配置
 - 修改 YAML 后务必运行验证：配置值可能被回退（已知问题：`true` 会变成 `false`）
 
 ### 时间边界约定

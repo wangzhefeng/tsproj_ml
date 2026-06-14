@@ -56,6 +56,47 @@ class DataLoader:
     def _is_univariate_method(self) -> bool:
         return str(getattr(self.args, "pred_method", "")).lower() in UNIVARIATE_PRED_METHODS
 
+    def _load_optional_frame(self, relative_path: Optional[str], label: str) -> Optional[pd.DataFrame]:
+        if not relative_path:
+            return None
+        data_path = self.args.data_dir / relative_path
+        if not data_path.exists():
+            return None
+        df = pd.read_csv(data_path)
+        logger.info(f"{self.log_prefix} {label} loaded: {df.shape}")
+        logger.info(f"{self.log_prefix} {label} missing values: \n{df.isna().sum()}")
+        return df
+
+    def _prepare_exogenous_splits(
+        self,
+        history_df: Optional[pd.DataFrame],
+        future_df: Optional[pd.DataFrame],
+        ts_col: Optional[str],
+        label: str,
+    ) -> tuple[Optional[pd.DataFrame], Optional[pd.DataFrame], Optional[pd.DataFrame]]:
+        if history_df is None and future_df is None:
+            return None, None, None
+        if ts_col is None:
+            raise ValueError(f"{self.log_prefix} {label} timestamp column is required for exogenous slicing.")
+
+        frames = [df.copy() for df in [history_df, future_df] if df is not None]
+        canonical_df = pd.concat(frames, axis=0, ignore_index=True)
+        canonical_df[ts_col] = pd.to_datetime(canonical_df[ts_col])
+        canonical_df = canonical_df.sort_values(by=[ts_col]).drop_duplicates(
+            subset=ts_col,
+            keep="last",
+        ).reset_index(drop=True)
+
+        forecast_start = pd.Timestamp(self.forecast_start_time)
+        history_slice = canonical_df[canonical_df[ts_col] <= forecast_start].copy().reset_index(drop=True)
+        future_slice = canonical_df[canonical_df[ts_col] >= forecast_start].copy().reset_index(drop=True)
+
+        logger.info(f"{self.log_prefix} {label} canonical shape after merge/dedup: {canonical_df.shape}")
+        logger.info(f"{self.log_prefix} {label} history slice shape: {history_slice.shape}")
+        logger.info(f"{self.log_prefix} {label} future slice shape: {future_slice.shape}")
+
+        return canonical_df, history_slice, future_slice
+
     def load_data(self) -> Dict:
         """
         加载所有必要的数据
@@ -86,61 +127,37 @@ class DataLoader:
         # ------------------------------
         # 加载日期类型数据
         # ------------------------------
-        df_date_history = None
-        df_date_future = None
-        # 加载历史日期类型数据
-        if self.args.date_history_path:
-            date_history_path = self.args.data_dir / self.args.date_history_path
-            if date_history_path.exists():
-                df_date_history = pd.read_csv(date_history_path)
-                input_data["date_history"] = df_date_history
-                logger.info(f"{self.log_prefix} Date history loaded: {df_date_history.shape}")
-                logger.info(f"{self.log_prefix} Date history missing values: \n{df_date_history.isna().sum()}")
-        # 加载未来日期类型数据
-        if self.args.date_future_path:
-            date_future_path = self.args.data_dir / self.args.date_future_path
-            if date_future_path.exists():
-                df_date_future = pd.read_csv(date_future_path)
-                input_data["date_future"] = df_date_future
-                logger.info(f"{self.log_prefix} Date future loaded: {df_date_future.shape}")
-                logger.info(f"{self.log_prefix} Date future missing values: \n{df_date_future.isna().sum()}")
-        # date 历史和未来数据拼接
-        if df_date_history is not None and df_date_future is not None:
-            df_date_all = pd.concat([df_date_history.iloc[:-1,], df_date_future], axis=0)
-        else:
-            df_date_all = None
-        # 数据收集
-        input_data["date_history"] = df_date_all
-        input_data["date_future"] = df_date_all
+        df_date_history_raw = self._load_optional_frame(self.args.date_history_path, "Date history")
+        df_date_future_raw = self._load_optional_frame(self.args.date_future_path, "Date future")
+        (
+            _df_date_all,
+            df_date_history,
+            df_date_future,
+        ) = self._prepare_exogenous_splits(
+            history_df=df_date_history_raw,
+            future_df=df_date_future_raw,
+            ts_col=self.args.date_ts_feat,
+            label="Date",
+        )
+        input_data["date_history"] = df_date_history
+        input_data["date_future"] = df_date_future
         # ------------------------------
         # 加载气象数据
         # ------------------------------
-        df_weather_history = None
-        df_weather_future = None
-        # 加载历史气象数据
-        if self.args.weather_history_path:
-            weather_history_path = self.args.data_dir / self.args.weather_history_path
-            if weather_history_path.exists():
-                df_weather_history = pd.read_csv(weather_history_path)
-                input_data["weather_history"] = df_weather_history
-                logger.info(f"{self.log_prefix} Weather history loaded: {df_weather_history.shape}")
-                logger.info(f"{self.log_prefix} Weather history missing values: \n{df_weather_history.isna().sum()}")
-        # 加载未来气象数据
-        if self.args.weather_future_path:
-            weather_future_path = self.args.data_dir / self.args.weather_future_path
-            if weather_future_path.exists():
-                df_weather_future = pd.read_csv(weather_future_path)
-                input_data["weather_future"] = df_weather_future
-                logger.info(f"{self.log_prefix} Weather future loaded: {df_weather_future.shape}")
-                logger.info(f"{self.log_prefix} Weather future missing values: \n{df_weather_future.isna().sum()}")
-        # weather 历史和未来数据拼接
-        if df_weather_history is not None and df_weather_future is not None:
-            df_weather_all = pd.concat([df_weather_history.iloc[:-1,], df_weather_future], axis=0)
-        else:
-            df_weather_all = None
-        # 数据收集
-        input_data["weather_history"] = df_weather_all
-        input_data["weather_future"] = df_weather_all
+        df_weather_history_raw = self._load_optional_frame(self.args.weather_history_path, "Weather history")
+        df_weather_future_raw = self._load_optional_frame(self.args.weather_future_path, "Weather future")
+        (
+            _df_weather_all,
+            df_weather_history,
+            df_weather_future,
+        ) = self._prepare_exogenous_splits(
+            history_df=df_weather_history_raw,
+            future_df=df_weather_future_raw,
+            ts_col=self.args.weather_ts_feat,
+            label="Weather",
+        )
+        input_data["weather_history"] = df_weather_history
+        input_data["weather_future"] = df_weather_future
         
         return input_data
 

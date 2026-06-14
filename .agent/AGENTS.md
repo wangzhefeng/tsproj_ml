@@ -84,5 +84,10 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 ### 关键约定
 - 输出目录：`results/`（不是 `saved_results/`）
 - 测试汇总指标：使用 median（中位数），不是 mean——单窗口 MAPE 爆炸会拖垮均值
-- 日志目录：`logs/main/`（直接运行 main.py）或 `logs/run/`（通过 run.py）
+- `MAPE Accuracy` 业务口径：按每个测试窗口内 `y_true > 0` 样本的 `P5` 阈值过滤后计算；无有效点时写 `NaN`
+- `prediction.png` 只掩码历史上下文中的低值异常点；未来预测原值保持在 `prediction.csv` 和 `prediction_plot_concat.csv` 中
+- 本地默认入口：修改 `main.py` 中的 `CONFIG_YAML`，再直接运行 `uv run python main.py`
+- `run.py` 保留为兼容入口，但当前文档和脚本不再把它作为推荐运行方式
+- 日志目录：`logs/main/`（直接运行 `main.py`）
 - `log_util.py` 在模块导入时执行，`LOG_NAME` 用 `os.environ.get('LOG_NAME', 'main')` 提供默认值
+- 在这台机器上如果 `uv` 触发 `~/.cache/uv` 权限问题，优先使用 `UV_CACHE_DIR=.uv_cache`

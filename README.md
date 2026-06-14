@@ -27,14 +27,16 @@
 - 可选模型融合：`averaging`、`weighted`、`stacking`、`blending`。
 - 可选数据增强、特征选择、目标/特征缩放、自动学习率、`RandomizedSearchCV` + `TimeSeriesSplit` 调参。
 - 滑窗测试支持训练窗口异常值局部修复，测试真实值不被清洗。
+- 滑窗测试中的 `MAPE Accuracy = 1 - MAPE` 按窗口内正样本 `P5` 相对阈值过滤后计算，近零异常点不再制造失真指标。
 - 预测输出保存历史上下文和预测绘图拼接数据，便于生产问题定位。
+- 未来预测图只对历史上下文复用 `P5` 相对阈值断线显示；未来预测值本身不做裁剪。
 
 ## 项目结构
 
 ```text
 tsproj_ml/
-├── main.py                      # 主流程入口，包含 Model.run()，通过硬编码 CONFIG_YAML 切换配置
-├── run.py                       # 推荐 CLI 入口，通过 --config-yaml 加载配置并应用 CLI 参数覆盖
+├── main.py                      # 主流程入口，本地修改 YAML 后直接运行
+├── run.py                       # 保留的兼容入口，不作为本地直跑推荐方式
 ├── pyproject.toml               # uv 依赖定义，Python == 3.10.11
 ├── config/
 │   ├── config_sections.py       # 共享分组 dataclass 和预测策略说明
@@ -62,10 +64,10 @@ tsproj_ml/
 │   ├── ModelEnsemble.py         # 融合模型
 │   ├── ModelSaveLoad.py         # pickle 保存/加载
 │   └── losses.py, learning_rate.py
-├── scripts/                     # 运行模板和维护说明
+├── scripts/                     # main.py 直跑脚本和维护说明
 │   ├── production_sync.md       # 生产包同步边界、可迁移模块和同步记录
-│   ├── run_model_test.sh        # 通过环境变量覆盖配置的模型测试启动脚本
-│   └── template.sh              # run.py 标准命令模板，可复制后按场景调整
+│   ├── run_model_test.sh        # main.py 直跑测试脚本
+│   └── template.sh              # main.py 直跑模板脚本
 ├── tests/                       # unittest 回归测试
 └── utils/
     ├── frequency.py             # pandas 频率解析
@@ -97,34 +99,20 @@ tsproj_ml/
 uv sync
 ```
 
-推荐 CLI 入口：
-
-```bash
-uv run python run.py \
-  --config-yaml config/ETT-small/ETTm1/lgbm_usmd.yaml \
-  --model-type lightgbm \
-  --is-testing 1 \
-  --is-forecasting 0
-```
-
-`run.py` 是正式运行入口，负责完整 CLI 覆盖；配置优先级为：Python 模板默认值（YAML 内 `base_config` 指定）< YAML `overrides` < `run.py` CLI 覆盖。`--config-yaml` 为必填参数。
-
-轻量本地入口：
+本地直跑入口：
 
 ```bash
 uv run python main.py
 ```
 
-`main.py` 通过 `CONFIG_YAML` 常量直接指定配置文件路径，适合快速切换单配置测试。运行真实项目配置时，优先使用 `run.py` 并从 `config/README.md` 选择具体 YAML。
+使用方式：
 
-脚本入口默认值也已对齐到当前模板：
+1. 打开 [main.py](/Users/wangzf/projects/tsproj_ml/main.py)。
+2. 修改 `CONFIG_YAML`，指向要测试的本地 YAML 配置文件。
+3. 如需调整数据路径、模型类型、预测策略、测试与预测开关，直接修改对应 YAML。
+4. 运行 `uv run python main.py`。
 
-```bash
-CONFIG_YAML=config/ETT-small/ETTm1/lgbm_usmd.yaml \
-CONFIG_CLASS=ModelConfig \
-MODEL_TYPE=lightgbm \
-bash scripts/run_model_test.sh
-```
+`main.py` 不提供命令行参数覆盖；本地开发和测试统一采用“手动改 YAML + 直接运行”的方式。
 
 ## 配置生成
 
@@ -267,8 +255,7 @@ uv run python config/generate_configs.py \
 
 - `config/config_loader.py` 提供 `load_yaml_config(config_yaml)`，按 YAML 的 `base_config` 加载对应的 Python 模板并应用分组 `overrides`。
 - `load_model_config()` 为内部工具函数，由 `load_yaml_config` 调用以实例化 `base_config` 指定的模板，不对外直接使用。
-- 该加载器导入时不会解析 `sys.argv`，避免 `run.py` 导入 `main.Model` 时发生二次参数解析。
-- `run.py` 在加载配置实例后应用 CLI 覆盖；`--config-yaml` 为必填参数。布尔 CLI 参数支持 `1/0`、`true/false`、`yes/no`、`on/off`。
+- 该加载器导入时不会解析 `sys.argv`；`main.py` 直接读取本地固定的 YAML 路径。
 
 ## 输出结构
 
@@ -293,6 +280,12 @@ results/
 
 `prediction.csv` 基础列为 `time,predict_value`；分位数预测会额外输出 `predict_q10`、`predict_q50`、`predict_q90` 这类列，实际列由 `quantiles` 决定。
 
+滑窗测试与未来预测图的可视化契约：
+
+- `test_scores_df.csv` 额外记录 `MAPE Threshold`、`MAPE Valid Points`、`MAPE Excluded Points`、`MAPE Excluded Ratio`。
+- `cv_plot_df.csv` 额外记录测试图的有效性标记；低于窗口正样本 `P5` 阈值的点在 `test_prediction.png` 中断线显示。
+- `prediction_plot_concat.csv` 保留历史与未来拼接后的原始值 `raw_value`，并额外输出 `plot_value`、`plot_valid`、`series_type`；`prediction.png` 用 `plot_value` 绘制历史上下文，用原始 `predict_value` 绘制未来预测。
+
 离线原始负荷异常处理由 `data_provider/outlier_process.py` 提供，输出默认保存到源数据目录：
 
 ```text
@@ -305,8 +298,7 @@ df_power_anomalies.png
 
 - 根 README 只做项目总览和主流程说明；配置映射、数据目录、目录职责请以对应子目录 README 为准。
 - 标准默认值由 Python dataclass 模板提供；新增具体数据配置优先用分组 YAML 管理。
-- `main.py` 是轻量入口，不负责完整 CLI 覆盖；日常运行和脚本运行优先使用 `run.py`。
-- `run.py` 和脚本默认值已对齐当前有效模板；如果运行具体项目配置，优先显式传 `--config-yaml`。
+- `main.py` 是本地开发与测试的主入口；切换任务时直接修改 `CONFIG_YAML` 和对应 YAML 内容。
 - `now_time` 会被规整到整点作为历史结束/预测开始，历史区间为 `[now_time - history_days, now_time)`，预测区间为 `[now_time, now_time + predict_days)`。
 - 分位数预测训练多个子模型；点预测融合只在 `predict_type="point"` 时生效。
 - 多变量递归类方法对非目标内生变量目前主要采用持久性回填，不等同于为每个内生变量单独建模。
@@ -345,8 +337,8 @@ df_power_anomalies.png
 ## 开发与维护注意事项
 
 - 项目事实以当前代码为准；更新文档时不要把 `docs/` 或 `logs/` 中的历史内容当作当前实现。
-- 运行入口、配置模块名、输出目录和脚本默认值容易漂移，修改前应重新核对 `main.py`、`run.py`、`config/`、`scripts/`。
-- 配置字段、命令参数、模型类型和预测策略名保持英文；中文用于解释语义和边界。
+- 运行入口、配置路径、输出目录和脚本说明容易漂移，修改前应重新核对 `main.py`、`config/`、`scripts/`。
+- 配置字段、模型类型和预测策略名保持英文；中文用于解释语义和边界。
 - 如果发现脚本、README、配置和代码不一致，优先按代码写清楚现状，不要为了文档一致性假定代码已经修好。
 - 修改 README 时避免重复目录级 README 的全部细节；根 README 只保留全局流程、关键契约和常用命令。
 
@@ -354,25 +346,16 @@ df_power_anomalies.png
 
 日志由 `utils/log_util.py` 创建。调用方通常先设置 `LOG_NAME`，日志写入 `logs/<LOG_NAME>/`；日志级别由 `SERVICE_LOG_LEVEL` 控制，默认 `INFO`。
 
-`main.py` 会设置 `LOG_NAME=main`，`run.py` 会设置 `LOG_NAME=run`。脚本也可通过环境变量覆盖 `LOG_NAME`。
+`main.py` 会设置 `LOG_NAME=main`。脚本也可通过环境变量覆盖 `LOG_NAME`。
 
 ## 验证建议
 
 文档更新后可用一致性搜索确认没有恢复旧入口模块名、旧配置类名或旧测试目录说明。
 
-入口导入回归检查：
-
-```bash
-uv run python -c "import sys; sys.argv=['run.py','--config-yaml','config/ETT-small/ETTm1/lgbm_usmd.yaml','--model-type','lightgbm']; import main; print('imported')"
-```
-
 轻量入口运行检查：
 
 ```bash
-uv run python run.py \
-  --config-yaml config/ETT-small/ETTm1/lgbm_usmd.yaml \
-  --is-testing 0 \
-  --is-forecasting 0
+uv run python main.py
 ```
 
 静态和测试检查：

@@ -25,7 +25,7 @@
 - 日期：`date_history_path`、`date_future_path`、`date_ts_feat`
 - 天气：`weather_history_path`、`weather_future_path`、`weather_ts_feat`
 
-日期和天气外生文件同时存在历史/未来版本时，会拼接为统一表后供历史和未来阶段使用。
+日期和天气外生文件同时存在历史/未来版本时，会先按时间列纵向拼接、排序、去重形成 canonical 全量表，再按 `forecast_start_time` 显式切成历史片段和未来片段供两个阶段分别使用。
 
 ## 历史与未来边界
 

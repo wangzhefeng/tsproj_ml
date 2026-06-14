@@ -4,19 +4,13 @@
 
 ## 加载规则
 
-正式运行入口是 `run.py`：
-
-```bash
-uv run python run.py \
-  --config-yaml config/ETT-small/ETTm1/lgbm_usmd.yaml
-```
+本地运行入口是 [main.py](/Users/wangzf/projects/tsproj_ml/main.py)。日常使用时直接在 `main.py` 中修改 `CONFIG_YAML`，然后运行 `uv run python main.py`。
 
 加载边界：
 
 - `config/config_loader.py` 提供 `load_yaml_config()`；`load_model_config()` 为内部工具函数，供 YAML 加载器读取 `base_config` 指定的 Python 模板。
 - YAML 的 `base_config` 指向标准模板，例如 `config.univariate_config` 或 `config.multivariate_config`。
-- `run.py` 加载配置实例后再应用 CLI 覆盖，优先级为：Python 模板默认值 < YAML `overrides` < CLI 参数。
-- `main.py` 通过 `CONFIG_YAML` 常量直接硬编码配置文件路径，仅提供轻量直跑入口。
+- `main.py` 通过 `CONFIG_YAML` 常量直接指定本地要加载的 YAML 配置文件。
 
 YAML 基本结构：
 
@@ -131,18 +125,6 @@ dataset/aidc_electricity_computility/electricity/2026-06-11/demand_load/AIDC/rou
 - 频率：`5min`
 - 日期外生：`df_date.csv`、`df_date_future.csv`
 - 天气外生：`df_weather.csv`、`df_weather_future.csv`
-
-## CLI 覆盖优先级
-
-配置文件提供默认值；`run.py` 参数在加载后覆盖对应字段。常用覆盖包括：
-
-- 数据：`--data-dir`、`--data-path`、`--target`、`--target-ts-feat`、`--freq`
-- 运行：`--is-testing`、`--is-forecasting`、`--now-time`
-- 窗口：`--history-days`、`--predict-days`、`--window-days`、`--lags`
-- 模型：`--model-type`、`--pred-method`、`--model-params`
-- 输出：`--checkpoints-dir`、`--test-results-dir`、`--pred-results-dir`
-
-布尔参数支持 `1/0`、`true/false`、`yes/no`、`on/off`。
 
 ## 配置生成
 

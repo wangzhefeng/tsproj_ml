@@ -104,6 +104,29 @@ class Forecaster:
         pred_arr = Forecaster._to_1d(pred)
         return float(pred_arr[0]) if pred_arr.size > 0 else np.nan
 
+    @staticmethod
+    def _build_plot_mask(values: Any) -> Dict[str, Any]:
+        values = np.asarray(values).reshape(-1)
+        positive_values = values[values > 0]
+        if positive_values.size == 0:
+            threshold = np.nan
+            valid_mask = np.zeros(len(values), dtype=bool)
+        else:
+            threshold = float(np.percentile(positive_values, 5))
+            valid_mask = values >= threshold
+
+        valid_points = int(valid_mask.sum())
+        excluded_points = int(len(values) - valid_points)
+        excluded_ratio = float(excluded_points / len(values)) if len(values) > 0 else np.nan
+
+        return {
+            "threshold": threshold,
+            "valid_mask": valid_mask,
+            "valid_points": valid_points,
+            "excluded_points": excluded_points,
+            "excluded_ratio": excluded_ratio,
+        }
+
     def _prepare_future_aux_index(self):
         """预处理未来日期/气象数据索引，便于按步快速切片。"""
         self._df_date_future_indexed = None
@@ -1030,14 +1053,34 @@ class Forecaster:
                 encoding="utf_8_sig",
                 index=False,
             )
+        history_plot_meta = None
+        if not y_trues_df_plot.empty and "y" in y_trues_df_plot.columns:
+            history_plot_meta = self._build_plot_mask(y_trues_df_plot["y"].values)
+            logger.info(
+                f"{self.log_prefix} History plot mask threshold={history_plot_meta['threshold']}, "
+                f"valid_points={history_plot_meta['valid_points']}, "
+                f"excluded_points={history_plot_meta['excluded_points']}, "
+                f"excluded_ratio={history_plot_meta['excluded_ratio']:.6f}"
+            )
+            y_trues_df_plot = y_trues_df_plot.copy()
+            y_trues_df_plot["plot_valid"] = history_plot_meta["valid_mask"]
+            y_trues_df_plot["plot_value"] = np.where(
+                history_plot_meta["valid_mask"],
+                y_trues_df_plot["y"],
+                np.nan,
+            )
         # 拼接可视化数据：最近两天历史 + 未来一天预测
         history_part = pd.DataFrame()
         if not y_trues_df_plot.empty:
-            history_part = y_trues_df_plot[["time", "y"]].rename(columns={"y": "value"})
+            history_part = y_trues_df_plot[["time", "y", "plot_value", "plot_valid"]].rename(columns={"y": "value"})
+            history_part["raw_value"] = history_part["value"]
             history_part["series_type"] = "history_true"
         future_part = pd.DataFrame()
         if not df_future.empty and "predict_value" in df_future.columns:
             future_part = df_future[["time", "predict_value"]].rename(columns={"predict_value": "value"})
+            future_part["raw_value"] = future_part["value"]
+            future_part["plot_value"] = future_part["value"]
+            future_part["plot_valid"] = True
             future_part["series_type"] = "future_pred"
         if not history_part.empty or not future_part.empty:
             plot_concat_df = pd.concat([history_part, future_part], axis=0, ignore_index=True)
@@ -1049,8 +1092,8 @@ class Forecaster:
             )
         import matplotlib.pyplot as plt
         plt.figure(figsize=(25, 8))
-        if not y_trues_df_plot.empty and "y" in y_trues_df_plot.columns:
-            plt.plot(y_trues_df_plot["time"], y_trues_df_plot["y"], label="Trues", lw=2.0)
+        if not y_trues_df_plot.empty and "plot_value" in y_trues_df_plot.columns:
+            plt.plot(y_trues_df_plot["time"], y_trues_df_plot["plot_value"], label="Trues", lw=2.0)
         if not df_future.empty and "predict_value" in df_future.columns:
             plt.plot(df_future["time"], df_future["predict_value"], label="Preds", lw=2.0, ls="-.")
         plt.xlabel("Time", fontsize=12)

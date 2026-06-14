@@ -58,6 +58,8 @@
 
 `train_outlier_report.csv` 始终写出；未启用或未发现训练异常时为空表头。
 
+`test_scores_df.csv` 中的 `MAPE` 与 `MAPE Accuracy` 采用业务口径：对每个测试窗口先取 `y_true > 0` 的点，再用这些正样本的 `P5` 作为相对阈值，只对 `y_true >= threshold` 的点计算指标。结果表会同步保存 `MAPE Threshold`、`MAPE Valid Points`、`MAPE Excluded Points`、`MAPE Excluded Ratio`。`cv_plot_df.csv` 也会保留对应的有效性标记，`test_prediction.png` 对无效点断线显示。
+
 ## 预测
 
 `Forecaster._predict_by_method()` 根据 `args.pred_method` 分发：
@@ -83,6 +85,14 @@
 
 `prediction.csv` 基础列为 `time,predict_value`。启用分位数预测时追加
 `predict_q10,predict_q50,predict_q90,...`。
+
+`prediction_plot_concat.csv` 用于未来预测图排障，当前除 `time,value,series_type` 外还会保存：
+
+- `raw_value`：历史上下文真实值或未来预测原值
+- `plot_value`：用于 `prediction.png` 的绘图值；历史上下文低于正样本 `P5` 阈值的点写为 `NaN`
+- `plot_valid`：该点是否参与主图连线
+
+`prediction.png` 的历史上下文主线使用 `plot_value`，未来预测主线始终使用 `prediction.csv` 中的原始 `predict_value`，不做裁剪或平滑。
 
 ## 与入口配置的关系
 

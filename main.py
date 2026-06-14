@@ -73,7 +73,7 @@ class Model:
         self.args = args
         data_name = Path(self.args.data_path).stem if getattr(self.args, "data_path", None) else "unknown_data"
         pred_method_code = PRED_METHOD_CODE.get(self.args.pred_method, str(self.args.pred_method).lower())
-        self.setting = f"{self.args.model_type}-{data_name}-{pred_method_code}"
+        self.setting = f"{self.args.model_type}-{data_name}-{pred_method_code}-{self.args.window_days}"
         self.log_prefix = f"[{self.setting}]"
         # ------------------------------
         # 数据参数

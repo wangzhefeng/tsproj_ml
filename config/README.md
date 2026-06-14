@@ -58,21 +58,14 @@ config/
 | 配置目录 | 配置数 |
 |---|---:|
 | `ETT-small/ETTm1` | 21 YAML |
-| `aidc_electricity_computility/electricity/2026-01-01/route_A` | 12 |
-| `aidc_electricity_computility/electricity/2026-01-01/route_B` | 12 |
-| `aidc_electricity_computility/electricity/2026-01-07/route_A` | 12 |
-| `aidc_electricity_computility/electricity/2026-01-07/route_B` | 12 |
-| `aidc_electricity_computility/electricity/2026-03-12/route_A` | 12 |
-| `aidc_electricity_computility/electricity/2026-03-12/route_B` | 12 |
-| `aidc_electricity_computility/electricity/2026-06-11/A1_01a` | 12 |
-| `aidc_electricity_computility/electricity/2026-06-11/A1_201` | 12 |
-| `aidc_electricity_computility/electricity/2026-06-11/A1_IT` | 12 |
-| `aidc_electricity_computility/electricity/2026-06-11/A3_01e` | 12 |
-| `aidc_electricity_computility/electricity/2026-06-11/AIDC/route_A` | 12 |
-| `aidc_electricity_computility/electricity/2026-06-11/AIDC/route_B` | 12 |
-| `aidc_electricity_computility/electricity/gaoweichao_compare` | 4 |
-| `aidc_electricity_computility/electricity_computility/add_training_inference_pod` | 7 |
-| `aidc_electricity_computility/electricity_computility/add_training_jobs` | 7 |
+| `aidc_electricity_computility/electricity/2026-06-11/A1_01a` | 12 YAML |
+| `aidc_electricity_computility/electricity/2026-06-11/A1_201` | 12 YAML |
+| `aidc_electricity_computility/electricity/2026-06-11/A1_IT` | 12 YAML |
+| `aidc_electricity_computility/electricity/2026-06-11/A3_01e` | 12 YAML |
+| `aidc_electricity_computility/electricity/2026-06-11/AIDC/route_A` | 12 YAML |
+| `aidc_electricity_computility/electricity/2026-06-11/AIDC/route_B` | 12 YAML |
+| `aidc_electricity_computility/electricity_computility/add_training_inference_pod` | 7 `.py` 模块配置 |
+| `aidc_electricity_computility/electricity_computility/add_training_jobs` | 7 `.py` 模块配置 |
 
 ## 数据映射
 

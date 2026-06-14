@@ -33,8 +33,10 @@ overrides:
   model_strategy:
     model_type: lightgbm
     pred_method: univariate-single-multistep-direct-recursive
-  # performance:
-  #   window_parallel_workers: 4
+  performance:
+    window_parallel_workers: 8
+    multi_output_n_jobs: 8
+    model_thread_count: 1
   # preprocessing:
   #   scale_target: false
   #   target_scaler_type: standard

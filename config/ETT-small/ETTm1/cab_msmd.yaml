@@ -200,7 +200,7 @@ overrides:
     window_parallel_workers: 1
     max_test_windows: null
     test_window_stride: 1
-    multi_output_n_jobs: 1
+    multi_output_n_jobs: 8
     quantile_parallel_workers: 1
     ensemble_parallel_workers: 1
     model_thread_count: 1

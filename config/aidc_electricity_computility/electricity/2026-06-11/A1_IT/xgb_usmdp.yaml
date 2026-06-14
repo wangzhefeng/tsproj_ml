@@ -34,7 +34,9 @@ overrides:
     model_type: xgboost
     pred_method: univariate-single-multistep-direct-pointwise
   performance:
-    window_parallel_workers: 4
+    window_parallel_workers: 8
+    multi_output_n_jobs: 1
+    model_thread_count: 8
   # preprocessing:
   #   scale_target: false
   #   target_scaler_type: standard

@@ -52,7 +52,7 @@ if str(ROOT) not in sys.path:
 # ---------------------------------------------------------------------------
 
 METHOD_SHORT = {
-    "usmdo": "univariate-single-multistep-direct-output",
+    "usmdo": "univariate-single-multistep-direct-pointwise",
     "usmd": "univariate-single-multistep-direct",
     "usmr": "univariate-single-multistep-recursive",
     "usmdr": "univariate-single-multistep-direct-recursive",

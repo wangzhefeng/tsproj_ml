@@ -48,7 +48,7 @@ class Model:
     # ------------------------------
     def univariate_single_multi_step_direct_output_forecast(self, model, df_future, endogenous_features, exogenous_features, target_feature, categorical_features, feature_scaler):
         """
-        单变量多步直接输出预测
+        单变量多步逐点 direct 预测
         [datetype, datetime, weather] -> [Y]
         """
         if not self.args.is_testing and self.args.is_forecasting:

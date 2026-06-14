@@ -154,7 +154,7 @@ overrides:
     - cat
     ensemble_method: stacking
     ensemble_val_ratio: 0.2
-    pred_method: univariate-single-multistep-direct-output
+    pred_method: univariate-single-multistep-direct-pointwise
     multi_output_strategy: multioutput
     predict_type: point
     quantiles:

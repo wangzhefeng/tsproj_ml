@@ -1,4 +1,4 @@
-# A1_201 — lightgbm — direct-output
+# A1_201 — lightgbm — direct-pointwise
 base_config: config.univariate_config
 overrides:
   runtime:
@@ -32,4 +32,4 @@ overrides:
     - 2016
   model_strategy:
     model_type: lightgbm
-    pred_method: univariate-single-multistep-direct-output
+    pred_method: univariate-single-multistep-direct-pointwise

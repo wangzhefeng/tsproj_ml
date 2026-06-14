@@ -514,9 +514,9 @@ class Forecaster:
     # ------------------------------
     # 单变量（目标变量滞后特征）预测单变量（目标变量）
     # ------------------------------
-    def univariate_single_multi_step_direct_output_forecast(self):
+    def univariate_single_multi_step_direct_pointwise_forecast(self):
         """
-        单变量(内生变量/目标变量)预测单变量(目标变量)多步直接输出预测(USMDO)
+        单变量(内生变量/目标变量)预测单变量(目标变量)多步逐点 direct 预测(USMDO)
         """
         # 多步预测值收集器
         Y_preds = np.array([])
@@ -537,7 +537,7 @@ class Forecaster:
         if predictor_features:
             X_test_future = df_future_featured[predictor_features].copy()
         else:
-            logger.warning(f"{self.log_prefix} predictor_features is empty in USMDO forecast; fallback to raw future frame.")
+            logger.warning(f"{self.log_prefix} predictor_features is empty in USMDO pointwise forecast; fallback to raw future frame.")
             X_test_future = self.df_future.copy()
             categorical_features = self.categorical_features
         logger.info(f"{self.log_prefix} after feature engineering df_future_featured shape: {df_future_featured.shape}")
@@ -936,10 +936,13 @@ class Forecaster:
         # 每次预测前重置，避免复用同一 Forecaster 实例时污染
         self.quantile_outputs = None
         perf_start = time.perf_counter()
-        if self.args.pred_method == "univariate-single-multistep-direct-output":
-            logger.info(f"{self.log_prefix} Forecast method: univariate_single_multi_step_direct_output_forecast(USMDO)")
+        if self.args.pred_method in {
+            "univariate-single-multistep-direct-pointwise",
+            "univariate-single-multistep-direct-output",
+        }:
+            logger.info(f"{self.log_prefix} Forecast method: univariate_single_multi_step_direct_pointwise_forecast(USMDO)")
             logger.info(f"{self.log_prefix} {'-' * 60}")
-            raw_pred = self.univariate_single_multi_step_direct_output_forecast()
+            raw_pred = self.univariate_single_multi_step_direct_pointwise_forecast()
             logger.info(f"{self.log_prefix} USMDO forecast completed, predicted {len(raw_pred)} steps.")
         elif self.args.pred_method == "univariate-single-multistep-direct":
             logger.info(f"{self.log_prefix} Forecast method: univariate_single_multi_step_direct_forecast(USMD)")

@@ -183,7 +183,7 @@ class ModelConfig:
 
     # 可选预测方法:
     # - 单变量预测单变量
-    # pred_method: str = "univariate-single-multistep-direct-output"       # USMDO [单变量(包含目标变量的所有内生变量)->单变量(目标内生变量)]多步直接输出预测
+    # pred_method: str = "univariate-single-multistep-direct-pointwise"       # USMDO [单变量(包含目标变量的所有内生变量)->单变量(目标内生变量)]多步逐点 direct 预测
     # pred_method: str = "univariate-single-multistep-direct"              # USMD [单变量(包含目标变量的所有内生变量)->单变量(目标内生变量)]多步直接预测
     # pred_method: str = "univariate-single-multistep-recursive"           # USMR [单变量(包含目标变量的所有内生变量)->单变量(目标内生变量)]多步递归预测
     pred_method: str = "univariate-single-multistep-direct-recursive"    # USMDR [单变量(包含目标变量的所有内生变量)->单变量(目标内生变量)]多步直接递归预测

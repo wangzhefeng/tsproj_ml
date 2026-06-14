@@ -14,7 +14,7 @@ from typing import Dict, List, Optional
 
 # 预测方法元信息 (full_method, short_code, description)
 _PRED_METHODS = [
-    ("univariate-single-multistep-direct-output", "usmdo", "单变量输入，多步直接输出"),
+    ("univariate-single-multistep-direct-pointwise", "usmdo", "单变量输入，按未来时点逐点 direct 预测"),
     ("univariate-single-multistep-direct", "usmd", "单变量输入，多步直接预测"),
     ("univariate-single-multistep-recursive", "usmr", "单变量输入，多步递归预测"),
     ("univariate-single-multistep-direct-recursive", "usmdr", "单变量输入，多步直接递归预测"),
@@ -25,6 +25,7 @@ _PRED_METHODS = [
 
 # 派生映射：保持向后兼容
 PRED_METHOD_CODE = {full: code for full, code, _ in _PRED_METHODS}  # full name → short code
+PRED_METHOD_CODE["univariate-single-multistep-direct-output"] = "usmdo"
 
 
 # 标准频率 → 每天样本数映射，用于生成与频率匹配的滞后步数。

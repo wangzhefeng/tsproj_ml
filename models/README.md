@@ -64,7 +64,7 @@
 
 | 方法 | 说明 |
 |---|---|
-| USMDO | 单变量多步直接输出 |
+| USMDO | 单变量多步逐点 direct |
 | USMD | 单变量多步 direct |
 | USMR | 单变量递归预测 |
 | USMDR | 单变量分块 direct-recursive |

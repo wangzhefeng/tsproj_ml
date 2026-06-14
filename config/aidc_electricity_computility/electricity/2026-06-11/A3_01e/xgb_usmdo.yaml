@@ -1,4 +1,4 @@
-# A3_01e — xgboost — direct-output
+# A3_01e — xgboost — direct-pointwise
 base_config: config.univariate_config
 overrides:
   runtime:
@@ -32,4 +32,4 @@ overrides:
     - 2016
   model_strategy:
     model_type: xgboost
-    pred_method: univariate-single-multistep-direct-output
+    pred_method: univariate-single-multistep-direct-pointwise

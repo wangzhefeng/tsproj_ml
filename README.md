@@ -1,6 +1,6 @@
 # tsproj-ml
 
-基于机器学习回归器的时间序列多步预测项目。当前主链路围绕 LightGBM / XGBoost / CatBoost 构建，同时在模型工厂层保留 RandomForest 支持；支持单变量/多变量、多步直接输出、direct、recursive 和 direct-recursive 分块预测。
+基于机器学习回归器的时间序列多步预测项目。当前主链路围绕 LightGBM / XGBoost / CatBoost 构建，同时在模型工厂层保留 RandomForest 支持；支持单变量/多变量、多步逐点 direct、direct、recursive 和 direct-recursive 分块预测。
 
 本文档按当前代码和当前目录整理，未使用 `docs/` 和 `logs/` 目录中的历史材料作为事实来源。目录级细节可继续查阅 `config/README.md`、`dataset/README.md`、`data_provider/README.md`、`models/README.md`、`scripts/README.md` 和 `utils/README.md`。
 
@@ -10,7 +10,7 @@
 
 | 缩写 | `pred_method` | 说明 |
 |---|---|---|
-| USMDO | `univariate-single-multistep-direct-output` | 单变量，每个未来时间点直接输出一步预测 |
+| USMDO | `univariate-single-multistep-direct-pointwise` | 单变量，按未来时点逐点 direct 预测 |
 | USMD | `univariate-single-multistep-direct` | 单变量，一个多输出模型直接预测整个 horizon |
 | USMR | `univariate-single-multistep-recursive` | 单变量，一步模型递归回填 |
 | USMDR | `univariate-single-multistep-direct-recursive` | 单变量，按块 direct，块间递归回填 |
@@ -140,7 +140,7 @@ YAML 按 `config_sections.py` 的分组语义保存覆盖项，例如 `target_se
 
 默认单变量策略矩阵是 4 种方法：
 
-- `usmdo`: `univariate-single-multistep-direct-output`
+- `usmdo`: `univariate-single-multistep-direct-pointwise`
 - `usmd`: `univariate-single-multistep-direct`
 - `usmr`: `univariate-single-multistep-recursive`
 - `usmdr`: `univariate-single-multistep-direct-recursive`

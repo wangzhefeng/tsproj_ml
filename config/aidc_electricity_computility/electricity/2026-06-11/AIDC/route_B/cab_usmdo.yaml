@@ -1,4 +1,4 @@
-# B — catboost — direct-output
+# B — catboost — direct-pointwise
 base_config: config.univariate_config
 overrides:
   runtime:
@@ -32,4 +32,4 @@ overrides:
     - 2016
   model_strategy:
     model_type: catboost
-    pred_method: univariate-single-multistep-direct-output
+    pred_method: univariate-single-multistep-direct-pointwise

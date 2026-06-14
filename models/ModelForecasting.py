@@ -539,7 +539,7 @@ class Forecaster:
     # ------------------------------
     def univariate_single_multi_step_direct_pointwise_forecast(self):
         """
-        单变量(内生变量/目标变量)预测单变量(目标变量)多步逐点 direct 预测(USMDO)
+        单变量(内生变量/目标变量)预测单变量(目标变量)多步逐点 direct 预测(USMDP)
         """
         # 多步预测值收集器
         Y_preds = np.array([])
@@ -560,7 +560,7 @@ class Forecaster:
         if predictor_features:
             X_test_future = df_future_featured[predictor_features].copy()
         else:
-            logger.warning(f"{self.log_prefix} predictor_features is empty in USMDO pointwise forecast; fallback to raw future frame.")
+            logger.warning(f"{self.log_prefix} predictor_features is empty in USMDP pointwise forecast; fallback to raw future frame.")
             X_test_future = self.df_future.copy()
             categorical_features = self.categorical_features
         logger.info(f"{self.log_prefix} after feature engineering df_future_featured shape: {df_future_featured.shape}")
@@ -775,8 +775,8 @@ class Forecaster:
         多变量(内生变量)预测单变量(目标变量)多步递归预测(MSMR)
         - 方法特点：
             1. 特征：所有内生变量(target + 其他内生变量)的滞后 + 外生变量
-            2. 训练：TODO
-            3. 预测：TODO
+            2. 训练：训练单个 1 步预测模型，输入为所有内生变量(目标 + 其他内生变量)的滞后 + 外生变量，目标为下一时点的目标值
+            3. 预测：逐步递归，每步用缓存的外生特征 + 当前滞后状态预测目标值，并把预测值回填为下一步的滞后输入
         - 与 USMD 的区别：
             - USMR: 只使用目标变量的滞后特征
             - MSMR: 使用所有内生变量的滞后特征（更多信息）
@@ -959,14 +959,11 @@ class Forecaster:
         # 每次预测前重置，避免复用同一 Forecaster 实例时污染
         self.quantile_outputs = None
         perf_start = time.perf_counter()
-        if self.args.pred_method in {
-            "univariate-single-multistep-direct-pointwise",
-            "univariate-single-multistep-direct-output",
-        }:
-            logger.info(f"{self.log_prefix} Forecast method: univariate_single_multi_step_direct_pointwise_forecast(USMDO)")
+        if self.args.pred_method == "univariate-single-multistep-direct-pointwise":
+            logger.info(f"{self.log_prefix} Forecast method: univariate_single_multi_step_direct_pointwise_forecast(USMDP)")
             logger.info(f"{self.log_prefix} {'-' * 60}")
             raw_pred = self.univariate_single_multi_step_direct_pointwise_forecast()
-            logger.info(f"{self.log_prefix} USMDO forecast completed, predicted {len(raw_pred)} steps.")
+            logger.info(f"{self.log_prefix} USMDP forecast completed, predicted {len(raw_pred)} steps.")
         elif self.args.pred_method == "univariate-single-multistep-direct":
             logger.info(f"{self.log_prefix} Forecast method: univariate_single_multi_step_direct_forecast(USMD)")
             logger.info(f"{self.log_prefix} {'-' * 60}")

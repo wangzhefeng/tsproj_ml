@@ -14,7 +14,7 @@ from typing import Dict, List, Optional
 
 # 预测方法元信息 (full_method, short_code, description)
 _PRED_METHODS = [
-    ("univariate-single-multistep-direct-pointwise", "usmdo", "单变量输入，按未来时点逐点 direct 预测"),
+    ("univariate-single-multistep-direct-pointwise", "usmdp", "单变量输入，按未来时点逐点 direct 预测"),
     ("univariate-single-multistep-direct", "usmd", "单变量输入，多步直接预测"),
     ("univariate-single-multistep-recursive", "usmr", "单变量输入，多步递归预测"),
     ("univariate-single-multistep-direct-recursive", "usmdr", "单变量输入，多步直接递归预测"),
@@ -25,7 +25,6 @@ _PRED_METHODS = [
 
 # 派生映射：保持向后兼容
 PRED_METHOD_CODE = {full: code for full, code, _ in _PRED_METHODS}  # full name → short code
-PRED_METHOD_CODE["univariate-single-multistep-direct-output"] = "usmdo"
 
 
 # 标准频率 → 每天样本数映射，用于生成与频率匹配的滞后步数。
@@ -69,7 +68,6 @@ class RuntimeConfig:
     `now_time` 是预测锚点；运行时根据 `history_days`、`predict_days`
     和 `window_days` 推导历史窗口、预测窗口和滑窗长度。
     """
-
     is_testing: bool = False  # 模型测试
     is_forecasting: bool = True  # 模型预测
     history_days: int = 31  # 历史数据天数
@@ -85,7 +83,6 @@ class TargetSeriesConfig:
     `target_series_numeric_features` 为空时自动推断数值内生变量；
     非空时作为显式白名单。
     """
-
     data_dir: str = "./dataset/aidc_electricity_computility/electricity/2026-06-11/demand_load/A1_201"
     data_path: str = "df_power.csv"
     freq: str = "5min"
@@ -104,7 +101,6 @@ class ExogenousFeatureConfig:
     外生信息。`enable_*` 字段是运行时开关；路径字段决定开关启用时是否加载
     对应外部文件。
     """
-
     # 日期类型数据配置
     enable_date_features: bool = True
     date_history_path: Optional[str] = "df_date.csv"
@@ -157,7 +153,6 @@ class TimeLagFeatureConfig:
 
     滞后特征由目标序列或内生变量的历史值生成，不再与日期时间外生特征混放。
     """
-
     # 特征滞后数列表；优先由具体配置根据 freq 显式覆盖，基类默认以 5min 为基准。
     enable_lags_features: bool = True
     lags: List[int] = field(
@@ -167,39 +162,41 @@ class TimeLagFeatureConfig:
 
 @dataclass
 class AdvancedFeatureConfig:
-    """可选的内生统计特征、周期特征和交互特征配置。"""
-
+    """
+    可选的内生统计特征、周期特征和交互特征配置。
+    """
+    # 高级特征总开关：以下子开关仅在此启用时才生效；统计/差分类特征依赖目标列 y，与 USMDP 不兼容
     enable_advanced_features: bool = False
-
+    # 滚动窗口统计特征：在指定窗口上对指定列计算 mean/std/min/max/skew/kurt
     enable_rolling_features: bool = False
     rolling_columns: List[str] = field(default_factory=lambda: ["y"])
     rolling_windows: List[int] = field(default_factory=lambda: [3, 7, 14, 28])
     rolling_stats: List[str] = field(default_factory=lambda: ["mean", "std", "min", "max", "skew", "kurt"])
-
+    # 扩展窗口统计特征：从序列起点累计计算 mean/std/min/max/skew/kurt
     enable_expanding_features: bool = False
     expanding_columns: List[str] = field(default_factory=lambda: ["y"])
     expanding_stats: List[str] = field(default_factory=lambda: ["mean", "std", "min", "max", "skew", "kurt"])
-
+    # 差分特征：y_t 与 y_{t-period} 的差值
     enable_diff_features: bool = False
     diff_columns: List[str] = field(default_factory=lambda: ["y"])
     diff_periods: List[int] = field(default_factory=lambda: [1, 7, 24])
-
+    # 百分比变化特征：相对前期的变化率
     enable_pct_change_features: bool = False
     pct_change_columns: List[str] = field(default_factory=lambda: ["y"])
     pct_change_periods: List[int] = field(default_factory=lambda: [1, 7])
-
+    # 距事件时间步特征：统计距最近峰/谷等事件的步数
     enable_time_since_features: bool = False
     time_since_columns: List[str] = field(default_factory=lambda: ["y"])
     time_since_events: List[str] = field(default_factory=lambda: ["peak", "trough"])
-
+    # 周期特征三角编码：对周期性列做 sin/cos 变换（如 minute）
     enable_cyclical_features: bool = False
     cyclical_columns: List[str] = field(default_factory=lambda: ["minute"])
     cyclical_period: int = 15
-
+    # 列对交互特征：对指定列对做加减乘除运算生成新特征
     enable_interaction_features: bool = False
     interaction_column_pairs: List[tuple] = field(default_factory=lambda: [("y", "dt_hour")])
     interaction_operations: List[str] = field(default_factory=lambda: ["add", "subtract", "multiply", "divide"])
-
+    # 多项式特征：对指定列做 n 次幂展开
     enable_polynomial_features: bool = False
     polynomial_columns: List[str] = field(default_factory=lambda: ["y"])
     polynomial_degree: int = 2
@@ -207,8 +204,9 @@ class AdvancedFeatureConfig:
 
 @dataclass
 class PreprocessingConfig:
-    """特征缩放、目标缩放和类别编码配置。"""
-
+    """
+    特征缩放、目标缩放和类别编码配置。
+    """
     # 预测特征
     scale_features: bool = False  # 是否对预测特征 X 进行归一化/标准化
     feature_scaler_type: str = "minmax"  # 预测特征 X 的缩放方法: "standard" 或 "minmax"
@@ -222,8 +220,9 @@ class PreprocessingConfig:
 
 @dataclass
 class ModelStrategyConfig:
-    """模型类型、融合模式和预测策略配置。"""
-
+    """
+    模型类型、融合模式和预测策略配置。
+    """
     # 单模型预测
     model_type: str = "lightgbm"
     model_params: Dict = field(default_factory=dict)
@@ -242,13 +241,17 @@ class ModelStrategyConfig:
     use_horizon_exogenous_for_direct: bool = False  # Direct 方法是否使用 horizon-aware 外生特征展开
     block_size: int = 0  # Direct-Recursive 方法的分块大小
 
+    # 全局训练（面板数据）：跨多条序列联合训练单模型，需配合 series_id_feature 区分序列
     enable_global_training: bool = False  # 全局训练模式，跨序列联合训练
+    # 全局训练时标识不同序列的列名（默认 series_id）
     series_id_feature: str = "series_id"
 
 
 @dataclass
 class TrainingEnhancementConfig:
-    """训练阶段的调参、增强、特征选择和损失函数配置。"""
+    """
+    训练阶段的调参、增强、特征选择和损失函数配置。
+    """
 
     patience: int = 100  # 早停步数
 
@@ -279,35 +282,40 @@ class TrainingEnhancementConfig:
 
 @dataclass
 class TrainOutlierConfig:
-    """滑窗测试阶段训练窗口异常处理配置。"""
-
-    enable_train_outlier_handling: bool = False
-    train_outlier_method: str = "local_interpolate"
-    high_outlier_threshold: float = 15000.0
-    high_outlier_max_run_points: int = 4
-    drop_outlier_max_run_points: int = 2
-    drop_rebound_min_abs_diff: float = 900.0
+    """
+    滑窗测试阶段训练窗口异常处理配置。
+    """
+    # 仅在滑窗测试阶段的训练窗口内清洗目标异常值，不影响最终预测的推理阶段。
+    enable_train_outlier_handling: bool = False  # 总开关
+    train_outlier_method: str = "local_interpolate"  # 清洗方法，目前仅支持 local_interpolate（局部插值）
+    high_outlier_threshold: float = 15000.0  # 高值阈值：y 超过此值视为候选异常
+    high_outlier_max_run_points: int = 4  # 高值连续段长度 ≤ 此值才清洗（短尖峰）；更长的高值段视为真实
+    drop_outlier_max_run_points: int = 2  # 骤降-回弹连续段长度上限
+    drop_rebound_min_abs_diff: float = 900.0  # 骤降-回弹判定的最小绝对幅度
 
 
 @dataclass
 class PerformanceConfig:
-    """并行度和过程日志配置。"""
-
-    window_parallel_workers: int = 1
-    max_test_windows: Optional[int] = None
-    test_window_stride: int = 1
-    multi_output_n_jobs: int = 1
-    quantile_parallel_workers: int = 1
-    ensemble_parallel_workers: int = 1
-    model_thread_count: int = 1
-    enable_step_logging: bool = False
-    forecast_log_interval: int = 24
+    """
+    并行度和过程日志配置。
+    """
+    # 并行度与过程日志：窗口/多输出/分位数/融合各有独立并行维度，按机器核数调整。
+    window_parallel_workers: int = 1  # 滑窗测试的窗口级并行进程数
+    max_test_windows: Optional[int] = None  # 测试窗口数量上限，None 表示不限
+    test_window_stride: int = 1  # 测试窗口索引步长（>1 时跳采窗口）
+    multi_output_n_jobs: int = 1  # direct 多输出模型的并行 job 数
+    quantile_parallel_workers: int = 1  # 分位数预测的并行进程数
+    ensemble_parallel_workers: int = 1  # 模型融合的并行进程数
+    model_thread_count: int = 1  # 单模型内部线程数（映射到 LightGBM/XGBoost 等底层库）
+    enable_step_logging: bool = False  # 是否打印逐步（特征工程/递归预测）详细日志
+    forecast_log_interval: int = 24  # 递归预测时每 N 步打印一次进度
 
 
 @dataclass
 class OutputConfig:
-    """模型、测试结果和预测结果的输出目录配置。"""
-
+    """
+    模型、测试结果和预测结果的输出目录配置。
+    """
     checkpoints_dir: str = "./results/pretrained_models/"
     test_results_dir: str = "./results/results_test/"
     pred_results_dir: str = "./results/results_forecast/"
@@ -325,6 +333,7 @@ class BaseModelConfig(
     TrainingEnhancementConfig,
     TrainOutlierConfig,
     PerformanceConfig,
-    OutputConfig,
-):
-    """供公开 `ModelConfig` 继承的扁平组合配置基类。"""
+    OutputConfig):
+    """
+    供公开 `ModelConfig` 继承的扁平组合配置基类。
+    """

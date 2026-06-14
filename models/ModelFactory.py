@@ -132,8 +132,13 @@ class BaseModel(ABC):
         return None
 
 
-# TODO 这个函数的作用是什么？
 def _filter_valid_params(params: Dict[str, Any], estimator_cls) -> Dict[str, Any]:
+    """
+    按估计器 ``__init__`` 签名过滤模型参数，仅保留该估计器显式声明的合法参数。
+
+    对于通过 ``**kwargs`` 透传原生参数的封装（签名含 VAR_KEYWORD），
+    无法用显式签名做白名单，直接原样返回，避免误删合法配置。
+    """
     signature = inspect.signature(estimator_cls.__init__)
     # 部分 sklearn 风格封装通过 **kwargs 接收额外原生参数，
     # 这类模型不能用显式签名做白名单过滤，否则会错误丢弃合法配置。

@@ -68,7 +68,7 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 
 ### 配置系统
 - YAML 配置：`base_config` 指向 Python 模块（默认 `config.univariate_config`），`overrides` 为扁平化键值覆盖
-- `lgbm_usmdo.yaml` 是 A1_01a 电负荷场景的当前配置
+- `lgbm_usmdp.yaml` 是 A1_01a 电负荷场景的当前配置
 - 修改 YAML 后务必运行验证：配置值可能被回退（已知问题：`true` 会变成 `false`）
 
 ### 时间边界约定
@@ -78,11 +78,11 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 - `pd.date_range` 使用 `inclusive="left"`，end 为排除边界——所以终日 23:55 是最后一个被包含的点
 
 ### 预测方法限制
-- **USMDO + advanced_features 不兼容**：`add_rolling_statistics` 和 `add_diff_features` 依赖目标列 `y`，训练时存在但预测时（未来数据）不存在 → LightGBM Fatal: feature count mismatch
+- **USMDP + advanced_features 不兼容**：`add_rolling_statistics` 和 `add_diff_features` 依赖目标列 `y`，训练时存在但预测时（未来数据）不存在 → LightGBM Fatal: feature count mismatch
 - 可通过将操作列改为外生特征列来启用，但默认配置下必须禁用
 
 ### 关键约定
-- 输出目录：`results/`（不是 `saved_results/`）
+- 输出目录：`results/`（不是 `saved_results/`）；三个子目录（pretrained_models/results_test/results_forecast）按 `<scenario>/<setting>` 嵌套，`<scenario>` 由 `data_dir` 解析得到（与 config 路径对齐），不同场景互不覆盖
 - 测试汇总指标：使用 median（中位数），不是 mean——单窗口 MAPE 爆炸会拖垮均值
 - `MAPE Accuracy` 业务口径：按每个测试窗口内 `y_true > 0` 样本的 `P5` 阈值过滤后计算；无有效点时写 `NaN`
 - `prediction.png` 只掩码历史上下文中的低值异常点；未来预测原值保持在 `prediction.csv` 和 `prediction_plot_concat.csv` 中

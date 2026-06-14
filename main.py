@@ -8,7 +8,7 @@
 # * Version     : 2.0
 # * Description : 基于机器学习回归器的时间序列预测框架
 # *               支持以下预测方法:
-# *               1. USMDO - 单变量多步逐点 direct 预测
+# *               1. USMDP - 单变量多步逐点 direct 预测
 # *               2. USMD  - 单变量多步直接预测
 # *               3. USMR  - 单变量多步递归预测
 # *               4. USMDR - 单变量多步直接递归预测
@@ -80,6 +80,8 @@ class Model:
         # ------------------------------
         # 数据读取路径
         self.args.data_dir = Path(self.args.data_dir)
+        # 场景子路径:由 data_dir 解析,使结果保存路径与 config 目录布局对齐
+        self.scenario_subpath = self._resolve_scenario_subpath(self.args.data_dir)
         self.step_minutes = resolve_freq_step_minutes(self.args.freq)
         # 目标时间序列每天样本数量
         self.n_per_day = resolve_samples_per_day(self.args.freq)
@@ -110,11 +112,11 @@ class Model:
         # ------------------------------
         # 模型训练、测试、预测结果保存路径
         # ------------------------------
-        self.args.checkpoints_dir = Path(self.args.checkpoints_dir).joinpath(self.setting)
+        self.args.checkpoints_dir = Path(self.args.checkpoints_dir).joinpath(self.scenario_subpath, self.setting)
         self.args.checkpoints_dir.mkdir(parents=True, exist_ok=True)
-        self.args.test_results_dir = Path(self.args.test_results_dir).joinpath(self.setting)
+        self.args.test_results_dir = Path(self.args.test_results_dir).joinpath(self.scenario_subpath, self.setting)
         self.args.test_results_dir.mkdir(parents=True, exist_ok=True)
-        self.args.pred_results_dir = Path(self.args.pred_results_dir).joinpath(self.setting)
+        self.args.pred_results_dir = Path(self.args.pred_results_dir).joinpath(self.scenario_subpath, self.setting)
         self.args.pred_results_dir.mkdir(parents=True, exist_ok=True)
         # ------------------------------
         # 参数合法性校验
@@ -164,6 +166,24 @@ class Model:
         logger.info(f"{self.log_prefix} Horizon: {self.horizon}")
         logger.info(f"{self.log_prefix} Window length: {self.window_len}")
         logger.info(f"{self.log_prefix} Number of windows: {self.n_windows}")
+
+    @staticmethod
+    def _resolve_scenario_subpath(data_dir) -> Path:
+        """
+        由 data_dir 解析场景子路径,使结果保存路径与 config 目录布局对齐。
+
+        去掉 data_dir 中 config 侧不存在的段:
+        - "dataset":     数据集根目录
+        - "demand_load": 数据集侧的分组目录(config 路径中无此段)
+
+        例:
+          ./dataset/aidc_electricity_computility/electricity/2026-06-11/demand_load/A1_01a/
+          -> aidc_electricity_computility/electricity/2026-06-11/A1_01a
+        """
+        _DATASET_NOISE_SEGMENTS = {"dataset", "demand_load"}
+        parts = [p for p in Path(data_dir).parts if p not in ("", ".")]
+        scenario_parts = [p for p in parts if p not in _DATASET_NOISE_SEGMENTS]
+        return Path(*scenario_parts) if scenario_parts else Path()
 
     def train(self, X_train: pd.DataFrame, Y_train: pd.DataFrame, categorical_features: List, mode: str="forecast", verbose: bool=False):
         """
@@ -562,7 +582,7 @@ def main():
     # ------------------------------
     # 配置文件切换区域
     # ------------------------------
-    CONFIG_YAML = "config/aidc_electricity_computility/electricity/2026-06-11/A1_01a/lgbm_usmdo.yaml"
+    CONFIG_YAML = "config/aidc_electricity_computility/electricity/2026-06-11/A1_01a/lgbm_usmr.yaml"
     # ------------------------------
     # 创建模型配置参数
     # ------------------------------

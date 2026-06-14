@@ -10,7 +10,7 @@
 
 | 缩写 | `pred_method` | 说明 |
 |---|---|---|
-| USMDO | `univariate-single-multistep-direct-pointwise` | 单变量，按未来时点逐点 direct 预测 |
+| USMDP | `univariate-single-multistep-direct-pointwise` | 单变量，按未来时点逐点 direct 预测 |
 | USMD | `univariate-single-multistep-direct` | 单变量，一个多输出模型直接预测整个 horizon |
 | USMR | `univariate-single-multistep-recursive` | 单变量，一步模型递归回填 |
 | USMDR | `univariate-single-multistep-direct-recursive` | 单变量，按块 direct，块间递归回填 |
@@ -128,7 +128,7 @@ YAML 按 `config_sections.py` 的分组语义保存覆盖项，例如 `target_se
 
 默认单变量策略矩阵是 4 种方法：
 
-- `usmdo`: `univariate-single-multistep-direct-pointwise`
+- `usmdp`: `univariate-single-multistep-direct-pointwise`
 - `usmd`: `univariate-single-multistep-direct`
 - `usmr`: `univariate-single-multistep-recursive`
 - `usmdr`: `univariate-single-multistep-direct-recursive`
@@ -142,7 +142,7 @@ YAML 按 `config_sections.py` 的分组语义保存覆盖项，例如 `target_se
 | `--data-file` | 可选；不传时选目录中第一个非外生 CSV |
 | `--target-ts-feat` | 可选；不传时使用目标 CSV 第一列 |
 | `--models` | 逗号分隔模型列表，默认 `lightgbm,xgboost,catboost` |
-| `--strategies` | 逗号分隔策略列表，默认 `usmdo,usmd,usmr,usmdr` |
+| `--strategies` | 逗号分隔策略列表，默认 `usmdp,usmd,usmr,usmdr` |
 | `--variant` | 输出子目录后缀，例如 `A1_201`、`A`、`B`；用于区分同数据集不同场景的配置目录，不写入文件名 |
 | `--config-dir` | 输出目录；建议显式传入，避免默认路径和项目约定漂移 |
 | `--base-config` | 可选；不传时按策略和内生特征自动选择 `config.univariate_config` 或 `config.multivariate_config` |
@@ -165,7 +165,7 @@ uv run python config/generate_configs.py \
   --dataset dataset/aidc_electricity_computility/electricity/2026-06-11/demand_load/A1_201 \
   --target h_total_use \
   --models lightgbm,xgboost,catboost \
-  --strategies usmdo,usmd,usmr,usmdr \
+  --strategies usmdp,usmd,usmr,usmdr \
   --config-dir config/aidc_electricity_computility/electricity/2026-06-11/A1_201 \
   --dry-run
 ```
@@ -259,19 +259,21 @@ uv run python config/generate_configs.py \
 
 ## 输出结构
 
-`<setting>` 当前由 `{model_type}-{data_name}-{pred_method_code}` 组成，例如 `lightgbm-df_power-usmd`。
+`<scenario>` 由 `data_dir` 解析而来（去掉 `dataset/` 前缀和 config 侧没有的 `demand_load` 段），使结果路径与 config 目录布局对齐，例如 `aidc_electricity_computility/electricity/2026-06-11/A1_01a`；不同场景的结果因此互不覆盖。
+
+`<setting>` 由 `{model_type}-{data_name}-{pred_method_code}-{window_days}` 组成，例如 `lightgbm-df_power-usmr-15`。
 
 ```text
 results/
-  pretrained_models/<setting>/
+  pretrained_models/<scenario>/<setting>/
     model.pkl
     target_scaler.pkl              # 仅目标缩放器已 fit 时保存
-  results_test/<setting>/
+  results_test/<scenario>/<setting>/
     test_scores_df.csv
     cv_plot_df.csv
     train_outlier_report.csv
     test_prediction.png            # 有有效预测列时保存
-  results_forecast/<setting>/
+  results_forecast/<scenario>/<setting>/
     prediction.csv
     prediction.png
     history_context.csv

@@ -313,6 +313,29 @@ class Tester:
         return df_history_test[["time"]].copy()
 
     @staticmethod
+    def _build_relative_mape_mask(y_test: np.ndarray):
+        y_test = np.asarray(y_test).flatten()
+        positive_values = y_test[y_test > 0]
+        if positive_values.size == 0:
+            threshold = np.nan
+            valid_mask = np.zeros(len(y_test), dtype=bool)
+        else:
+            threshold = float(np.percentile(positive_values, 5))
+            valid_mask = y_test >= threshold
+
+        valid_points = int(valid_mask.sum())
+        excluded_points = int(len(y_test) - valid_points)
+        excluded_ratio = float(excluded_points / len(y_test)) if len(y_test) > 0 else np.nan
+
+        return {
+            "threshold": threshold,
+            "valid_mask": valid_mask,
+            "valid_points": valid_points,
+            "excluded_points": excluded_points,
+            "excluded_ratio": excluded_ratio,
+        }
+
+    @staticmethod
     def _evaluate_score(
         y_test: np.ndarray,
         y_pred: np.ndarray,
@@ -324,19 +347,28 @@ class Tester:
         模型评估
         计算模型的性能指标
         """
-        # Ensure y_test and y_pred are 1D arrays for metrics
         y_test = np.array(y_test).flatten()
         y_pred = np.array(y_pred).flatten()
-        # Handle potential division by zero in MAPE if y_test contains zeros
-        y_test_mape = np.where(y_test == 0, 0.01, y_test)
-        # Calculate the model's performance metrics
+        mape_meta = Tester._build_relative_mape_mask(y_test)
+        valid_mask = mape_meta["valid_mask"]
+        if mape_meta["valid_points"] > 0:
+            mape_value = mean_absolute_percentage_error(y_test[valid_mask], y_pred[valid_mask])
+            mape_accuracy = 1 - mape_value
+        else:
+            mape_value = np.nan
+            mape_accuracy = np.nan
+
         test_scores = {
             "R2": r2_score(y_test, y_pred),
             "MSE": mean_squared_error(y_test, y_pred),
             "RMSE": root_mean_squared_error(y_test, y_pred),
             "MAE": mean_absolute_error(y_test, y_pred),
-            "MAPE": mean_absolute_percentage_error(y_test_mape, y_pred),
-            "MAPE Accuracy": 1 - mean_absolute_percentage_error(y_test_mape, y_pred),
+            "MAPE": mape_value,
+            "MAPE Accuracy": mape_accuracy,
+            "MAPE Threshold": mape_meta["threshold"],
+            "MAPE Valid Points": mape_meta["valid_points"],
+            "MAPE Excluded Points": mape_meta["excluded_points"],
+            "MAPE Excluded Ratio": mape_meta["excluded_ratio"],
         }
         test_scores_df = pd.DataFrame(test_scores, index=[window])
         test_scores_df["time_range"] = f"{df_history_test['time'].min()}~{df_history_test['time'].max()}"
@@ -355,14 +387,12 @@ class Tester:
         """
         测试集预测数据
         """
-        # Ensure y_test and y_pred are 1D arrays
         y_test = np.array(y_test).flatten()
         y_pred = np.array(y_pred).flatten()
+        mape_meta = Tester._build_relative_mape_mask(y_test)
+        valid_mask = mape_meta["valid_mask"]
 
-        # Data collection for plot
         cv_plot_df_window = pd.DataFrame()
-        
-        # Ensure the slice is valid and matches the length of y_pred/y_test
         time_slice = df_history_test["time"]
         if len(time_slice) != len(y_pred):
             logger.warning(f"{log_prefix} Length mismatch for plotting data: time_slice ({len(time_slice)}) vs y_pred ({len(y_pred)}). Adjusting to min length.")
@@ -370,11 +400,15 @@ class Tester:
             cv_plot_df_window["time"] = time_slice.iloc[:min_len].values
             cv_plot_df_window["Y_trues"] = y_test[:min_len]
             cv_plot_df_window["Y_preds"] = y_pred[:min_len]
+            valid_mask = valid_mask[:min_len]
         else:
             cv_plot_df_window["time"] = time_slice.values
             cv_plot_df_window["Y_trues"] = y_test
             cv_plot_df_window["Y_preds"] = y_pred
-            
+        cv_plot_df_window["mape_valid"] = valid_mask
+        cv_plot_df_window["Y_trues_plot"] = np.where(valid_mask, cv_plot_df_window["Y_trues"], np.nan)
+        cv_plot_df_window["Y_preds_plot"] = np.where(valid_mask, cv_plot_df_window["Y_preds"], np.nan)
+
         return cv_plot_df_window
 
     def _calc_features_corr(self, df: pd.DataFrame, train_features: List[str]):
@@ -394,7 +428,6 @@ class Tester:
     # ------------------------------
     @staticmethod
     def test_results_save(args, log_prefix: str, test_scores_df, cv_plot_df, train_outlier_report=None):
-        # 测试结果数据保存
         test_scores_df.to_csv(args.test_results_dir.joinpath("test_scores_df.csv"), index=False, encoding="utf-8")
         cv_plot_df.to_csv(args.test_results_dir.joinpath("cv_plot_df.csv"), index=False, encoding="utf-8")
         if train_outlier_report is None:
@@ -404,10 +437,6 @@ class Tester:
             index=False,
             encoding="utf-8",
         )
-        # if getattr(self.args, "disable_plotting", False):
-        #     logger.info(f"{log_prefix} Skip plotting because disable_plotting=True.")
-        #     return
-        # 测试结果数据可视化
         required_cols = {"Y_preds", "Y_trues"}
         if cv_plot_df.empty or not required_cols.issubset(set(cv_plot_df.columns)):
             logger.warning(f"{log_prefix} No valid prediction columns found for visualization.")
@@ -416,12 +445,11 @@ class Tester:
             logger.warning(f"{log_prefix} No data to visualize for test prediction.")
             return
         import matplotlib.pyplot as plt
-        # 画布
         plt.figure(figsize=(25, 8))
-        # 创建折线图
-        plt.plot(cv_plot_df["Y_trues"].values, label="Trues", lw=1.7)
-        plt.plot(cv_plot_df["Y_preds"].values, label="Preds", lw=1.7, ls="-.")
-        # 增强视觉效果
+        plot_true_col = "Y_trues_plot" if "Y_trues_plot" in cv_plot_df.columns else "Y_trues"
+        plot_pred_col = "Y_preds_plot" if "Y_preds_plot" in cv_plot_df.columns else "Y_preds"
+        plt.plot(cv_plot_df[plot_true_col].values, label="Trues", lw=1.7)
+        plt.plot(cv_plot_df[plot_pred_col].values, label="Preds", lw=1.7, ls="-.")
         plt.legend()
         plt.xlabel("Time")
         plt.ylabel("Value")

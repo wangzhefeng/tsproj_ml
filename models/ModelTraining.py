@@ -44,7 +44,6 @@ LOGGING_LABEL = Path(__file__).name[:-3]
 
 UNIVARIATE_PRED_METHODS = {
     "univariate-single-multistep-direct-pointwise",
-    "univariate-single-multistep-direct-output",
     "univariate-single-multistep-direct",
     "univariate-single-multistep-recursive",
     "univariate-single-multistep-direct-recursive",

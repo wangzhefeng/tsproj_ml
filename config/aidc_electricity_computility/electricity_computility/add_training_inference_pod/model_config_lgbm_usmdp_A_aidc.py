@@ -8,7 +8,7 @@ from dataclasses import dataclass, field
 class ModelConfig:
     """
     模型配置类
-    包含 AIDC 数据集 USMDO 所需配置项
+    包含数据路径、特征设置、模型参数等所有配置项
     """
     model_cfgs: Optional[Dict] = field(default=None, repr=False)
     # ------------------------------
@@ -19,7 +19,7 @@ class ModelConfig:
     # ------------------------------
     # 模型运行模式
     # ------------------------------
-    is_testing: bool = True  # 模型测试
+    is_testing: bool = False  # 模型测试
     is_forecasting: bool = True  # 模型预测
     history_days: int = 31  # 历史数据天数
     predict_days: int = 1  # 预测未来 1 天的数据
@@ -31,8 +31,8 @@ class ModelConfig:
     # ------------------------------
     # 目标时间序列配置
     # ------------------------------
-    data_dir: str = "./dataset/aidc_electricity_computility/electricity_computility/add_training_jobs/"
-    data_path: str = "A3_F2_201_A_dataset_new.csv"
+    data_dir: str = "./dataset/aidc_electricity_computility/electricity_computility/add_training_inference_pod/"
+    data_path: str = "dataset_electricity_with_computility_A.csv"
     freq: str = "5min"
     target_ts_feat: str = "time"
     target: str = "y"
@@ -183,7 +183,7 @@ class ModelConfig:
 
     # 可选预测方法:
     # - 单变量预测单变量
-    pred_method: str = "univariate-single-multistep-direct-pointwise"       # USMDO [单变量(包含目标变量的所有内生变量)->单变量(目标内生变量)]多步逐点 direct 预测
+    pred_method: str = "univariate-single-multistep-direct-pointwise"       # USMDP [单变量(包含目标变量的所有内生变量)->单变量(目标内生变量)]多步逐点 direct 预测
     # pred_method: str = "univariate-single-multistep-direct"              # USMD [单变量(包含目标变量的所有内生变量)->单变量(目标内生变量)]多步直接预测
     # pred_method: str = "univariate-single-multistep-recursive"           # USMR [单变量(包含目标变量的所有内生变量)->单变量(目标内生变量)]多步递归预测
     # pred_method: str = "univariate-single-multistep-direct-recursive"    # USMDR [单变量(包含目标变量的所有内生变量)->单变量(目标内生变量)]多步直接递归预测

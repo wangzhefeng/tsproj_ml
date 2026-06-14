@@ -147,7 +147,7 @@ uv run python config/generate_configs.py \
 
 默认单变量策略矩阵：
 
-- `usmdo`
+- `usmdp`
 - `usmd`
 - `usmr`
 - `usmdr`

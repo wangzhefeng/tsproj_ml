@@ -1,4 +1,4 @@
-# B — catboost — direct-pointwise
+# A1_IT — lightgbm — direct-pointwise
 base_config: config.univariate_config
 overrides:
   runtime:
@@ -9,7 +9,7 @@ overrides:
     window_days: 15
     now_time: '2026-06-11T23:55:00'
   target_series:
-    data_dir: ./dataset/aidc_electricity_computility/electricity/2026-06-11/demand_load/AIDC/route_B/
+    data_dir: ./dataset/aidc_electricity_computility/electricity/2026-06-11/demand_load/A1_IT/
     data_path: df_power.csv
     freq: 5min
     target_ts_feat: count_data_time
@@ -31,5 +31,15 @@ overrides:
     - 1728
     - 2016
   model_strategy:
-    model_type: catboost
+    model_type: lightgbm
     pred_method: univariate-single-multistep-direct-pointwise
+  performance:
+    window_parallel_workers: 4
+  # preprocessing:
+  #   scale_target: false
+  #   target_scaler_type: standard
+  #   inverse_target: false
+  # advanced_features:
+  #   enable_advanced_features: false
+  #   enable_rolling_features: false
+  #   enable_diff_features: false

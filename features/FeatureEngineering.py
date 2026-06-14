@@ -989,10 +989,7 @@ class FeatureEngineer:
         self.endogenous_feature_engineer.reset()
         lags = self.args.lags if getattr(self.args, "enable_lags_features", True) else []
 
-        if self.args.pred_method in {
-            "univariate-single-multistep-direct-pointwise",
-            "univariate-single-multistep-direct-output",
-        }:
+        if self.args.pred_method in "univariate-single-multistep-direct-pointwise":
             df_series_featured = self.endogenous_feature_engineer.extend_direct_multi_step_targets(
                 df = df_series_featured,
                 target = target_feature,

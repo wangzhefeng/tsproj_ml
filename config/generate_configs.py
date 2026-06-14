@@ -16,7 +16,7 @@
         --target h_total_use \
         --target-ts-feat count_data_time \
         --models lightgbm,xgboost,catboost \
-        --strategies usmdo,usmd,usmr,usmdr \
+        --strategies usmdp,usmd,usmr,usmdr \
         --now-time 2026-01-01T00:00:00 \
         --freq 5min \
         --variant A \
@@ -52,7 +52,7 @@ if str(ROOT) not in sys.path:
 # ---------------------------------------------------------------------------
 
 METHOD_SHORT = {
-    "usmdo": "univariate-single-multistep-direct-pointwise",
+    "usmdp": "univariate-single-multistep-direct-pointwise",
     "usmd": "univariate-single-multistep-direct",
     "usmr": "univariate-single-multistep-recursive",
     "usmdr": "univariate-single-multistep-direct-recursive",
@@ -329,7 +329,7 @@ def parse_args(argv: Optional[List[str]] = None):
 
   # 指定模型和策略
   %(prog)s --dataset ./dataset/aidc_electricity_computility/gaoweichao_compare/ \\
-           --target y --models catboost --strategies usmd,usmdo --variant A
+           --target y --models catboost --strategies usmd,usmdp --variant A
         """,
     )
 
@@ -366,8 +366,8 @@ def parse_args(argv: Optional[List[str]] = None):
     # ---- 模型与策略 ----
     parser.add_argument("--models", type=str, default="lightgbm,xgboost,catboost",
                         help="模型列表, 逗号分隔 (默认: lightgbm,xgboost,catboost)")
-    parser.add_argument("--strategies", type=str, default="usmdo,usmd,usmr,usmdr",
-                        help="策略列表, 逗号分隔 (默认: usmdo,usmd,usmr,usmdr)")
+    parser.add_argument("--strategies", type=str, default="usmdp,usmd,usmr,usmdr",
+                        help="策略列表, 逗号分隔 (默认: usmdp,usmd,usmr,usmdr)")
 
     # ---- 输出相关 ----
     parser.add_argument("--config-dir", type=str, default=None,

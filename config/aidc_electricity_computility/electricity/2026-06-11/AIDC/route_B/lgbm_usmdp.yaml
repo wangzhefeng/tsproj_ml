@@ -1,4 +1,4 @@
-# A1_01a — lightgbm — direct-pointwise
+# B — lightgbm — direct-pointwise
 base_config: config.univariate_config
 overrides:
   runtime:
@@ -6,10 +6,10 @@ overrides:
     is_forecasting: true
     history_days: 65
     predict_days: 1
-    window_days: 2
+    window_days: 15
     now_time: '2026-06-11T23:55:00'
   target_series:
-    data_dir: ./dataset/aidc_electricity_computility/electricity/2026-06-11/demand_load/A1_01a/
+    data_dir: ./dataset/aidc_electricity_computility/electricity/2026-06-11/demand_load/AIDC/route_B/
     data_path: df_power.csv
     freq: 5min
     target_ts_feat: count_data_time
@@ -21,15 +21,15 @@ overrides:
     weather_history_path: df_weather.csv
     weather_future_path: df_weather_future.csv
     weather_ts_feat: ts
-  # time_lag_features:
-  #   lags:
-  #   - 288
-  #   - 576
-  #   - 864
-  #   - 1152
-  #   - 1440
-  #   - 1728
-  #   - 2016
+  time_lag_features:
+    lags:
+    - 288
+    - 576
+    - 864
+    - 1152
+    - 1440
+    - 1728
+    - 2016
   model_strategy:
     model_type: lightgbm
     pred_method: univariate-single-multistep-direct-pointwise

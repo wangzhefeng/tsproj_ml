@@ -141,12 +141,13 @@ class Model:
                 max_lag = max(effective_lags)
                 min_train_rows = self.window_len - self.horizon
                 if min_train_rows <= max_lag:
-                    min_window_days = -(-(max_lag + self.horizon) // self.n_per_day)
+                    min_window_days = (max_lag + self.horizon) // self.n_per_day + 1
                     raise ValueError(
                         f"{self.log_prefix} window_days ({self.args.window_days}) too small for lags: "
                         f"sliding-window train rows = window_len - horizon = {self.window_len} - {self.horizon} "
                         f"= {min_train_rows}, but max(lags) = {max_lag}. "
-                        f"Lag features would be all-NaN. Need window_days >= {min_window_days}."
+                        f"Lag features would be all-NaN. To keep at least one valid lag row, "
+                        f"need window_days >= {min_window_days}."
                     )
         # ------------------------------
         # 日志打印
@@ -597,7 +598,7 @@ def main():
     # ------------------------------
     # 配置文件切换区域
     # ------------------------------
-    CONFIG_YAML = "config/aidc_electricity_computility/electricity/2026-06-11/A1_01a/cab_usmdp.yaml"
+    CONFIG_YAML = "config/aidc_electricity_computility/electricity/2026-06-11/A1_01a/lgbm_usmr.yaml"
     # ------------------------------
     # 创建模型配置参数
     # ------------------------------

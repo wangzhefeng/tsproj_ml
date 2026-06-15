@@ -598,7 +598,7 @@ def main():
     # ------------------------------
     # 配置文件切换区域
     # ------------------------------
-    CONFIG_YAML = "config/aidc_electricity_computility/electricity/2026-06-11/A1_01a/lgbm_usmr.yaml"
+    CONFIG_YAML = "config/aidc_electricity_computility/electricity/2026-06-11/A1_IT/lgbm_usmd.yaml"
     # ------------------------------
     # 创建模型配置参数
     # ------------------------------

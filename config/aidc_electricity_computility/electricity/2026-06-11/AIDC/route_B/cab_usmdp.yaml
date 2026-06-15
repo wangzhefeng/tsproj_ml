@@ -41,8 +41,8 @@ overrides:
   eval_mask:
     mode: absolute
     percentile: 5.0
-    min_value: 12000.0
     max_value: 16500.0
+    min_value: 12000.0
   performance:
     window_parallel_workers: 8
     multi_output_n_jobs: 1

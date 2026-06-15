@@ -3,7 +3,7 @@ base_config: config.univariate_config
 overrides:
   runtime:
     is_testing: true
-    is_forecasting: true
+    is_forecasting: false
     history_days: 65
     predict_days: 1
     window_days: 15
@@ -23,6 +23,18 @@ overrides:
     weather_ts_feat: ts
   time_lag_features:
     lags:
+    - 1
+    - 2
+    - 3
+    - 4
+    - 5
+    - 6
+    - 7
+    - 8
+    - 9
+    - 10
+    - 11
+    - 12
     - 288
     - 576
     - 864
@@ -30,6 +42,34 @@ overrides:
     - 1440
     - 1728
     - 2016
+  advanced_features:
+    enable_advanced_features: true
+    enable_rolling_features: true
+    rolling_columns:
+    - y
+    rolling_windows:
+    - 12
+    - 24
+    - 72
+    - 288
+    rolling_stats:
+    - mean
+    - std
+    - min
+    - max
+    enable_expanding_features: false
+    enable_diff_features: true
+    diff_columns:
+    - y
+    diff_periods:
+    - 1
+    - 12
+    - 288
+    enable_pct_change_features: false
+    enable_time_since_features: false
+    enable_cyclical_features: false
+    enable_interaction_features: false
+    enable_polynomial_features: false
   model_strategy:
     model_type: lightgbm
     pred_method: univariate-single-multistep-direct
@@ -50,8 +90,8 @@ overrides:
   eval_mask:
     mode: percentile
     percentile: 5.0
-    min_value: null
     max_value: null
+    min_value: null
   performance:
     window_parallel_workers: 8
     multi_output_n_jobs: 8
@@ -64,3 +104,7 @@ overrides:
   #   enable_advanced_features: false
   #   enable_rolling_features: false
   #   enable_diff_features: false
+  output:
+    checkpoints_dir: ./results/pretrained_models_advf_usmd/
+    test_results_dir: ./results/results_test_advf_usmd/
+    pred_results_dir: ./results/results_forecast_advf_usmd/

@@ -50,8 +50,8 @@ overrides:
   eval_mask:
     mode: percentile
     percentile: 5.0
-    min_value: null
     max_value: null
+    min_value: null
   performance:
     window_parallel_workers: 8
     multi_output_n_jobs: 8

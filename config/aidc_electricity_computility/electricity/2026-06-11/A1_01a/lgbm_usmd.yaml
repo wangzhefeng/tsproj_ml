@@ -33,6 +33,17 @@ overrides:
   model_strategy:
     model_type: lightgbm
     pred_method: univariate-single-multistep-direct
+  train_outlier:
+    enable_train_outlier_handling: true
+    train_outlier_method: local_interpolate
+    high_outlier_threshold: null
+    high_outlier_max_run_points: 4
+    rise_outlier_max_run_points: 2
+    rise_rebound_min_abs_diff: 1000.0
+    low_outlier_threshold: null
+    low_outlier_max_run_points: 4
+    drop_outlier_max_run_points: 2
+    drop_rebound_min_abs_diff: 1000.0
   training_enhancement:
     enable_time_decay_sample_weight: true
     decay_halflife_days: 14  # 半衰期天数,按数据漂移速度调整

@@ -7,6 +7,8 @@
 | 文件 | 职责 |
 |---|---|
 | `data_loader.py` | 读取目标、日期、天气 CSV；构造历史/未来时间轴；统一目标列为 `y` |
+| `computility_process.py` | 从 AIDC 算力原始指标聚合出 `df_computility.csv`，再与 `df_power.csv` 合并为 `df.csv` |
+| `fill_missing.py` | 对 `df.csv` 缺失补 0 + 重算派生列，产出稠密版 `df_filled.csv`（不改动原文件） |
 | `outlier_handling.py` | 滑窗测试训练段异常处理，不修改测试真实值 |
 | `outlier_process.py` | 离线负荷数据异常标记、清洗和图片输出 |
 
@@ -55,3 +57,29 @@
 - 图片结果：`df_power_anomalies.png`
 
 离线清洗输出的文件名可变更，但 CSV 内容契约不应随意改变。
+
+## 算力数据合并与缺失填充
+
+`computility_process.py` 把 `算力数据/<room>/` 下 training / inference / pod 三类原始指标
+按 `count_data_time` 聚合（min/max/mean/std/count，可加量再加 sum，gpu_util 加 busy_*，
+gpu_power_usage 加 high_power_*），再叠加结构衍生列（占比/比值/present 标志）与时序
+衍生列（diff/rolling），产出 `df_computility.csv`；最后与 `df_power.csv` 按
+`count_data_time` 内连接，写出 `df.csv`（215 列：时间 + `h_total_use` + 213 特征）。
+
+`df.csv` 的缺失几乎全部来自 `inference_*`：推理空窗期整段无数据（A1_201 最严重，
+约 33% 时刻缺推理；最长连续缺口 ~60h）。`pod_*` 全程完整，`training_*` 基本完整，
+`h_total_use` 与 `count_data_time` 100% 完整。
+
+`fill_missing.py` 对 `df.csv` 做「原始列补 0 + 重算派生」产出稠密版 `df_filled.csv`：
+
+- 162 个原始聚合列 `NaN→0`（语义：无负载 = 0）；
+- 丢弃旧派生列，在补 0 的基础列上重算 51 个派生列（保证内部一致），残存滚动热身
+  NaN 一并补 0；
+- `*_present` 标志保留区分：真无负载 → 0；仅功耗指标漏采但负载在 → 1
+  （A3_01e 有约 24% 的推理"缺失"实为功耗漏采，可借 present 降权）；
+- 时间列、目标列原样保留，列顺序与原 `df.csv` 一致。
+
+`df_filled.csv` 未自动接入管线（当前配置以 `df_power.csv` 为目标），多变量场景按需
+切换数据源。两个脚本默认根目录均为
+`dataset/aidc_electricity_computility/electricity/2026-06-11/demand_load`。
+

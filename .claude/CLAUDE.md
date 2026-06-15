@@ -96,3 +96,4 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 - 日志目录：`logs/main/`（直接运行 `main.py`）
 - `log_util.py` 在模块导入时执行，`LOG_NAME` 用 `os.environ.get('LOG_NAME', 'main')` 提供默认值
 - 在这台机器上如果 `uv` 触发 `~/.cache/uv` 权限问题，优先使用 `UV_CACHE_DIR=.uv_cache`
+- 算力房间数据：`df.csv`（含 NaN，`inference_*` 在推理空窗期整段缺失）与稠密版 `df_filled.csv`（`fill_missing.py`：原始列补 0 + 重算派生）都在 `demand_load/<room>/` 下；当前配置仍以 `df_power.csv` 为目标，二者按需接入多变量场景

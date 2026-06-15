@@ -49,6 +49,8 @@ tsproj_ml/
 ├── dataset/                     # ETT-small 和 AIDC electricity 数据
 ├── data_provider/
 │   ├── data_loader.py           # 数据读取、时间轴构造、历史/未来切片
+│   ├── computility_process.py   # 算力指标聚合并与 df_power.csv 合并为 df.csv
+│   ├── fill_missing.py          # df.csv 缺失补 0 + 重算派生，产出 df_filled.csv
 │   ├── outlier_handling.py      # 滑窗训练段异常处理
 │   └── outlier_process.py       # 原始负荷数据异常标记、清洗与可视化
 ├── features/

@@ -56,6 +56,30 @@ from utils.log_util import logger
 LOGGING_LABEL = Path(__file__).name[:-3]
 
 
+def _filter_supported_lags(lags: List[int], n_samples: int, log_prefix: str) -> List[int]:
+    """
+    丢弃当前样本数无法支撑的 lag(否则 shift(lag) 产出全 NaN 列,模型无声退化)。
+
+    Args:
+        lags: 配置的滞后步数列表。
+        n_samples: 当前 df_series 的行数;至少需 lag < n_samples 才能产出 1 个有效值。
+        log_prefix: 日志前缀。
+
+    Returns:
+        过滤后的 lag 列表(保留原相对顺序)。
+    """
+    if not lags:
+        return []
+    usable = [int(l) for l in lags if int(l) < n_samples]
+    dropped = [int(l) for l in lags if int(l) >= n_samples]
+    if dropped:
+        logger.warning(
+            f"{log_prefix} 丢弃超出可用样本数的 lag {dropped} "
+            f"(当前样本数 {n_samples},需 lag < 样本数);剩余 lags={usable}。"
+        )
+    return usable
+
+
 class ExogenousFeatureEngineer:
     """
     exogenous features engineering
@@ -987,9 +1011,10 @@ class FeatureEngineer:
         """
         df_series_featured = df_series.copy()
         self.endogenous_feature_engineer.reset()
-        lags = self.args.lags if getattr(self.args, "enable_lags_features", True) else []
+        configured_lags = self.args.lags if getattr(self.args, "enable_lags_features", True) else []
+        lags = _filter_supported_lags(configured_lags, n_samples=len(df_series), log_prefix=self.log_prefix)
 
-        if self.args.pred_method in "univariate-single-multistep-direct-pointwise":
+        if self.args.pred_method == "univariate-single-multistep-direct-pointwise":
             df_series_featured = self.endogenous_feature_engineer.extend_direct_multi_step_targets(
                 df = df_series_featured,
                 target = target_feature,

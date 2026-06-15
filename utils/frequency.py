@@ -6,6 +6,7 @@
 
 from pathlib import Path
 
+import numpy as np
 from pandas.tseries.frequencies import to_offset
 
 
@@ -62,6 +63,41 @@ def resolve_samples_per_day(freq: str) -> int:
         )
 
     return int(quotient)
+
+
+def compute_time_decay_weights(
+    n_samples: int,
+    n_per_day: int,
+    halflife_days: float,
+) -> "np.ndarray":
+    """
+    指数时间衰减样本权重:越近期的样本权重越大,用于抑制概念漂移导致的远期噪声。
+
+    权重定义为 ``w_i = exp(-λ * age_i)``,其中 ``λ = ln(2) / (halflife_days * n_per_day)``,
+    ``age`` 以"距序列末尾的步数"度量(末尾样本 age=0,权重最大;最老样本 age=n_samples-1)。
+    最终权重归一化到均值 1,避免改变有效学习率量级。
+
+    Args:
+        n_samples: 训练样本行数。
+        n_per_day: 每天样本数(由 ``resolve_samples_per_day`` 得到)。
+        halflife_days: 半衰期(天);权重衰减到一半所需的样本年龄。
+
+    Returns:
+        一维权重数组,长度为 ``n_samples``,均值≈1。
+    """
+    import numpy as np
+
+    if n_samples <= 0:
+        return np.asarray([], dtype=float)
+    halflife_steps = max(1.0, float(halflife_days) * float(n_per_day))
+    lam = np.log(2) / halflife_steps
+    # 末尾样本 age=0(最新),最老样本 age=n_samples-1
+    ages = np.arange(n_samples - 1, -1, -1, dtype=float)
+    weights = np.exp(-lam * ages)
+    mean_w = weights.mean()
+    if mean_w > 0:
+        weights = weights / mean_w  # 归一化到均值1,保持学习率量级
+    return weights
 
 
 

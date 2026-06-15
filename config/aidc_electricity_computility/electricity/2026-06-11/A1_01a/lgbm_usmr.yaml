@@ -33,6 +33,9 @@ overrides:
   model_strategy:
     model_type: lightgbm
     pred_method: univariate-single-multistep-recursive
+  training_enhancement:
+    enable_time_decay_sample_weight: true
+    decay_halflife_days: 14  # 半衰期天数,按数据漂移速度调整
   eval_mask:
     mode: percentile
     percentile: 5.0

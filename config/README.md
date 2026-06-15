@@ -119,6 +119,34 @@ dataset/aidc_electricity_computility/electricity/2026-06-11/demand_load/AIDC/rou
 - 日期外生：`df_date.csv`、`df_date_future.csv`
 - 天气外生：`df_weather.csv`、`df_weather_future.csv`
 
+## 配置分组参考
+
+YAML 的 `overrides` 按 `config_sections.py` 的 dataclass 分组。常用分组说明：
+
+### training_enhancement
+
+训练阶段的调参、增强与损失配置。所有字段均有 dataclass 默认值，YAML 只需写需要覆盖的字段。
+
+| 字段 | 类型 | 默认值 | 说明 |
+|---|---|---|---|
+| `patience` | int | `100` | 早停轮数 |
+| `enable_time_decay_sample_weight` | bool | `false` | 时间衰减样本权重：近期样本权重更高，抑制概念漂移导致的远期噪声 |
+| `decay_halflife_days` | float | `14.0` | 半衰期（天）：样本权重衰减到一半所需的样本年龄；仅在 `enable_time_decay_sample_weight: true` 时生效 |
+| `perform_tuning` | bool | `false` | 是否执行超参数随机搜索 |
+| `enable_data_augmentation` | bool | `false` | 是否启用数据增强 |
+| `enable_feature_selection` | bool | `false` | 是否启用特征选择 |
+| `enable_auto_learning_rate` | bool | `false` | 是否自动估算学习率 |
+
+> 时间衰减权重兼容性：默认配置下（`multi_output_strategy: multioutput` + `predict_type: point` + `enable_ensemble: false`）所有 7 种预测方法均支持；`regressor_chain` 多输出、`ensemble`、多输出分位数路径不支持，开启时会 warning 跳过（不阻塞运行）。
+
+启用示例：
+
+```yaml
+  training_enhancement:
+    enable_time_decay_sample_weight: true
+    decay_halflife_days: 14
+```
+
 ## 配置生成
 
 `config/generate_configs.py` 用于从 dataset 叶子目录批量生成分组 YAML 配置。生成前建议使用

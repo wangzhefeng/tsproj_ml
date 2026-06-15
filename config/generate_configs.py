@@ -178,6 +178,8 @@ YAML_OVERRIDE_GROUPS = {
     ],
     "training_enhancement": [
         "patience",
+        "enable_time_decay_sample_weight",
+        "decay_halflife_days",
         "perform_tuning",
         "tuning_metric",
         "tuning_n_splits",

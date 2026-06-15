@@ -197,7 +197,8 @@ class LightGBMModel(BaseModel):
             eval_set: Optional[tuple] = None,
             eval_metric: str = "mae",
             early_stopping_rounds: int = 100,
-            verbose: bool = False):
+            verbose: bool = False,
+            sample_weight: Optional[Any] = None):
         """
         训练 LightGBM 模型
         
@@ -209,6 +210,7 @@ class LightGBMModel(BaseModel):
             eval_metric: 评估指标
             early_stopping_rounds: 早停轮数
             verbose: 是否显示训练过程
+            sample_weight: 训练样本权重(例如时间衰减权重)
         """
         # 设置训练参数
         fit_params = {}
@@ -220,6 +222,8 @@ class LightGBMModel(BaseModel):
             fit_params["verbose"] = verbose
         if categorical_feature is not None:
             fit_params["categorical_feature"] = categorical_feature
+        if sample_weight is not None:
+            fit_params["sample_weight"] = sample_weight
         # 兼容不同 lightgbm 版本的 sklearn API 参数差异（例如 fit 不再接受 verbose）
         supported_fit_params = set(inspect.signature(self.model.fit).parameters.keys())
         fit_params = {k: v for k, v in fit_params.items() if k in supported_fit_params}
@@ -278,7 +282,8 @@ class XGBoostModel(BaseModel):
             eval_set: Optional[tuple] = None,
             eval_metric: str = "mae",
             early_stopping_rounds: int = 50,
-            verbose: bool = False):
+            verbose: bool = False,
+            sample_weight: Optional[Any] = None):
         """
         训练XGBoost模型
         
@@ -289,6 +294,7 @@ class XGBoostModel(BaseModel):
             eval_metric: 评估指标
             early_stopping_rounds: 早停轮数
             verbose: 是否显示训练过程s
+            sample_weight: 训练样本权重(例如时间衰减权重)
         """
         # 设置训练参数
         fit_params = {}
@@ -298,6 +304,8 @@ class XGBoostModel(BaseModel):
             fit_params['early_stopping_rounds'] = early_stopping_rounds
         if verbose is not None:
             fit_params['verbose'] = verbose
+        if sample_weight is not None:
+            fit_params['sample_weight'] = sample_weight
         # 模型训练
         self.model.fit(X, y, **fit_params)
         self.is_fitted = True
@@ -367,7 +375,8 @@ class CatBoostModel(BaseModel):
             eval_metric: str = "mae",
             early_stopping_rounds: int = 50,
             native_train_data = None,
-            native_eval_data = None):
+            native_eval_data = None,
+            sample_weight: Optional[Any] = None):
         """
         训练 CatBoost 模型
         
@@ -378,6 +387,8 @@ class CatBoostModel(BaseModel):
             eval_metric: 评估指标
             categorical_feature: 类别特征列表
             early_stopping_rounds: 早停轮数
+            native_train_data: 原生训练容器(Pool);权重已内嵌其中,无需再传 sample_weight
+            sample_weight: 非 native 路径的样本权重(例如时间衰减权重);native 路径忽略此项
         """
         # 设置训练参数
         fit_params = {}
@@ -386,6 +397,9 @@ class CatBoostModel(BaseModel):
             fit_params["early_stopping_rounds"] = early_stopping_rounds
         if categorical_feature is not None and native_train_data is None:
             fit_params["cat_features"] = categorical_feature
+        # 非 native 路径下补充样本权重;native 路径权重已在 Pool 中
+        if sample_weight is not None and native_train_data is None:
+            fit_params["sample_weight"] = sample_weight
         supported_fit_params = set(inspect.signature(self.model.fit).parameters.keys())
         fit_params = {k: v for k, v in fit_params.items() if k in supported_fit_params}
         # 模型训练
@@ -441,7 +455,8 @@ class RandomForestModel(BaseModel):
         """
         训练 Random Forest 模型
         """
-        self.model.fit(X, y)
+        sample_weight = kwargs.get("sample_weight")
+        self.model.fit(X, y, sample_weight=sample_weight)
         self.is_fitted = True
 
         return self

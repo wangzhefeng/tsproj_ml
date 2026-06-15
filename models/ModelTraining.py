@@ -37,6 +37,7 @@ from models.ModelEnsemble import TimeSeriesEnsembleRegressor, EnsembleConfig
 from models.learning_rate import resolve_learning_rate
 from models.losses import get_loss_name_from_model_params, get_scorer_by_loss_name
 from utils.log_util import logger
+from utils.frequency import compute_time_decay_weights
 
 # global variable
 LOGGING_LABEL = Path(__file__).name[:-3]
@@ -143,6 +144,8 @@ class Trainer:
             random_state=int(getattr(self.args, "augmentation_random_state", 42)),
             log_prefix=self.log_prefix,
         )
+        # 时间衰减样本权重;在 train() 中按启用开关计算,baseline 路径自行计算
+        self.sample_weight = None
 
     def _resolve_worker_count(self, attr_name: str, default: int = 1) -> int:
         value = int(getattr(self.args, attr_name, default) or default)
@@ -254,6 +257,14 @@ class Trainer:
         Y_train_df_processed = self._ensure_target_frame(Y_train_df)
         lgbm_categorical = list(categorical_features or [])
         model_type = self.model_type
+        # baseline 路径不走增强/学习率块,这里独立计算时间衰减权重
+        baseline_sample_weight = None
+        if bool(getattr(self.args, "enable_time_decay_sample_weight", False)):
+            baseline_sample_weight = compute_time_decay_weights(
+                n_samples=len(X_train_df_processed),
+                n_per_day=int(getattr(self.args, "n_per_day", 1) or 1),
+                halflife_days=float(getattr(self.args, "decay_halflife_days", 14.0)),
+            )
         estimator_wrapper = self.model_factory.create_model(
             model_type=model_type,
             model_params=self.model_params,
@@ -268,8 +279,15 @@ class Trainer:
                 fit_kwargs["categorical_feature"] = lgbm_categorical
             if str(model_type).lower() in ["catboost", "cat"] and lgbm_categorical is not None:
                 fit_kwargs["categorical_feature"] = lgbm_categorical
+            if baseline_sample_weight is not None and str(model_type).lower() in ["lightgbm", "lgb", "xgboost", "xgb"]:
+                fit_kwargs["sample_weight"] = baseline_sample_weight
             model.fit(X_train_df_processed, np.ravel(Y_train_df_processed.values), **fit_kwargs)
         else:
+            if baseline_sample_weight is not None:
+                logger.warning(
+                    f"{self.log_prefix} time-decay sample_weight not supported for "
+                    f"multi-output baseline (sklearn wrapper); skipped."
+                )
             logger.info(
                 f"{self.log_prefix} FourMethods baseline training multi-output regressor "
                 f"with {Y_train_df_processed.shape[1]} outputs..."
@@ -324,8 +342,15 @@ class Trainer:
                 fit_kwargs_q["categorical_feature"] = lgbm_categorical
             if str(model_type).lower() in ["catboost", "cat"] and getattr(self, "native_data_bundle", {}).get("enabled"):
                 fit_kwargs_q["native_train_data"] = self.native_data_bundle.get("train_native")
+            if getattr(self, "sample_weight", None) is not None and str(model_type).lower() in ["lightgbm", "lgb", "xgboost", "xgb"]:
+                fit_kwargs_q["sample_weight"] = self.sample_weight
             model_q.fit(X_train_df_processed, np.ravel(Y_train_df_processed.values), **fit_kwargs_q)
         else:
+            if getattr(self, "sample_weight", None) is not None:
+                logger.warning(
+                    f"{self.log_prefix} time-decay sample_weight not supported for "
+                    f"multi-output quantile (sklearn wrapper); skipped."
+                )
             model_q = self._build_multi_output_model(estimator_wrapper_q.model, n_outputs=Y_train_df_processed.shape[1])
             model_q.fit(X_train_df_processed, Y_train_df_processed)
         return quantile, model_q
@@ -381,6 +406,7 @@ class Trainer:
             X_train=X_train,
             y_train=Y_train,
             categorical_features=categorical_features,
+            sample_weight=getattr(self, "sample_weight", None),
         )
         if native_bundle.get("enabled"):
             logger.info(
@@ -400,9 +426,13 @@ class Trainer:
         目前仅对 LightGBM 点预测接入 early stopping。
         """
         fit_kwargs = {}
+        sample_weight = getattr(self, "sample_weight", None)
         y_values = np.ravel(Y_train_df_processed.values)
         model_type = str(self.model_type).lower()
         if model_type not in ["lightgbm", "lgb"]:
+            # 非 LightGBM(如 XGBoost 单输出点预测)也支持 sample_weight,直接传全量
+            if sample_weight is not None and model_type in ["xgboost", "xgb"]:
+                fit_kwargs["sample_weight"] = sample_weight
             return X_train_df_processed, y_values, fit_kwargs
 
         total_rows = len(X_train_df_processed)
@@ -410,6 +440,8 @@ class Trainer:
         val_size = max(horizon, int(math.floor(total_rows * 0.1)))
         if total_rows <= (val_size + 1):
             logger.info(f"{self.log_prefix} Skip early stopping: insufficient rows ({total_rows}) for val_size={val_size}.")
+            if sample_weight is not None:
+                fit_kwargs["sample_weight"] = sample_weight
             return X_train_df_processed, y_values, fit_kwargs
 
         X_fit = X_train_df_processed.iloc[:-val_size].copy()
@@ -419,6 +451,9 @@ class Trainer:
         fit_kwargs["eval_set"] = [(X_val, y_val)]
         fit_kwargs["eval_metric"] = "mae"
         fit_kwargs["early_stopping_rounds"] = int(getattr(self.args, "patience", 100) or 100)
+        if sample_weight is not None:
+            # 权重需与 X_fit 行对齐(切掉验证段)
+            fit_kwargs["sample_weight"] = sample_weight[:-val_size]
         logger.info(
             f"{self.log_prefix} Early stopping enabled: "
             f"train_rows={len(X_fit)}, val_rows={len(X_val)}, patience={fit_kwargs['early_stopping_rounds']}"
@@ -437,6 +472,7 @@ class Trainer:
         """
         fit_kwargs_list = [{} for _ in range(Y_train_df_processed.shape[1])]
         model_type = str(self.model_type).lower()
+        sample_weight = getattr(self, "sample_weight", None)
         if model_type not in ["lightgbm", "lgb", "xgboost", "xgb", "catboost", "cat"]:
             return X_train_df_processed, Y_train_df_processed, fit_kwargs_list
 
@@ -448,6 +484,10 @@ class Trainer:
                 f"{self.log_prefix} Skip multi-output early stopping: "
                 f"insufficient rows ({total_rows}) for val_size={val_size}."
             )
+            # 无验证切分时,各输出直接用全量权重
+            if sample_weight is not None:
+                for output_idx in range(Y_train_df_processed.shape[1]):
+                    fit_kwargs_list[output_idx]["sample_weight"] = sample_weight
             return X_train_df_processed, Y_train_df_processed, fit_kwargs_list
 
         X_fit = X_train_df_processed.iloc[:-val_size].copy()
@@ -455,6 +495,8 @@ class Trainer:
         X_val = X_train_df_processed.iloc[-val_size:].copy()
         Y_val = Y_train_df_processed.iloc[-val_size:].copy()
         patience = int(getattr(self.args, "patience", 100) or 100)
+        # 多输出权重按训练切分对齐(各输出共享同一权重序列)
+        sw_fit = sample_weight[:-val_size] if sample_weight is not None else None
 
         for output_idx in range(Y_train_df_processed.shape[1]):
             fit_kwargs = {
@@ -462,6 +504,8 @@ class Trainer:
                 "eval_metric": "mae",
                 "early_stopping_rounds": patience,
             }
+            if sw_fit is not None:
+                fit_kwargs["sample_weight"] = sw_fit
             if model_type in ["lightgbm", "lgb"] and categorical_features:
                 fit_kwargs["categorical_feature"] = categorical_features
             if model_type in ["catboost", "cat"] and native_data_bundle.get("enabled"):
@@ -557,6 +601,22 @@ class Trainer:
             X_train_df, Y_train_df, categorical_features
         )
         # ------------------------------
+        # 时间衰减样本权重(在增强之后计算:增强行位于末尾,age 最大,自然获得低权重)
+        # ------------------------------
+        self.sample_weight = None
+        if bool(getattr(self.args, "enable_time_decay_sample_weight", False)):
+            self.sample_weight = compute_time_decay_weights(
+                n_samples=len(X_train_df),
+                n_per_day=int(getattr(self.args, "n_per_day", 1) or 1),
+                halflife_days=float(getattr(self.args, "decay_halflife_days", 14.0)),
+            )
+            logger.info(
+                f"{self.log_prefix} Time-decay sample_weight enabled: "
+                f"n_samples={len(self.sample_weight)}, halflife_days="
+                f"{getattr(self.args, 'decay_halflife_days', 14.0)}, "
+                f"latest_weight={float(self.sample_weight[-1]):.4f}, oldest_weight={float(self.sample_weight[0]):.4f}"
+            )
+        # ------------------------------
         # 学习率配置（固定 or 自动）
         # ------------------------------
         resolved_lr = resolve_learning_rate(
@@ -599,6 +659,10 @@ class Trainer:
         # 模型训练
         # ------------------------------
         if self.args.enable_ensemble and str(getattr(self.args, "predict_type", "point")).lower() == "point":
+            if getattr(self, "sample_weight", None) is not None:
+                logger.warning(
+                    f"{self.log_prefix} time-decay sample_weight not supported for ensemble path; skipped."
+                )
             logger.info(f"{self.log_prefix} Ensemble models: {self.args.ensemble_models}, Ensemble method: {self.args.ensemble_method}")
             logger.info(f"{self.log_prefix} {'-' * 50}")
            
@@ -664,6 +728,11 @@ class Trainer:
                     logger.info(f"{self.log_prefix} {'-' * 71}")
                     strategy = str(getattr(self.args, "multi_output_strategy", "multioutput")).lower()
                     if strategy == "regressor_chain":
+                        if getattr(self, "sample_weight", None) is not None:
+                            logger.warning(
+                                f"{self.log_prefix} time-decay sample_weight not supported for "
+                                f"RegressorChain/MultiOutputRegressor; skipped."
+                            )
                         estimator_wrapper = self.model_factory.create_model(
                             model_type=model_type,
                             model_params=self.model_params,

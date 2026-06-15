@@ -173,6 +173,8 @@ overrides:
     series_id_feature: series_id
   training_enhancement:
     patience: 100
+    enable_time_decay_sample_weight: true
+    decay_halflife_days: 14  # 半衰期天数,按数据漂移速度调整
     perform_tuning: false
     tuning_metric: neg_mean_absolute_error
     tuning_n_splits: 3

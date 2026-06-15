@@ -133,6 +133,21 @@ class Model:
         block_size = int(getattr(self.args, 'block_size', 0) or 0)
         if block_size < 0:
             raise ValueError(f"{self.log_prefix} block_size ({block_size}) must be >= 0.")
+        # 滞后特征可用性校验:滑窗训练行数 = window_len - horizon 必须 > max(lags),
+        # 否则 shift(lag) 产出的滞后列全 NaN,模型无声退化(仅对真正构造 lag 列的方法校验)。
+        if self.args.pred_method != "univariate-single-multistep-direct-pointwise":
+            effective_lags = [int(l) for l in (getattr(self.args, "lags", []) or []) if int(l) > 0]
+            if effective_lags:
+                max_lag = max(effective_lags)
+                min_train_rows = self.window_len - self.horizon
+                if min_train_rows <= max_lag:
+                    min_window_days = -(-(max_lag + self.horizon) // self.n_per_day)
+                    raise ValueError(
+                        f"{self.log_prefix} window_days ({self.args.window_days}) too small for lags: "
+                        f"sliding-window train rows = window_len - horizon = {self.window_len} - {self.horizon} "
+                        f"= {min_train_rows}, but max(lags) = {max_lag}. "
+                        f"Lag features would be all-NaN. Need window_days >= {min_window_days}."
+                    )
         # ------------------------------
         # 日志打印
         # ------------------------------
@@ -582,7 +597,7 @@ def main():
     # ------------------------------
     # 配置文件切换区域
     # ------------------------------
-    CONFIG_YAML = "config/aidc_electricity_computility/electricity/2026-06-11/AIDC/route_B/lgbm_usmdp.yaml"
+    CONFIG_YAML = "config/aidc_electricity_computility/electricity/2026-06-11/A1_01a/cab_usmdp.yaml"
     # ------------------------------
     # 创建模型配置参数
     # ------------------------------

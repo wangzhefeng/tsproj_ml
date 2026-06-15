@@ -44,6 +44,9 @@ overrides:
     low_outlier_max_run_points: 4
     drop_outlier_max_run_points: 2
     drop_rebound_min_abs_diff: 1000.0
+  training_enhancement:
+    enable_time_decay_sample_weight: true
+    decay_halflife_days: 14  # 半衰期天数,按数据漂移速度调整
   eval_mask:
     mode: absolute
     percentile: 5.0

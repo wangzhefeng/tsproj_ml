@@ -255,6 +255,10 @@ class TrainingEnhancementConfig:
 
     patience: int = 100  # 早停步数
 
+    # 时间衰减样本权重:近期样本权重更高,抑制概念漂移导致的远期噪声污染。
+    enable_time_decay_sample_weight: bool = False
+    decay_halflife_days: float = 14.0  # 半衰期(天):样本权重衰减到一半所需的样本年龄
+
     # 模型超参数调优
     perform_tuning: bool = False
     tuning_metric: str = "neg_mean_absolute_error"

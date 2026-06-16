@@ -49,7 +49,6 @@ tsproj_ml/
 ├── dataset/                     # ETT-small 和 AIDC electricity 数据
 ├── data_provider/
 │   ├── data_loader.py           # 数据读取、时间轴构造、历史/未来切片
-│   ├── computility_process.py   # 算力指标聚合并与 df_power.csv 合并为 df.csv
 │   ├── fill_missing.py          # df.csv 缺失补 0 + 重算派生，产出 df_filled.csv
 │   ├── outlier_handling.py      # 滑窗训练段异常处理
 │   └── outlier_process.py       # 原始负荷数据异常标记、清洗与可视化
@@ -66,7 +65,12 @@ tsproj_ml/
 │   ├── ModelEnsemble.py         # 融合模型
 │   ├── ModelSaveLoad.py         # pickle 保存/加载
 │   └── losses.py, learning_rate.py
-├── scripts/                     # main.py 直跑脚本和维护说明
+├── scripts/                     # main.py 直跑脚本、AIDC 专项脚本和维护说明
+│   ├── aidc/                    # AIDC 算力处理、结果融合和领导汇报脚本
+│   │   ├── computility_process.py
+│   │   ├── select_aidc_leadership_days.py
+│   │   ├── fuse_aidc_results.py
+│   │   └── adjust_leadership_day_summary_metrics.py
 │   ├── production_sync.md       # 生产包同步边界、可迁移模块和同步记录
 │   ├── run_model_test.sh        # main.py 直跑测试脚本
 │   └── template.sh              # main.py 直跑模板脚本
@@ -110,7 +114,7 @@ uv run python main.py
 使用方式：
 
 1. 打开 [main.py](/Users/wangzf/projects/tsproj_ml/main.py)。
-2. 修改 `CONFIG_YAML`，指向要测试的本地 YAML 配置文件。
+2. 修改 `CONFIG_YAML`，指向要测试的本地 YAML 配置文件；当前默认值是 `config/aidc_electricity_computility/electricity/2026-06-11/A1_01a/lgbm_msmd.yaml`。
 3. 如需调整数据路径、模型类型、预测策略、测试与预测开关，直接修改对应 YAML。
 4. 运行 `uv run python main.py`。
 
@@ -183,7 +187,7 @@ uv run python config/generate_configs.py \
 | `AIDC/route_A` | `config/aidc_electricity_computility/electricity/2026-06-11/AIDC/route_A` | 12 |
 | `AIDC/route_B` | `config/aidc_electricity_computility/electricity/2026-06-11/AIDC/route_B` | 12 |
 
-这些配置的目标文件均为 `df_power.csv`，时间列为 `count_data_time`，目标列为 `h_total_use`，频率为 `5min`，`now_time` 为 `2026-06-11T23:55:00`。所有 YAML 均以 `config.univariate_config` 作为 `base_config`。
+这些配置共用时间列 `count_data_time`、目标列 `h_total_use`、频率 `5min` 和 `now_time = 2026-06-11T23:55:00`。其中单变量 YAML 继续以 `df_power.csv` 为目标文件并使用 `config.univariate_config`，4 个房间场景新增的 `lgbm_msmd.yaml`、`lgbm_msmr.yaml`、`lgbm_msmdr.yaml` 为多变量配置，使用 `config.multivariate_config`，目标文件为筛后的 `df_selected.csv`。
 
 ## 数据契约
 
@@ -213,6 +217,28 @@ uv run python config/generate_configs.py \
 - `config/multivariate_config.py` 默认指向 `dataset/ETT-small/ETTm1.csv`，目标列为 `OT`，多变量输入列为 `HUFL`、`HULL`、`MUFL`、`MULL`、`LUFL`、`LULL`。
 - `config/multivariate_config.py` 默认启用 `dataset/ETT-small/ETTm1_exogenous/` 下的仿真日期类型和天气外生数据。
 - 单变量默认 `pred_method` 为 `univariate-single-multistep-direct`；多变量默认 `pred_method` 为 `multivariate-single-multistep-direct-recursive`。
+
+### AIDC 算力链路
+
+`scripts/aidc/computility_process.py` 是当前 AIDC 电力/算力融合的权威入口。它读取
+`electricity/算力数据/<room>/training|inference|pod/` 下的原始指标，先生成
+`df_computility.csv`，再与 `df_power.csv` 按 `count_data_time` 内连接生成 `df.csv`，
+并继续产出 `df_selected.csv` 与 `feature_selection_report.csv`。
+
+当前算力特征分三层：
+
+- 原始聚合特征：按 5 分钟统计 `min/max/mean/std/count`，容量/功率类额外保留 `sum`
+- 状态与结构特征：如 `training_active_jobs`、`*_gpu_busy_ratio`、
+  `training_to_inference_power_ratio`、`pod_overhead_ratio`
+- 时序动态特征：如 `*_diff_1`、`*_diff_3`、`*_roll_mean_3`、`*_roll_mean_12`
+
+当前四个房间场景的 `df.csv` 均为 215 列：
+
+- `count_data_time`
+- `h_total_use`
+- 213 个算力特征
+
+多变量 LGBM 配置现优先使用筛后的 `df_selected.csv`；单变量配置继续使用 `df_power.csv`。
 
 ## 关键配置
 

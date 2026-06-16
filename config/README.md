@@ -112,7 +112,7 @@ dataset/aidc_electricity_computility/electricity/2026-06-11/demand_load/AIDC/rou
 
 常见字段：
 
-- 目标文件：`df_power.csv`
+- 目标文件：单变量默认 `df_power.csv`；4 个房间场景的多变量 LGBM 配置使用 `df_selected.csv`
 - 时间列：`count_data_time`
 - 目标列：`h_total_use`
 - 频率：`5min`

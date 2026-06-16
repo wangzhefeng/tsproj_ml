@@ -272,6 +272,16 @@ class Model:
         logger.info(f"{self.log_prefix} Testing windows selected: {window_indices}")
         
         window_workers = int(getattr(self.args, "window_parallel_workers", 1) or 1)
+        if (
+            str(getattr(self.args, "pred_method", "")) == "multivariate-single-multistep-direct"
+            and window_workers > 1
+        ):
+            logger.warning(
+                f"{self.log_prefix} pred_method=multivariate-single-multistep-direct with "
+                f"window_parallel_workers={window_workers} will force multi_output_n_jobs=1 "
+                f"and model_thread_count=1 during testing. This usually slows msmd testing; "
+                f"prefer window_parallel_workers=1."
+            )
         payload_args = copy.deepcopy(self.args)
         if window_workers > 1:
             payload_args.multi_output_n_jobs = 1
@@ -598,7 +608,7 @@ def main():
     # ------------------------------
     # 配置文件切换区域
     # ------------------------------
-    CONFIG_YAML = "config/aidc_electricity_computility/electricity/2026-06-11/A1_IT/lgbm_usmd.yaml"
+    CONFIG_YAML = "config/aidc_electricity_computility/electricity/2026-06-11/A1_01a/lgbm_msmd.yaml"
     # ------------------------------
     # 创建模型配置参数
     # ------------------------------

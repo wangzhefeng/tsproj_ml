@@ -15,15 +15,17 @@
 - `models/losses.py`
 - `models/learning_rate.py`
 - `data_provider/outlier_handling.py`
+- `utils/eval_mask.py`（MAPE 评估掩码与绘图掩码，被 `ModelTesting`/`ModelForecasting` 依赖）
+- `utils/frequency.py`（采样频率解析，被 `FeatureEngineering` 依赖）
 
 ## 禁止直接回迁内容
 
 - 生产 API main class
 - `BaseModelMainClass`
-- 算力数据预处理
+- 算力数据预处理（含 `data_provider/fill_missing.py`、`data_provider/computility_process.py` 兼容 shim、`scripts/aidc/*`——属算力（AIDC）场景特定，不是通用数据质量逻辑，不回迁）
 - 生产输出字段
 - 生产路径 import
-- dataset/results 文件
+- dataset 和 results 文件
 
 ## 同步记录模板
 
@@ -51,3 +53,17 @@
 - 是否需要迁移项目 2：需要时同步 `data_provider/outlier_handling.py` 与 `config/config_sections.py` 的 `TrainOutlierConfig`；新规则按需启用。
 - 项目 2 适配点：保持生产输入输出、算力预处理、部署父类不变；注意 low 默认关、rise 默认开。
 - 验证结果：本仓库 `tests/test_outlier_handling.py` 6 用例通过。
+
+### 2026-06-14 eval-mask-configurable
+
+- 变更摘要：`EvalMaskConfig`（mode/percentile/min_value/max_value）取代硬编码 P5 分位；MAPE 指标与绘图掩码统一到 `utils/eval_mask.build_eval_mask`，移除 `_build_relative_mape_mask`/`_build_plot_mask` 重复实现；`test_scores_df.csv` 新增 `MAPE Upper Threshold` 列；72 个 aidc electricity yaml 填入 eval_mask 默认值。
+- 是否需要迁移项目 2：需要时同步 `utils/eval_mask.py`、`config/config_sections.py` 的 `EvalMaskConfig`，以及 `ModelTesting.py`/`ModelForecasting.py` 的 `build_eval_mask` 调用点；yaml 默认值按生产场景重新填写。
+- 项目 2 适配点：保持生产输入输出、算力预处理、部署父类不变；仅替换 MAPE/掩码计算入口与对应配置节。
+- 验证结果：以本仓库 `unittest` 与 aidc electricity 真实配置滑窗测试为准。
+
+### 2026-06-15 feature-lags-and-drift-fix
+
+- 变更摘要：`features/FeatureEngineering.py` 新增 `_filter_supported_lags`——丢弃超出当前样本数的 lag，避免 `shift(lag)` 产出全 NaN 列导致模型无声退化；修复 `pred_method in "univariate-single-multistep-direct-pointwise"` 字符串子串误匹配为 `==` 精确判断。
+- 是否需要迁移项目 2：需要时同步 `features/FeatureEngineering.py` 的 lag 过滤逻辑与 `pred_method` 判断修复。
+- 项目 2 适配点：保持生产输入输出、算力预处理、部署父类不变；仅同步特征工程的 lag 处理。
+- 验证结果：以本仓库真实配置（含启用 lags 的 usmd 配置）滑窗测试为准。

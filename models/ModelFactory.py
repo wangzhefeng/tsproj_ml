@@ -6,16 +6,17 @@
 # * Email       : zfwang7@gmail.com
 # * Date        : 2026-02-11
 # * Version     : 1.0.021110
-# * Description : description
+# * Description : 生产环境模型工厂
 # * Link        : link
-# * Requirement : 相关模块版本需求(例如: numpy >= 2.1.0)
+# * Requirement : lightgbm, catboost, pandas, numpy
 # ***************************************************
 
 # python libraries
-from pathlib import Path
-from abc import ABC, abstractmethod
-from typing import Dict, Any, Optional
+import copy
 import inspect
+from abc import ABC, abstractmethod
+from pathlib import Path
+from typing import Any, Dict, Optional
 
 import numpy as np
 import pandas as pd
@@ -70,7 +71,7 @@ class BaseModel(ABC):
     所有具体模型必须继承此类并实现抽象方法
     """
     
-    def __init__(self, params: Dict[str, Any], log_prefix: str="BaseModel"):
+    def __init__(self, params: Dict[str, Any], log_prefix: str="BaseModel", log_params: bool = True):
         """
         初始化模型
         
@@ -81,6 +82,7 @@ class BaseModel(ABC):
         self.params = params
         self.model = None
         self.is_fitted = False
+        self.log_params = log_params
     
     @abstractmethod
     def fit(self, X: pd.DataFrame, y: pd.Series, **kwargs):
@@ -130,9 +132,19 @@ class BaseModel(ABC):
         return None
 
 
-# TODO 这个函数的作用是什么？
 def _filter_valid_params(params: Dict[str, Any], estimator_cls) -> Dict[str, Any]:
-    valid = set(inspect.signature(estimator_cls.__init__).parameters.keys())
+    """
+    按估计器 ``__init__`` 签名过滤模型参数，仅保留该估计器显式声明的合法参数。
+
+    对于通过 ``**kwargs`` 透传原生参数的封装（签名含 VAR_KEYWORD），
+    无法用显式签名做白名单，直接原样返回，避免误删合法配置。
+    """
+    signature = inspect.signature(estimator_cls.__init__)
+    # 部分 sklearn 风格封装通过 **kwargs 接收额外原生参数，
+    # 这类模型不能用显式签名做白名单过滤，否则会错误丢弃合法配置。
+    if any(param.kind == inspect.Parameter.VAR_KEYWORD for param in signature.parameters.values()):
+        return dict(params)
+    valid = set(signature.parameters.keys())
     valid.discard("self")
     return {k: v for k, v in params.items() if k in valid}
 
@@ -141,7 +153,7 @@ def _filter_valid_params(params: Dict[str, Any], estimator_cls) -> Dict[str, Any
 # ##############################
 class LightGBMModel(BaseModel):
     """
-    LightGBM模型封装
+    LightGBM 模型封装
     
     特点:
     - 训练速度快
@@ -150,46 +162,43 @@ class LightGBMModel(BaseModel):
     - 适合大数据集
     """
 
-    def __init__(self, params: Dict[str, Any], log_prefix: str="LightGBMModel"):
-        super().__init__(params)
-        # 设置默认参数
-        default_params = {
-            "boosting_type": "gbdt",
-            "objective": "regression_l1",  # "regression_l1": L1 loss or MAE, "regression": L2 loss or MSE
-            "metric": "mae",  # if objective=="regression_l1": mae, if objective=="regression": rmse
-            "n_estimators": 1000,
-            "learning_rate": 0.05,
-            "max_bin": 31,
-            "num_leaves": 31,
-            'max_depth': -1,
-            "feature_fraction": 0.8,
-            "bagging_fraction": 0.8,
-            "bagging_freq": 1,
-            "lambda_l1": 0.5,
-            "lambda_l2": 0.5,
-            "verbose": -1,
-            "n_jobs": -1,
-            'random_state': 42,
-            # "force_row_wise": True,
-            "force_col_wise": True,
-        }
-        # 参数合并（用户参数优先，避免被默认值覆盖）
-        merged_params = {**default_params, **(params or {})}
+    DEFAULT_PARAMS = {
+        "boosting_type": "gbdt",
+        "objective": "regression_l1",
+        "metric": "mae",
+        "n_estimators": 300,
+        "learning_rate": 0.05,
+        "max_bin": 63,
+        "num_leaves": 31,
+        "max_depth": -1,
+        "feature_fraction": 0.8,
+        "bagging_fraction": 0.8,
+        "bagging_freq": 1,
+        "verbose": -1,
+        "n_jobs": -1,
+        "random_state": 42,
+        "force_col_wise": True,
+    }
+
+    def __init__(self, params: Dict[str, Any], log_prefix: str="LightGBMModel", log_params: bool = True):
+        super().__init__(params, log_prefix=log_prefix, log_params=log_params)
+        merged_params = {**copy.deepcopy(self.DEFAULT_PARAMS), **(params or {})}
         # 模型参数
-        # self.params = _filter_valid_params(default_params, lgb.LGBMRegressor)
         self.params = merged_params
-        logger.info(f"{log_prefix} model parameters: \n{self.params}")
+        if self.log_params:
+            logger.info(f"{log_prefix} model parameters: \n{self.params}")
         # 模型构建
         self.model = lgb.LGBMRegressor(**self.params)
     
     def fit(self, 
-            X: pd.DataFrame, 
-            y: pd.Series, 
+            X: pd.DataFrame,
+            y: pd.Series,
             categorical_feature: Optional[list] = None,
             eval_set: Optional[tuple] = None,
             eval_metric: str = "mae",
             early_stopping_rounds: int = 100,
-            verbose: bool = False):
+            verbose: bool = False,
+            sample_weight: Optional[Any] = None):
         """
         训练 LightGBM 模型
         
@@ -201,17 +210,20 @@ class LightGBMModel(BaseModel):
             eval_metric: 评估指标
             early_stopping_rounds: 早停轮数
             verbose: 是否显示训练过程
+            sample_weight: 训练样本权重(例如时间衰减权重)
         """
         # 设置训练参数
         fit_params = {}
         if eval_set is not None:
-            fit_params['eval_set'] = eval_set
-            fit_params['eval_metric'] = eval_metric
-            fit_params['callbacks'] = [lgb.early_stopping(early_stopping_rounds, verbose=verbose)]
+            fit_params["eval_set"] = eval_set
+            fit_params["eval_metric"] = eval_metric
+            fit_params["callbacks"] = [lgb.early_stopping(early_stopping_rounds, verbose=verbose)]
         if verbose is not None:
-            fit_params['verbose'] = verbose
+            fit_params["verbose"] = verbose
         if categorical_feature is not None:
-            fit_params['categorical_feature'] = categorical_feature
+            fit_params["categorical_feature"] = categorical_feature
+        if sample_weight is not None:
+            fit_params["sample_weight"] = sample_weight
         # 兼容不同 lightgbm 版本的 sklearn API 参数差异（例如 fit 不再接受 verbose）
         supported_fit_params = set(inspect.signature(self.model.fit).parameters.keys())
         fit_params = {k: v for k, v in fit_params.items() if k in supported_fit_params}
@@ -241,24 +253,25 @@ class XGBoostModel(BaseModel):
     - 广泛应用
     """
 
-    def __init__(self, params: Dict[str, Any], log_prefix: str="XGBoostModel"):
-        super().__init__(params)
-        # 设置默认参数
-        default_params = {
-            'objective': 'reg:squarederror',
-            'n_estimators': 1000,
-            'learning_rate': 0.05,
-            'max_depth': 6,
-            'subsample': 0.8,
-            'colsample_bytree': 0.8,
-            'n_jobs': -1,
-            'random_state': 42,
-        }
-        # 参数合并（用户参数优先，避免被默认值覆盖）
-        merged_params = {**default_params, **(params or {})}
+    DEFAULT_PARAMS = {
+        "objective": "reg:absoluteerror",
+        "eval_metric": "mae",
+        "n_estimators": 300,
+        "learning_rate": 0.05,
+        "max_depth": 6,
+        "subsample": 0.8,
+        "colsample_bytree": 0.8,
+        "n_jobs": -1,
+        "random_state": 42,
+    }
+
+    def __init__(self, params: Dict[str, Any], log_prefix: str="XGBoostModel", log_params: bool = True):
+        super().__init__(params, log_prefix=log_prefix, log_params=log_params)
+        merged_params = {**copy.deepcopy(self.DEFAULT_PARAMS), **(params or {})}
         # 模型参数
         self.params = _filter_valid_params(merged_params, xgb.XGBRegressor)
-        logger.info(f"{log_prefix} model parameters: \n{self.params}")
+        if self.log_params:
+            logger.info(f"{log_prefix} model parameters: \n{self.params}")
         # 模型构建
         self.model = xgb.XGBRegressor(**self.params)
         self.log_prefix = log_prefix
@@ -269,7 +282,8 @@ class XGBoostModel(BaseModel):
             eval_set: Optional[tuple] = None,
             eval_metric: str = "mae",
             early_stopping_rounds: int = 50,
-            verbose: bool = False):
+            verbose: bool = False,
+            sample_weight: Optional[Any] = None):
         """
         训练XGBoost模型
         
@@ -280,6 +294,7 @@ class XGBoostModel(BaseModel):
             eval_metric: 评估指标
             early_stopping_rounds: 早停轮数
             verbose: 是否显示训练过程s
+            sample_weight: 训练样本权重(例如时间衰减权重)
         """
         # 设置训练参数
         fit_params = {}
@@ -289,6 +304,8 @@ class XGBoostModel(BaseModel):
             fit_params['early_stopping_rounds'] = early_stopping_rounds
         if verbose is not None:
             fit_params['verbose'] = verbose
+        if sample_weight is not None:
+            fit_params['sample_weight'] = sample_weight
         # 模型训练
         self.model.fit(X, y, **fit_params)
         self.is_fitted = True
@@ -306,8 +323,8 @@ class XGBoostModel(BaseModel):
 
 class CatBoostModel(BaseModel):
     """
-    CatBoost模型封装
-    
+    CatBoost 模型封装
+     
     特点:
     - 自动处理类别特征
     - 对默认参数不敏感
@@ -315,44 +332,53 @@ class CatBoostModel(BaseModel):
     - 性能优秀
     """
     
-    def __init__(self, params: Dict[str, Any], log_prefix: str="CatBoostModel"):
-        super().__init__(params)
-        # 设置默认参数
-        default_params = {
-            'iterations': 1000,
-            'learning_rate': 0.05,
-            'depth': 6,
-            'verbose': False,
-            'random_state': 42,
-            'thread_count': -1,
-        }
-        # 参数合并（用户参数优先，避免被默认值覆盖）
-        merged_params = {**default_params, **(params or {})}
+    DEFAULT_PARAMS = {
+        "loss_function": "MAE",
+        "eval_metric": "MAE",
+        "iterations": 300,
+        "learning_rate": 0.05,
+        "depth": 6,
+        "verbose": False,
+        "random_seed": 42,
+        "thread_count": 1,
+        "allow_writing_files": False,
+    }
+
+    def __init__(self, params: Dict[str, Any], log_prefix: str="CatBoostModel", log_params: bool = True):
+        super().__init__(params, log_prefix=log_prefix, log_params=log_params)
+        merged_params = {**copy.deepcopy(self.DEFAULT_PARAMS), **(params or {})}
         # CatBoost 的 iterations / n_estimators / num_boost_round / num_trees 是同义参数，只能保留一个
-        iteration_aliases = ['n_estimators', 'num_boost_round', 'num_trees']
+        iteration_aliases = ["n_estimators", "num_boost_round", "num_trees"]
         for alias in iteration_aliases:
             if alias in merged_params:
-                merged_params['iterations'] = merged_params.pop(alias)
+                merged_params["iterations"] = merged_params.pop(alias)
+        # CatBoost 的 random_seed / random_state 是同义参数，只能保留一个
+        if "random_seed" in merged_params and "random_state" in merged_params:
+            merged_params.pop("random_state", None)
         # 清理从其他树模型配置复用过来的不兼容参数
-        incompatible_params = ['num_leaves', 'feature_fraction', 'bagging_fraction', 'bagging_freq']
+        incompatible_params = ["num_leaves", "feature_fraction", "bagging_fraction", "bagging_freq", "force_col_wise"]
         for param in incompatible_params:
             merged_params.pop(param, None)
         # 模型参数
         self.params = _filter_valid_params(merged_params, cab.CatBoostRegressor)
-        logger.info(f"{log_prefix} model parameters: \n{self.params}")
+        if self.log_params:
+            logger.info(f"{log_prefix} model parameters: \n{self.params}")
         # 模型构建
         self.model = cab.CatBoostRegressor(**self.params)
         self.log_prefix = log_prefix
     
-    def fit(self, 
-            X: pd.DataFrame, 
+    def fit(self,
+            X: pd.DataFrame,
             y: pd.Series,
             categorical_feature: Optional[list] = None,
             eval_set: Optional[tuple] = None,
             eval_metric: str = "mae",
-            early_stopping_rounds: int = 50):
+            early_stopping_rounds: int = 50,
+            native_train_data = None,
+            native_eval_data = None,
+            sample_weight: Optional[Any] = None):
         """
-        训练CatBoost模型
+        训练 CatBoost 模型
         
         Args:
             X: 训练特征
@@ -361,17 +387,25 @@ class CatBoostModel(BaseModel):
             eval_metric: 评估指标
             categorical_feature: 类别特征列表
             early_stopping_rounds: 早停轮数
+            native_train_data: 原生训练容器(Pool);权重已内嵌其中,无需再传 sample_weight
+            sample_weight: 非 native 路径的样本权重(例如时间衰减权重);native 路径忽略此项
         """
         # 设置训练参数
         fit_params = {}
         if eval_set is not None:
-            fit_params['eval_set'] = eval_set
-            fit_params['eval_metric'] = eval_metric
-            fit_params['early_stopping_rounds'] = early_stopping_rounds
-        if categorical_feature is not None:
-            fit_params['cat_features'] = categorical_feature
+            fit_params["eval_set"] = native_eval_data if native_eval_data is not None else eval_set
+            fit_params["early_stopping_rounds"] = early_stopping_rounds
+        if categorical_feature is not None and native_train_data is None:
+            fit_params["cat_features"] = categorical_feature
+        # 非 native 路径下补充样本权重;native 路径权重已在 Pool 中
+        if sample_weight is not None and native_train_data is None:
+            fit_params["sample_weight"] = sample_weight
+        supported_fit_params = set(inspect.signature(self.model.fit).parameters.keys())
+        fit_params = {k: v for k, v in fit_params.items() if k in supported_fit_params}
         # 模型训练
-        self.model.fit(X, y, **fit_params)
+        fit_input = native_train_data if native_train_data is not None else X
+        fit_target = None if native_train_data is not None else y
+        self.model.fit(fit_input, fit_target, **fit_params)
         self.is_fitted = True
 
         return self
@@ -396,8 +430,8 @@ class RandomForestModel(BaseModel):
     - 并行化训练
     """
     
-    def __init__(self, params: Dict[str, Any], log_prefix: str="RandomForestModel"):
-        super().__init__(params)
+    def __init__(self, params: Dict[str, Any], log_prefix: str="RandomForestModel", log_params: bool = True):
+        super().__init__(params, log_prefix=log_prefix, log_params=log_params)
         # 设置默认参数
         default_params = {
             'n_estimators': 100,
@@ -411,7 +445,8 @@ class RandomForestModel(BaseModel):
         merged_params = {**default_params, **(params or {})}
         # 模型参数
         self.params = _filter_valid_params(merged_params, RandomForestRegressor)
-        logger.info(f"{log_prefix} model parameters: \n{self.params}")
+        if self.log_params:
+            logger.info(f"{log_prefix} model parameters: \n{self.params}")
         # 模型构建
         self.model = RandomForestRegressor(**self.params)
         self.log_prefix = log_prefix
@@ -420,7 +455,8 @@ class RandomForestModel(BaseModel):
         """
         训练 Random Forest 模型
         """
-        self.model.fit(X, y)
+        sample_weight = kwargs.get("sample_weight")
+        self.model.fit(X, y, sample_weight=sample_weight)
         self.is_fitted = True
 
         return self
@@ -444,20 +480,45 @@ class ModelFactory:
     """
     # 支持的模型映射
     _models = {
-        'lightgbm': LightGBMModel,
-        'lgb': LightGBMModel,
-        'xgboost': XGBoostModel,
-        'xgb': XGBoostModel,
-        'catboost': CatBoostModel,
-        'cat': CatBoostModel,
-        'randomforest': RandomForestModel,
-        'rf': RandomForestModel,
+        "lightgbm": LightGBMModel,
+        "lgb": LightGBMModel,
+        "xgboost": XGBoostModel,
+        "xgb": XGBoostModel,
+        "catboost": CatBoostModel,
+        "cat": CatBoostModel,
+        "randomforest": RandomForestModel,
+        "rf": RandomForestModel,
     }
 
     def __init__(self, log_prefix: str = "ModelFactory"):
         self.log_prefix = log_prefix
+
+    @staticmethod
+    def _normalize_model_type(model_type: str) -> str:
+        model_type = str(model_type).lower()
+        if model_type not in ModelFactory._models:
+            supported = ", ".join(ModelFactory._models.keys())
+            raise ValueError(
+                f"不支持的模型类型: {model_type}\n"
+                f"支持的模型: {supported}"
+            )
+        return model_type
+
+    @classmethod
+    def get_default_model_params(cls, model_type: str) -> Dict[str, Any]:
+        normalized_type = cls._normalize_model_type(model_type)
+        model_class = cls._models[normalized_type]
+
+        return copy.deepcopy(getattr(model_class, "DEFAULT_PARAMS", {}))
+
+    @classmethod
+    def resolve_model_params(cls, model_type: str, model_params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        resolved = cls.get_default_model_params(model_type)
+        resolved.update(copy.deepcopy(model_params or {}))
+
+        return resolved
     
-    def create_model(self, model_type: str, model_params: Dict[str, Any]) -> BaseModel:
+    def create_model(self, model_type: str, model_params: Dict[str, Any], log_params: bool = True) -> BaseModel:
         """
         创建模型实例
         
@@ -478,17 +539,16 @@ class ModelFactory:
             >>> y_pred = model.predict(X_test)
         """
         # 模型类型
-        model_type = model_type.lower()
-        if model_type not in ModelFactory._models:
-            supported = ', '.join(ModelFactory._models.keys())
-            raise ValueError(
-                f"不支持的模型类型: {model_type}\n"
-                f"支持的模型: {supported}"
-            )
+        model_type = self._normalize_model_type(model_type)
         # 创建模型实例
         model_class = ModelFactory._models[model_type]
-
-        return model_class(model_params, log_prefix=f"{self.log_prefix} {model_type.capitalize()}")
+        resolved_params = self.resolve_model_params(model_type, model_params)
+        
+        return model_class(
+            resolved_params,
+            log_prefix=f"{self.log_prefix} {model_type.capitalize()}",
+            log_params=log_params,
+        )
     
     @staticmethod
     def list_models() -> list:
@@ -502,47 +562,7 @@ class ModelFactory:
 
 # 测试代码 main 函数
 def main():
-    import numpy as np
-    import pandas as pd
-    from sklearn.model_selection import train_test_split
-    
-    # 创建示例数据
-    np.random.seed(42)
-    X = pd.DataFrame(np.random.randn(1000, 10), columns=[f'feature_{i}' for i in range(10)])
-    y = pd.Series(np.random.randn(1000), name='target')
-    
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
-    
-    # 测试不同模型
-    for model_type in ['lightgbm', 'xgboost', 'catboost']:
-        print(f"\n测试 {model_type} 模型:")
-        print("=" * 50)
-        
-        # 创建模型
-        params = {'n_estimators': 100, 'learning_rate': 0.1}
-        model = ModelFactory.create_model(model_type, params)
-        
-        # 训练
-        model.fit(X_train, y_train, eval_set=(X_test, y_test))
-        
-        # 预测
-        y_pred = model.predict(X_test)
-        
-        # 评估
-        from sklearn.metrics import mean_squared_error, mean_absolute_error
-        mse = mean_squared_error(y_test, y_pred)
-        mae = mean_absolute_error(y_test, y_pred)
-        
-        print(f"MSE: {mse:.4f}")
-        print(f"MAE: {mae:.4f}")
-        
-        # 特征重要性
-        importance = model.get_feature_importance()
-        if importance is not None:
-            print(f"前5个重要特征:")
-            top_features = np.argsort(importance)[-5:][::-1]
-            for i, idx in enumerate(top_features, 1):
-                print(f"  {i}. {X.columns[idx]}: {importance[idx]:.4f}")
+    pass
 
 if __name__ == "__main__":
     main()

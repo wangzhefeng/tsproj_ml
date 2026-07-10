@@ -1,156 +1,110 @@
-# 基于机器学习回归模型的时间序列多步预测方法调研（含原理图）
+# models 模块说明
 
-本文档专注于 **机器学习回归模型**（LightGBM / XGBoost / CatBoost / RandomForest / Linear Models）在多步预测中的常用方法，并与当前实现 `models/ModelForecasting.py` 逐项对比。
+`models/` 是训练、测试、预测、融合和模型持久化层。CSV 读取由
+`data_provider/` 完成，特征构造由 `features/` 完成。
 
-## 1. 业界常用多步预测方法与原理
+## 文件职责
 
-> 图示规范（v2）：统一配色、统一编号（图1-图6）、中文标注、统一图例口径（优点/缺点/适用场景）。
+| 文件 | 职责 |
+|---|---|
+| `ModelFactory.py` | 统一创建 LightGBM、XGBoost、CatBoost、RandomForest 封装 |
+| `ModelTraining.py` | 训练、调参、分位数模型、融合、特征选择和数据增强入口 |
+| `ModelTesting.py` | 滑窗测试、窗口内训练预测、指标计算和测试结果保存 |
+| `ModelForecasting.py` | 7 种多步预测策略的推理实现 |
+| `ModelEnsemble.py` | averaging、weighted、stacking、blending 融合回归器 |
+| `ModelSaveLoad.py` | pickle 模型和目标缩放器保存/加载 |
+| `learning_rate.py` | 固定/自动学习率解析 |
+| `losses.py` | 模型损失名称和调参 scorer 推断 |
 
+## 训练
 
-### 1.1 Recursive（递归法）
+`Trainer.train()` 输入已经构造好的 `X_train`、`Y_train` 和类别特征列表。
+主流程包括：
 
-核心原理：
-- 训练一个一步模型 `f1`，只学 `y(t+1)`。
-- 推理时把 `y_hat(t+1)` 回填到历史，再预测 `y_hat(t+2)`，循环到 `H`。
+1. 可选数据增强。
+2. 可选特征选择。
+3. 可选自动学习率。
+4. 特征缩放和目标缩放。
+5. 可选超参数搜索。
+6. 按 `predict_type` 和 `enable_ensemble` 进入点预测、融合或分位数训练。
 
-![Recursive Principle](../docs/assets/forecasting_imgs/method_recursive_v2.png)
+支持模型：
 
-适用性：
-- 优点：训练成本最低、模型管理最简单。
-- 风险：误差逐步累积，长 horizon 易漂移。
+- `lightgbm` / `lgb`
+- `xgboost` / `xgb`
+- `catboost` / `cat`
+- `randomforest` / `rf`
 
-### 1.2 Direct（直接法）
+## 测试
 
-核心原理：
-- 每个 horizon 单独训练：`f1` 预测 `t+1`，`f2` 预测 `t+2`，…，`fH` 预测 `t+H`。
-- 预测时并行输出后拼接。
+`Tester._window_test()` 是单个滑窗任务入口。`main.Model.test()` 负责构造窗口任务，
+并在 `window_parallel_workers > 1` 时并行执行。
 
-![Direct Principle](../docs/assets/forecasting_imgs/method_direct_v2.png)
+窗口边界：
 
-适用性：
-- 优点：无递归误差传播，短中期稳定。
-- 风险：模型数量多，训练和维护成本高。
+- 训练窗口和测试窗口从历史数据尾部倒推。
+- 可选训练段异常处理只修改训练窗口目标列。
+- 测试段真实 `y` 不会透传给预测器。
+- Direct 类方法的训练标签只在训练窗口内部构造，避免跨入测试期。
 
-### 1.3 MIMO / Multi-output（多输出直接法）
+测试输出：
 
-核心原理：
-- 用一个模型一次输出整个 horizon 向量：`[y(t+1), ..., y(t+H)]`。
-- 常见实现：`MultiOutputRegressor(base_estimator)`。
+```text
+<test_results_dir>/test_scores_df.csv
+<test_results_dir>/cv_plot_df.csv
+<test_results_dir>/train_outlier_report.csv
+<test_results_dir>/test_prediction.png
+```
 
-![MIMO Principle](../docs/assets/forecasting_imgs/method_mimo_v2.png)
+`train_outlier_report.csv` 始终写出；未启用或未发现训练异常时为空表头。
 
-适用性：
-- 优点：部署和推理简单。
-- 风险：若底层是独立头（常见于 `MultiOutputRegressor`），跨 horizon 依赖建模有限。
+`test_scores_df.csv` 中的 `MAPE` 与 `MAPE Accuracy` 采用业务口径：对每个测试窗口先取 `y_true > 0` 的点，再用这些正样本的 `P5` 作为相对阈值，只对 `y_true >= threshold` 的点计算指标。结果表会同步保存 `MAPE Threshold`、`MAPE Valid Points`、`MAPE Excluded Points`、`MAPE Excluded Ratio`。`cv_plot_df.csv` 也会保留对应的有效性标记，`test_prediction.png` 对无效点断线显示。
 
-### 1.4 DirRec（直接-递归混合）
+## 预测
 
-核心原理：
-- 顺序地做 horizon 预测，每一步可把前一步预测加入特征。
-- 兼具 direct 与 recursive 的特点。
+`Forecaster._predict_by_method()` 根据 `args.pred_method` 分发：
 
-![DirRec Principle](../docs/assets/forecasting_imgs/method_dirrec_v2.png)
+| 方法 | 说明 |
+|---|---|
+| USMDP | 单变量多步逐点 direct |
+| USMD | 单变量多步 direct |
+| USMR | 单变量递归预测 |
+| USMDR | 单变量分块 direct-recursive |
+| MSMD | 多变量 direct 预测目标 |
+| MSMR | 多变量递归预测目标 |
+| MSMDR | 多变量分块 direct-recursive |
 
-适用性：
-- 优点：在中长 horizon 常较 recursive 更稳。
-- 风险：特征 schema 管理复杂（列对齐、回填规则）。
+预测输出：
 
-### 1.5 Block Direct / DIRMO（分块直接法）
+```text
+<pred_results_dir>/prediction.csv
+<pred_results_dir>/prediction.png
+<pred_results_dir>/history_context.csv
+<pred_results_dir>/prediction_plot_concat.csv
+```
 
-核心原理：
-- 将 horizon 切成若干块，每块由一个多输出模型直接预测。
-- 是 Direct 与 Recursive 间的工程折中。
+`prediction.csv` 基础列为 `time,predict_value`。启用分位数预测时追加
+`predict_q10,predict_q50,predict_q90,...`。
 
-![Block Direct Principle](../docs/assets/forecasting_imgs/method_block_direct_v2.png)
+`prediction_plot_concat.csv` 用于未来预测图排障，当前除 `time,value,series_type` 外还会保存：
 
-适用性：
-- 优点：模型数少于 Direct，误差传播小于 Recursive。
-- 风险：块大小（block size）需要调参。
+- `raw_value`：历史上下文真实值或未来预测原值
+- `plot_value`：用于 `prediction.png` 的绘图值；历史上下文低于正样本 `P5` 阈值的点写为 `NaN`
+- `plot_valid`：该点是否参与主图连线
 
-### 1.6 方法对比总览
+`prediction.png` 的历史上下文主线使用 `plot_value`，未来预测主线始终使用 `prediction.csv` 中的原始 `predict_value`，不做裁剪或平滑。
 
-![Method Comparison Matrix](../docs/assets/forecasting_imgs/method_comparison_matrix_v2.png)
+## 与入口配置的关系
 
-## 2. 当前实现状态（以代码为准）
+- `models/` 不加载配置模块；配置实例由 `run.py` 或 `main.py` 创建后传入。
+- `config/config_loader.py` 导入时不解析命令行，避免 `run.py` 导入 `main.Model` 时发生二次参数解析。
+- 模型线程数由 `model_thread_count` 通过训练层映射到 LightGBM/XGBoost 的
+  `n_jobs` 或 CatBoost 的 `thread_count`。
 
-以下结论基于当前 `models/ModelForecasting.py`（并结合训练侧 `ModelTraining.py`）：
+## 验证
 
-| 业界方法 | 当前实现 | 状态 |
-|---|---|---|
-| Recursive | `univariate_single_multi_step_recursive_forecast`、`multivariate_single_multi_step_recursive_forecast` | 已实现 |
-| Direct | `univariate_single_multi_step_direct_forecast`、`multivariate_single_multi_step_direct_forecast` | 已实现 |
-| Direct Output | `univariate_single_multi_step_direct_output_forecast` | 已实现 |
-| DirRec | `univariate_single_multi_step_direct_recursive_forecast`、`multivariate_single_multi_step_direct_recursive_forecast` | 已实现 |
-| Block Direct / DIRMO | USMDR、MSMDR 均为“每块一次模型调用”的严格分块实现 | 已实现 |
-| MIMO / Multi-output | 训练侧支持 `MultiOutputRegressor` | 已实现 |
-| Regressor Chain | 训练侧支持 `RegressorChain`（`multi_output_strategy`） | 已实现 |
-| Quantile 多分位预测 | 训练侧量化模型 bundle + 预测侧统一分位推理 | 已实现 |
-| Global（跨序列） | 支持 `enable_global_training` 与 `series_id` 特征透传（最小可用） | 部分实现 |
+模型层已有 unittest 覆盖训练窗口异常报告和测试窗口边界。改动模型逻辑后至少运行：
 
-## 3. 当前代码实现要点（ModelForecasting）
-
-1. 统一的预测入口与分位数输出
-- 通过 `_predict_point_and_quantiles` 支持：
-  - 点预测模型：直接返回预测值；
-  - 分位数模型：返回中位分位点预测 + 所有分位点预测。
-- `quantile_outputs` 在 `_predict_by_method` 前会重置，避免复用污染。
-
-2. Direct 方法的输入构建已对齐 horizon-aware 外生特征
-- `_build_direct_forecast_input` 采用“历史 `max_lag` + 全部未来外生行”，并在最后一个历史锚点取特征输入。
-- 配合特征工程侧的 horizon 展开，可保证 direct 训练/推理语义一致。
-
-3. 递归类方法的 schema 与状态管理
-- 递归方法 (`USMR/MSMR`) 使用 `_recursive_schema_cache` 固定特征 schema。
-- 推理阶段支持 `selected_features` 子集对齐，减少训练-推理特征漂移风险。
-
-4. USMDR / MSMDR 已采用严格分块 direct 逻辑
-- 每个块只调用一次模型，取该块长度的输出。
-- 块间再进行历史回填（目标值必回填；MSMDR 对其他内生变量采用持久性填充）。
-
-## 4. 下一步可优化点（当前版本剩余）
-
-1. MSMR/MSMDR 中“其他内生变量”预测仍为持久性策略
-- 当前默认使用 last-value 回填。
-- 若业务里其他内生变量可预测，建议引入协变量子模型或场景输入，提高中长 horizon 稳定性。
-
-2. Global 训练仍是最小可用版本
-- 已支持 `series_id` 透传，但尚未形成完整多序列评估与采样策略（如按系列分层验证、跨系列权重策略）。
-
-3. 测试配置对样本量敏感
-- 当 `lags` 大、`history_days/window_days/predict_days` 不匹配时，容易出现有效样本不足。
-- 建议在配置层增加自动可行性检查与窗口自适应降级。
-
-## 5. 本次生成的图片文件
-
-已生成并保存于 `../docs/assets/forecasting_imgs/`：
-- `method_recursive_v2.png`
-- `method_direct_v2.png`
-- `method_mimo_v2.png`
-- `method_dirrec_v2.png`
-- `method_block_direct_v2.png`
-- `method_comparison_matrix_v2.png`
-
-## 6. 调研参考资料（核心）
-
-1. Ben Taieb & Hyndman（多步策略文献入口）
-- https://robjhyndman.com/publications/rectify/index.html
-
-2. sktime reduction（direct / recursive / multioutput）
-- https://www.sktime.net/en/stable/api_reference/auto_generated/sktime.forecasting.compose.make_reduction.html
-
-3. scikit-learn MultiOutputRegressor
-- https://scikit-learn.org/stable/modules/generated/sklearn.multioutput.MultiOutputRegressor.html
-
-4. scikit-learn RegressorChain
-- https://scikit-learn.org/stable/modules/generated/sklearn.multioutput.RegressorChain.html
-
-5. skforecast（回归模型 direct/recursive 实战）
-- https://skforecast.org/latest/
-
-6. M5 Accuracy（LightGBM 与多步策略工业实践）
-- https://statmodeling.stat.columbia.edu/wp-content/uploads/2021/10/M5_accuracy_competition.pdf
-
-7. LightGBM / XGBoost / CatBoost 文档（含 quantile 相关能力）
-- https://lightgbm.readthedocs.io/
-- https://xgboost.readthedocs.io/en/stable/parameter.html
-- https://catboost.ai/docs/en/concepts/loss-functions-regression
+```bash
+uv run python -m unittest discover -s tests -p "test_*.py"
+```

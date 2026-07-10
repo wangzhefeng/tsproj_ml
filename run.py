@@ -9,13 +9,22 @@
 # * Description : CLI entry for ML time-series forecasting
 # ***************************************************
 
+import os
+import sys
+from pathlib import Path
+ROOT = str(Path.cwd())
+if ROOT not in sys.path:
+    sys.path.append(ROOT)
 import argparse
 import datetime
-import importlib
 import json
 import random
 from typing import Any
+from config.config_loader import load_yaml_config
 
+# global variable
+LOGGING_LABEL = Path(__file__).name[:-3]
+os.environ['LOG_NAME'] = LOGGING_LABEL
 from utils.log_util import logger
 
 
@@ -41,12 +50,9 @@ def _set_seed(seed: int) -> None:
         logger.warning("[run.py] numpy is not installed, only Python random seed is set.")
 
 
-def _load_config(config_module: str, config_class: str):
-    module = importlib.import_module(config_module)
-    if not hasattr(module, config_class):
-        raise AttributeError(f"Config class '{config_class}' not found in module '{config_module}'.")
-    config_cls = getattr(module, config_class)
-    return config_cls()
+def _load_config(config_yaml: str):
+    """加载 YAML 配置文件并返回配置实例。base_config 从 YAML 内部读取。"""
+    return load_yaml_config(config_yaml)
 
 
 def _apply_overrides(cfg, args):
@@ -54,16 +60,12 @@ def _apply_overrides(cfg, args):
         cfg.data_dir = args.data_dir
     if args.data_path is not None:
         cfg.data_path = args.data_path
-    if args.data is not None:
-        cfg.data = args.data
     if args.target is not None:
         cfg.target = args.target
     if args.target_ts_feat is not None:
         cfg.target_ts_feat = args.target_ts_feat
     if args.freq is not None:
         cfg.freq = args.freq
-    if args.freq_minutes is not None:
-        cfg.freq_minutes = args.freq_minutes
 
     if args.model_type is not None:
         cfg.model_type = args.model_type
@@ -114,9 +116,27 @@ def _apply_overrides(cfg, args):
         cfg.auto_lr_max = args.auto_lr_max
     if args.huber_delta is not None:
         cfg.huber_delta = args.huber_delta
+    if args.enable_train_outlier_handling is not None:
+        cfg.enable_train_outlier_handling = _parse_bool_flag(args.enable_train_outlier_handling)
+    if args.train_outlier_method is not None:
+        cfg.train_outlier_method = args.train_outlier_method
+    if args.high_outlier_threshold is not None:
+        cfg.high_outlier_threshold = args.high_outlier_threshold
+    if args.high_outlier_max_run_points is not None:
+        cfg.high_outlier_max_run_points = args.high_outlier_max_run_points
+    if args.drop_outlier_max_run_points is not None:
+        cfg.drop_outlier_max_run_points = args.drop_outlier_max_run_points
+    if args.drop_rebound_min_abs_diff is not None:
+        cfg.drop_rebound_min_abs_diff = args.drop_rebound_min_abs_diff
+    if args.low_outlier_threshold is not None:
+        cfg.low_outlier_threshold = args.low_outlier_threshold
+    if args.low_outlier_max_run_points is not None:
+        cfg.low_outlier_max_run_points = args.low_outlier_max_run_points
+    if args.rise_outlier_max_run_points is not None:
+        cfg.rise_outlier_max_run_points = args.rise_outlier_max_run_points
+    if args.rise_rebound_min_abs_diff is not None:
+        cfg.rise_rebound_min_abs_diff = args.rise_rebound_min_abs_diff
 
-    if args.learning_rate is not None:
-        cfg.learning_rate = args.learning_rate
     if args.patience is not None:
         cfg.patience = args.patience
 
@@ -146,16 +166,10 @@ def args_parse():
     parser = argparse.ArgumentParser(description="Machine Learning Time Series Forecasting CLI")
 
     parser.add_argument(
-        "--config-module",
+        "--config-yaml",
         type=str,
-        default="config.univariate_config",
-        help="Python module path for config, e.g. config.univariate_config",
-    )
-    parser.add_argument(
-        "--config-class",
-        type=str,
-        default="ModelConfig_univariate",
-        help="Config class name in config module",
+        required=True,
+        help="YAML config file path (base_config is read from inside the YAML).",
     )
 
     parser.add_argument("--seed", type=int, default=2025)
@@ -169,11 +183,9 @@ def args_parse():
 
     parser.add_argument("--data-dir", type=str, default=None)
     parser.add_argument("--data-path", type=str, default=None)
-    parser.add_argument("--data", type=str, default=None)
     parser.add_argument("--target", type=str, default=None)
     parser.add_argument("--target-ts-feat", type=str, default=None)
     parser.add_argument("--freq", type=str, default=None)
-    parser.add_argument("--freq-minutes", type=int, default=None)
 
     parser.add_argument("--history-days", type=int, default=None)
     parser.add_argument("--predict-days", type=int, default=None)
@@ -196,7 +208,16 @@ def args_parse():
     parser.add_argument("--auto-lr-min", type=float, default=None)
     parser.add_argument("--auto-lr-max", type=float, default=None)
     parser.add_argument("--huber-delta", type=float, default=None)
-    parser.add_argument("--learning-rate", type=float, default=None)
+    parser.add_argument("--enable-train-outlier-handling", default=None, help="bool flag")
+    parser.add_argument("--train-outlier-method", type=str, default=None)
+    parser.add_argument("--high-outlier-threshold", type=float, default=None)
+    parser.add_argument("--high-outlier-max-run-points", type=int, default=None)
+    parser.add_argument("--drop-outlier-max-run-points", type=int, default=None)
+    parser.add_argument("--drop-rebound-min-abs-diff", type=float, default=None)
+    parser.add_argument("--low-outlier-threshold", type=float, default=None)
+    parser.add_argument("--low-outlier-max-run-points", type=int, default=None)
+    parser.add_argument("--rise-outlier-max-run-points", type=int, default=None)
+    parser.add_argument("--rise-rebound-min-abs-diff", type=float, default=None)
     parser.add_argument("--patience", type=int, default=None)
 
     parser.add_argument("--now-time", type=str, default=None, help="ISO datetime, e.g. 2025-12-27T00:00:00")
@@ -209,13 +230,12 @@ def args_parse():
 
 
 def run(args):
-    cfg = _load_config(args.config_module, args.config_class)
+    cfg = _load_config(args.config_yaml)
     cfg = _apply_overrides(cfg, args)
 
     logger.info(
-        "[run.py] config=%s.%s, model_type=%s, pred_method=%s, is_testing=%s, is_forecasting=%s",
-        args.config_module,
-        args.config_class,
+        "[run.py] config=%s, model_type=%s, pred_method=%s, is_testing=%s, is_forecasting=%s",
+        args.config_yaml,
         cfg.model_type,
         cfg.pred_method,
         cfg.is_testing,

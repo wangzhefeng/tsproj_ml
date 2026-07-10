@@ -1,0 +1,66 @@
+# A1_201 — catboost — recursive
+base_config: config.univariate_config
+overrides:
+  runtime:
+    is_testing: true
+    is_forecasting: true
+    history_days: 65
+    predict_days: 1
+    window_days: 15
+    now_time: '2026-06-11T23:55:00'
+  target_series:
+    data_dir: ./dataset/aidc_electricity_computility/electricity/2026-06-11/demand_load/A1_201/
+    data_path: df_power.csv
+    freq: 5min
+    target_ts_feat: count_data_time
+    target: h_total_use
+  exogenous_features:
+    date_history_path: df_date.csv
+    date_future_path: df_date_future.csv
+    date_ts_feat: date
+    weather_history_path: df_weather.csv
+    weather_future_path: df_weather_future.csv
+    weather_ts_feat: ts
+  time_lag_features:
+    lags:
+    - 288
+    - 576
+    - 864
+    - 1152
+    - 1440
+    - 1728
+    - 2016
+  model_strategy:
+    model_type: catboost
+    pred_method: univariate-single-multistep-recursive
+  train_outlier:
+    enable_train_outlier_handling: true
+    train_outlier_method: local_interpolate
+    high_outlier_threshold: null
+    high_outlier_max_run_points: 4
+    rise_outlier_max_run_points: 2
+    rise_rebound_min_abs_diff: 1000.0
+    low_outlier_threshold: null
+    low_outlier_max_run_points: 4
+    drop_outlier_max_run_points: 2
+    drop_rebound_min_abs_diff: 1000.0
+  training_enhancement:
+    enable_time_decay_sample_weight: true
+    decay_halflife_days: 14  # 半衰期天数,按数据漂移速度调整
+  eval_mask:
+    mode: percentile
+    percentile: 5.0
+    min_value: null
+    max_value: null
+  performance:
+    window_parallel_workers: 8
+    multi_output_n_jobs: 1
+    model_thread_count: 8
+  # preprocessing:
+  #   scale_target: false
+  #   target_scaler_type: standard
+  #   inverse_target: false
+  # advanced_features:
+  #   enable_advanced_features: false
+  #   enable_rolling_features: false
+  #   enable_diff_features: false

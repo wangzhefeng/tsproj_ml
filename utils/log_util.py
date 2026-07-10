@@ -16,10 +16,10 @@ from pathlib import Path
 
 
 # 项目根路径
-ROOT_PATH = Path.cwd()
+ROOT_PATH = Path(__file__).resolve().parent.parent
 
 # 日志路径
-LOG_DIR = Path(f"{ROOT_PATH}/logs/{os.environ.get('LOG_NAME')}")
+LOG_DIR = Path(f"{ROOT_PATH}/logs/{os.environ.get('LOG_NAME', 'main')}")
 LOG_DIR.mkdir(parents=True, exist_ok=True)
 LOG_PATH = LOG_DIR.joinpath("service")
 

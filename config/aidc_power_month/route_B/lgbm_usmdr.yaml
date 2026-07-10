@@ -1,0 +1,67 @@
+# B — lightgbm — direct-recursive (日频单变量)
+base_config: config.univariate_config
+overrides:
+  runtime:
+    is_testing: true
+    is_forecasting: true
+    history_days: 281
+    predict_days: 30
+    window_days: 91
+    now_time: '2026-07-08T00:00:00'
+  target_series:
+    data_dir: ./dataset/aidc_power_month/
+    data_path: B_Loads_1day_20251001_20260708.csv
+    freq: 1D
+    target_ts_feat: time
+    target: value
+  exogenous_features:
+    enable_date_features: false
+    enable_weather_features: false
+    datetime_features:
+    - day
+    - weekday
+    - week
+    - day_of_week
+    - week_of_year
+    - month
+    - days_in_month
+    - quarter
+    - day_of_year
+    - year
+    datetime_categorical_features:
+    - dt_day
+    - dt_weekday
+    - dt_week
+    - dt_day_of_week
+    - dt_week_of_year
+    - dt_month
+    - dt_days_in_month
+    - dt_quarter
+    - dt_day_of_year
+    - dt_year
+  time_lag_features:
+    lags:
+    - 1
+    - 2
+    - 3
+    - 4
+    - 5
+    - 6
+    - 7
+    - 14
+    - 28
+  model_strategy:
+    model_type: lightgbm
+    pred_method: univariate-single-multistep-direct-recursive
+  training_enhancement:
+    enable_time_decay_sample_weight: true
+    decay_halflife_days: 60  # 半衰期天数,按数据漂移速度调整
+  train_outlier:
+    enable_train_outlier_handling: false  # 日频稀疏点不宜插值清洗
+  eval_mask:
+    mode: percentile
+    percentile: 5.0
+  performance:
+    window_parallel_workers: 8
+    multi_output_n_jobs: 8
+    model_thread_count: 1

@@ -48,9 +48,12 @@ config/
 ├── multivariate_config.py
 ├── ETT-small/
 │   └── ETTm1/
-└── aidc_electricity_computility/
-    ├── electricity/
-    └── electricity_computility/
+├── aidc_electricity_computility/
+│   ├── electricity/
+│   └── electricity_computility/
+└── aidc_power_month/
+    ├── route_A/
+    └── route_B/
 ```
 
 ## 配置数量
@@ -64,6 +67,8 @@ config/
 | `aidc_electricity_computility/electricity/2026-06-11/A3_01e` | 12 YAML |
 | `aidc_electricity_computility/electricity/2026-06-11/AIDC/route_A` | 12 YAML |
 | `aidc_electricity_computility/electricity/2026-06-11/AIDC/route_B` | 12 YAML |
+| `aidc_power_month/route_A` | 4 YAML |
+| `aidc_power_month/route_B` | 4 YAML |
 | `aidc_electricity_computility/electricity_computility/add_training_inference_pod` | 7 `.py` 模块配置 |
 | `aidc_electricity_computility/electricity_computility/add_training_jobs` | 7 `.py` 模块配置 |
 
@@ -118,6 +123,19 @@ dataset/aidc_electricity_computility/electricity/2026-06-11/demand_load/AIDC/rou
 - 频率：`5min`
 - 日期外生：`df_date.csv`、`df_date_future.csv`
 - 天气外生：`df_weather.csv`、`df_weather_future.csv`
+
+### AIDC power month
+
+日频（`1D`）算力房间月度负荷，与上面 5min 的 AIDC electricity 区分：
+
+```text
+dataset/aidc_power_month/
+```
+
+- 目标文件：`A_Loads_1day_20251001_20260708.csv`、`B_Loads_1day_20251001_20260708.csv`
+- 时间列：`time`；目标列：`value`；频率：`1D`（281 天，2025-10-01 → 2026-07-08）
+- 同目录 `weather_in_*`（小时粒度）、`date_in_*` 不作外生（粒度不匹配 / 无未来期），单变量配置默认仅用 datetime 派生
+- 对应配置：`config/aidc_power_month/route_A/`、`route_B/`（各 4 个 lgbm 单变量方法）
 
 ## 配置分组参考
 

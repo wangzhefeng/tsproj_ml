@@ -152,7 +152,10 @@ lightning_logs/
 # ---------------------------------------
 # custom setting
 # ---------------------------------------
+.claude/
 dataset/
 logs/
 results/
 tests/
+.uv_cache/
+.ruff_cache/

@@ -48,6 +48,7 @@ class Forecaster:
                  target_output_features: List[str],
                  categorical_features: List[str],
                  selected_features: List[str] = None,
+                 target_detrender=None,
                  log_prefix: str = "[Forecaster]"):
         self.args = args
         self.horizon = horizon
@@ -63,6 +64,7 @@ class Forecaster:
         self.target_output_features = target_output_features
         self.categorical_features = categorical_features
         self.selected_features = selected_features
+        self.target_detrender = target_detrender
         self.log_prefix = log_prefix
         logger.info(f"{self.log_prefix} Forecaster params init...")
         logger.info(f"{self.log_prefix} {'-' * 71}")
@@ -987,6 +989,17 @@ class Forecaster:
         else:
             result = pred_arr[:, 0]
 
+        # 目标去趋势还原:点对点加回线性趋势,使调用方拿到电平预测(覆盖点预测+分位数)
+        if getattr(self, "target_detrender", None) is not None and self.target_detrender.is_fitted:
+            n = min(len(result), len(self.df_future))
+            future_times = self.df_future["time"].iloc[:n]
+            result = self.target_detrender.restore(result[:n], future_times)
+            if self.quantile_outputs:
+                self.quantile_outputs = {
+                    q: self.target_detrender.restore(np.asarray(p).reshape(-1)[:n], future_times)
+                    for q, p in self.quantile_outputs.items()
+                }
+
         logger.info(
             f"{self.log_prefix} Forecast method runtime: "
             f"{self.args.pred_method} took {time.perf_counter() - perf_start:.3f}s"
@@ -1002,7 +1015,9 @@ class Forecaster:
         df_future["time"] = pd.to_datetime(df_future["time"])
         df_future = df_future.sort_values(by=["time"]).reset_index(drop=True)
         df_future.to_csv(self.args.pred_results_dir.joinpath("prediction.csv"), encoding="utf_8_sig", index=False)
-        # 历史上下文截取：以未来预测起点为边界，取其前最近 2 天历史真值
+        # 历史上下文截取：以未来预测起点为边界，取其前最近若干历史真值
+        # 上下文长度与 horizon 挂钩，避免低频(日/周)下 2*n_per_day 退化为极少点
+        plot_context_len = max(2 * n_per_day, int(getattr(self, "horizon", 2 * n_per_day)))
         y_trues_df_plot = pd.DataFrame()
         if df_history is not None and not df_history.empty and "time" in df_history.columns and "y" in df_history.columns:
             df_history_plot = df_history.copy()
@@ -1014,13 +1029,13 @@ class Forecaster:
                 if history_before_future.empty:
                     logger.warning(
                         f"{self.log_prefix} No history before forecast start ({future_start}); "
-                        "fallback to latest available 2-day history for plotting."
+                        f"fallback to latest available {plot_context_len}-point history for plotting."
                     )
-                    y_trues_df_plot = df_history_plot.tail(2 * n_per_day).copy()
+                    y_trues_df_plot = df_history_plot.tail(plot_context_len).copy()
                 else:
-                    y_trues_df_plot = history_before_future.tail(2 * n_per_day).copy()
+                    y_trues_df_plot = history_before_future.tail(plot_context_len).copy()
             else:
-                y_trues_df_plot = df_history_plot.tail(2 * n_per_day).copy()
+                y_trues_df_plot = df_history_plot.tail(plot_context_len).copy()
         # 保留历史上下文，便于生产问题定位
         if df_history is not None and not df_history.empty:
             df_history.copy().to_csv(
@@ -1050,7 +1065,7 @@ class Forecaster:
                 y_trues_df_plot["y"],
                 np.nan,
             )
-        # 拼接可视化数据：最近两天历史 + 未来一天预测
+        # 拼接可视化数据：最近若干历史真值 + 未来预测(含分位数)
         history_part = pd.DataFrame()
         if not y_trues_df_plot.empty:
             history_part = y_trues_df_plot[["time", "y", "plot_value", "plot_valid"]].rename(columns={"y": "value"})
@@ -1058,7 +1073,9 @@ class Forecaster:
             history_part["series_type"] = "history_true"
         future_part = pd.DataFrame()
         if not df_future.empty and "predict_value" in df_future.columns:
-            future_part = df_future[["time", "predict_value"]].rename(columns={"predict_value": "value"})
+            # 分位数列一并写入,使 plot_concat 数据完整
+            q_cols = [c for c in df_future.columns if str(c).startswith("predict_q")]
+            future_part = df_future[["time", "predict_value"] + q_cols].rename(columns={"predict_value": "value"})
             future_part["raw_value"] = future_part["value"]
             future_part["plot_value"] = future_part["value"]
             future_part["plot_valid"] = True
@@ -1073,13 +1090,24 @@ class Forecaster:
             )
         import matplotlib.pyplot as plt
         plt.figure(figsize=(25, 8))
-        if not y_trues_df_plot.empty and "plot_value" in y_trues_df_plot.columns:
-            plt.plot(y_trues_df_plot["time"], y_trues_df_plot["plot_value"], label="Trues", lw=2.0)
+        # 历史真值:用原始 y 而非 masked plot_value,保证线条连续不断
+        if not y_trues_df_plot.empty and "y" in y_trues_df_plot.columns:
+            plt.plot(y_trues_df_plot["time"], y_trues_df_plot["y"], label="Trues", lw=2.0)
+        # 未来预测(点)
         if not df_future.empty and "predict_value" in df_future.columns:
             plt.plot(df_future["time"], df_future["predict_value"], label="Preds", lw=2.0, ls="-.")
+        # 分位数预测区间带(若启用):填充 q_low~q_high
+        qcols = sorted(c for c in df_future.columns if str(c).startswith("predict_q"))
+        if len(qcols) >= 2:
+            plt.fill_between(
+                df_future["time"],
+                df_future[qcols[0]].astype(float).values,
+                df_future[qcols[-1]].astype(float).values,
+                color="tab:blue", alpha=0.15, label=f"PI [{qcols[0]},{qcols[-1]}]",
+            )
         plt.xlabel("Time", fontsize=12)
         plt.ylabel("Value", fontsize=12)
-        plt.title(f"模型预测预测--{self.args.pred_method}", fontsize=14)
+        plt.title(f"模型预测--{self.args.pred_method}", fontsize=14)
         plt.legend()
         plt.grid(True, alpha=1.0)
         plt.tight_layout()

@@ -40,6 +40,7 @@ from data_provider.outlier_handling import (
     handle_train_outliers,
 )
 from utils.eval_mask import build_eval_mask
+from utils.quantile import monotonize_quantile_columns
 from utils.log_util import logger
 
 # global variable
@@ -64,6 +65,7 @@ class Tester:
         horizon = payload["horizon"]
         window_len = payload["window_len"]
         window = payload["window"]
+        target_detrender = payload.get("target_detrender")
         train_outlier_report = empty_train_outlier_report()
 
         # 滑窗数据分割：先切原始历史，再在窗口内构造训练标签，避免 Direct 标签跨入测试期
@@ -110,6 +112,9 @@ class Tester:
         # 窗口目标特征处理
         Y_train = Y_train.to_frame() if isinstance(Y_train, pd.Series) else Y_train
         y_test_raw = df_history_test[payload["target_feature"]].to_numpy()
+        # detrend 开启时 df_history_test 来自 detrended 序列,评分前还原到电平空间
+        if target_detrender is not None and target_detrender.is_fitted:
+            y_test_raw = target_detrender.restore(y_test_raw, df_history_test["time"])
         # ------------------------------
         # 窗口训练
         # ------------------------------
@@ -152,6 +157,7 @@ class Tester:
             target_output_features=target_output_features,
             categorical_features=categorical_features,
             selected_features=selected_features,
+            target_detrender=target_detrender,
             log_prefix=log_prefix,
         )
         y_pred = predictor._predict_by_method()
@@ -210,6 +216,12 @@ class Tester:
             min_value=args.min_value,
             max_value=args.max_value,
         )
+        # 分位数预测(若启用):补入 cv_plot,使回测也体现分位数区间
+        if getattr(predictor, "quantile_outputs", None):
+            n = len(cv_plot_df_window)
+            for q, q_pred in sorted(predictor.quantile_outputs.items(), key=lambda x: float(x[0])):
+                q_col = f"predict_q{int(round(float(q) * 100)):02d}"
+                cv_plot_df_window[q_col] = np.asarray(q_pred).reshape(-1)[:n]
 
         return {
             "window": window,
@@ -433,6 +445,8 @@ class Tester:
     # ------------------------------
     @staticmethod
     def test_results_save(args, log_prefix: str, test_scores_df, cv_plot_df, train_outlier_report=None):
+        # 分位数单调化(可选):逐行排序 predict_q* 列(csv 与绘图同步生效)
+        cv_plot_df = monotonize_quantile_columns(cv_plot_df, bool(getattr(args, "quantile_monotone", False)))
         test_scores_df.to_csv(args.test_results_dir.joinpath("test_scores_df.csv"), index=False, encoding="utf-8")
         cv_plot_df.to_csv(args.test_results_dir.joinpath("cv_plot_df.csv"), index=False, encoding="utf-8")
         if train_outlier_report is None:
@@ -451,10 +465,24 @@ class Tester:
             return
         import matplotlib.pyplot as plt
         plt.figure(figsize=(25, 8))
-        plot_true_col = "Y_trues_plot" if "Y_trues_plot" in cv_plot_df.columns else "Y_trues"
-        plot_pred_col = "Y_preds_plot" if "Y_preds_plot" in cv_plot_df.columns else "Y_preds"
-        plt.plot(cv_plot_df[plot_true_col].values, label="Trues", lw=1.7)
-        plt.plot(cv_plot_df[plot_pred_col].values, label="Preds", lw=1.7, ls="-.")
+        # 用未掩码的原始列绘制,保证线条连续不断(eval_mask 掩码仅用于 MAPE 计算,不参与绘图)
+        plot_true_col = "Y_trues"
+        plot_pred_col = "Y_preds"
+        # 按时间排序后再绘制:滑窗 CV 结果默认按 window(最新优先)拼接,直接画会出现
+        # 窗口倒序、边界时间倒退造成的"拼接错乱/真值递减"视觉假象(底层预测与指标无误)
+        plot_df = cv_plot_df.sort_values("time").reset_index(drop=True) if "time" in cv_plot_df.columns else cv_plot_df
+        plot_x = plot_df["time"] if "time" in plot_df.columns else np.arange(len(plot_df))
+        plt.plot(plot_x, plot_df[plot_true_col].values, label="Trues", lw=1.7)
+        plt.plot(plot_x, plot_df[plot_pred_col].values, label="Preds", lw=1.7, ls="-.")
+        # 分位数预测区间带(若回测含分位数列):填充 q_low~q_high
+        qcols = sorted(c for c in plot_df.columns if str(c).startswith("predict_q"))
+        if len(qcols) >= 2:
+            plt.fill_between(
+                plot_x,
+                plot_df[qcols[0]].astype(float).values,
+                plot_df[qcols[-1]].astype(float).values,
+                color="tab:blue", alpha=0.15, label=f"PI [{qcols[0]},{qcols[-1]}]",
+            )
         plt.legend()
         plt.xlabel("Time")
         plt.ylabel("Value")

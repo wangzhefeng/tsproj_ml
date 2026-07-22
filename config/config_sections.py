@@ -214,6 +214,7 @@ class PreprocessingConfig:
     scale_target: bool = False  # 是否对目标变量 Y 进行归一化/标准化
     inverse_target: bool = False  # 预测结果是否对目标变量 Y 进行逆变换
     target_scaler_type: str = "minmax"  # 目标变量 Y 的缩放方法: "none"、"standard"、"minmax"、"log1p"、"robust" 或 "yeo-johnson"
+    detrend_target: bool = False  # 是否在特征工程前对原始 y 做线性去趋势(与 scale_target 互斥)
     use_grouped_scaling: bool = False  # 是否对特征使用分组归一化/标准化
     encode_categorical_features: bool = False  # 是否对类别特征进行编码
 
@@ -238,6 +239,7 @@ class ModelStrategyConfig:
     multi_output_strategy: str = "multioutput"  # 多输出策略: multioutput / regressor_chain
     predict_type: str = "point"  # 预测类型: point / quantile
     quantiles: List[float] = field(default_factory=lambda: [0.1, 0.5, 0.9])  # 分位数预测配置，predict_type=quantile 时生效
+    quantile_monotone: bool = False  # 分位数单调化开关:逐行排序 predict_q* 消除 quantile crossing(默认关)
     use_horizon_exogenous_for_direct: bool = False  # Direct 方法是否使用 horizon-aware 外生特征展开
     block_size: int = 0  # Direct-Recursive 方法的分块大小
 

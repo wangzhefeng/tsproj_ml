@@ -1,4 +1,4 @@
-# B — lightgbm — direct-recursive (日频单变量)
+# B — lightgbm — direct-pointwise (日频单变量 · 概率预测 quantile)
 base_config: config.univariate_config
 overrides:
   runtime:
@@ -42,7 +42,12 @@ overrides:
     - 28
   model_strategy:
     model_type: lightgbm
-    pred_method: univariate-single-multistep-direct-recursive
+    pred_method: univariate-single-multistep-direct-pointwise
+    predict_type: quantile  # 概率预测:输出各分位数(predict_qXX)
+    quantiles:
+    - 0.1
+    - 0.5
+    - 0.9
   training_enhancement:
     enable_time_decay_sample_weight: true
     decay_halflife_days: 60  # 半衰期天数,按数据漂移速度调整
@@ -55,5 +60,5 @@ overrides:
     detrend_target: true  # 特征工程前对 y 线性去趋势(与 scale_target 互斥)
   performance:
     window_parallel_workers: 8
-    multi_output_n_jobs: 8
-    model_thread_count: 1
+    multi_output_n_jobs: 1
+    model_thread_count: 8

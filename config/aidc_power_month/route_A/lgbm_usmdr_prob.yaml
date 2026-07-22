@@ -1,4 +1,4 @@
-# B — lightgbm — direct-recursive (日频单变量)
+# A — lightgbm — direct-recursive (日频单变量 · 概率预测 quantile)
 base_config: config.univariate_config
 overrides:
   runtime:
@@ -10,7 +10,7 @@ overrides:
     now_time: '2026-06-30T00:00:00'
   target_series:
     data_dir: ./dataset/aidc_power_month/
-    data_path: B_Loads_1day_20251001_20260708.csv
+    data_path: A_Loads_1day_20251001_20260708.csv
     freq: 1D
     target_ts_feat: time
     target: value
@@ -43,6 +43,11 @@ overrides:
   model_strategy:
     model_type: lightgbm
     pred_method: univariate-single-multistep-direct-recursive
+    predict_type: quantile  # 概率预测:输出各分位数(predict_qXX)
+    quantiles:
+    - 0.1
+    - 0.5
+    - 0.9
   training_enhancement:
     enable_time_decay_sample_weight: true
     decay_halflife_days: 60  # 半衰期天数,按数据漂移速度调整

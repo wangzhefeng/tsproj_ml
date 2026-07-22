@@ -41,6 +41,8 @@ from data_provider.data_loader import DataLoader
 from features.FeatureScalering import (
     FeatureScaler,
     TargetScaler,
+    TargetDetrender,
+    resolve_detrend_target_enabled,
     resolve_feature_scaler_type,
     resolve_inverse_target_enabled,
     resolve_scale_features_enabled,
@@ -53,6 +55,7 @@ from models.ModelTesting import Tester
 from models.ModelForecasting import Forecaster
 from data_provider.outlier_handling import empty_train_outlier_report
 from utils.frequency import resolve_freq_step_minutes, resolve_samples_per_day
+from utils.quantile import monotonize_quantile_columns
 
 warnings.filterwarnings("ignore")
 
@@ -73,7 +76,9 @@ class Model:
         self.args = args
         data_name = Path(self.args.data_path).stem if getattr(self.args, "data_path", None) else "unknown_data"
         pred_method_code = PRED_METHOD_CODE.get(self.args.pred_method, str(self.args.pred_method).lower())
-        self.setting = f"{self.args.model_type}-{data_name}-{pred_method_code}-{self.args.window_days}"
+        # 概率预测(quantile)用独立 setting 后缀,避免与点预测版本的结果目录/模型撞车
+        _predict_suffix = "-quantile" if str(getattr(self.args, "predict_type", "point")).lower() == "quantile" else ""
+        self.setting = f"{self.args.model_type}-{data_name}-{pred_method_code}-{self.args.window_days}{_predict_suffix}"
         self.log_prefix = f"[{self.setting}]"
         # ------------------------------
         # 数据参数
@@ -133,6 +138,12 @@ class Model:
         block_size = int(getattr(self.args, 'block_size', 0) or 0)
         if block_size < 0:
             raise ValueError(f"{self.log_prefix} block_size ({block_size}) must be >= 0.")
+        # detrend_target 与 scale_target 互斥:两者同开会双重加趋势且逆变换顺序错乱
+        if resolve_detrend_target_enabled(self.args) and resolve_scale_target_enabled(self.args):
+            raise ValueError(
+                f"{self.log_prefix} detrend_target and scale_target are mutually exclusive "
+                f"(both enabled would double-apply the trend). Keep scale_target=false when detrending."
+            )
         # 滞后特征可用性校验:滑窗训练行数 = window_len - horizon 必须 > max(lags),
         # 否则 shift(lag) 产出的滞后列全 NaN,模型无声退化(仅对真正构造 lag 列的方法校验)。
         if self.args.pred_method != "univariate-single-multistep-direct-pointwise":
@@ -301,6 +312,7 @@ class Model:
                 "categorical_features": categorical_features,
                 "train_start_time": self.train_start_time,
                 "train_end_time": self.train_end_time,
+                "target_detrender": getattr(self, "target_detrender", None),
             }
             for window in window_indices
         ]
@@ -401,6 +413,7 @@ class Model:
             target_output_features=target_output_features,
             categorical_features=categorical_features,
             selected_features=selected_features,
+            target_detrender=getattr(self, "target_detrender", None),
             log_prefix=self.log_prefix,
         )
         Y_pred = predictor._predict_by_method()
@@ -443,6 +456,10 @@ class Model:
                     df_future_prediction.loc[df_future_prediction.index[:min_len], q_col] = q_arr[:min_len]
                 else:
                     df_future_prediction[q_col] = q_arr
+        # 分位数单调化(可选):逐行排序保证 q10<=q50<=q90
+        df_future_prediction = monotonize_quantile_columns(
+            df_future_prediction, bool(getattr(self.args, "quantile_monotone", False))
+        )
         quantile_cols = [c for c in df_future_prediction.columns if c.startswith("predict_q")]
         if quantile_cols:
             df_future_prediction = df_future_prediction[["time", "predict_value"] + quantile_cols]
@@ -451,12 +468,14 @@ class Model:
         logger.info(f"{self.log_prefix} after forecast df_future_prediction: \n{df_future_prediction.head()}")
         logger.info(f"{self.log_prefix} after forecast df_future_prediction.shape: {df_future_prediction.shape}")
         # 模型预测结果保存
+        # 绘图历史用真电平(detrend 关闭时 df_history_levels 即 df_history 本身)
+        df_history_plot_src = getattr(self, "df_history_levels", df_history)
         if target_scaler_forecasting is None:
-            history_target = target_feature if target_feature in df_history.columns else "y"
-            df_history_for_plot = df_history[["time", history_target]].rename(columns={history_target: "y"}).copy()
+            history_target = target_feature if target_feature in df_history_plot_src.columns else "y"
+            df_history_for_plot = df_history_plot_src[["time", history_target]].rename(columns={history_target: "y"}).copy()
         else:
             df_history_for_plot = target_scaler_forecasting.prepare_history_target_for_plot(
-                df_history,
+                df_history_plot_src,
                 [target_output_features[0]],
             )
         predictor.forecast_results_save(df_history_for_plot, df_future_prediction, self.n_per_day)
@@ -494,6 +513,22 @@ class Model:
          df_weather_history,
          endogenous_features_with_target,
          target_feature) = dataloader.process_history_data(input_data=input_data)
+        # ------------------------------
+        # 目标去趋势(可选):特征工程前对整条 y 线性去趋势,
+        # 使 target/lag/rolling/diff 一致落在 detrended 空间;Forecaster 输出时点对点还原电平
+        # ------------------------------
+        self.df_history_levels = df_history.copy()
+        self.target_detrender = TargetDetrender(
+            self.args,
+            log_prefix=self.log_prefix,
+            verbose=bool(getattr(self.args, "enable_step_logging", False)),
+        )
+        if self.target_detrender.enabled:
+            self.target_detrender.fit(df_history, time_col="time", target_col="y")
+            df_history = self.target_detrender.detrend(df_history)
+            logger.info(f"{self.log_prefix} 目标去趋势(detrend_target): 启用")
+        else:
+            logger.info(f"{self.log_prefix} 目标去趋势(detrend_target): 禁用")
         # ------------------------------
         # 特征工程
         # ------------------------------
@@ -608,7 +643,8 @@ def main():
     # ------------------------------
     # 配置文件切换区域
     # ------------------------------
-    CONFIG_YAML = "config/aidc_electricity_computility/electricity/2026-06-11/A1_01a/lgbm_msmd.yaml"
+    # CONFIG_YAML = "config/aidc_electricity_computility/electricity/2026-06-11/A1_01a/lgbm_msmd.yaml"
+    CONFIG_YAML = "config/aidc_power_month/route_B/lgbm_usmd_prob.yaml"
     # ------------------------------
     # 创建模型配置参数
     # ------------------------------

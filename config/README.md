@@ -129,13 +129,13 @@ dataset/aidc_electricity_computility/electricity/2026-06-11/demand_load/AIDC/rou
 日频（`1D`）算力房间月度负荷，与上面 5min 的 AIDC electricity 区分：
 
 ```text
-dataset/aidc_power_month/
+dataset/aidc_power/
 ```
 
-- 目标文件：`{A,B}_Loads_1day_mean_20251001_20260708.csv`（日 mean 聚合）
-- 时间列：`time`；目标列：`value`；频率：`1D`（281 天，2025-10-01 → 2026-07-08）
+- 目标文件：`derived/{A,B}_Loads_1day_mean_20251001_20260728.csv`（日 mean 聚合，由 `data_provider/data_aggregate.py` 从 5min 源数据生成，缺失点 seasonal_slot 填充）
+- 时间列：`time`；目标列：`value`；频率：`1D`（301 天，2025-10-01 → 2026-07-28）
 - 同目录 `weather_in_*`（小时粒度）、`date_in_*` 不作外生（粒度不匹配 / 无未来期），单变量配置默认仅用 datetime 派生
-- 对应配置：`config/aidc_power_month/route_A/`、`route_B/`（各 8 个 lgbm 单变量方法，`_mean` 聚合）
+- 对应配置：`config/aidc_power_month/route_A/`、`route_B/`（各 8 个 lgbm 单变量方法，`data_path` 指向 `derived/` 下的 `_mean` 聚合文件）
 
 ## 配置分组参考
 

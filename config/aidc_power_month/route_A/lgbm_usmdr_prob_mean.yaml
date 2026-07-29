@@ -5,12 +5,12 @@ overrides:
     is_testing: true
     is_forecasting: true
     history_days: 281
-    predict_days: 31
+    predict_days: 34
     window_days: 150
-    now_time: '2026-06-30T00:00:00'
+    now_time: '2026-07-28T00:00:00'
   target_series:
     data_dir: ./dataset/aidc_power_month/
-    data_path: A_Loads_1day_mean_20251001_20260708.csv
+    data_path: A_Loads_1day_mean_20251001_20260728.csv
     freq: 1D
     target_ts_feat: time
     target: value

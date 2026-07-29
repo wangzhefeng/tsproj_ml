@@ -1,4 +1,4 @@
-# B — lightgbm — recursive (日频单变量)
+# A — lightgbm — recursive (日频单变量)
 base_config: config.univariate_config
 overrides:
   runtime:
@@ -10,7 +10,7 @@ overrides:
     now_time: '2026-06-30T00:00:00'
   target_series:
     data_dir: ./dataset/aidc_power_month/
-    data_path: B_Loads_1day_20251001_20260708.csv
+    data_path: A_Loads_1day_mean_20251001_20260708.csv
     freq: 1D
     target_ts_feat: time
     target: value
@@ -52,7 +52,7 @@ overrides:
     mode: percentile
     percentile: 5.0
   preprocessing:
-    detrend_target: true  # 特征工程前对 y 线性去趋势(与 scale_target 互斥)
+    detrend_target: true  # 特征工程前对 y 线性去趋势,让模型预测平稳残差(与 scale_target 互斥)
   performance:
     window_parallel_workers: 8
     multi_output_n_jobs: 1

@@ -94,8 +94,10 @@ class Model:
         now_time = pd.Timestamp(self.args.now_time).replace(tzinfo=None).floor("1D") + datetime.timedelta(days=1)
         # 时间序列历史数据开始时刻（= now_time - history_days）
         start_time = now_time - datetime.timedelta(days=self.args.history_days)
-        # 时间序列未来结束时刻（= now_time + predict_days）
-        future_time = now_time + datetime.timedelta(days=self.args.predict_days)
+        # 预测数据长度（= predict_steps 个 freq 步长）
+        self.horizon = int(self.args.predict_steps)
+        # 时间序列未来结束时刻（= now_time + predict_steps × freq 步长）
+        future_time = now_time + datetime.timedelta(minutes=self.step_minutes * self.horizon)
         # 数据划分时间戳
         self.train_start_time = start_time
         self.train_end_time = now_time
@@ -104,8 +106,6 @@ class Model:
         # ------------------------------
         # 模型测试、预测
         # ------------------------------
-        # 预测未来 1 天(24小时)的数据/数据划分长度/预测数据长度
-        self.horizon = int(self.args.predict_days * self.n_per_day)
         # 测试窗口数据长度(训练+测试)
         self.window_len = int(self.args.window_days * self.n_per_day)
         # 测试滑动窗口数量, >=1, 1: 单个窗口

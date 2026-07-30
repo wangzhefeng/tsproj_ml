@@ -5,7 +5,7 @@ overrides:
     is_testing: true
     is_forecasting: false
     history_days: 19
-    predict_days: 1
+    predict_steps: 288
     window_days: 15
     now_time: '2026-06-11T23:55:00'
   target_series:

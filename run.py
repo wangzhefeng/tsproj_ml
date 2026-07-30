@@ -74,8 +74,8 @@ def _apply_overrides(cfg, args):
 
     if args.history_days is not None:
         cfg.history_days = args.history_days
-    if args.predict_days is not None:
-        cfg.predict_days = args.predict_days
+    if args.predict_steps is not None:
+        cfg.predict_steps = args.predict_steps
     if args.window_days is not None:
         cfg.window_days = args.window_days
 
@@ -188,7 +188,7 @@ def args_parse():
     parser.add_argument("--freq", type=str, default=None)
 
     parser.add_argument("--history-days", type=int, default=None)
-    parser.add_argument("--predict-days", type=int, default=None)
+    parser.add_argument("--predict-steps", type=int, default=None)
     parser.add_argument("--window-days", type=int, default=None)
     parser.add_argument("--lags", type=str, default=None, help="comma separated list, e.g. 288,576")
 

@@ -41,6 +41,7 @@ import pandas as pd
 import yaml
 
 from config.config_sections import default_lags_for_freq
+from utils.frequency import resolve_samples_per_day
 
 # 项目根路径
 ROOT = Path(__file__).resolve().parent.parent
@@ -88,7 +89,7 @@ YAML_OVERRIDE_GROUPS = {
         "is_testing",
         "is_forecasting",
         "history_days",
-        "predict_days",
+        "predict_steps",
         "window_days",
         "now_time",
     ],
@@ -394,8 +395,8 @@ def parse_args(argv: Optional[List[str]] = None):
     # ---- 窗口参数 ----
     parser.add_argument("--history-days", type=int, default=31,
                         help="历史数据天数 (默认: 31)")
-    parser.add_argument("--predict-days", type=int, default=1,
-                        help="预测天数 (默认: 1)")
+    parser.add_argument("--predict-steps", type=int, default=None,
+                        help="预测步数, 以 freq 为单位 (默认: 1 天对应的步数)")
     parser.add_argument("--window-days", type=int, default=15,
                         help="滑动窗口天数 (默认: 15)")
 
@@ -429,7 +430,7 @@ def _build_generation_overrides(params: dict) -> dict:
     """只写生成场景显式覆盖的字段，避免 YAML 重复完整基类默认值。"""
     return {
         "history_days": params["history_days"],
-        "predict_days": params["predict_days"],
+        "predict_steps": params["predict_steps"],
         "window_days": params["window_days"],
         "now_time": params["now_time_iso"],
         "data_dir": params["data_dir"],
@@ -593,7 +594,7 @@ def main(argv: Optional[List[str]] = None):
             # 构建参数字典
             params = {
                 "history_days": args.history_days,
-                "predict_days": args.predict_days,
+                "predict_steps": args.predict_steps if args.predict_steps is not None else resolve_samples_per_day(freq),
                 "window_days": args.window_days,
                 "now_time_iso": now_time_iso,
                 "data_dir": data_dir_rel,

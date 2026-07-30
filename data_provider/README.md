@@ -1,15 +1,15 @@
 # data_provider 模块说明
 
-`data_provider/` 负责把原始 CSV 转成主流程可用的历史/未来时间序列数据，并提供两类异常处理工具。
+`data_provider/` 负责把原始 CSV 转成主流程可用的历史/未来时间序列数据，并提供滑窗测试训练段异常处理工具。
 
 ## 文件职责
 
 | 文件 | 职责 |
 |---|---|
 | `data_loader.py` | 读取目标、日期、天气 CSV；构造历史/未来时间轴；统一目标列为 `y` |
-| `fill_missing.py` | 对 `df.csv` 缺失补 0 + 重算派生列，产出稠密版 `df_filled.csv`（不改动原文件） |
 | `outlier_handling.py` | 滑窗测试训练段异常处理，不修改测试真实值 |
-| `outlier_process.py` | 离线负荷数据异常标记、清洗和图片输出 |
+
+离线/批处理脚本（频率聚合 `data_aggregate.py`、填充回测 `fill_method_backtest.py`、离线异常清洗 `outlier_process.py` 等）统一放在 `data_process/`。
 
 ## DataLoader 输入契约
 
@@ -33,7 +33,7 @@
 `main.Model` 计算时间窗口后传给 `DataLoader`：
 
 - 历史区间：`[now_time - history_days, now_time)`
-- 预测区间：`[now_time, now_time + predict_days)`
+- 预测区间：`[now_time, now_time + predict_steps × freq)`
 
 `process_history_data()` 会按历史区间构造模板并映射真实目标；`process_future_data()`
 只构造未来模板和外生特征，不读取未来真实目标。
@@ -47,7 +47,7 @@
 - 输出 `train_outlier_report.csv` 所需的标准列。
 - 不改变测试段真实值，避免评估泄漏。
 
-`outlier_process.py` 用于离线处理原始负荷文件：
+`data_process/outlier_process.py` 用于离线处理原始负荷文件：
 
 - 输入通常是一个 `df_power.csv`。
 - 输出保存在源数据目录。
@@ -59,7 +59,7 @@
 
 ## 算力数据合并与缺失填充
 
-算力预处理脚本已移动到 [scripts/aidc/computility_process.py](/Users/wangzf/projects/tsproj_ml/scripts/aidc/computility_process.py)。
+算力预处理脚本已移动到 [config/aidc_electricity_computility/electricity/2026-06-11/scripts/computility_process.py](/Users/wangzf/projects/tsproj_ml/config/aidc_electricity_computility/electricity/2026-06-11/scripts/computility_process.py)。
 
 该脚本把 `算力数据/<room>/` 下 training / inference / pod 三类原始指标
 按 `count_data_time` 聚合（min/max/mean/std/count，可加量再加 sum，gpu_util 加 busy_*，
@@ -100,7 +100,7 @@ gpu_power_usage 加 high_power_*），再叠加结构衍生列（占比/比值/p
 约 33% 时刻缺推理；最长连续缺口 ~60h）。`pod_*` 全程完整，`training_*` 基本完整，
 `h_total_use` 与 `count_data_time` 100% 完整。
 
-`fill_missing.py` 对 `df.csv` 做「原始列补 0 + 重算派生」产出稠密版 `df_filled.csv`：
+`config/aidc_electricity_computility/electricity/2026-06-11/scripts/fill_missing.py` 对 `df.csv` 做「原始列补 0 + 重算派生」产出稠密版 `df_filled.csv`：
 
 - 162 个原始聚合列 `NaN→0`（语义：无负载 = 0）；
 - 丢弃旧派生列，在补 0 的基础列上重算 51 个派生列（保证内部一致），残存滚动热身

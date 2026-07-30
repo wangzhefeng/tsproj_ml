@@ -13,7 +13,8 @@ The general coding guidelines (Karpathy: think before coding, simplicity, surgic
 ### 时间边界约定
 - `now_time` 配置值 = 最后一个已知数据点（如 `2026-06-11T23:55:00`）
 - 内部分界点 = `floor("1D") + 1day` = 次日 00:00:00
-- `start_time = now_time - history_days`，`future_time = now_time + predict_days`
+- `start_time = now_time - history_days`，`future_time = now_time + predict_steps × freq 步长`
+- **`predict_steps` 以 `freq` 为单位计步**（取代旧 `predict_days`）：15min 下 1 天 = 96、4 小时 = 16；5min 下 1 天 = 288；日频下 = 天数。`horizon = predict_steps`，不再经 `n_per_day` 换算
 - `pd.date_range` 使用 `inclusive="left"`，end 为排除边界——所以终日 23:55 是最后一个被包含的点
 
 ### 预测方法限制
@@ -22,7 +23,7 @@ The general coding guidelines (Karpathy: think before coding, simplicity, surgic
 
 ### 低频（日/周）数据配置约定
 - **freq 必须写 `1D` 而非 `D`**：`default_lags_for_freq` 只认 `1D`，写 `D` 会落回 5min 基准 lags（`[288,576,...]`），与低频数据错配
-- **window_days 在低频下 ≈ 每窗训练样本数**：`main.py` 滞后校验要求 `window_days × n_per_day − horizon > max(lags)`，否则 RAISE（"Lag features would be all-NaN"）；日频即 `window_days > max(lags) + predict_days`
+- **window_days 在低频下 ≈ 每窗训练样本数**：`main.py` 滞后校验要求 `window_days × n_per_day − horizon > max(lags)`，否则 RAISE（"Lag features would be all-NaN"）；日频即 `window_days > max(lags) + predict_steps`
 - **history_days > window_days**：`main.py` 硬校验，否则 RAISE
 - **datetime 派生剔除子日粒度**：低频下 `datetime_features` 去掉 `minute`/`hour`，`datetime_categorical_features` 同步去对应 `dt_*` 项
 
@@ -42,4 +43,4 @@ The general coding guidelines (Karpathy: think before coding, simplicity, surgic
 - 日志目录：`logs/main/`（直接运行 `main.py`）
 - `log_util.py` 在模块导入时执行，`LOG_NAME` 用 `os.environ.get('LOG_NAME', 'main')` 提供默认值
 - 在这台机器上如果 `uv` 触发 `~/.cache/uv` 权限问题，优先使用 `UV_CACHE_DIR=.uv_cache`
-- 算力房间数据：`df.csv`（215 列，全量合并）、`df_selected.csv`（多变量筛后建模数据）、`feature_selection_report.csv`（筛列报告）和稠密版 `df_filled.csv`（`fill_missing.py`：原始列补 0 + 重算派生）都在 `demand_load/<room>/` 下；算力预处理权威入口是 `scripts/aidc/computility_process.py`，特征分原始聚合、状态/结构、时序动态三层；单变量配置继续使用 `df_power.csv`，4 个房间场景的多变量 LGBM 配置使用 `df_selected.csv`
+- 算力房间数据：`df.csv`（215 列，全量合并）、`df_selected.csv`（多变量筛后建模数据）、`feature_selection_report.csv`（筛列报告）和稠密版 `df_filled.csv`（`config/aidc_electricity_computility/electricity/2026-06-11/scripts/fill_missing.py`：原始列补 0 + 重算派生）都在 `demand_load/<room>/` 下；算力预处理权威入口是 `config/aidc_electricity_computility/electricity/2026-06-11/scripts/computility_process.py`，特征分原始聚合、状态/结构、时序动态三层；单变量配置继续使用 `df_power.csv`，4 个房间场景的多变量 LGBM 配置使用 `df_selected.csv`

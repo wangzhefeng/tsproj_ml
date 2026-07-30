@@ -22,7 +22,7 @@
 
 - 生产 API main class
 - `BaseModelMainClass`
-- 算力数据预处理（含 `data_provider/fill_missing.py`、`data_provider/computility_process.py` 兼容 shim、`scripts/aidc/*`——属算力（AIDC）场景特定，不是通用数据质量逻辑，不回迁）
+- 算力数据预处理（`config/aidc_electricity_computility/electricity/2026-06-11/scripts/*`——属算力（AIDC）场景特定，不是通用数据质量逻辑，不回迁）
 - 生产输出字段
 - 生产路径 import
 - dataset 和 results 文件

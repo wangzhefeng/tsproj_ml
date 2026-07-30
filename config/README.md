@@ -132,10 +132,29 @@ dataset/aidc_electricity_computility/electricity/2026-06-11/demand_load/AIDC/rou
 dataset/aidc_power/
 ```
 
-- 目标文件：`derived/{A,B}_Loads_1day_mean_20251001_20260728.csv`（日 mean 聚合，由 `data_provider/data_aggregate.py` 从 5min 源数据生成，缺失点 seasonal_slot 填充）
+- 目标文件：`derived/{A,B}_Loads_1day_mean_20251001_20260728.csv`（日 mean 聚合，由 `data_process/data_aggregate.py` 从 5min 源数据生成，缺失点 linear 插值填充——回测依据见 `data_process/fill_method_backtest.py`）
 - 时间列：`time`；目标列：`value`；频率：`1D`（301 天，2025-10-01 → 2026-07-28）
 - 同目录 `weather_in_*`（小时粒度）、`date_in_*` 不作外生（粒度不匹配 / 无未来期），单变量配置默认仅用 datetime 派生
 - 对应配置：`config/aidc_power_month/route_A/`、`route_B/`（各 8 个 lgbm 单变量方法，`data_path` 指向 `derived/` 下的 `_mean` 聚合文件）
+- 数据聚合配置：`config/aidc_power_month/aggregate_A.yaml`、`aggregate_B.yaml`（由 `data_process/data_aggregate.py run_aggregation` 加载，schema 独立于模型配置，`config <yaml> [--force]` 运行）
+
+### aidc_power_15min（5min -> 15min 场景）
+
+15min 频率负荷，与日频共享 5min 源数据，聚合目标频率不同：
+
+- 数据聚合配置：`config/aidc_power_15min/aggregate_A.yaml`、`aggregate_B.yaml`（`data_process/data_aggregate.py` 加载）
+- 目标文件：`derived/{A,B}_Loads_15min_mean_20251001_20260728.csv`（15min mean 聚合，linear 插值填充）
+- 时间列：`time`；目标列：`value`；频率：`15min`（301 天 × 96 点/天 = 28896 行）
+- 对应配置：`config/aidc_power_15min/route_A/`、`route_B/`（各 8 个 lgbm 单变量方法，`data_path` 指向 `derived/` 下的 15min `_mean` 聚合文件）
+- 与日频配置差异：`predict_steps` 96（34）、`window_days` 30（150）、`history_days` 60（281）、lags 为 1~7 天的 15min 步数 [96,192,288,384,480,576,672]、datetime 特征加回 `hour`/`minute`、rolling/diff 窗口与周期按 ×96 换算（如 rolling_windows [672,1344,2688] = 7/14/28 天）
+
+### aidc_power_15min_short（4h 超短期场景）
+
+复用 15min 聚合数据（不再重复 aggregate 配置），预测未来 4 小时 = 16 点：
+
+- 对应配置：`config/aidc_power_15min_short/route_A/`、`route_B/`（各 8 个 lgbm 单变量方法）
+- 与 15min 日预测配置差异：`predict_steps` 16（96）、`history_days` 30（60）、`window_days` 14（30）、lags 增加近邻步数 [1,2,3,4,8,12,16] 并保留日/周周期 [96,192,672]、rolling_windows [16,96,672]、diff_periods [1,96,672]、`decay_halflife_days` 14（60）
+- 滑窗测试窗口数约 97 个（horizon 小则窗口多），可用 `window_parallel_workers` 并行
 
 ## 配置分组参考
 

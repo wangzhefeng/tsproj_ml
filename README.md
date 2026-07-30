@@ -49,9 +49,12 @@ tsproj_ml/
 ├── dataset/                     # ETT-small 和 AIDC electricity 数据
 ├── data_provider/
 │   ├── data_loader.py           # 数据读取、时间轴构造、历史/未来切片
-│   ├── fill_missing.py          # df.csv 缺失补 0 + 重算派生，产出 df_filled.csv
-│   ├── outlier_handling.py      # 滑窗训练段异常处理
-│   └── outlier_process.py       # 原始负荷数据异常标记、清洗与可视化
+│   └── outlier_handling.py      # 滑窗训练段异常处理
+├── data_process/                # 离线/批处理脚本（不接入主流程模型代码）
+│   ├── data_aggregate.py        # 单目标时序频率聚合 CLI（配置驱动，含缺失填充注册表）
+│   ├── fill_method_backtest.py  # 缺失填充方法掩码回测（MAPE 分桶对比）
+│   ├── outlier_process.py       # 原始负荷数据异常标记、清洗与可视化
+│   └── 其余工具脚本             # decomposition/difference/impute/normalization 等，当前未被模型代码引用
 ├── features/
 │   ├── FeatureEngineering.py    # 日期时间、日期类型、天气、滞后、高级特征
 │   ├── FeatureScalering.py      # 特征/目标缩放与逆变换
@@ -65,12 +68,7 @@ tsproj_ml/
 │   ├── ModelEnsemble.py         # 融合模型
 │   ├── ModelSaveLoad.py         # pickle 保存/加载
 │   └── losses.py, learning_rate.py
-├── scripts/                     # main.py 直跑脚本、AIDC 专项脚本和维护说明
-│   ├── aidc/                    # AIDC 算力处理、结果融合和领导汇报脚本
-│   │   ├── computility_process.py
-│   │   ├── select_aidc_leadership_days.py
-│   │   ├── fuse_aidc_results.py
-│   │   └── adjust_leadership_day_summary_metrics.py
+├── scripts/                     # main.py 直跑脚本和维护说明（AIDC 专项脚本见 config/aidc_electricity_computility/electricity/2026-06-11/scripts/）
 │   ├── production_sync.md       # 生产包同步边界、可迁移模块和同步记录
 │   ├── run_model_test.sh        # main.py 直跑测试脚本
 │   └── template.sh              # main.py 直跑模板脚本
@@ -202,7 +200,7 @@ uv run python config/generate_configs.py \
 | `freq` | pandas 固定频率，如 `5min`、`15min`、`1h` |
 | `now_time` | 预测基准时间 |
 | `history_days` | 历史窗口天数 |
-| `predict_days` | 预测未来天数 |
+| `predict_steps` | 预测步数（以 `freq` 为单位，如 15min 下 1 天 = 96、4 小时 = 16） |
 | `window_days` | 滑窗测试的训练+测试窗口天数 |
 
 可选外生输入：
@@ -220,7 +218,7 @@ uv run python config/generate_configs.py \
 
 ### AIDC 算力链路
 
-`scripts/aidc/computility_process.py` 是当前 AIDC 电力/算力融合的权威入口。它读取
+`config/aidc_electricity_computility/electricity/2026-06-11/scripts/computility_process.py` 是当前 AIDC 电力/算力融合的权威入口。它读取
 `electricity/算力数据/<room>/training|inference|pod/` 下的原始指标，先生成
 `df_computility.csv`，再与 `df_power.csv` 按 `count_data_time` 内连接生成 `df.csv`，
 并继续产出 `df_selected.csv` 与 `feature_selection_report.csv`。
@@ -316,7 +314,7 @@ results/
 - `cv_plot_df.csv` 额外记录测试图的有效性标记；被 `eval_mask` 判为异常的点在 `test_prediction.png` 中断线显示。
 - `prediction_plot_concat.csv` 保留历史与未来拼接后的原始值 `raw_value`，并额外输出 `plot_value`、`plot_valid`、`series_type`；`prediction.png` 用 `plot_value` 绘制历史上下文，用原始 `predict_value` 绘制未来预测。
 
-离线原始负荷异常处理由 `data_provider/outlier_process.py` 提供，输出默认保存到源数据目录：
+离线原始负荷异常处理由 `data_process/outlier_process.py` 提供，输出默认保存到源数据目录：
 
 ```text
 df_power_outlier_detection.csv
@@ -329,7 +327,7 @@ df_power_anomalies.png
 - 根 README 只做项目总览和主流程说明；配置映射、数据目录、目录职责请以对应子目录 README 为准。
 - 标准默认值由 Python dataclass 模板提供；新增具体数据配置优先用分组 YAML 管理。
 - `main.py` 是本地开发与测试的主入口；切换任务时直接修改 `CONFIG_YAML` 和对应 YAML 内容。
-- `now_time` 会被规整到整点作为历史结束/预测开始，历史区间为 `[now_time - history_days, now_time)`，预测区间为 `[now_time, now_time + predict_days)`。
+- `now_time` 会被规整到整点作为历史结束/预测开始，历史区间为 `[now_time - history_days, now_time)`，预测区间为 `[now_time, now_time + predict_steps × freq)`。
 - 分位数预测训练多个子模型；点预测融合只在 `predict_type="point"` 时生效。
 - 多变量递归类方法对非目标内生变量目前主要采用持久性回填，不等同于为每个内生变量单独建模。
 - `.DS_Store`、`__pycache__/`、`logs/`、`results/` 不是源码或数据契约。

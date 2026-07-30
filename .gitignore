@@ -153,9 +153,11 @@ lightning_logs/
 # custom setting
 # ---------------------------------------
 .claude/
+.hermes/
 dataset/
 logs/
 results/
 tests/
 .uv_cache/
 .ruff_cache/
+reports/

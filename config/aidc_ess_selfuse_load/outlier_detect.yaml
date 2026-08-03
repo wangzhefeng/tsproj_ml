@@ -6,12 +6,15 @@
 # 正常日内爬坡（早晚设备启停）会被 z-score 大量误判。
 #
 # 策略：物理边界硬截（abs_low + abs_high）为主 + spike 检测补充孤立跳变
+# 统计可疑点不自动清洗；review_daily_plots 为其所在日期输出完整 5min 曲线供人工审核。
 
 tasks:
   - source_path: dataset/aidc_ess_selfuse_load/A_GateEnergys_5min_20251001_20260728.csv
     time_col: time
     target_col: value
     route: ESS_A
+    review_daily_plots: true
+    auto_clean_statistical: false
     abs_low_threshold: 0.0
     abs_high_threshold: 500.0
     spike_window: 2
@@ -26,6 +29,8 @@ tasks:
     time_col: time
     target_col: value
     route: ESS_B
+    review_daily_plots: true
+    auto_clean_statistical: false
     abs_low_threshold: 0.0
     abs_high_threshold: 500.0
     spike_window: 2

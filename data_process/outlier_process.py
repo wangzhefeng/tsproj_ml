@@ -6,13 +6,15 @@
   2. 孤立跳变检测：spike —— 与短窗口邻域偏差极大的单点/短段（传感器毛刺、通信恢复跳变）
   3. 局部 robust Z-score：local —— 长窗口基线偏离（连续段异常）
   4. 周期 robust Z-score：periodic —— 同时段历史基线偏离
+  5. 同槽位滚动基线：same_slot —— 连续高/低段的待审核候选
 
 local/periodic Z-score 支持 run-length 过滤（短段保留、长段提高阈值）。
 
 输出（源文件同级的 outlier_analysis/ 子目录，文件名从源文件名派生）：
-  outlier_analysis/<stem>_outlier_detection.csv  异常标记（原始数据 + 是否异常/异常类型/异常分数）
+  outlier_analysis/<stem>_outlier_detection.csv  异常标记（含是否清洗/审核状态）
   outlier_analysis/<stem>_remove_outlier.csv     清洗后数据（异常点 time 插值 + ffill/bfill）
   outlier_analysis/<stem>_anomalies.png          原始/清洗后对比图 + 异常标记
+  outlier_analysis/review_days/<stem>/<date>_review.png  统计可疑点的逐日审核图
 
 用法（仓库根目录）：
     uv run python data_process/outlier_process.py <config.yaml>
@@ -41,8 +43,12 @@ local/periodic Z-score 支持 run-length 过滤（短段保留、长段提高阈
     local_baseline_windows:     局部基线窗口列表，默认 [25, 145]
     local_robust_z_threshold:   局部 robust Z 阈值，默认 3.0
     periodic_robust_z_threshold: 周期 robust Z 阈值，默认 2.8
+    same_slot_relative_deviation_pct: 同槽位滚动基线相对偏离百分比，默认 inf（不启用）
+    same_slot_min_run_points:     同槽位候选的最小连续点数，默认 3
     max_short_run_points:       短段最大点数（≤此长度保留），默认 12
-    long_run_score_multiplier:  长段分数乘数，默认 2.5
+    long_run_score_multiplier:  long run 的阈值倍数，默认 2.5
+    review_daily_plots:         对待审核统计点生成逐日全量数据图，默认 false
+    auto_clean_statistical:     统计候选是否自动清洗，默认 true（兼容既有场景）
     plot:                       是否生成图片，默认 true
 """
 
@@ -68,11 +74,16 @@ DEFAULT_ABS_HIGH_THRESHOLD = float("inf")
 DEFAULT_SPIKE_WINDOW = 3
 DEFAULT_SPIKE_Z_THRESHOLD = 6.0
 DEFAULT_SPIKE_ABS_DIFF = 0.0
+DEFAULT_SPIKE_COMPANION_SPREAD = float("inf")
 DEFAULT_LOCAL_BASELINE_WINDOWS = [25, 145]
 DEFAULT_LOCAL_ROBUST_Z_THRESHOLD = 3.0
 DEFAULT_PERIODIC_ROBUST_Z_THRESHOLD = 2.8
 DEFAULT_MAX_SHORT_RUN_POINTS = 12
 DEFAULT_LONG_RUN_SCORE_MULTIPLIER = 2.5
+DEFAULT_SAME_SLOT_WINDOW_DAYS = 31
+DEFAULT_SAME_SLOT_MIN_PERIODS = 9
+DEFAULT_SAME_SLOT_RELATIVE_DEVIATION_PCT = float("inf")
+DEFAULT_SAME_SLOT_MIN_RUN_POINTS = 3
 
 ROBUST_SCALE = 1.4826
 EPSILON = 1e-9
@@ -80,6 +91,8 @@ EPSILON = 1e-9
 ANOMALY_COL = "是否异常"
 ANOMALY_TYPE_COL = "异常类型"
 ANOMALY_SCORE_COL = "异常分数"
+AUTO_CLEAN_COL = "是否清洗"
+REVIEW_STATUS_COL = "审核状态"
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
@@ -94,11 +107,18 @@ class OutlierParams:
     spike_window: int = DEFAULT_SPIKE_WINDOW
     spike_z_threshold: float = DEFAULT_SPIKE_Z_THRESHOLD
     spike_abs_diff_threshold: float = DEFAULT_SPIKE_ABS_DIFF
+    spike_companion_spread_threshold: float = DEFAULT_SPIKE_COMPANION_SPREAD
     local_baseline_windows: List[int] = None  # type: ignore[assignment]
     local_robust_z_threshold: float = DEFAULT_LOCAL_ROBUST_Z_THRESHOLD
     periodic_robust_z_threshold: float = DEFAULT_PERIODIC_ROBUST_Z_THRESHOLD
     max_short_run_points: int = DEFAULT_MAX_SHORT_RUN_POINTS
     long_run_score_multiplier: float = DEFAULT_LONG_RUN_SCORE_MULTIPLIER
+    auto_clean_statistical: bool = True
+    auto_clean_spike: bool = False
+    same_slot_window_days: int = DEFAULT_SAME_SLOT_WINDOW_DAYS
+    same_slot_min_periods: int = DEFAULT_SAME_SLOT_MIN_PERIODS
+    same_slot_relative_deviation_pct: float = DEFAULT_SAME_SLOT_RELATIVE_DEVIATION_PCT
+    same_slot_min_run_points: int = DEFAULT_SAME_SLOT_MIN_RUN_POINTS
 
     def __post_init__(self):
         if self.local_baseline_windows is None:
@@ -113,6 +133,7 @@ class OutlierSpec:
     target_col: str
     params: OutlierParams
     plot: bool = True
+    review_daily_plots: bool = False
     route: str = ""
 
 
@@ -121,6 +142,7 @@ class OutlierResult:
     marked_csv: Path
     cleaned_csv: Path
     plot: Optional[Path]
+    review_plots: List[Path]
     total_rows: int
     anomaly_count: int
     type_counts: Dict[str, int]
@@ -178,6 +200,22 @@ def _keep_short_runs(
     return pd.Series(kept, index=mask.index)
 
 
+def _keep_runs_at_least(mask: pd.Series, min_run_points: int) -> pd.Series:
+    """仅保留长度不小于给定值的连续候选段。"""
+    values = mask.fillna(False).to_numpy(dtype=bool)
+    kept = np.zeros(len(values), dtype=bool)
+    start = None
+    for pos, is_true in enumerate(values):
+        if is_true and start is None:
+            start = pos
+        if start is not None and (not is_true or pos == len(values) - 1):
+            end = pos if is_true else pos - 1
+            if end - start + 1 >= min_run_points:
+                kept[start:end + 1] = True
+            start = None
+    return pd.Series(kept, index=mask.index)
+
+
 def _compute_spike_scores(y: pd.Series, half_window: int) -> Dict[str, pd.Series]:
     """孤立跳变检测：用前后各 half_window 个点的中位数做局部基线。
 
@@ -196,7 +234,11 @@ def _compute_spike_scores(y: pd.Series, half_window: int) -> Dict[str, pd.Series
         residual.abs().rolling(window, center=True, min_periods=min_p).median()
     )
     spike_z = (residual.abs() / scale).fillna(0.0).replace([np.inf, -np.inf], 0.0)
-    return {"z": spike_z, "abs_diff": residual.abs().fillna(0.0)}
+    return {
+        "z": spike_z,
+        "abs_diff": residual.abs().fillna(0.0),
+        "companion_spread": (y.shift(1) - y.shift(-1)).abs(),
+    }
 
 
 def _compute_local_scores(y: pd.Series, windows: List[int]) -> Dict[str, pd.Series]:
@@ -234,6 +276,40 @@ def _compute_periodic_scores(
     return {"high": (residual / slot_scale).clip(lower=0.0), "low": (-residual / slot_scale).clip(lower=0.0)}
 
 
+def _compute_same_slot_relative_scores(
+    df: pd.DataFrame,
+    y: pd.Series,
+    time_col: str,
+    *,
+    window_days: int,
+    min_periods: int,
+) -> Dict[str, pd.Series]:
+    """按相同日内槽位的日期滚动中位数，计算相对偏离百分比。
+
+    该基线保留日内周期并跟随慢趋势，适合识别连续多点高/低段；
+    它只产生审核候选，不直接定义物理越界。
+    """
+    time_values = pd.to_datetime(df[time_col])
+    deltas = time_values.diff().dropna()
+    median_delta = pd.Timedelta(deltas.median()) if len(deltas) else pd.Timedelta(minutes=5)
+    median_seconds = median_delta.total_seconds()
+    slots_per_hour = max(1, round(3600 / median_seconds))
+    slot = (
+        time_values.dt.hour * slots_per_hour
+        + (time_values.dt.minute * 60 + time_values.dt.second) // int(3600 / slots_per_hour)
+    )
+    baseline = y.groupby(slot).transform(
+        lambda values: values.rolling(
+            window=window_days, center=True, min_periods=min_periods
+        ).median()
+    )
+    relative_deviation = ((y / baseline) - 1.0) * 100.0
+    return {
+        "high": relative_deviation.clip(lower=0.0).fillna(0.0),
+        "low": (-relative_deviation).clip(lower=0.0).fillna(0.0),
+    }
+
+
 def detect_anomalies(
     df: pd.DataFrame,
     time_col: str,
@@ -256,12 +332,26 @@ def detect_anomalies(
 
     # --- 2. 孤立跳变检测（z-score + abs_diff 双条件） ---
     spike_scores = _compute_spike_scores(y, params.spike_window)
-    spike_mask = (spike_scores["z"] >= params.spike_z_threshold) & \
-                 (spike_scores["abs_diff"] >= params.spike_abs_diff_threshold)
+    spike_has_large_residual = spike_scores["abs_diff"] >= params.spike_abs_diff_threshold
+    spike_has_large_z = spike_scores["z"] >= params.spike_z_threshold
+    if np.isfinite(params.spike_companion_spread_threshold):
+        spike_has_stable_companions = (
+            spike_scores["companion_spread"] <= params.spike_companion_spread_threshold
+        )
+    else:
+        spike_has_stable_companions = pd.Series(False, index=y.index)
+    spike_mask = spike_has_large_residual & (spike_has_large_z | spike_has_stable_companions)
 
     # --- 3. 局部 robust Z-score ---
     local_scores = _compute_local_scores(y, params.local_baseline_windows)
     periodic_scores = _compute_periodic_scores(df, y, time_col)
+    same_slot_scores = _compute_same_slot_relative_scores(
+        df,
+        y,
+        time_col,
+        window_days=params.same_slot_window_days,
+        min_periods=params.same_slot_min_periods,
+    )
 
     local_high = _keep_short_runs(
         local_scores["high"] >= params.local_robust_z_threshold,
@@ -294,6 +384,16 @@ def detect_anomalies(
         params.long_run_score_multiplier,
     )
 
+    # --- 5. 同槽位滚动基线相对偏离（持续段审核候选） ---
+    same_slot_high = _keep_runs_at_least(
+        same_slot_scores["high"] >= params.same_slot_relative_deviation_pct,
+        params.same_slot_min_run_points,
+    )
+    same_slot_low = _keep_runs_at_least(
+        same_slot_scores["low"] >= params.same_slot_relative_deviation_pct,
+        params.same_slot_min_run_points,
+    )
+
     marked = df.copy()
     anomaly_type = pd.Series("", index=marked.index, dtype="object")
     anomaly_type = _add_anomaly_type(anomaly_type, absolute_low, "absolute_low")
@@ -303,16 +403,31 @@ def detect_anomalies(
     anomaly_type = _add_anomaly_type(anomaly_type, local_low, "local_low")
     anomaly_type = _add_anomaly_type(anomaly_type, periodic_high, "periodic_high")
     anomaly_type = _add_anomaly_type(anomaly_type, periodic_low, "periodic_low")
+    anomaly_type = _add_anomaly_type(anomaly_type, same_slot_high, "same_slot_high")
+    anomaly_type = _add_anomaly_type(anomaly_type, same_slot_low, "same_slot_low")
 
     anomaly_score = _finite_max(
         spike_scores["z"],
         local_scores["high"], local_scores["low"],
         periodic_scores["high"], periodic_scores["low"],
+        same_slot_scores["high"], same_slot_scores["low"],
     )
+    physical_mask = absolute_low | absolute_high
     is_anomaly = anomaly_type != ""
+    statistical_mask = is_anomaly & ~physical_mask
+    auto_clean_mask = (
+        physical_mask
+        | (spike_mask & (params.auto_clean_spike | params.auto_clean_statistical))
+        | (statistical_mask & ~spike_mask & params.auto_clean_statistical)
+    )
+    review_mask = statistical_mask & ~params.auto_clean_statistical
     marked[ANOMALY_COL] = np.where(is_anomaly, "是", "否")
     marked[ANOMALY_TYPE_COL] = np.where(is_anomaly, anomaly_type, "")
     marked[ANOMALY_SCORE_COL] = np.where(is_anomaly, anomaly_score.round(6), "")
+    marked[AUTO_CLEAN_COL] = np.where(auto_clean_mask, "是", "否")
+    marked[REVIEW_STATUS_COL] = np.select(
+        [auto_clean_mask, review_mask], ["自动清洗", "待审核"], default="无"
+    )
     return marked
 
 
@@ -347,13 +462,20 @@ def build_cleaned_series(
     首轮按检测标记置空；随后把所有非数值和超出物理边界的残留值再次置空。
     该守卫不依赖检测是否漏标，保证清洗 CSV 不会输出越界值。
     """
-    if ANOMALY_COL not in marked.columns:
-        raise ValueError(f"marked data must contain {ANOMALY_COL!r}.")
+    if AUTO_CLEAN_COL not in marked.columns and ANOMALY_COL not in marked.columns:
+        raise ValueError(
+            f"marked data must contain {AUTO_CLEAN_COL!r} or {ANOMALY_COL!r}."
+        )
     cleaned = marked[[time_col, target_col]].copy()
     cleaned_time = pd.to_datetime(cleaned[time_col])
     cleaned_target = pd.to_numeric(cleaned[target_col], errors="coerce")
-    anomaly_mask = marked[ANOMALY_COL] == "是"
-    cleaned_target.loc[anomaly_mask] = np.nan
+    # 仅物理越界自动清洗；统计可疑点保留原值，交由逐日审核图人工判定。
+    if AUTO_CLEAN_COL in marked.columns:
+        clean_mask = marked[AUTO_CLEAN_COL] == "是"
+    else:
+        # 兼容旧版 detection CSV。
+        clean_mask = marked[ANOMALY_COL] == "是"
+    cleaned_target.loc[clean_mask] = np.nan
 
     # 检测漏标、源非数值和插值边界都由此处统一兜底。
     for _ in range(2):
@@ -399,9 +521,11 @@ def plot_anomalies(
     cleaned_df = cleaned.copy()
     cleaned_df[time_col] = pd.to_datetime(cleaned_df[time_col])
     anomaly_mask = plot_df[ANOMALY_COL] == "是"
+    auto_clean_mask = plot_df[AUTO_CLEAN_COL] == "是"
+    review_mask = plot_df[REVIEW_STATUS_COL] == "待审核"
     anomaly_count = int(anomaly_mask.sum())
     anomaly_rate = anomaly_count / len(plot_df) if len(plot_df) else 0.0
-    replaced_mask = anomaly_mask | (
+    replaced_mask = auto_clean_mask | (
         pd.to_numeric(plot_df[target_col], errors="coerce")
         != pd.to_numeric(cleaned_df[target_col], errors="coerce")
     )
@@ -409,10 +533,14 @@ def plot_anomalies(
     fig, (raw_ax, clean_ax) = plt.subplots(2, 1, figsize=(24, 12), sharex=True)
     raw_ax.plot(plot_df[time_col], plot_df[target_col],
                 color="#2F5597", linewidth=0.8, label="raw")
-    if anomaly_count:
-        anomaly_df = plot_df.loc[anomaly_mask]
-        raw_ax.scatter(anomaly_df[time_col], anomaly_df[target_col],
-                       color="#D62728", s=24, label="detected anomaly", zorder=3)
+    if auto_clean_mask.any():
+        physical_df = plot_df.loc[auto_clean_mask]
+        raw_ax.scatter(physical_df[time_col], physical_df[target_col],
+                       color="#D62728", s=24, label="auto-cleaned", zorder=3)
+    if review_mask.any():
+        review_df = plot_df.loc[review_mask]
+        raw_ax.scatter(review_df[time_col], review_df[target_col],
+                       color="#FF7F0E", s=24, label="review required", zorder=3)
     raw_ax.set_title(
         f"{route}: raw load and detected anomalies "
         f"(points={len(plot_df)}, anomalies={anomaly_count}, rate={anomaly_rate:.2%})"
@@ -447,6 +575,127 @@ def plot_anomalies(
     return output_path
 
 
+def plot_review_days(
+    marked: pd.DataFrame,
+    time_col: str,
+    target_col: str,
+    route: str,
+    output_dir: Path,
+) -> List[Path]:
+    """对每个含统计可疑点的日期输出当天完整时序，供人工审核。"""
+    if REVIEW_STATUS_COL not in marked.columns:
+        return []
+
+    plot_df = marked.copy()
+    plot_df[time_col] = pd.to_datetime(plot_df[time_col])
+    review_mask = plot_df[REVIEW_STATUS_COL] == "待审核"
+    if not review_mask.any():
+        return []
+
+    plt = _setup_matplotlib()
+    output_dir.mkdir(parents=True, exist_ok=True)
+    review_dates = plot_df.loc[review_mask, time_col].dt.normalize().drop_duplicates().sort_values()
+    output_paths: List[Path] = []
+    for review_date in review_dates:
+        next_date = review_date + pd.Timedelta(days=1)
+        day_mask = (plot_df[time_col] >= review_date) & (plot_df[time_col] < next_date)
+        day_df = plot_df.loc[day_mask]
+        day_review_mask = day_df[REVIEW_STATUS_COL] == "待审核"
+        day_clean_mask = day_df[AUTO_CLEAN_COL] == "是"
+
+        fig, ax = plt.subplots(figsize=(16, 7))
+        ax.plot(day_df[time_col], day_df[target_col], color="#2F5597", linewidth=1.1, label="raw")
+        if day_clean_mask.any():
+            auto_cleaned = day_df.loc[day_clean_mask]
+            ax.scatter(auto_cleaned[time_col], auto_cleaned[target_col], color="#D62728",
+                       s=48, marker="x", label="auto-cleaned", zorder=3)
+        review_points = day_df.loc[day_review_mask]
+        ax.scatter(review_points[time_col], review_points[target_col], color="#FF7F0E",
+                   s=58, label="review required", zorder=3)
+        ax.set_title(
+            f"{route}: full-day review — {review_date:%Y-%m-%d} "
+            f"(review points={len(review_points)})"
+        )
+        ax.set_xlabel("time")
+        ax.set_ylabel(target_col)
+        ax.grid(True, alpha=0.3)
+        ax.legend(loc="best")
+        fig.autofmt_xdate()
+        fig.tight_layout()
+        output_path = output_dir / f"{review_date:%Y-%m-%d}_review.png"
+        fig.savefig(output_path, dpi=180, bbox_inches="tight")
+        plt.close(fig)
+        output_paths.append(output_path)
+    return output_paths
+
+
+def plot_cross_route_review_days(
+    marked_a: pd.DataFrame,
+    marked_b: pd.DataFrame,
+    time_col: str,
+    target_col: str,
+    route_a: str,
+    route_b: str,
+    output_dir: Path,
+) -> List[Path]:
+    """为含待审核点的日期输出 A、B、A+B 联动审核图。"""
+    left = marked_a.copy()
+    right = marked_b.copy()
+    left[time_col] = pd.to_datetime(left[time_col])
+    right[time_col] = pd.to_datetime(right[time_col])
+    merged = left[[time_col, target_col, REVIEW_STATUS_COL, AUTO_CLEAN_COL]].merge(
+        right[[time_col, target_col, REVIEW_STATUS_COL, AUTO_CLEAN_COL]],
+        on=time_col,
+        how="inner",
+        suffixes=("_a", "_b"),
+        validate="one_to_one",
+    )
+    if merged.empty:
+        return []
+
+    review_mask = (
+        merged[f"{REVIEW_STATUS_COL}_a"].eq("待审核")
+        | merged[f"{REVIEW_STATUS_COL}_b"].eq("待审核")
+    )
+    if not review_mask.any():
+        return []
+
+    plt = _setup_matplotlib()
+    output_dir.mkdir(parents=True, exist_ok=True)
+    review_dates = merged.loc[review_mask, time_col].dt.normalize().drop_duplicates().sort_values()
+    output_paths: List[Path] = []
+    for review_date in review_dates:
+        next_date = review_date + pd.Timedelta(days=1)
+        day = merged.loc[(merged[time_col] >= review_date) & (merged[time_col] < next_date)].copy()
+        day_review = (
+            day[f"{REVIEW_STATUS_COL}_a"].eq("待审核")
+            | day[f"{REVIEW_STATUS_COL}_b"].eq("待审核")
+        )
+        day["total"] = pd.to_numeric(day[f"{target_col}_a"], errors="coerce") + pd.to_numeric(
+            day[f"{target_col}_b"], errors="coerce"
+        )
+
+        fig, axes = plt.subplots(3, 1, figsize=(16, 11), sharex=True)
+        series = [(f"{target_col}_a", route_a), (f"{target_col}_b", route_b), ("total", "A+B total")]
+        for axis, (column, label) in zip(axes, series):
+            axis.plot(day[time_col], day[column], color="#2F5597", linewidth=1.0, label=label)
+            if day_review.any():
+                axis.scatter(day.loc[day_review, time_col], day.loc[day_review, column],
+                             color="#FF7F0E", s=34, label="review required", zorder=3)
+            axis.grid(True, alpha=0.3)
+            axis.set_ylabel("kW")
+            axis.legend(loc="best")
+        axes[0].set_title(f"A/B/total source review — {review_date:%Y-%m-%d}")
+        axes[-1].set_xlabel("time")
+        fig.autofmt_xdate()
+        fig.tight_layout()
+        output_path = output_dir / f"{review_date:%Y-%m-%d}_A_B_total_review.png"
+        fig.savefig(output_path, dpi=180, bbox_inches="tight")
+        plt.close(fig)
+        output_paths.append(output_path)
+    return output_paths
+
+
 # ---------------------------------------------------------------------------
 # 单任务执行
 # ---------------------------------------------------------------------------
@@ -458,6 +707,7 @@ def _output_paths(source_path: Path) -> Dict[str, Path]:
         "marked": out_dir / f"{stem}_outlier_detection.csv",
         "cleaned": out_dir / f"{stem}_remove_outlier.csv",
         "plot": out_dir / f"{stem}_anomalies.png",
+        "review_dir": out_dir / "review_days" / stem,
     }
 
 
@@ -490,6 +740,12 @@ def process_outlier(spec: OutlierSpec) -> OutlierResult:
             marked, cleaned, spec.time_col, spec.target_col, route, paths["plot"]
         )
 
+    review_plots: List[Path] = []
+    if spec.review_daily_plots:
+        review_plots = plot_review_days(
+            marked, spec.time_col, spec.target_col, route, paths["review_dir"]
+        )
+
     anomaly_count = int((marked[ANOMALY_COL] == "是").sum())
     type_counts = (
         marked.loc[marked[ANOMALY_COL] == "是", ANOMALY_TYPE_COL]
@@ -500,11 +756,14 @@ def process_outlier(spec: OutlierSpec) -> OutlierResult:
     print(f"  -> {paths['cleaned']}")
     if plot_path:
         print(f"  -> {plot_path}")
+    if review_plots:
+        print(f"  -> {len(review_plots)} review-day plots under {paths['review_dir']}")
 
     return OutlierResult(
         marked_csv=paths["marked"],
         cleaned_csv=paths["cleaned"],
         plot=plot_path,
+        review_plots=review_plots,
         total_rows=len(df),
         anomaly_count=anomaly_count,
         type_counts=type_counts,
@@ -534,11 +793,22 @@ def _build_params(raw: dict[str, Any]) -> OutlierParams:
         spike_window=int(raw.get("spike_window", DEFAULT_SPIKE_WINDOW)),
         spike_z_threshold=float(raw.get("spike_z_threshold", DEFAULT_SPIKE_Z_THRESHOLD)),
         spike_abs_diff_threshold=float(raw.get("spike_abs_diff_threshold", DEFAULT_SPIKE_ABS_DIFF)),
+        spike_companion_spread_threshold=float(
+            raw.get("spike_companion_spread_threshold", DEFAULT_SPIKE_COMPANION_SPREAD)
+        ),
         local_baseline_windows=raw.get("local_baseline_windows", None),
         local_robust_z_threshold=float(raw.get("local_robust_z_threshold", DEFAULT_LOCAL_ROBUST_Z_THRESHOLD)),
         periodic_robust_z_threshold=float(raw.get("periodic_robust_z_threshold", DEFAULT_PERIODIC_ROBUST_Z_THRESHOLD)),
         max_short_run_points=int(raw.get("max_short_run_points", DEFAULT_MAX_SHORT_RUN_POINTS)),
         long_run_score_multiplier=float(raw.get("long_run_score_multiplier", DEFAULT_LONG_RUN_SCORE_MULTIPLIER)),
+        auto_clean_statistical=bool(raw.get("auto_clean_statistical", True)),
+        auto_clean_spike=bool(raw.get("auto_clean_spike", False)),
+        same_slot_window_days=int(raw.get("same_slot_window_days", DEFAULT_SAME_SLOT_WINDOW_DAYS)),
+        same_slot_min_periods=int(raw.get("same_slot_min_periods", DEFAULT_SAME_SLOT_MIN_PERIODS)),
+        same_slot_relative_deviation_pct=float(
+            raw.get("same_slot_relative_deviation_pct", DEFAULT_SAME_SLOT_RELATIVE_DEVIATION_PCT)
+        ),
+        same_slot_min_run_points=int(raw.get("same_slot_min_run_points", DEFAULT_SAME_SLOT_MIN_RUN_POINTS)),
     )
 
 
@@ -552,8 +822,50 @@ def _build_spec(raw: dict[str, Any], config_path: Path) -> OutlierSpec:
         target_col=raw["target_col"],
         params=_build_params(raw),
         plot=bool(raw.get("plot", True)),
+        review_daily_plots=bool(raw.get("review_daily_plots", False)),
         route=raw.get("route", ""),
     )
+
+
+def _run_cross_route_review(
+    raw: Mapping[str, Any],
+    specs: List[OutlierSpec],
+    results: List[OutlierResult],
+    *,
+    force: bool,
+) -> None:
+    review_config = raw.get("cross_route_review")
+    if review_config is None:
+        return
+    if not isinstance(review_config, Mapping):
+        raise ValueError("cross_route_review must be a mapping.")
+    route_a = str(review_config["route_a"])
+    route_b = str(review_config["route_b"])
+    by_route = {
+        spec.route: (spec, result)
+        for spec, result in zip(specs, results)
+    }
+    if route_a not in by_route or route_b not in by_route:
+        raise ValueError("cross_route_review routes must match task route values.")
+    spec_a, result_a = by_route[route_a]
+    spec_b, result_b = by_route[route_b]
+    if (spec_a.time_col, spec_a.target_col) != (spec_b.time_col, spec_b.target_col):
+        raise ValueError("cross_route_review tasks must use identical time_col and target_col.")
+    output_dir = _resolve_path(str(review_config["output_dir"]))
+    if force and output_dir.exists():
+        for output_path in output_dir.glob("*_A_B_total_review.png"):
+            output_path.unlink()
+    review_paths = plot_cross_route_review_days(
+        pd.read_csv(result_a.marked_csv),
+        pd.read_csv(result_b.marked_csv),
+        spec_a.time_col,
+        spec_a.target_col,
+        route_a,
+        route_b,
+        output_dir,
+    )
+    if review_paths:
+        print(f"  -> {len(review_paths)} A/B/total review plots under {output_dir}")
 
 
 def run_outlier_detection(config_path: str | Path, *, force: bool = False) -> None:
@@ -564,13 +876,19 @@ def run_outlier_detection(config_path: str | Path, *, force: bool = False) -> No
     config_path = Path(config_path).resolve()
     raw = _load_config(config_path)
     task_list = raw["tasks"] if "tasks" in raw else [raw]
+    specs: List[OutlierSpec] = []
+    results: List[OutlierResult] = []
     for item in task_list:
         spec = _build_spec(item, config_path)
+        specs.append(spec)
         # --force 时删除旧输出
         if force:
             for p in _output_paths(spec.source_path).values():
+                if p.is_dir():
+                    continue
                 p.unlink(missing_ok=True)
-        process_outlier(spec)
+        results.append(process_outlier(spec))
+    _run_cross_route_review(raw, specs, results, force=force)
 
 
 def main() -> None:

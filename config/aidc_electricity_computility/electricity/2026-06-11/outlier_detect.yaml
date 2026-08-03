@@ -1,0 +1,33 @@
+# AIDC 2026-06-11 demand_load 异常检测配置
+# 由 data_process/outlier_process.py run_outlier_detection 加载，schema 独立于模型配置
+tasks:
+  - source_path: dataset/aidc_electricity_computility/electricity/2026-06-11/demand_load/A1_01a/df_power.csv
+    time_col: count_data_time
+    target_col: h_total_use
+    route: A1_01a
+
+  - source_path: dataset/aidc_electricity_computility/electricity/2026-06-11/demand_load/A1_201/df_power.csv
+    time_col: count_data_time
+    target_col: h_total_use
+    route: A1_201
+    abs_low_threshold: 100.0  # 该房间负荷量级 ~600，默认 1000 不适用
+
+  - source_path: dataset/aidc_electricity_computility/electricity/2026-06-11/demand_load/A1_IT/df_power.csv
+    time_col: count_data_time
+    target_col: h_total_use
+    route: A1_IT
+
+  - source_path: dataset/aidc_electricity_computility/electricity/2026-06-11/demand_load/A3_01e/df_power.csv
+    time_col: count_data_time
+    target_col: h_total_use
+    route: A3_01e
+
+  - source_path: dataset/aidc_electricity_computility/electricity/2026-06-11/demand_load/AIDC/route_A/df_power.csv
+    time_col: count_data_time
+    target_col: h_total_use
+    route: AIDC/route_A
+
+  - source_path: dataset/aidc_electricity_computility/electricity/2026-06-11/demand_load/AIDC/route_B/df_power.csv
+    time_col: count_data_time
+    target_col: h_total_use
+    route: AIDC/route_B

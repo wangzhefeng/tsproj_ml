@@ -1,0 +1,34 @@
+# AIDC ESS 自用功率 A/B 路 5min 异常检测
+# 由 data_process/outlier_process.py run_outlier_detection 加载，schema 独立于模型配置
+#
+# 数据特征：储能电站自身用电负荷（站用电），物理范围 ≥0 且通常 < 300 kW。
+# 与配电负荷（MW 级，波动数百 kW）不同，站用电动态范围低（10~140 kW），
+# 正常日内爬坡（早晚设备启停）就会被默认 z-score 阈值大量误判。
+#
+# 参数选择逻辑：
+#   abs_low_threshold = 0.0       → 捕获所有负脏值（传感器/通信故障，如 -1.3 亿）
+#   local/periodic z = 5.0        → 提高阈值
+#   max_short_run_points = 0      → 不无条件保留任何短段
+#   long_run_score_multiplier=10  → 长段有效 z-score 门槛 = 5×10 = 50，只保留最极端的孤立尖峰
+#   （代码无 abs_high 参数，>300kW 的大正异常只能靠极高 z-score 辅助命中）
+
+tasks:
+  - source_path: dataset/aidc_ess_selfuse_power/A_GateEnergys_5min_20251001_20260728.csv
+    time_col: time
+    target_col: value
+    route: ESS_A
+    abs_low_threshold: 0.0
+    local_robust_z_threshold: 5.0
+    periodic_robust_z_threshold: 5.0
+    max_short_run_points: 0
+    long_run_score_multiplier: 10.0
+
+  - source_path: dataset/aidc_ess_selfuse_power/B_GateEnergys_5min_20251001_20260728.csv
+    time_col: time
+    target_col: value
+    route: ESS_B
+    abs_low_threshold: 0.0
+    local_robust_z_threshold: 5.0
+    periodic_robust_z_threshold: 5.0
+    max_short_run_points: 0
+    long_run_score_multiplier: 10.0

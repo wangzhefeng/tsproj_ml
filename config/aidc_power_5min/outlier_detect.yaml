@@ -1,0 +1,12 @@
+# AIDC 功率 5min 原始数据 A/B 路异常检测
+# 由 data_process/outlier_process.py run_outlier_detection 加载，schema 独立于模型配置
+tasks:
+  - source_path: dataset/aidc_power_5min/A_Loads_5min_20251001_20260728.csv
+    time_col: time
+    target_col: value
+    route: power_A_5min
+
+  - source_path: dataset/aidc_power_5min/B_Loads_5min_20251001_20260728.csv
+    time_col: time
+    target_col: value
+    route: power_B_5min

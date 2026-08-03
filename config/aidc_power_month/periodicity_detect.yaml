@@ -1,0 +1,14 @@
+# 日频负荷周期检测
+# 由 data_process/periodicity_analysis.py run_periodicity_analysis 加载，schema 独立于模型配置
+tasks:
+  - source_path: dataset/aidc_power_month/A_Loads_1day_mean_20251001_20260728.csv
+    time_col: time
+    target_col: value
+    route: power_A_1day
+    max_lags: 60
+
+  - source_path: dataset/aidc_power_month/B_Loads_1day_mean_20251001_20260728.csv
+    time_col: time
+    target_col: value
+    route: power_B_1day
+    max_lags: 60

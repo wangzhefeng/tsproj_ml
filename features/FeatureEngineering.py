@@ -116,6 +116,11 @@ class ExogenousFeatureEngineer:
             "quarter": lambda s: s.dt.quarter,
             "day_of_year": lambda s: s.dt.dayofyear,
             "year": lambda s: s.dt.year,
+            # 日历边界标记（bool→0/1）：低频（日频）场景下区分周期边界状态
+            "is_month_start": lambda s: s.dt.is_month_start,
+            "is_month_end": lambda s: s.dt.is_month_end,
+            "is_quarter_start": lambda s: s.dt.is_quarter_start,
+            "is_quarter_end": lambda s: s.dt.is_quarter_end,
         }
         for feature_name in self.args.datetime_features:
             if feature_name in feature_map:

@@ -17,6 +17,7 @@ dependencies = [
     "scipy>=1.15.3",
     "sklearn-pandas>=2.2.0",
     "sklearn2pmml>=0.128.1",
+    "statsmodels>=0.14.6",
     "tqdm>=4.67.3",
     "xgboost>=3.2.0",
 ]

@@ -53,7 +53,7 @@ tsproj_ml/
 ├── data_process/                # 离线/批处理脚本（不接入主流程模型代码）
 │   ├── data_aggregate.py        # 单目标时序频率聚合 CLI（配置驱动，含缺失填充注册表）
 │   ├── fill_method_backtest.py  # 缺失填充方法掩码回测（MAPE 分桶对比）
-│   ├── outlier_process.py       # 原始负荷数据异常标记、清洗与可视化
+│   ├── outlier_process.py       # 原始负荷数据异常标记、清洗与可视化（配置驱动）
 │   └── 其余工具脚本             # decomposition/difference/impute/normalization 等，当前未被模型代码引用
 ├── features/
 │   ├── FeatureEngineering.py    # 日期时间、日期类型、天气、滞后、高级特征
@@ -285,7 +285,7 @@ uv run python config/generate_configs.py \
 
 ## 输出结构
 
-`<scenario>` 由 `data_dir` 解析而来（去掉 `dataset/` 前缀和 config 侧没有的 `demand_load` 段），使结果路径与 config 目录布局对齐，例如 `aidc_electricity_computility/electricity/2026-06-11/A1_01a`；不同场景的结果因此互不覆盖。
+`<scenario>` 由 YAML 中的 `scenario_subpath` 显式指定（如 `aidc_power_month/route_A`），使结果路径与 config 目录布局对齐；未指定时回退为从 `data_dir` 自动推导（去掉 `dataset/` 前缀和 `demand_load` 段）。多组配置共用同一 `data_dir` 时（如三个 `aidc_power_*` 场景共用 `dataset/aidc_power/`）必须显式指定，否则结果会混入同一目录。不同场景的结果因此互不覆盖。
 
 `<setting>` 由 `{model_type}-{data_name}-{pred_method_code}-{window_days}` 组成，例如 `lightgbm-df_power-usmr-15`。
 
@@ -314,7 +314,7 @@ results/
 - `cv_plot_df.csv` 额外记录测试图的有效性标记；被 `eval_mask` 判为异常的点在 `test_prediction.png` 中断线显示。
 - `prediction_plot_concat.csv` 保留历史与未来拼接后的原始值 `raw_value`，并额外输出 `plot_value`、`plot_valid`、`series_type`；`prediction.png` 用 `plot_value` 绘制历史上下文，用原始 `predict_value` 绘制未来预测。
 
-离线原始负荷异常处理由 `data_process/outlier_process.py` 提供，输出默认保存到源数据目录：
+离线原始负荷异常处理由 `data_process/outlier_process.py` 提供（配置驱动，用法同 `data_aggregate.py`）。配置示例：`config/aidc_electricity_computility/electricity/2026-06-11/outlier_detect.yaml`。输出文件名从源文件名派生，保存到源数据目录：
 
 ```text
 df_power_outlier_detection.csv

@@ -33,7 +33,7 @@ The general coding guidelines (Karpathy: think before coding, simplicity, surgic
 - 容量上限：`multi_output_n_jobs × model_thread_count ≤ 物理核数`，优先「多并行单线程」。本机 M2 共 8 核（4 性能 + 4 能效）。
 
 ### 关键约定
-- 输出目录：`results/`（不是 `saved_results/`）；三个子目录（pretrained_models/results_test/results_forecast）按 `<scenario>/<setting>` 嵌套，`<scenario>` 由 `data_dir` 解析得到（与 config 路径对齐），不同场景互不覆盖
+- 输出目录：`results/`（不是 `saved_results/`）；三个子目录（pretrained_models/results_test/results_forecast）按 `<scenario>/<setting>` 嵌套，`<scenario>` 优先取 YAML `overrides.output.scenario_subpath`（与 config 目录对齐），未设时由 `data_dir` 去掉 `dataset/`/`demand_load` 段自动推导；多组配置共用同一 `data_dir` 时必须显式指定 `scenario_subpath`，否则结果混入同一目录
 - 测试汇总指标：使用 median（中位数），不是 mean——单窗口 MAPE 爆炸会拖垮均值
 - `MAPE Accuracy` 业务口径：按 `eval_mask` 掩码过滤后计算（默认 `mode: percentile` 即窗口正样本 `P5`；`absolute`/`combined` 模式启用 `min_value` 绝对下限，`max_value` 上限与 mode 正交、三模式均生效）；阈值落 `test_scores_df.csv` 的 `MAPE Threshold`/`MAPE Upper Threshold` 列，无有效点写 `NaN`
 - `prediction.png` 按 `eval_mask` 掩码历史上下文异常点（断线）；未来预测原值保留在 `prediction.csv` 和 `prediction_plot_concat.csv`

@@ -1,0 +1,123 @@
+# AIDC A/B 路 5min 负荷 → 月度预测用电量（kWh）聚合配置集
+# 由 data_process/data_aggregate.py run_aggregation 加载
+# schema 独立于模型配置（顶层平铺或 tasks: 列表，无 base_config/overrides）
+#
+# unit_scale: 0.0833 = 1/12，将 5min 平均功率（kW）sum 聚合后乘步长系数得电量 kWh
+# 聚合输出落 dataset/aidc_load_5min/derived/，再由后续步骤复制到 dataset/aidc_power_month/
+#
+# 频率层说明：
+#   - 1D  sum: 日用电量 kWh（预测主粒度，训练/测试/预测）
+#   - 1h  sum: 小时电量 kWh（峰谷分析）
+#   - 15min sum: 细粒度电量 kWh（异常检测参考）
+#   - 1month sum: 月电量 kWh（统计参考，不参与训练）
+#   - 1D  mean: 日均功率 kW（与 power_month 场景对比验证用，unit_scale=1.0）
+
+tasks:
+  # ==================== A 路 ====================
+  # --- 日用电量 kWh（预测主粒度）---
+  - source_path: dataset/aidc_load_5min/A_Loads_5min_20251001_20260728.csv
+    time_col: time
+    target_col: value
+    source_freq: 5min
+    target_freq: 1D
+    method: sum
+    fill_method: linear
+    fill_weeks: 4
+    unit_scale: 0.0833333333333333
+    output_path: dataset/aidc_load_5min/derived/A_Loads_1day_sum_20251001_20260728.csv
+
+  # --- 小时电量 kWh（峰谷分析）---
+  - source_path: dataset/aidc_load_5min/A_Loads_5min_20251001_20260728.csv
+    time_col: time
+    target_col: value
+    source_freq: 5min
+    target_freq: 1h
+    method: sum
+    fill_method: linear
+    fill_weeks: 4
+    unit_scale: 0.0833333333333333
+    output_path: dataset/aidc_load_5min/derived/A_Loads_1hour_sum_20251001_20260728.csv
+
+  # --- 15min 电量 kWh（异常检测参考）---
+  - source_path: dataset/aidc_load_5min/A_Loads_5min_20251001_20260728.csv
+    time_col: time
+    target_col: value
+    source_freq: 5min
+    target_freq: 15min
+    method: sum
+    fill_method: linear
+    fill_weeks: 4
+    unit_scale: 0.0833333333333333
+    output_path: dataset/aidc_load_5min/derived/A_Loads_15min_sum_20251001_20260728.csv
+
+  # --- 月电量 kWh（统计参考）---
+  # 月频是非固定频率（MonthEnd），data_aggregate 不支持。从日频 sum 再聚合。
+  # 见 verify 脚本或后续分析。
+  # - source_path: dataset/aidc_load_5min/A_Loads_5min_20251001_20260728.csv
+  #   target_freq: 1ME
+
+  # --- 日均功率 kW（对比验证，mean 不转 kWh）---
+  - source_path: dataset/aidc_load_5min/A_Loads_5min_20251001_20260728.csv
+    time_col: time
+    target_col: value
+    source_freq: 5min
+    target_freq: 1D
+    method: mean
+    fill_method: linear
+    fill_weeks: 4
+    unit_scale: 1.0
+    output_path: dataset/aidc_load_5min/derived/A_Loads_1day_mean_20251001_20260728.csv
+
+  # ==================== B 路 ====================
+  # --- 日用电量 kWh（预测主粒度）---
+  - source_path: dataset/aidc_load_5min/B_Loads_5min_20251001_20260728.csv
+    time_col: time
+    target_col: value
+    source_freq: 5min
+    target_freq: 1D
+    method: sum
+    fill_method: linear
+    fill_weeks: 4
+    unit_scale: 0.0833333333333333
+    output_path: dataset/aidc_load_5min/derived/B_Loads_1day_sum_20251001_20260728.csv
+
+  # --- 小时电量 kWh（峰谷分析）---
+  - source_path: dataset/aidc_load_5min/B_Loads_5min_20251001_20260728.csv
+    time_col: time
+    target_col: value
+    source_freq: 5min
+    target_freq: 1h
+    method: sum
+    fill_method: linear
+    fill_weeks: 4
+    unit_scale: 0.0833333333333333
+    output_path: dataset/aidc_load_5min/derived/B_Loads_1hour_sum_20251001_20260728.csv
+
+  # --- 15min 电量 kWh（异常检测参考）---
+  - source_path: dataset/aidc_load_5min/B_Loads_5min_20251001_20260728.csv
+    time_col: time
+    target_col: value
+    source_freq: 5min
+    target_freq: 15min
+    method: sum
+    fill_method: linear
+    fill_weeks: 4
+    unit_scale: 0.0833333333333333
+    output_path: dataset/aidc_load_5min/derived/B_Loads_15min_sum_20251001_20260728.csv
+
+  # --- 月电量 kWh（统计参考）---
+  # 月频是非固定频率（MonthEnd），data_aggregate 不支持。从日频 sum 再聚合。
+  # - source_path: dataset/aidc_load_5min/B_Loads_5min_20251001_20260728.csv
+  #   target_freq: 1ME
+
+  # --- 日均功率 kW（对比验证，mean 不转 kWh）---
+  - source_path: dataset/aidc_load_5min/B_Loads_5min_20251001_20260728.csv
+    time_col: time
+    target_col: value
+    source_freq: 5min
+    target_freq: 1D
+    method: mean
+    fill_method: linear
+    fill_weeks: 4
+    unit_scale: 1.0
+    output_path: dataset/aidc_load_5min/derived/B_Loads_1day_mean_20251001_20260728.csv

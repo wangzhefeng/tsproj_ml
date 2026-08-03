@@ -1,0 +1,20 @@
+# AIDC 月度用电量预测 — 小时电量峰谷检测
+# 由 data_process/peak_valley_detection.py run_peak_valley_detection 加载
+# 小时频数据检测日内用电高峰/低谷时段
+
+tasks:
+  - source_path: dataset/aidc_load_5min/derived/A_Loads_1hour_sum_20251001_20260728.csv
+    time_col: time
+    target_col: value
+    route: load_month_A_1hour
+    top_n: 30
+    prominence: 2000.0      # 小时电量中位数 ~12000 kWh, 显著度门槛 2000
+    distance: 6             # 最小间隔 6 小时, 避免密集噪声
+
+  - source_path: dataset/aidc_load_5min/derived/B_Loads_1hour_sum_20251001_20260728.csv
+    time_col: time
+    target_col: value
+    route: load_month_B_1hour
+    top_n: 30
+    prominence: 2000.0
+    distance: 6

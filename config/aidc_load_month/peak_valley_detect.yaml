@@ -1,0 +1,18 @@
+# 日频负荷峰谷检测
+# 由 data_process/peak_valley_detection.py run_peak_valley_detection 加载
+# 日频按周尺度过滤相邻局部极值。
+
+tasks:
+  - source_path: dataset/aidc_load_month/A_Loads_1day_mean_20251001_20260728.csv
+    time_col: time
+    target_col: value
+    route: power_A_1day
+    distance: 7
+    top_n: 20
+
+  - source_path: dataset/aidc_load_month/B_Loads_1day_mean_20251001_20260728.csv
+    time_col: time
+    target_col: value
+    route: power_B_1day
+    distance: 7
+    top_n: 20

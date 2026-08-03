@@ -285,7 +285,7 @@ uv run python config/generate_configs.py \
 
 ## 输出结构
 
-`<scenario>` 由 YAML 中的 `scenario_subpath` 显式指定（如 `aidc_power_month/route_A`），使结果路径与 config 目录布局对齐；未指定时回退为从 `data_dir` 自动推导（去掉 `dataset/` 前缀和 `demand_load` 段）。多组配置共用同一 `data_dir` 时（如三个 `aidc_power_*` 场景共用 `dataset/aidc_power/`）必须显式指定，否则结果会混入同一目录。不同场景的结果因此互不覆盖。
+`<scenario>` 由 YAML 中的 `scenario_subpath` 显式指定（如 `aidc_load_month/route_A`），使结果路径与 config 目录布局对齐；未指定时回退为从 `data_dir` 自动推导（去掉 `dataset/` 前缀和 `demand_load` 段）。多组配置共用同一 `data_dir` 时（如三个 `aidc_power_*` 场景共用 `dataset/aidc_power/`）必须显式指定，否则结果会混入同一目录。不同场景的结果因此互不覆盖。
 
 `<setting>` 由 `{model_type}-{data_name}-{pred_method_code}-{window_days}` 组成，例如 `lightgbm-df_power-usmr-15`。
 

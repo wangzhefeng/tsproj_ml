@@ -1,0 +1,33 @@
+# AIDC 功率 15min 短期场景数据 A/B 路异常检测
+# 由 data_process/outlier_process.py run_outlier_detection 加载，schema 独立于模型配置
+#
+# 数据特征：同 15min，正常范围 9000~19000 kW。
+
+tasks:
+  - source_path: dataset/aidc_load_15min_short/A_Loads_15min_mean_20251001_20260728.csv
+    time_col: time
+    target_col: value
+    route: power_A_15min_short
+    abs_low_threshold: 0.0
+    abs_high_threshold: 25000.0
+    spike_window: 2
+    spike_z_threshold: 8.0
+    spike_abs_diff_threshold: 500.0
+    local_robust_z_threshold: 5.0
+    periodic_robust_z_threshold: 5.0
+    max_short_run_points: 0
+    long_run_score_multiplier: 10.0
+
+  - source_path: dataset/aidc_load_15min_short/B_Loads_15min_mean_20251001_20260728.csv
+    time_col: time
+    target_col: value
+    route: power_B_15min_short
+    abs_low_threshold: 0.0
+    abs_high_threshold: 25000.0
+    spike_window: 2
+    spike_z_threshold: 8.0
+    spike_abs_diff_threshold: 500.0
+    local_robust_z_threshold: 5.0
+    periodic_robust_z_threshold: 5.0
+    max_short_run_points: 0
+    long_run_score_multiplier: 10.0

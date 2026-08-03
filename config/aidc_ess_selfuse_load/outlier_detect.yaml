@@ -1,0 +1,37 @@
+# AIDC ESS 自用功率 A/B 路 5min 异常检测
+# 由 data_process/outlier_process.py run_outlier_detection 加载，schema 独立于模型配置
+#
+# 数据特征：储能电站自身用电负荷（站用电），物理范围 ≥0 且通常 < 300 kW。
+# 与配电负荷（MW 级，波动数百 kW）不同，站用电动态范围低（10~140 kW），
+# 正常日内爬坡（早晚设备启停）会被 z-score 大量误判。
+#
+# 策略：物理边界硬截（abs_low + abs_high）为主 + spike 检测补充孤立跳变
+
+tasks:
+  - source_path: dataset/aidc_ess_selfuse_load/A_GateEnergys_5min_20251001_20260728.csv
+    time_col: time
+    target_col: value
+    route: ESS_A
+    abs_low_threshold: 0.0
+    abs_high_threshold: 500.0
+    spike_window: 2
+    spike_z_threshold: 8.0
+    spike_abs_diff_threshold: 50.0
+    local_robust_z_threshold: 5.0
+    periodic_robust_z_threshold: 5.0
+    max_short_run_points: 0
+    long_run_score_multiplier: 10.0
+
+  - source_path: dataset/aidc_ess_selfuse_load/B_GateEnergys_5min_20251001_20260728.csv
+    time_col: time
+    target_col: value
+    route: ESS_B
+    abs_low_threshold: 0.0
+    abs_high_threshold: 500.0
+    spike_window: 2
+    spike_z_threshold: 8.0
+    spike_abs_diff_threshold: 50.0
+    local_robust_z_threshold: 5.0
+    periodic_robust_z_threshold: 5.0
+    max_short_run_points: 0
+    long_run_score_multiplier: 10.0

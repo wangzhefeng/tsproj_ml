@@ -14,7 +14,7 @@ import pandas as pd
 AGGREGATION_METHODS = {"mean", "max", "min", "sum", "median"}
 
 # 聚合/填充逻辑版本：修改本文件处理逻辑时 +1，使既有派生缓存自动失效
-LOGIC_VERSION = 1
+LOGIC_VERSION = 2
 
 # pandas 频率别名 -> 项目规范写法（与建模侧 default_lags_for_freq 的 1D 约定对齐）
 _FREQ_ALIASES = {"D": "1D", "h": "1h", "H": "1h", "min": "1min", "T": "1min"}
@@ -109,6 +109,7 @@ def _audit_config(
     method: str,
     fill_method: str,
     fill_weeks: int,
+    unit_scale: float,
 ) -> dict[str, Any]:
     stat = source_path.stat()
     return {
@@ -122,6 +123,7 @@ def _audit_config(
         "method": method,
         "fill_method": fill_method,
         "fill_weeks": int(fill_weeks),
+        "unit_scale": float(unit_scale),
         "logic_version": LOGIC_VERSION,
     }
 
@@ -146,9 +148,14 @@ def aggregate_csv(
     method: str = "mean",
     fill_method: str = "none",
     fill_weeks: int = 4,
+    unit_scale: float = 1.0,
     output_path: str | Path,
 ) -> AggregationResult:
-    """把规则化后的单目标时间序列聚合到目标频率，并落盘审计信息。"""
+    """把规则化后的单目标时间序列聚合到目标频率，并落盘审计信息。
+
+    unit_scale：聚合结果的全局缩放系数（默认 1.0）。典型用途——
+    源数据是 5min 平均功率（kW），sum 聚合后乘步长 1/12 h 得电量 kWh。
+    """
     source = Path(source_path)
     if not source.exists():
         raise FileNotFoundError(f"Aggregation source file not found: {source}")
@@ -178,6 +185,7 @@ def aggregate_csv(
         method=method,
         fill_method=fill_method,
         fill_weeks=fill_weeks,
+        unit_scale=unit_scale,
     )
     if _can_reuse(destination, audit_path, config):
         audit = json.loads(audit_path.read_text(encoding="utf-8"))
@@ -220,6 +228,8 @@ def aggregate_csv(
         )
     filled_count = before_fill - len(remaining_index)
     aggregated = getattr(series.resample(target_freq), method)().reset_index(name=target_col)
+    if unit_scale != 1.0:
+        aggregated[target_col] = aggregated[target_col] * unit_scale
     if aggregated[target_col].isna().any():
         raise ValueError("Aggregation produced missing output values")
 
@@ -271,6 +281,7 @@ class AggregationSpec:
     method: str
     fill_method: str
     fill_weeks: int
+    unit_scale: float
     output_path: Path
 
 
@@ -299,6 +310,7 @@ def _build_spec(raw: dict[str, Any], config_path: Path) -> AggregationSpec:
         method=raw.get("method", "mean"),
         fill_method=raw.get("fill_method", "none"),
         fill_weeks=raw.get("fill_weeks", 4),
+        unit_scale=float(raw.get("unit_scale", 1.0)),
         output_path=_resolve_path(raw["output_path"], config_path),
     )
 
@@ -323,6 +335,7 @@ def _run_spec(spec: AggregationSpec, force: bool = False) -> None:
         method=spec.method,
         fill_method=spec.fill_method,
         fill_weeks=spec.fill_weeks,
+        unit_scale=spec.unit_scale,
         output_path=spec.output_path,
     )
     status = "重新生成" if result.regenerated else "复用缓存"

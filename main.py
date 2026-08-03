@@ -85,8 +85,13 @@ class Model:
         # ------------------------------
         # 数据读取路径
         self.args.data_dir = Path(self.args.data_dir)
-        # 场景子路径:由 data_dir 解析,使结果保存路径与 config 目录布局对齐
-        self.scenario_subpath = self._resolve_scenario_subpath(self.args.data_dir)
+        # 场景子路径:优先用 YAML 显式指定的 scenario_subpath(多组配置共用同一 data_dir 时用);
+        # 为空时由 data_dir 自动推导,使结果保存路径与 config 目录布局对齐。
+        explicit_scenario = str(getattr(self.args, "scenario_subpath", "") or "").strip().strip("/")
+        self.scenario_subpath = (
+            Path(*explicit_scenario.split("/")) if explicit_scenario
+            else self._resolve_scenario_subpath(self.args.data_dir)
+        )
         self.step_minutes = resolve_freq_step_minutes(self.args.freq)
         # 目标时间序列每天样本数量
         self.n_per_day = resolve_samples_per_day(self.args.freq)

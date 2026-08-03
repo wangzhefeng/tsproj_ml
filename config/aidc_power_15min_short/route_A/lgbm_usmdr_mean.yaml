@@ -1,6 +1,8 @@
 # A — lightgbm — direct-recursive (15min 单变量) · 4h 超短期 horizon=16
 base_config: config.univariate_config
 overrides:
+  output:
+    scenario_subpath: aidc_power_15min_short/route_A
   runtime:
     is_testing: true
     is_forecasting: true
@@ -9,8 +11,8 @@ overrides:
     window_days: 14
     now_time: '2026-07-28T00:00:00'
   target_series:
-    data_dir: ./dataset/aidc_power/
-    data_path: derived/A_Loads_15min_mean_20251001_20260728.csv
+    data_dir: ./dataset/aidc_power_15min_short/
+    data_path: A_Loads_15min_mean_20251001_20260728.csv
     freq: 15min
     target_ts_feat: time
     target: value

@@ -1,6 +1,6 @@
 # AIDC B 路 5min 负荷 -> 15min mean 聚合
 # 由 data_process/data_aggregate.py run_aggregation 加载，schema 独立于模型配置
-source_path: dataset/aidc_power/B_Loads_5min_20251001_20260728.csv
+source_path: dataset/aidc_power_5min/B_Loads_5min_20251001_20260728.csv
 time_col: time
 target_col: value
 source_freq: 5min
@@ -8,4 +8,4 @@ target_freq: 15min
 method: mean
 fill_method: linear
 fill_weeks: 4
-output_path: dataset/aidc_power/derived/B_Loads_15min_mean_20251001_20260728.csv
+output_path: dataset/aidc_power_15min/B_Loads_15min_mean_20251001_20260728.csv

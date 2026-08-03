@@ -343,6 +343,9 @@ class OutputConfig:
     checkpoints_dir: str = "./results/pretrained_models/"
     test_results_dir: str = "./results/results_test/"
     pred_results_dir: str = "./results/results_forecast/"
+    # 显式场景子路径；空字符串=由 data_dir 自动推导（去掉 dataset/demand_load 段）。
+    # 多组配置共用同一 data_dir 时必须显式指定，否则结果会混入同一 scenario 目录。
+    scenario_subpath: str = ""
 
 
 @dataclass

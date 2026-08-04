@@ -1,8 +1,7 @@
 # AIDC 功率 5min 原始数据 A/B 路异常检测
-# 由 data_process/outlier_process.py run_outlier_detection 加载，schema 独立于模型配置
-#
-# 5min 是唯一异常处理层；15min/1hour/1D 仅聚合本配置生成的清洗 CSV。
-# 持续段只标记待审核，物理越界和两侧稳定的孤立跳飞才自动清洗。
+# 由 data_process/outlier_process.py run_outlier_detection 加载，schema 独立于模型配置。
+# 5min 是唯一异常处理层；15min/1D 只聚合本配置生成的清洗 CSV。
+# 仅处理物理越界和两侧稳定同伴支持的孤立跳飞；持续负荷变化保留原值。
 
 tasks:
   - source_path: dataset/aidc_load_5min/A_Loads_5min_20251001_20260728.csv
@@ -16,14 +15,10 @@ tasks:
     spike_abs_diff_threshold: 1500.0
     spike_companion_spread_threshold: 500.0
     auto_clean_spike: true
-    local_robust_z_threshold: 999999.0
-    periodic_robust_z_threshold: 999999.0
-    same_slot_window_days: 31
-    same_slot_min_periods: 9
-    same_slot_relative_deviation_pct: 10.0
-    same_slot_min_run_points: 3
+    # 通用统计规则不适用于此 5min 负荷场景，显式禁用。
+    local_robust_z_threshold: .inf
+    periodic_robust_z_threshold: .inf
     auto_clean_statistical: false
-    review_daily_plots: true
 
   - source_path: dataset/aidc_load_5min/B_Loads_5min_20251001_20260728.csv
     time_col: time
@@ -36,16 +31,7 @@ tasks:
     spike_abs_diff_threshold: 1500.0
     spike_companion_spread_threshold: 500.0
     auto_clean_spike: true
-    local_robust_z_threshold: 999999.0
-    periodic_robust_z_threshold: 999999.0
-    same_slot_window_days: 31
-    same_slot_min_periods: 9
-    same_slot_relative_deviation_pct: 10.0
-    same_slot_min_run_points: 3
+    # 通用统计规则不适用于此 5min 负荷场景，显式禁用。
+    local_robust_z_threshold: .inf
+    periodic_robust_z_threshold: .inf
     auto_clean_statistical: false
-    review_daily_plots: true
-
-cross_route_review:
-  route_a: power_A_5min
-  route_b: power_B_5min
-  output_dir: dataset/aidc_load_5min/outlier_analysis/review_days_A_B_total

@@ -152,12 +152,13 @@ lightning_logs/
 # ---------------------------------------
 # custom setting
 # ---------------------------------------
+.agents/
 .claude/
 .hermes/
+.uv_cache/
+.venv/
 dataset/
 logs/
 results/
 tests/
-.uv_cache/
-.ruff_cache/
 reports/

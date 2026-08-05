@@ -12,7 +12,7 @@ overrides:
     now_time: '2026-07-28T23:55:00'
   target_series:
     data_dir: ./dataset/aidc_ess_selfuse_load/
-    data_path: B_GateEnergys_5min_20251001_20260728.csv
+    data_path: outlier_analysis/B_GateEnergys_5min_20251001_20260728_remove_outlier.csv
     freq: 5min
     target_ts_feat: time
     target: value

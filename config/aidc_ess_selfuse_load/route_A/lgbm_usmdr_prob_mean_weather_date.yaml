@@ -1,8 +1,8 @@
-# A — lightgbm — direct-pointwise (5min 单变量)
+# A — lightgbm — direct-recursive (5min 单变量 · 概率预测 quantile) · 外生 日期+气象)
 base_config: config.univariate_config
 overrides:
   output:
-    scenario_subpath: aidc_ess_selfuse_load/route_A
+    scenario_subpath: aidc_ess_selfuse_load/route_A_weather_date
   runtime:
     is_testing: true
     is_forecasting: true
@@ -17,8 +17,25 @@ overrides:
     target_ts_feat: time
     target: value
   exogenous_features:
-    enable_date_features: false
-    enable_weather_features: false
+    enable_date_features: true
+    date_history_path: date_in_20251001_20260728.csv
+    date_future_path: date_future_in_20260729_20260805.csv
+    date_ts_feat: date
+    datetype_features:
+    - date_type
+    datetype_categorical_features:
+    - date_type  # date_type 按类别传给 LightGBM
+    enable_weather_features: true
+    weather_history_path: weather_in_20251001_20260728.csv
+    weather_future_path: weather_future_in_20260729_20260731.csv
+    weather_ts_feat: ts
+    weather_features:
+    - rt_ssr
+    - rt_ws10
+    - rt_tt2
+    - cal_rh
+    - rt_ps
+    - rt_rain
     datetime_features:
     - hour
     - minute
@@ -44,7 +61,12 @@ overrides:
     - 2016
   model_strategy:
     model_type: lightgbm
-    pred_method: univariate-single-multistep-direct-pointwise
+    pred_method: univariate-single-multistep-direct-recursive
+    predict_type: quantile  # 概率预测:输出各分位数(predict_qXX)
+    quantiles:
+    - 0.1
+    - 0.5
+    - 0.9
   training_enhancement:
     enable_time_decay_sample_weight: true
     decay_halflife_days: 60  # 半衰期天数,按数据漂移速度调整
@@ -57,5 +79,5 @@ overrides:
     detrend_target: true  # 特征工程前对 y 线性去趋势(与 scale_target 互斥)
   performance:
     window_parallel_workers: 8
-    multi_output_n_jobs: 1
-    model_thread_count: 8
+    multi_output_n_jobs: 8
+    model_thread_count: 1

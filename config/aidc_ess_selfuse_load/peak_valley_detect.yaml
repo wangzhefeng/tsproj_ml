@@ -1,0 +1,21 @@
+# AIDC ESS 站用电 A/B 路 5min 峰谷检测（异常值清洗后数据）
+# 由 data_process/peak_valley_detection.py run_peak_valley_detection 加载，schema 独立于模型配置
+# 站用电动态范围低（median ~45 kW，日内振幅 median ~110 kW），prominence 相应取 30（配电负荷场景为 200）
+# top_n 必须取 null：工具按 |值-中位数| 对峰谷混合排序，本序列谷值贴近下限 0（幅度上限 ~45），
+# 任何 top_n 截断都会被尖峰（幅度 100~430）占满而丢掉全部谷值；distance=288 已限频 ≈每日 1 峰 1 谷
+tasks:
+  - source_path: dataset/aidc_ess_selfuse_load/outlier_analysis/A_GateEnergys_5min_20251001_20260728_remove_outlier.csv
+    time_col: time
+    target_col: value
+    route: ESS_A_5min
+    distance: 288       # 相邻峰谷最小间距 1 天（288 点）
+    prominence: 30.0    # 显著度过滤：峰谷相对相邻极值至少 30 kW
+    top_n: null
+
+  - source_path: dataset/aidc_ess_selfuse_load/outlier_analysis/B_GateEnergys_5min_20251001_20260728_remove_outlier.csv
+    time_col: time
+    target_col: value
+    route: ESS_B_5min
+    distance: 288
+    prominence: 30.0
+    top_n: null

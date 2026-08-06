@@ -492,6 +492,12 @@ class Tester:
         plt.ylabel("Value")
         plt.title("Trues and Preds Timeseries Plot")
         plt.grid(True)
+        # X 轴日期格式化：避免高频数据刻度标签重叠
+        if "time" in plot_df.columns:
+            from matplotlib.dates import DateFormatter, DayLocator, AutoDateLocator
+            locator = AutoDateLocator()
+            plt.gca().xaxis.set_major_locator(locator)
+            plt.gca().xaxis.set_major_formatter(DateFormatter("%m-%d %H:%M"))
         plt.tight_layout()
         plt.savefig(args.test_results_dir.joinpath("test_prediction.png"), bbox_inches="tight", dpi=300)
         # plt.show();
@@ -540,7 +546,16 @@ class Tester:
                 ax_w.set_ylabel("Value")
                 ax_w.grid(True, alpha=0.3)
                 ax_w.legend()
-                fig_w.autofmt_xdate()
+                # X 轴日期格式化：避免高频数据（288 点/天）刻度标签重叠成黑块
+                if "time" in group_sorted.columns:
+                    from matplotlib.dates import DateFormatter, HourLocator, AutoDateLocator
+                    span_hours = (group_sorted["time"].max() - group_sorted["time"].min()).total_seconds() / 3600
+                    if span_hours <= 48:
+                        ax_w.xaxis.set_major_locator(HourLocator(interval=max(1, int(span_hours / 6))))
+                        ax_w.xaxis.set_major_formatter(DateFormatter("%m-%d %H:%M"))
+                    else:
+                        ax_w.xaxis.set_major_formatter(DateFormatter("%m-%d"))
+                fig_w.autofmt_xdate(rotation=30)
                 fig_w.tight_layout()
                 fig_w.savefig(window_plots_dir.joinpath(f"window_{int(win):02d}.png"), dpi=150, bbox_inches="tight")
                 plt.close(fig_w)

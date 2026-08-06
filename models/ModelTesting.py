@@ -223,6 +223,10 @@ class Tester:
                 q_col = f"predict_q{int(round(float(q) * 100)):02d}"
                 cv_plot_df_window[q_col] = np.asarray(q_pred).reshape(-1)[:n]
 
+        # 注入窗口编号，供后续 per-window 绘图使用
+        if not cv_plot_df_window.empty:
+            cv_plot_df_window["window"] = window
+
         return {
             "window": window,
             "test_scores_df": eval_scores_window,
@@ -491,6 +495,55 @@ class Tester:
         plt.tight_layout()
         plt.savefig(args.test_results_dir.joinpath("test_prediction.png"), bbox_inches="tight", dpi=300)
         # plt.show();
+
+        # ---- per-window 绘图 ----
+        # 每个滑窗测试窗口单独出一张图，输出到 window_plots/ 子目录
+        window_plots_dir = args.test_results_dir.joinpath("window_plots")
+        window_plots_dir.mkdir(parents=True, exist_ok=True)
+        if "window" in cv_plot_df.columns:
+            # 从 test_scores_df 取每个窗口的 time_range 和 MAPE（用于标题）
+            window_meta = {}
+            if not test_scores_df.empty and "time_range" in test_scores_df.columns:
+                for idx, row in test_scores_df.iterrows():
+                    if row.get("time_range") == "中位数":
+                        continue
+                    # test_scores_df 的 index 是窗口号
+                    window_meta[idx] = {
+                        "time_range": row["time_range"],
+                        "mape": row.get("MAPE", None),
+                    }
+            for win, group in cv_plot_df.groupby("window"):
+                group_sorted = group.sort_values("time") if "time" in group.columns else group
+                fig_w, ax_w = plt.subplots(figsize=(14, 5))
+                x_w = group_sorted["time"] if "time" in group_sorted.columns else np.arange(len(group_sorted))
+                ax_w.plot(x_w, group_sorted["Y_trues"].values, label="Trues", lw=1.5)
+                ax_w.plot(x_w, group_sorted["Y_preds"].values, label="Preds", lw=1.5, ls="-.")
+                # 分位数区间带
+                qcols_w = sorted(c for c in group_sorted.columns if str(c).startswith("predict_q"))
+                if len(qcols_w) >= 2:
+                    ax_w.fill_between(
+                        x_w,
+                        group_sorted[qcols_w[0]].astype(float).values,
+                        group_sorted[qcols_w[-1]].astype(float).values,
+                        color="tab:blue", alpha=0.15, label=f"PI [{qcols_w[0]},{qcols_w[-1]}]",
+                    )
+                meta = window_meta.get(win, {})
+                tr = meta.get("time_range", "")
+                mape_val = meta.get("mape")
+                title = f"Window {int(win)}"
+                if tr:
+                    title += f": {tr}"
+                if mape_val is not None and not np.isnan(mape_val):
+                    title += f"  MAPE={mape_val:.2%}"
+                ax_w.set_title(title)
+                ax_w.set_xlabel("Time")
+                ax_w.set_ylabel("Value")
+                ax_w.grid(True, alpha=0.3)
+                ax_w.legend()
+                fig_w.autofmt_xdate()
+                fig_w.tight_layout()
+                fig_w.savefig(window_plots_dir.joinpath(f"window_{int(win):02d}.png"), dpi=150, bbox_inches="tight")
+                plt.close(fig_w)
 
 
 

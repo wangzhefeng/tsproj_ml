@@ -74,6 +74,7 @@ class RuntimeConfig:
     predict_steps: int = 288  # 预测步数（以 freq 为单位；默认 288 = 5min 基准下 1 天）
     window_days: int = 15  # 滑动窗口天数
     now_time: datetime.datetime = field(default_factory=lambda: datetime.datetime(2026, 6, 11, 23, 55, 0))  # 预测推理开始时间
+    schedule_mode: str = "daily"  # 调度模式: daily=日界对齐(预测下一完整自然日) | intraday=保留调度时刻(从调度时刻起预测)
 
 
 @dataclass
@@ -346,6 +347,8 @@ class OutputConfig:
     # 显式场景子路径；空字符串=由 data_dir 自动推导（去掉 dataset/demand_load 段）。
     # 多组配置共用同一 data_dir 时必须显式指定，否则结果会混入同一 scenario 目录。
     scenario_subpath: str = ""
+    # 结果目录 setting 后缀（如 "-intraday"）；空=不加。用于同配置不同语义版本的结果隔离。
+    setting_suffix: str = ""
 
 
 @dataclass

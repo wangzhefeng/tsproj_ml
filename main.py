@@ -78,7 +78,9 @@ class Model:
         pred_method_code = PRED_METHOD_CODE.get(self.args.pred_method, str(self.args.pred_method).lower())
         # 概率预测(quantile)用独立 setting 后缀,避免与点预测版本的结果目录/模型撞车
         _predict_suffix = "-quantile" if str(getattr(self.args, "predict_type", "point")).lower() == "quantile" else ""
-        self.setting = f"{self.args.model_type}-{data_name}-{pred_method_code}-{self.args.window_days}{_predict_suffix}"
+        # 可选自定义后缀（如 "-intraday"），用于同配置不同语义版本的结果隔离
+        _custom_suffix = str(getattr(self.args, "setting_suffix", "") or "").strip()
+        self.setting = f"{self.args.model_type}-{data_name}-{pred_method_code}-{self.args.window_days}{_predict_suffix}{_custom_suffix}"
         self.log_prefix = f"[{self.setting}]"
         # ------------------------------
         # 数据参数
@@ -95,8 +97,14 @@ class Model:
         self.step_minutes = resolve_freq_step_minutes(self.args.freq)
         # 目标时间序列每天样本数量
         self.n_per_day = resolve_samples_per_day(self.args.freq)
-        # 时间序列当前时刻（历史/未来分界点 = 次日 00:00:00）
-        now_time = pd.Timestamp(self.args.now_time).replace(tzinfo=None).floor("1D") + datetime.timedelta(days=1)
+        # 时间序列当前时刻（历史/未来分界点）
+        #   schedule_mode=daily(默认): floor("1D")+1day 对齐到次日 00:00, 预测下一完整自然日
+        #   schedule_mode=intraday   : 保留调度时刻, 预测从调度时刻起 predict_steps 步
+        now_ts = pd.Timestamp(self.args.now_time).replace(tzinfo=None)
+        if str(getattr(self.args, "schedule_mode", "daily")).lower() == "intraday":
+            now_time = now_ts
+        else:
+            now_time = now_ts.floor("1D") + datetime.timedelta(days=1)
         # 时间序列历史数据开始时刻（= now_time - history_days）
         start_time = now_time - datetime.timedelta(days=self.args.history_days)
         # 预测数据长度（= predict_steps 个 freq 步长）

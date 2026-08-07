@@ -1,7 +1,7 @@
 # 15min 负荷峰谷检测(expanding 场景, 异常值处理后数据: 聚合自已清洗的 5min 源)
 # 由 data_process/peak_valley_detection.py run_peak_valley_detection 加载，schema 独立于模型配置
 tasks:
-  - source_path: dataset/aidc_load_15min_expanding/A_Loads_15min_mean_20251001_20260728.csv
+  - source_path: dataset/aidc_load_15min_daily/A_Loads_15min_mean_20251001_20260728.csv
     time_col: time
     target_col: value
     route: load_A_15min
@@ -9,7 +9,7 @@ tasks:
     prominence: 200.0   # 显著度过滤：峰谷相对相邻极值至少 200
     top_n: 20
 
-  - source_path: dataset/aidc_load_15min_expanding/B_Loads_15min_mean_20251001_20260728.csv
+  - source_path: dataset/aidc_load_15min_daily/B_Loads_15min_mean_20251001_20260728.csv
     time_col: time
     target_col: value
     route: load_B_15min

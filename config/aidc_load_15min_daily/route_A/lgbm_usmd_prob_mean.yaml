@@ -1,17 +1,18 @@
-# A — lightgbm — direct-pointwise (15min 单变量, expanding 扩窗)
+# A — lightgbm — direct (15min 单变量 · 概率预测 quantile, daily 日级)
 base_config: config.univariate_config
 overrides:
   output:
-    scenario_subpath: aidc_load_15min_expanding/route_A
+    scenario_subpath: aidc_load_15min_daily/route_A
   runtime:
     is_testing: true
     is_forecasting: true
-    history_days: 270  # 扩窗: 用满 301 天数据的近全部历史(配合 window_days=240 → 31 测试窗口与 rolling 可比)
+    history_days: 60
     predict_steps: 96
-    window_days: 240  # 扩窗训练窗(rolling 场景为 30)
+    window_days: 30
+    schedule_mode: daily  # 日界对齐: 预测下一完整自然日
     now_time: '2026-07-28T23:45:00'
   target_series:
-    data_dir: ./dataset/aidc_load_15min_expanding/
+    data_dir: ./dataset/aidc_load_15min_daily/
     data_path: A_Loads_15min_mean_20251001_20260728.csv
     freq: 15min
     target_ts_feat: time
@@ -40,14 +41,41 @@ overrides:
     - 480
     - 576
     - 672
+  advanced_features:
+    enable_advanced_features: true
+    enable_rolling_features: true
+    rolling_columns:
+    - y
+    rolling_windows:
+    - 96
+    - 192
+    - 384
+    - 672
+    rolling_stats:
+    - mean
+    - std
+    - min
+    - max
+    enable_diff_features: true
+    diff_columns:
+    - y
+    diff_periods:
+    - 96
+    - 192
+    - 672
   model_strategy:
     model_type: lightgbm
-    pred_method: univariate-single-multistep-direct-pointwise
+    pred_method: univariate-single-multistep-direct
+    predict_type: quantile  # 概率预测:输出各分位数(predict_qXX)
+    quantiles:
+    - 0.1
+    - 0.5
+    - 0.9
   training_enhancement:
     enable_time_decay_sample_weight: true
     decay_halflife_days: 60  # 半衰期天数,按数据漂移速度调整
   train_outlier:
-    enable_train_outlier_handling: false  # 日频稀疏点不宜插值清洗
+    enable_train_outlier_handling: false  # 已由 outlier_process 清洗
   eval_mask:
     mode: percentile
     percentile: 5.0
@@ -55,5 +83,5 @@ overrides:
     detrend_target: true  # 特征工程前对 y 线性去趋势(与 scale_target 互斥)
   performance:
     window_parallel_workers: 8
-    multi_output_n_jobs: 1
-    model_thread_count: 8
+    multi_output_n_jobs: 8
+    model_thread_count: 1

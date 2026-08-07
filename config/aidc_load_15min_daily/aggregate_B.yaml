@@ -8,4 +8,4 @@ target_freq: 15min
 method: mean
 fill_method: linear
 fill_weeks: 4
-output_path: dataset/aidc_load_15min_expanding/B_Loads_15min_mean_20251001_20260728.csv
+output_path: dataset/aidc_load_15min_daily/B_Loads_15min_mean_20251001_20260728.csv

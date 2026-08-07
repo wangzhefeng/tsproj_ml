@@ -23,8 +23,6 @@ overrides:
     - hour
     - minute
     - day
-    - weekday
-    - week
     - day_of_week
     - week_of_year
     - month

@@ -6,7 +6,7 @@ overrides:
   runtime:
     is_testing: true
     is_forecasting: true
-    history_days: 281
+    history_days: 301
     predict_steps: 30
     window_days: 150
     now_time: '2026-07-28T00:00:00'
@@ -21,8 +21,6 @@ overrides:
     enable_weather_features: false
     datetime_features:
     - day
-    - weekday
-    - week
     - day_of_week
     - week_of_year
     - month

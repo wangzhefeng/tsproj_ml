@@ -20,6 +20,8 @@ The general coding guidelines (Karpathy: think before coding, simplicity, surgic
 ### 预测方法限制
 - **USMDP + advanced_features 不兼容**：`add_rolling_statistics` 和 `add_diff_features` 依赖目标列 `y`，训练时存在但预测时（未来数据）不存在 → LightGBM Fatal: feature count mismatch
 - 可通过将操作列改为外生特征列来启用，但默认配置下必须禁用
+- **多输出方法的时间衰减样本权重不生效**：`enable_time_decay_sample_weight: true` 是全场景统一模板（单输出方法 USMDP/USMR 真实生效）。多输出方法（USMD/USMDR）走 sklearn `MultiOutputRegressor`/`DirectMultiOutputRegressor`，其 `fit` 接口不传递 `sample_weight`，运行时安全跳过（日志 WARNING），模型行为不变——这不是配置 bug，是 sklearn API 固有约束
+- **datetime_features 有两对同义项**：`feature_map`（`features/FeatureEngineering.py`）中 `weekday` ≡ `day_of_week`（同 `.dt.weekday`）、`week` ≡ `week_of_year`（同 `.dt.isocalendar().week`），配置中只应保留后者（pandas 规范名）
 
 ### 低频（日/周）数据配置约定
 - **freq 必须写 `1D` 而非 `D`**：`default_lags_for_freq` 只认 `1D`，写 `D` 会落回 5min 基准 lags（`[288,576,...]`），与低频数据错配

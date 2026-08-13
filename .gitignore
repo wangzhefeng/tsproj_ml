@@ -157,6 +157,7 @@ lightning_logs/
 .hermes/
 .uv_cache/
 .venv/
+.workbuddy/
 dataset/
 logs/
 results/

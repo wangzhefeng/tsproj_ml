@@ -1,8 +1,8 @@
-# B — lightgbm — direct-pointwise (5min 单变量)
-base_config: config.univariate_config
+# B — lightgbm — recursive (5min 多变量(PCS协变量))
+base_config: config.multivariate_config
 overrides:
   output:
-    scenario_subpath: aidc_ess_selfuse_load/route_B
+    scenario_subpath: aidc_ess_selfuse_load/route_B_pcs
     plot_overlay_path: B_ESS_PCS_merged_5min_20251001_20260728.csv
     plot_overlay_col: pcs_power
   runtime:
@@ -14,10 +14,14 @@ overrides:
     now_time: '2026-07-28T23:55:00'
   target_series:
     data_dir: ./dataset/aidc_ess_selfuse_load/
-    data_path: outlier_analysis/GateEnergys/B_GateEnergys_5min_20251001_20260728_remove_outlier.csv
+    data_path: B_ESS_PCS_merged_5min_20251001_20260728.csv
     freq: 5min
     target_ts_feat: time
-    target: value
+    target: ess_power
+    target_series_numeric_features:
+    - pcs_power
+    target_series_categorical_features: []
+    target_series_drop_features: []
   exogenous_features:
     enable_date_features: false
     enable_weather_features: false
@@ -44,7 +48,7 @@ overrides:
     - 2016
   model_strategy:
     model_type: lightgbm
-    pred_method: univariate-single-multistep-direct-pointwise
+    pred_method: multivariate-single-multistep-recursive
   training_enhancement:
     enable_time_decay_sample_weight: true
     decay_halflife_days: 60  # 半衰期天数,按数据漂移速度调整
@@ -54,7 +58,7 @@ overrides:
     mode: percentile
     percentile: 5.0
   preprocessing:
-    detrend_target: true  # 特征工程前对 y 线性去趋势(与 scale_target 互斥)
+    detrend_target: true  # 特征工程前对 y 线性去趋势,让模型预测平稳残差(与 scale_target 互斥)
   performance:
     window_parallel_workers: 8
     multi_output_n_jobs: 1

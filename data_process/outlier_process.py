@@ -9,7 +9,7 @@
 
 local/periodic Z-score 支持 run-length 过滤（短段保留、长段提高阈值）。
 
-输出（源文件同级的 outlier_analysis/ 子目录，文件名从源文件名派生）：
+输出（默认源文件同级的 outlier_analysis/ 子目录，文件名从源文件名派生；可在任务中配置 output_dir 覆盖输出目录）：
   outlier_analysis/<stem>_outlier_detection.csv  异常标记（含是否清洗/审核状态）
   outlier_analysis/<stem>_remove_outlier.csv     清洗后数据（异常点 time 插值 + ffill/bfill）
   outlier_analysis/<stem>_anomalies.png          原始/清洗后对比图 + 异常标记
@@ -127,6 +127,7 @@ class OutlierSpec:
     plot: bool = True
     review_daily_plots: bool = False
     route: str = ""
+    output_dir: Optional[Path] = None
 
 
 @dataclass(frozen=True)
@@ -570,9 +571,9 @@ def plot_review_days(
 # ---------------------------------------------------------------------------
 # 单任务执行
 # ---------------------------------------------------------------------------
-def _output_paths(source_path: Path) -> Dict[str, Path]:
+def _output_paths(source_path: Path, output_dir: Optional[Path] = None) -> Dict[str, Path]:
     stem = source_path.stem
-    out_dir = source_path.parent / "outlier_analysis"
+    out_dir = output_dir or (source_path.parent / "outlier_analysis")
     out_dir.mkdir(parents=True, exist_ok=True)
     return {
         "marked": out_dir / f"{stem}_outlier_detection.csv",
@@ -592,7 +593,7 @@ def process_outlier(spec: OutlierSpec) -> OutlierResult:
         raise ValueError(f"{source_path} must contain {spec.time_col!r} and {spec.target_col!r}.")
 
     marked = detect_anomalies(df, spec.time_col, spec.target_col, spec.params)
-    paths = _output_paths(source_path)
+    paths = _output_paths(source_path, spec.output_dir)
 
     # 写标记 CSV
     original = pd.read_csv(source_path)
@@ -689,6 +690,7 @@ def _build_spec(raw: dict[str, Any], config_path: Path) -> OutlierSpec:
         plot=bool(raw.get("plot", True)),
         review_daily_plots=bool(raw.get("review_daily_plots", False)),
         route=raw.get("route", ""),
+        output_dir=_resolve_path(raw["output_dir"]) if raw.get("output_dir") else None,
     )
 
 
@@ -704,7 +706,7 @@ def run_outlier_detection(config_path: str | Path, *, force: bool = False) -> No
         spec = _build_spec(item, config_path)
         # --force 时删除旧输出
         if force:
-            for p in _output_paths(spec.source_path).values():
+            for p in _output_paths(spec.source_path, spec.output_dir).values():
                 if p.is_dir():
                     continue
                 p.unlink(missing_ok=True)

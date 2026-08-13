@@ -10,6 +10,7 @@
 
 tasks:
   - source_path: dataset/aidc_ess_selfuse_load/A_GateEnergys_5min_20251001_20260728.csv
+    output_dir: dataset/aidc_ess_selfuse_load/outlier_analysis/GateEnergys
     time_col: time
     target_col: value
     route: ESS_A
@@ -26,6 +27,7 @@ tasks:
     long_run_score_multiplier: 10.0
 
   - source_path: dataset/aidc_ess_selfuse_load/B_GateEnergys_5min_20251001_20260728.csv
+    output_dir: dataset/aidc_ess_selfuse_load/outlier_analysis/GateEnergys
     time_col: time
     target_col: value
     route: ESS_B

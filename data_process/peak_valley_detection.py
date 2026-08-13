@@ -62,6 +62,7 @@ class PeakValleySpec:
     top_n: Optional[int] = None
     plot: bool = True
     route: str = ""
+    output_dir: Optional[Path] = None
 
 
 # ---------------------------------------------------------------------------
@@ -199,9 +200,9 @@ def plot_peaks_valleys(
 # ---------------------------------------------------------------------------
 # 单任务执行
 # ---------------------------------------------------------------------------
-def _output_paths(source_path: Path) -> dict[str, Path]:
+def _output_paths(source_path: Path, output_dir: Optional[Path] = None) -> dict[str, Path]:
     stem = source_path.stem
-    out_dir = source_path.parent / "peak_valley_analysis"
+    out_dir = output_dir or (source_path.parent / "peak_valley_analysis")
     out_dir.mkdir(parents=True, exist_ok=True)
     return {
         "csv": out_dir / f"{stem}_peaks_valleys.csv",
@@ -218,7 +219,7 @@ def process_peaks_valleys(spec: PeakValleySpec) -> pd.DataFrame:
         raise ValueError(f"{source_path} must contain {spec.time_col!r} and {spec.target_col!r}.")
 
     detail = detect_peaks_valleys(df, spec.time_col, spec.target_col, spec)
-    paths = _output_paths(source_path)
+    paths = _output_paths(source_path, spec.output_dir)
 
     detail.to_csv(paths["csv"], index=False, encoding="utf-8-sig")
 
@@ -270,6 +271,7 @@ def _build_spec(raw: dict[str, Any], config_path: Path) -> PeakValleySpec:
         top_n=raw.get("top_n"),
         plot=bool(raw.get("plot", True)),
         route=raw.get("route", ""),
+        output_dir=_resolve_path(raw["output_dir"]) if raw.get("output_dir") else None,
     )
 
 
@@ -284,7 +286,7 @@ def run_peak_valley_detection(config_path: str | Path, *, force: bool = False) -
     for item in task_list:
         spec = _build_spec(item, config_path)
         if force:
-            for p in _output_paths(spec.source_path).values():
+            for p in _output_paths(spec.source_path, spec.output_dir).values():
                 p.unlink(missing_ok=True)
         process_peaks_valleys(spec)
 

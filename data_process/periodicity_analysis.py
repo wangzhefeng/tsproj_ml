@@ -71,6 +71,7 @@ class PeriodicitySpec:
     min_acf: float = DEFAULT_MIN_ACF
     plot: bool = True
     route: str = ""
+    output_dir: Optional[Path] = None
 
 
 # ---------------------------------------------------------------------------
@@ -257,9 +258,9 @@ def plot_fft_spectrum(y: np.ndarray, output_path: Path) -> Path:
 # ---------------------------------------------------------------------------
 # 单任务执行
 # ---------------------------------------------------------------------------
-def _output_paths(source_path: Path) -> dict[str, Path]:
+def _output_paths(source_path: Path, output_dir: Optional[Path] = None) -> dict[str, Path]:
     stem = source_path.stem
-    out_dir = source_path.parent / "periodicity_analysis"
+    out_dir = output_dir or (source_path.parent / "periodicity_analysis")
     out_dir.mkdir(parents=True, exist_ok=True)
     return {
         "report": out_dir / f"{stem}_periodicity_report.csv",
@@ -285,7 +286,7 @@ def process_periodicity(spec: PeriodicitySpec) -> dict[str, Any]:
         top_n_periods=spec.top_n_periods,
         min_acf=spec.min_acf,
     )
-    paths = _output_paths(source_path)
+    paths = _output_paths(source_path, spec.output_dir)
 
     # 写结构化报告 CSV：指标名/值/说明
     rows = [
@@ -359,6 +360,7 @@ def _build_spec(raw: dict[str, Any], config_path: Path) -> PeriodicitySpec:
         min_acf=float(raw.get("min_acf", DEFAULT_MIN_ACF)),
         plot=bool(raw.get("plot", True)),
         route=raw.get("route", ""),
+        output_dir=_resolve_path(raw["output_dir"]) if raw.get("output_dir") else None,
     )
 
 
@@ -373,7 +375,7 @@ def run_periodicity_analysis(config_path: str | Path, *, force: bool = False) ->
     for item in task_list:
         spec = _build_spec(item, config_path)
         if force:
-            for p in _output_paths(spec.source_path).values():
+            for p in _output_paths(spec.source_path, spec.output_dir).values():
                 p.unlink(missing_ok=True)
         process_periodicity(spec)
 

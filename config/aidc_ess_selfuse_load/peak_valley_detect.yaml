@@ -4,7 +4,8 @@
 # top_n 必须取 null：工具按 |值-中位数| 对峰谷混合排序，本序列谷值贴近下限 0（幅度上限 ~45），
 # 任何 top_n 截断都会被尖峰（幅度 100~430）占满而丢掉全部谷值；distance=288 已限频 ≈每日 1 峰 1 谷
 tasks:
-  - source_path: dataset/aidc_ess_selfuse_load/outlier_analysis/A_GateEnergys_5min_20251001_20260728_remove_outlier.csv
+  - source_path: dataset/aidc_ess_selfuse_load/outlier_analysis/GateEnergys/A_GateEnergys_5min_20251001_20260728_remove_outlier.csv
+    output_dir: dataset/aidc_ess_selfuse_load/peak_valley_analysis
     time_col: time
     target_col: value
     route: ESS_A_5min
@@ -12,7 +13,8 @@ tasks:
     prominence: 30.0    # 显著度过滤：峰谷相对相邻极值至少 30 kW
     top_n: null
 
-  - source_path: dataset/aidc_ess_selfuse_load/outlier_analysis/B_GateEnergys_5min_20251001_20260728_remove_outlier.csv
+  - source_path: dataset/aidc_ess_selfuse_load/outlier_analysis/GateEnergys/B_GateEnergys_5min_20251001_20260728_remove_outlier.csv
+    output_dir: dataset/aidc_ess_selfuse_load/peak_valley_analysis
     time_col: time
     target_col: value
     route: ESS_B_5min

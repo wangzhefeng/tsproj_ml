@@ -50,18 +50,28 @@ class TimeSeriesAugmenter:
         X: pd.DataFrame,
         y: pd.DataFrame,
         categorical_features: Optional[List[str]] = None,
-    ) -> Tuple[pd.DataFrame, pd.DataFrame]:
+        sample_weight: Optional[np.ndarray] = None,
+    ) -> Tuple[pd.DataFrame, pd.DataFrame, Optional[np.ndarray]]:
         """
-        在训练数据上做 bootstrap + numeric jitter，返回增广后的 (X, y)
+        在训练数据上做 bootstrap + numeric jitter，返回增广后的 (X, y, sample_weight)。
+
+        sample_weight（可选，如时间衰减权重）：增强行继承其 bootstrap 源行的权重——
+        合成样本的"年龄"等于源行年龄，而非按拼接位置获得末尾(最新)的最高权重。
+        扩展后权重重新归一化到均值 1，保持有效学习率量级。
         """
         if not self.enabled or self.augmentation_ratio <= 0 or len(X) < 10:
-            return X, y
+            return X, y, sample_weight
 
         categorical_features = categorical_features or []
         n_samples = len(X)
         n_aug = int(n_samples * self.augmentation_ratio)
         if n_aug <= 0:
-            return X, y
+            return X, y, sample_weight
+
+        if sample_weight is not None and len(sample_weight) != n_samples:
+            raise ValueError(
+                f"{self.log_prefix} sample_weight length {len(sample_weight)} != n_samples {n_samples}."
+            )
 
         idx = self.rng.choice(n_samples, size=n_aug, replace=True)
         X_aug = X.iloc[idx].copy().reset_index(drop=True)
@@ -88,12 +98,19 @@ class TimeSeriesAugmenter:
 
         X_out = pd.concat([X.reset_index(drop=True), X_aug], axis=0, ignore_index=True)
         y_out = pd.concat([y.reset_index(drop=True), y_aug], axis=0, ignore_index=True)
+        # 权重同步扩展：增强行继承源行权重（age 一致），再归一化到均值 1
+        w_out = sample_weight
+        if sample_weight is not None:
+            w_out = np.concatenate([np.asarray(sample_weight, dtype=float), np.asarray(sample_weight, dtype=float)[idx]])
+            w_mean = w_out.mean()
+            if w_mean > 0:
+                w_out = w_out / w_mean
         logger.info(
             f"{self.log_prefix} Data augmentation enabled: {n_samples} -> {len(X_out)} "
             f"(+{n_aug}, ratio={self.augmentation_ratio:.2f})"
         )
 
-        return X_out, y_out
+        return X_out, y_out, w_out
 
 
 def augment_time_series(df, target_feature, noise_level=0.01):

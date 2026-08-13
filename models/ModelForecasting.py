@@ -49,6 +49,7 @@ class Forecaster:
                  categorical_features: List[str],
                  selected_features: List[str] = None,
                  target_detrender=None,
+                 df_custom_future=None,
                  log_prefix: str = "[Forecaster]"):
         self.args = args
         self.horizon = horizon
@@ -59,6 +60,7 @@ class Forecaster:
         self.df_future = df_future
         self.df_date_future = df_date_future
         self.df_weather_future = df_weather_future
+        self.df_custom_future = df_custom_future or []
         self.endogenous_features = endogenous_features
         self.target_feature = target_feature
         self.target_output_features = target_output_features
@@ -231,6 +233,7 @@ class Forecaster:
             df_date_future=self.df_date_future,
             df_weather_history=None,
             df_weather_future=self.df_weather_future,
+            df_custom_future=self.df_custom_future,
         )
         if "time" in df_future_exog.columns:
             df_future_exog = df_future_exog.set_index("time", drop=False)
@@ -250,6 +253,7 @@ class Forecaster:
                 df_date_future=df_date_future_step,
                 df_weather_history=None,
                 df_weather_future=df_weather_future_step,
+                df_custom_future=self.df_custom_future,
                 endogenous_features_with_target=self.endogenous_features,
                 target_feature=self.target_feature,
                 horizon=self.horizon,
@@ -350,6 +354,7 @@ class Forecaster:
             df_date_future=self.df_date_future,
             df_weather_history=None,
             df_weather_future=self.df_weather_future,
+            df_custom_future=self.df_custom_future,
         )
         if "time" in df_future_exog.columns:
             df_future_exog = df_future_exog.set_index("time", drop=False)
@@ -369,6 +374,7 @@ class Forecaster:
                 df_date_future=df_date_future_step,
                 df_weather_history=None,
                 df_weather_future=df_weather_future_step,
+                df_custom_future=self.df_custom_future,
                 endogenous_features_with_target=self.endogenous_features,
                 target_feature=self.target_feature,
                 horizon=self.horizon,
@@ -504,6 +510,7 @@ class Forecaster:
             df_date_future=df_date_future_slice,
             df_weather_history=None,
             df_weather_future=df_weather_future_slice,
+            df_custom_future=self.df_custom_future,
             endogenous_features_with_target=endogenous_features,
             target_feature=self.target_feature,
             horizon=self.horizon,
@@ -533,6 +540,7 @@ class Forecaster:
             df_date_future=self.df_date_future,
             df_weather_history=None,
             df_weather_future=self.df_weather_future,
+            df_custom_future=self.df_custom_future,
             endogenous_features_with_target=self.endogenous_features,
             target_feature=self.target_feature,
             horizon=self.horizon,
@@ -694,6 +702,7 @@ class Forecaster:
                 df_date_future=df_date_future_slice,
                 df_weather_history=None,
                 df_weather_future=df_weather_future_slice,
+                df_custom_future=self.df_custom_future,
                 endogenous_features_with_target=self.endogenous_features,
                 target_feature=self.target_feature,
                 horizon=self.horizon,
@@ -885,6 +894,7 @@ class Forecaster:
                     df_date_future=df_date_future_slice,
                     df_weather_history=None,
                     df_weather_future=df_weather_future_slice,
+                    df_custom_future=self.df_custom_future,
                     endogenous_features_with_target=self.endogenous_features,
                     target_feature=self.target_feature,
                     horizon=self.horizon,

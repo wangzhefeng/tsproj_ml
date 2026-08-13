@@ -57,7 +57,17 @@ class TimeSeriesEnsembleRegressor:
     """
 
     def __init__(self, base_models: Sequence[Tuple[str, Any]], config: EnsembleConfig):
-        self.base_models = list(base_models)
+        # 成员规格统一为三元组 (name, model, preprocessor)；兼容二元组 (name, model)
+        # preprocessor: 成员级预处理器（StandardScaler / SimpleImputer / Pipeline），
+        # None 表示该成员不做独立预处理
+        self.base_models: list[tuple] = []
+        for item in base_models:
+            if len(item) == 2:
+                name, model = item
+                scaler = None
+            else:
+                name, model, scaler = item
+            self.base_models.append((name, model, scaler))
         self.config = config
         self.weights_: np.ndarray | None = None
         self.meta_model_: Any | None = None
@@ -73,29 +83,37 @@ class TimeSeriesEnsembleRegressor:
         return X[:split_idx], y[:split_idx], X[split_idx:], y[split_idx:]
 
     def _fit_base_models(self, X_train, y_train):
-        if self.config.parallel_workers <= 1 or len(self.base_models) <= 1:
-            for name, model in self.base_models:
-                logger.info(f"[Ensemble] Training base model: {name}")
-                model.fit(X_train, y_train)
-            return
-
-        def _fit_one(name, model):
+        def _fit_one(name, model, scaler):
             logger.info(f"[Ensemble] Training base model: {name}")
-            model.fit(X_train, y_train)
+            # 成员级缩放：scaler 随本次训练数据重新 fit（两次 fit 调用分别对应
+            # val 估计段与全量段，predict 时使用的是全量段 fit 的最终状态）
+            X_fit = scaler.fit_transform(X_train) if scaler is not None else X_train
+            model.fit(X_fit, y_train)
             return name, model
 
+        if self.config.parallel_workers <= 1 or len(self.base_models) <= 1:
+            self.base_models = [
+                (name, _fit_one(name, model, scaler)[1], scaler)
+                for name, model, scaler in self.base_models
+            ]
+            return
+
         with ThreadPoolExecutor(max_workers=self.config.parallel_workers) as executor:
-            futures = [executor.submit(_fit_one, name, model) for name, model in self.base_models]
-            fitted_models = []
+            futures = [
+                executor.submit(_fit_one, name, model, scaler)
+                for name, model, scaler in self.base_models
+            ]
+            fitted_map = {}
             for future in as_completed(futures):
-                fitted_models.append(future.result())
-        fitted_map = {name: model for name, model in fitted_models}
-        self.base_models = [(name, fitted_map[name]) for name, _ in self.base_models]
+                name, model = future.result()
+                fitted_map[name] = model
+        self.base_models = [(name, fitted_map[name], scaler) for name, _, scaler in self.base_models]
 
     def _collect_predictions(self, X) -> np.ndarray:
         preds = []
-        for _, model in self.base_models:
-            preds.append(_to_2d(model.predict(X)))
+        for _, model, scaler in self.base_models:
+            X_pred = scaler.transform(X) if scaler is not None else X
+            preds.append(_to_2d(model.predict(X_pred)))
         # shape: (n_models, n_samples, n_outputs)
         return np.stack(preds, axis=0)
 
@@ -134,11 +152,12 @@ class TimeSeriesEnsembleRegressor:
         self._single_output = y_2d.shape[1] == 1
 
         X_train, y_train, X_val, y_val = self._split_train_val(X, y_2d)
-        self._fit_base_models(X_train, y_train.ravel() if self._single_output else y_train)
 
         method = str(self.config.method).lower()
         needs_val = method in {"weighted", "blending", "stacking"}
         if needs_val and X_val is not None and len(X_val) > 0:
+            # 先在 train 段拟合基模型，仅为在 val 上估计融合权重/meta
+            self._fit_base_models(X_train, y_train.ravel() if self._single_output else y_train)
             val_preds = self._collect_predictions(X_val)
             if method == "weighted":
                 self._fit_weighted(val_preds, y_val)
@@ -146,10 +165,15 @@ class TimeSeriesEnsembleRegressor:
                 self._fit_blending(val_preds, y_val)
             elif method == "stacking":
                 self._fit_stacking(val_preds, y_val)
-            self._fit_base_models(X, y_2d.ravel() if self._single_output else y_2d)
         elif needs_val:
             logger.warning("[Ensemble] Validation split unavailable, fallback to averaging.")
             self.config.method = "averaging"
+        # ------------------------------ 
+        # 所有方法的基模型最终都在全量训练数据上重训：
+        # 使融合成员与单模型基线使用完全一致的训练数据
+        # （averaging 不需要 val，此前只在 80% 数据上训练，属于结构性缺陷）
+        # ------------------------------ 
+        self._fit_base_models(X, y_2d.ravel() if self._single_output else y_2d)
 
         return self
 

@@ -168,6 +168,7 @@ YAML_OVERRIDE_GROUPS = {
         "ensemble_models",
         "ensemble_method",
         "ensemble_val_ratio",
+        "ensemble_model_specs",
         "pred_method",
         "multi_output_strategy",
         "predict_type",

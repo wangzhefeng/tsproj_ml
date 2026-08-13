@@ -12,8 +12,9 @@
 # ***************************************************
 
 # python libraries
+import os
 from pathlib import Path
-from typing import List
+from typing import List, Optional
 
 import numpy as np
 import pandas as pd
@@ -47,6 +48,44 @@ from utils.log_util import logger
 LOGGING_LABEL = Path(__file__).name[:-3]
 
 
+def _load_plot_overlay_df(args, log_prefix: str) -> Optional[pd.DataFrame]:
+    """加载测试可视化叠加参考序列（time + plot_overlay_col 两列）。
+
+    plot_overlay_path 相对 data_dir 解析（绝对路径直接用）；路径或列名任一为空、
+    文件不存在、缺列时返回 None（叠加关闭，不影响原有绘图）。
+    """
+    overlay_path_raw = str(getattr(args, "plot_overlay_path", "") or "").strip()
+    overlay_col = str(getattr(args, "plot_overlay_col", "") or "").strip()
+    if not overlay_path_raw or not overlay_col:
+        return None
+    overlay_path = Path(overlay_path_raw)
+    if not overlay_path.is_absolute():
+        overlay_path = Path(args.data_dir) / overlay_path
+    if not overlay_path.exists():
+        logger.warning(f"{log_prefix} Plot overlay file not found, overlay skipped: {overlay_path}")
+        return None
+    try:
+        overlay_df = pd.read_csv(overlay_path)
+    except Exception as exc:
+        logger.warning(f"{log_prefix} Plot overlay file read failed, overlay skipped: {exc}")
+        return None
+    if "time" not in overlay_df.columns or overlay_col not in overlay_df.columns:
+        logger.warning(
+            f"{log_prefix} Plot overlay file missing 'time'/'{overlay_col}' column(s), overlay skipped: {overlay_path}"
+        )
+        return None
+    overlay_df["time"] = pd.to_datetime(overlay_df["time"])
+    overlay_df[overlay_col] = pd.to_numeric(overlay_df[overlay_col], errors="coerce")
+    overlay_df = (
+        overlay_df.loc[overlay_df[overlay_col].notna(), ["time", overlay_col]]
+        .drop_duplicates(subset="time", keep="last")
+        .sort_values("time")
+        .reset_index(drop=True)
+    )
+    logger.info(f"{log_prefix} Plot overlay loaded: {overlay_path} column='{overlay_col}' rows={len(overlay_df)}")
+    return overlay_df
+
+
 class Tester:
     
     def __init__(self, args, log_prefix: str, horizon: int, window_len: int):
@@ -60,6 +99,11 @@ class Tester:
         """
         单个滑动窗口测试任务
         """
+        # 窗口并行（进程池）时每个 worker 单线程纪律：payload 的 n_jobs/thread_count
+        # 已被强制为 1，但 HistGB 走 OpenMP 无 n_jobs 参数，需 OMP_NUM_THREADS=1 兜底，
+        # 避免 window_workers × OMP 线程超额订阅（串行路径不带此标记，不受影响）。
+        if payload.get("force_single_thread_env"):
+            os.environ["OMP_NUM_THREADS"] = "1"
         args = payload["args"]
         log_prefix = payload["log_prefix"]
         horizon = payload["horizon"]
@@ -97,6 +141,7 @@ class Tester:
             df_history_train=df_history_train,
             df_date_history=payload["df_date_history"],
             df_weather_history=payload["df_weather_history"],
+            df_custom_history=payload.get("df_custom_history"),
             endogenous_features_with_target=payload["endogenous_features_with_target"],
             target_feature=payload["target_feature"],
             horizon=horizon,
@@ -152,6 +197,7 @@ class Tester:
             df_future=df_future_for_test,
             df_date_future=payload["df_date_history"],
             df_weather_future=payload["df_weather_history"],
+            df_custom_future=payload.get("df_custom_history"),
             endogenous_features=payload["endogenous_features_with_target"],
             target_feature=payload["target_feature"],
             target_output_features=target_output_features,
@@ -193,6 +239,23 @@ class Tester:
             min_len = min(len(y_pred), len(y_test_for_eval))
             y_pred = np.asarray(y_pred)[:min_len]
             y_test_for_eval = np.asarray(y_test_for_eval)[:min_len]
+        # 季节 naive 对照（昨日同时刻实际值），与评估标签对齐
+        y_naive = Tester._build_seasonal_naive(
+            df_history=payload["df_history"],
+            window=window,
+            horizon=horizon,
+            window_len=window_len,
+            target_feature=payload["target_feature"],
+            n_per_day=int(getattr(args, "n_per_day", 1) or 1),
+            target_detrender=target_detrender,
+        )
+        if y_naive is not None:
+            y_naive = np.asarray(y_naive).reshape(-1)
+            if len(y_naive) >= len(y_test_for_eval):
+                y_naive = y_naive[: len(y_test_for_eval)]
+            else:
+                # 长度不足无法对齐，放弃本窗口 naive 对照
+                y_naive = None
         # 测试集评价指标
         eval_scores_window = Tester._evaluate_score(
             y_test_for_eval,
@@ -204,6 +267,7 @@ class Tester:
             percentile=args.percentile,
             min_value=args.min_value,
             max_value=args.max_value,
+            y_naive=y_naive,
         )
         # 测试集预测数据
         cv_plot_df_window = Tester._evaluate_result(
@@ -300,6 +364,7 @@ class Tester:
         endogenous_features_with_target: List[str],
         target_feature: str,
         horizon: int,
+        df_custom_history=None,
     ):
         """
         在单个训练窗口内部构造特征和多步标签，避免标签跨入测试窗口。
@@ -316,6 +381,8 @@ class Tester:
             df_date_future=None,
             df_weather_history=df_weather_history,
             df_weather_future=None,
+            df_custom_history=df_custom_history,
+            df_custom_future=None,
             endogenous_features_with_target=endogenous_features_with_target,
             target_feature=target_feature,
             horizon=horizon,
@@ -344,6 +411,34 @@ class Tester:
         return df_history_test[["time"]].copy()
 
     @staticmethod
+    def _build_seasonal_naive(
+        df_history: pd.DataFrame,
+        window: int,
+        horizon: int,
+        window_len: int,
+        target_feature: str,
+        n_per_day: int,
+        target_detrender=None,
+    ):
+        """
+        季节 naive 对照序列：测试期第 i 点的 naive 值 = 该点 n_per_day 步前
+        （昨日同时刻）的实际值，全部取自预测原点之前/之中的已知实际数据。
+        历史不足一天时返回 None（naive 指标列记 NaN）。
+        """
+        _, _, test_start, test_end = Tester._evaluate_split_index(
+            window, len(df_history), horizon, window_len
+        )
+        naive_start = test_start - n_per_day
+        if naive_start < 0:
+            return None
+        y_naive = df_history[target_feature].iloc[naive_start: test_end + 1 - n_per_day].to_numpy()
+        # detrend 开启时 df_history 为 detrended 序列，还原到电平空间（与 y_test_raw 同口径）
+        if target_detrender is not None and target_detrender.is_fitted:
+            naive_times = df_history["time"].iloc[naive_start: test_end + 1 - n_per_day]
+            y_naive = target_detrender.restore(y_naive, naive_times)
+        return y_naive
+
+    @staticmethod
     def _evaluate_score(
         y_test: np.ndarray,
         y_pred: np.ndarray,
@@ -354,6 +449,7 @@ class Tester:
         percentile: float = 5.0,
         min_value: float = None,
         max_value: float = None,
+        y_naive: Optional[np.ndarray] = None,
     ):
         """
         模型评估
@@ -371,6 +467,14 @@ class Tester:
         else:
             mape_value = np.nan
             mape_accuracy = np.nan
+        # 季节 naive 对照指标：与模型共用同一 eval_mask，保证口径可比
+        if y_naive is not None and mape_meta["valid_points"] > 0:
+            y_naive = np.asarray(y_naive).flatten()
+            naive_mape = mean_absolute_percentage_error(y_test[valid_mask], y_naive[valid_mask])
+            naive_mape_accuracy = 1 - naive_mape
+        else:
+            naive_mape = np.nan
+            naive_mape_accuracy = np.nan
 
         test_scores = {
             "R2": r2_score(y_test, y_pred),
@@ -379,6 +483,8 @@ class Tester:
             "MAE": mean_absolute_error(y_test, y_pred),
             "MAPE": mape_value,
             "MAPE Accuracy": mape_accuracy,
+            "Naive MAPE": naive_mape,
+            "Naive MAPE Accuracy": naive_mape_accuracy,
             "MAPE Threshold": mape_meta["threshold"],
             "MAPE Upper Threshold": mape_meta["upper_threshold"],
             "MAPE Valid Points": mape_meta["valid_points"],
@@ -467,8 +573,11 @@ class Tester:
         if len(cv_plot_df["Y_preds"].values) == 0 or len(cv_plot_df["Y_trues"].values) == 0:
             logger.warning(f"{log_prefix} No data to visualize for test prediction.")
             return
+        # 加载叠加参考序列（若已配置）
+        overlay_df = _load_plot_overlay_df(args, log_prefix)
+        overlay_col = str(getattr(args, "plot_overlay_col", "") or "").strip()
         import matplotlib.pyplot as plt
-        plt.figure(figsize=(25, 8))
+        fig_main, ax_main = plt.subplots(figsize=(25, 8))
         # 用未掩码的原始列绘制,保证线条连续不断(eval_mask 掩码仅用于 MAPE 计算,不参与绘图)
         plot_true_col = "Y_trues"
         plot_pred_col = "Y_preds"
@@ -476,30 +585,41 @@ class Tester:
         # 窗口倒序、边界时间倒退造成的"拼接错乱/真值递减"视觉假象(底层预测与指标无误)
         plot_df = cv_plot_df.sort_values("time").reset_index(drop=True) if "time" in cv_plot_df.columns else cv_plot_df
         plot_x = plot_df["time"] if "time" in plot_df.columns else np.arange(len(plot_df))
-        plt.plot(plot_x, plot_df[plot_true_col].values, label="Trues", lw=1.7)
-        plt.plot(plot_x, plot_df[plot_pred_col].values, label="Preds", lw=1.7, ls="-.")
+        ax_main.plot(plot_x, plot_df[plot_true_col].values, label="Trues", lw=1.7)
+        ax_main.plot(plot_x, plot_df[plot_pred_col].values, label="Preds", lw=1.7, ls="-.")
         # 分位数预测区间带(若回测含分位数列):填充 q_low~q_high
         qcols = sorted(c for c in plot_df.columns if str(c).startswith("predict_q"))
         if len(qcols) >= 2:
-            plt.fill_between(
+            ax_main.fill_between(
                 plot_x,
                 plot_df[qcols[0]].astype(float).values,
                 plot_df[qcols[-1]].astype(float).values,
                 color="tab:blue", alpha=0.15, label=f"PI [{qcols[0]},{qcols[-1]}]",
             )
-        plt.legend()
-        plt.xlabel("Time")
-        plt.ylabel("Value")
-        plt.title("Trues and Preds Timeseries Plot")
-        plt.grid(True)
+        ax_main.legend(loc="upper left")
+        ax_main.set_xlabel("Time")
+        ax_main.set_ylabel("Value")
+        ax_main.set_title("Trues and Preds Timeseries Plot")
+        ax_main.grid(True)
         # X 轴日期格式化：避免高频数据刻度标签重叠
         if "time" in plot_df.columns:
             from matplotlib.dates import DateFormatter, DayLocator, AutoDateLocator
             locator = AutoDateLocator()
-            plt.gca().xaxis.set_major_locator(locator)
-            plt.gca().xaxis.set_major_formatter(DateFormatter("%m-%d %H:%M"))
-        plt.tight_layout()
-        plt.savefig(args.test_results_dir.joinpath("test_prediction.png"), bbox_inches="tight", dpi=300)
+            ax_main.xaxis.set_major_locator(locator)
+            ax_main.xaxis.set_major_formatter(DateFormatter("%m-%d %H:%M"))
+        # 叠加参考序列（次坐标轴，量级与目标差异大时不压扁主曲线）
+        if overlay_df is not None and "time" in plot_df.columns:
+            ax_overlay = ax_main.twinx()
+            overlay_vals = overlay_df.set_index("time")[overlay_col].reindex(plot_df["time"]).to_numpy(dtype=float)
+            ax_overlay.plot(
+                plot_df["time"], overlay_vals,
+                label=overlay_col, lw=1.0, color="gray", alpha=0.7, ls="--",
+            )
+            ax_overlay.set_ylabel(overlay_col)
+            ax_overlay.legend(loc="upper right")
+        fig_main.tight_layout()
+        fig_main.savefig(args.test_results_dir.joinpath("test_prediction.png"), bbox_inches="tight", dpi=300)
+        plt.close(fig_main)
         # plt.show();
 
         # ---- per-window 绘图 ----
@@ -555,6 +675,16 @@ class Tester:
                         ax_w.xaxis.set_major_formatter(DateFormatter("%m-%d %H:%M"))
                     else:
                         ax_w.xaxis.set_major_formatter(DateFormatter("%m-%d"))
+                # 叠加参考序列（次坐标轴）
+                if overlay_df is not None and "time" in group_sorted.columns:
+                    ax_ov = ax_w.twinx()
+                    ov_vals = overlay_df.set_index("time")[overlay_col].reindex(group_sorted["time"]).to_numpy(dtype=float)
+                    ax_ov.plot(
+                        group_sorted["time"], ov_vals,
+                        label=overlay_col, lw=1.0, color="gray", alpha=0.7, ls="--",
+                    )
+                    ax_ov.set_ylabel(overlay_col)
+                    ax_ov.legend(loc="upper right")
                 fig_w.autofmt_xdate(rotation=30)
                 fig_w.tight_layout()
                 fig_w.savefig(window_plots_dir.joinpath(f"window_{int(win):02d}.png"), dpi=150, bbox_inches="tight")

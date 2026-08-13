@@ -110,6 +110,8 @@ class DataLoader:
             "date_future": None,
             "weather_history": None,
             "weather_future": None,
+            "custom_history": [],
+            "custom_future": [],
         }
         # ------------------------------
         # 加载目标时间序列数据
@@ -157,7 +159,34 @@ class DataLoader:
         )
         input_data["weather_history"] = df_weather_history
         input_data["weather_future"] = df_weather_future
-        
+        # ------------------------------
+        # 加载自定义外生特征（注册表，多来源）
+        # ------------------------------
+        custom_sources = getattr(self.args, "custom_features", None) or []
+        for source in custom_sources:
+            name = str(source.get("name") or source.get("history_path") or "custom")
+            ts_col = source.get("ts_col")
+            if not ts_col:
+                raise ValueError(f"{self.log_prefix} Custom source '{name}' missing ts_col.")
+            columns = list(source.get("columns") or [])
+            if not columns:
+                raise ValueError(f"{self.log_prefix} Custom source '{name}' missing columns.")
+            categorical_columns = list(source.get("categorical_columns") or [])
+            df_history_raw = self._load_optional_frame(source.get("history_path"), f"Custom[{name}] history")
+            df_future_raw = self._load_optional_frame(source.get("future_path"), f"Custom[{name}] future")
+            _all, df_history, df_future = self._prepare_exogenous_splits(
+                history_df=df_history_raw,
+                future_df=df_future_raw,
+                ts_col=ts_col,
+                label=f"Custom[{name}]",
+            )
+            base = {"name": name, "ts_col": ts_col, "columns": columns,
+                    "categorical_columns": categorical_columns}
+            if df_history is not None and not df_history.empty:
+                input_data["custom_history"].append({**base, "df": df_history})
+            if df_future is not None and not df_future.empty:
+                input_data["custom_future"].append({**base, "df": df_future})
+
         return input_data
 
     def __process_df_timestamp(self, df: pd.DataFrame, col_ts: str):
@@ -322,7 +351,8 @@ class DataLoader:
         else:
             logger.info(f"{self.log_prefix} __process_df_timestamp df_weather_history: {df_weather_history}")
 
-        return (df_history, df_date_history, df_weather_history, endogenous_features_with_target, target_feature)
+        return (df_history, df_date_history, df_weather_history, endogenous_features_with_target, target_feature,
+                input_data["custom_history"])
 
     def process_future_data(self, input_data: Dict):
         """
@@ -351,7 +381,7 @@ class DataLoader:
         else:
             logger.info(f"{self.log_prefix} after __process_df_timestamp df_weather_future: {df_weather_future}")
 
-        return (df_future_template, df_date_future, df_weather_future)
+        return (df_future_template, df_date_future, df_weather_future, input_data["custom_future"])
 
 
 def _to_single_output_label(y: Any) -> Optional[np.ndarray]:

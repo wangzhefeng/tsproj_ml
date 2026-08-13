@@ -60,6 +60,8 @@
 
 `test_scores_df.csv` 中的 `MAPE` 与 `MAPE Accuracy` 采用业务口径：对每个测试窗口先取 `y_true > 0` 的点，再用这些正样本的 `P5` 作为相对阈值，只对 `y_true >= threshold` 的点计算指标。结果表会同步保存 `MAPE Threshold`、`MAPE Valid Points`、`MAPE Excluded Points`、`MAPE Excluded Ratio`。`cv_plot_df.csv` 也会保留对应的有效性标记，`test_prediction.png` 对无效点断线显示。
 
+每个窗口同时输出季节 naive 对照列 `Naive MAPE` / `Naive MAPE Accuracy`：naive 值取测试点 `n_per_day` 步前（昨日同时刻）的实际值，与模型指标共用同一 eval_mask，用于判断模型是否跑赢持久性锚点；窗口历史不足一天时记 `NaN`。
+
 ## 预测
 
 `Forecaster._predict_by_method()` 根据 `args.pred_method` 分发：

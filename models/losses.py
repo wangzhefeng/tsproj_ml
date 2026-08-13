@@ -56,11 +56,15 @@ def _normalize_loss_name(loss_name: Any) -> str:
         "regression_l1": "mae",
         "reg:absoluteerror": "mae",
         "meanabsoluteerror": "mae",
+        "absolute_error": "mae",
+        "absoluteerror": "mae",
         "mse": "mse",
         "l2": "mse",
         "regression": "mse",
         "reg:squarederror": "mse",
         "meansquarederror": "mse",
+        "squared_error": "mse",
+        "squarederror": "mse",
         "rmse": "rmse",
         "rootmeansquarederror": "rmse",
         "mape": "mape",
@@ -84,5 +88,13 @@ def get_loss_name_from_model_params(model_type: str, model_params: Dict[str, Any
         raw_loss = params.get("eval_metric") or params.get("objective")
     elif model_key in {"catboost", "cat"}:
         raw_loss = params.get("eval_metric") or params.get("loss_function")
+    elif model_key in {"histgb", "histgradientboosting"}:
+        raw_loss = params.get("loss")
+    elif model_key in {"ridge", "elasticnet", "enet", "lasso"}:
+        # 线性正则回归的训练目标均为 MSE 系
+        raw_loss = "mse"
+    elif model_key in {"quantileregressor", "qr"}:
+        # 线性分位数回归（默认 quantile=0.5 即 MAE 口径）
+        raw_loss = "mae"
 
     return _normalize_loss_name(raw_loss)

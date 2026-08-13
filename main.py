@@ -266,7 +266,8 @@ class Model:
              df_weather_history,
              endogenous_features_with_target,
              target_feature,
-             categorical_features):
+             categorical_features,
+             df_custom_history=None):
         """
         模型滑窗测试
         """
@@ -310,9 +311,11 @@ class Model:
         if window_workers > 1:
             payload_args.multi_output_n_jobs = 1
             payload_args.model_thread_count = 1
+            payload_args.ensemble_parallel_workers = 1
         payloads = [
             {
                 "args": payload_args,
+                "force_single_thread_env": window_workers > 1,
                 "log_prefix": self.log_prefix,
                 "horizon": self.horizon,
                 "window_len": self.window_len,
@@ -320,6 +323,7 @@ class Model:
                 "df_history": df_history,
                 "df_date_history": df_date_history,
                 "df_weather_history": df_weather_history,
+                "df_custom_history": df_custom_history,
                 "endogenous_features_with_target": endogenous_features_with_target,
                 "target_feature": target_feature,
                 "categorical_features": categorical_features,
@@ -396,7 +400,8 @@ class Model:
                  target_feature,
                  target_output_features,
                  categorical_features,
-                 selected_features=None):
+                 selected_features=None,
+                 df_custom_future=None):
         """
         模型预测
         """
@@ -421,6 +426,7 @@ class Model:
             df_future=df_future_prediction,
             df_date_future=df_date_future,
             df_weather_future=df_weather_future,
+            df_custom_future=df_custom_future,
             endogenous_features=endogenous_features_with_target,
             target_feature=target_feature,
             target_output_features=target_output_features,
@@ -525,7 +531,8 @@ class Model:
          df_date_history,
          df_weather_history,
          endogenous_features_with_target,
-         target_feature) = dataloader.process_history_data(input_data=input_data)
+         target_feature,
+         df_custom_history) = dataloader.process_history_data(input_data=input_data)
         # ------------------------------
         # 目标去趋势(可选):特征工程前对整条 y 线性去趋势,
         # 使 target/lag/rolling/diff 一致落在 detrended 空间;Forecaster 输出时点对点还原电平
@@ -560,6 +567,8 @@ class Model:
             df_date_future=None,
             df_weather_history=df_weather_history,
             df_weather_future=None,
+            df_custom_history=df_custom_history,
+            df_custom_future=None,
             endogenous_features_with_target=endogenous_features_with_target,
             target_feature=target_feature,
             horizon=self.horizon,
@@ -591,6 +600,7 @@ class Model:
                 endogenous_features_with_target=endogenous_features_with_target,
                 target_feature=target_feature,
                 categorical_features=categorical_features,
+                df_custom_history=df_custom_history,
             )
         # ------------------------------
         # 模型预测
@@ -605,7 +615,8 @@ class Model:
             logger.info(f"{self.log_prefix} {'=' * 87}")
             (df_future,
              df_date_future,
-             df_weather_future) = dataloader.process_future_data(input_data=input_data)
+             df_weather_future,
+             df_custom_future) = dataloader.process_future_data(input_data=input_data)
 
             # 模型训练
             logger.info(f"{self.log_prefix} {'=' * 87}")
@@ -631,6 +642,7 @@ class Model:
                 df_future=df_future,
                 df_date_future=df_date_future,
                 df_weather_future=df_weather_future,
+                df_custom_future=df_custom_future,
                 endogenous_features_with_target=endogenous_features_with_target,
                 target_feature=target_feature,
                 target_output_features=target_output_features,

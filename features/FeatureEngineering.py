@@ -44,7 +44,7 @@
 
 # python libraries
 from pathlib import Path
-from typing import List
+from typing import Any, Dict, List, Optional
 
 import numpy as np
 import pandas as pd
@@ -278,6 +278,53 @@ class ExogenousFeatureEngineer:
         if self.verbose:
             logger.info(f"{self.log_prefix} after extend_weather_feature weather_features: {weather_features}")
 
+        return df_copy
+
+    def extend_custom_feature(
+        self,
+        df: pd.DataFrame,
+        custom_sources: Optional[List[Dict[str, Any]]],
+    ):
+        """合并自定义外生特征（注册表多来源）。
+
+        每个来源 dict: {"name", "ts_col", "columns", "categorical_columns", "df"}。
+        按精确时间戳 merge（与 weather 同机制），历史/未来共用——计划类外生特征
+        两段列名语义一致，不做 weather 那样的 rt_/pred_ 重命名。
+        """
+        df_copy = df.copy()
+        if not custom_sources:
+            return df_copy
+        for source in custom_sources:
+            name = source.get("name", "custom")
+            df_custom = source.get("df")
+            col_ts = source.get("ts_col")
+            columns = [c for c in (source.get("columns") or [])]
+            categorical_columns = [c for c in (source.get("categorical_columns") or [])]
+            if df_custom is None or df_custom.empty:
+                logger.warning(f"{self.log_prefix} Custom source '{name}' frame is empty; skipped.")
+                continue
+            keep_cols = [col_ts] + [c for c in columns if c in df_custom.columns]
+            missing = [c for c in columns if c not in df_custom.columns]
+            if missing:
+                logger.warning(f"{self.log_prefix} Custom source '{name}' missing columns {missing}; skipped.")
+            if len(keep_cols) <= 1:
+                continue
+            df_sel = df_custom[keep_cols].copy()
+            df_sel[col_ts] = pd.to_datetime(df_sel[col_ts])
+            df_sel = df_sel.drop_duplicates(subset=col_ts, keep="last").sort_values(col_ts)
+            for col in keep_cols[1:]:
+                if col in categorical_columns:
+                    df_sel[col] = df_sel[col].astype("category")
+                else:
+                    df_sel[col] = pd.to_numeric(df_sel[col], errors="coerce")
+            df_copy = pd.merge(df_copy, df_sel, left_on="time", right_on=col_ts, how="left")
+            if col_ts != "time" and col_ts in df_copy.columns:
+                del df_copy[col_ts]
+            added = keep_cols[1:]
+            self.exogenous_features.extend(added)
+            self.categorical_features.extend([c for c in added if c in categorical_columns])
+            if self.verbose:
+                logger.info(f"{self.log_prefix} after extend_custom_feature[{name}] added: {added}")
         return df_copy
 
     def extend_future_weather_feature(self, df: pd.DataFrame, df_weather: pd.DataFrame, col_ts: str):
@@ -906,7 +953,8 @@ class FeatureEngineer:
         # 高级特征工程
         self.advanced_feature_engineer = EndogenousAdvancedFeatureEngineer(log_prefix, verbose=verbose)
 
-    def create_exogenouse_features(self, df, df_date_history, df_date_future, df_weather_history, df_weather_future):
+    def create_exogenouse_features(self, df, df_date_history, df_date_future, df_weather_history, df_weather_future,
+                                   df_custom_history=None, df_custom_future=None):
         """
         历史数据特征工程: 外生变量特征
         """
@@ -951,6 +999,13 @@ class FeatureEngineer:
             if self.verbose:
                 logger.info(f"{self.log_prefix} after extend_future_weather_feature df_featured: \n{df_featured.head()}")
                 logger.info(f"{self.log_prefix} after extend_future_weather_feature df_featured shape: {df_featured.shape}")
+        # 特征工程: 自定义外生特征（注册表多来源；历史段优先，未来段回退）
+        custom_sources = df_custom_history if df_custom_history else df_custom_future
+        if custom_sources:
+            df_featured = self.exogenous_feature_engineer.extend_custom_feature(
+                df=df_featured,
+                custom_sources=custom_sources,
+            )
         # 特征工程: 日期时间特征
         if getattr(self.args, "enable_datetime_features", True):
             df_featured = self.exogenous_feature_engineer.extend_datetime_feature(
@@ -1238,13 +1293,15 @@ class FeatureEngineer:
         else:
             return df_series, []
 
-    def create_features(self, 
-                        df_series: pd.DataFrame, 
-                        df_date_history: pd.DataFrame=None, 
+    def create_features(self,
+                        df_series: pd.DataFrame,
+                        df_date_history: pd.DataFrame=None,
                         df_date_future: pd.DataFrame=None,
-                        df_weather_history: pd.DataFrame=None, 
+                        df_weather_history: pd.DataFrame=None,
                         df_weather_future: pd.DataFrame=None,
-                        endogenous_features_with_target: List[str]=["y"], 
+                        df_custom_history=None,
+                        df_custom_future=None,
+                        endogenous_features_with_target: List[str]=["y"],
                         target_feature: str="y",
                         horizon: int=1):
         """
@@ -1271,6 +1328,8 @@ class FeatureEngineer:
             df_date_future=df_date_future,
             df_weather_history=df_weather_history,
             df_weather_future=df_weather_future,
+            df_custom_history=df_custom_history,
+            df_custom_future=df_custom_future,
         )
         # Direct 系列方法下，按 horizon 展开外生特征
         if getattr(self.args, "use_horizon_exogenous_for_direct", False) and self.args.pred_method in [

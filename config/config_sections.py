@@ -9,7 +9,7 @@ YAML 覆盖、CLI 覆盖和 `dataclasses.fields()` 仍然继续使用
 
 import datetime
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 
 # 预测方法元信息 (full_method, short_code, description)
@@ -127,6 +127,17 @@ class ExogenousFeatureConfig:
     )
     weather_categorical_features: List[str] = field(default_factory=list)
 
+    # 自定义外生特征注册表（多文件来源，仿 date/weather 通路的通用版）。
+    # 每个来源一个 dict：
+    #   name: 来源标识（日志/调试用）
+    #   history_path: 历史段 CSV（相对 data_dir）
+    #   future_path: 未来段 CSV（forecast 用；可为 null——仅回测时）
+    #   ts_col: 时间戳列名（精确时间戳 merge，与 weather 同粒度）
+    #   columns: 使用的特征列名白名单
+    #   categorical_columns: 其中按类别传给 LightGBM 的列名（默认 []）
+    # 与 weather 通路的区别：无 rt_/pred_ 列名映射（历史/未来列名一致）、无硬编码列白名单。
+    custom_features: List[Dict[str, Any]] = field(default_factory=list)
+
     # 日期时间特征：从时间戳直接派生，作为可预知外生变量使用。
     enable_datetime_features: bool = True
     datetime_features: List[str] = field(
@@ -234,6 +245,13 @@ class ModelStrategyConfig:
     ensemble_models: List[str] = field(default_factory=lambda: ["lgb", "xgb", "cat"])
     ensemble_method: str = "stacking"  # "averaging"、"weighted"、"stacking" 或 "blending"
     ensemble_val_ratio: float = 0.2
+    # 融合成员级规格（非空时取代 ensemble_models）：每项 {model, params?, scale?, impute?}
+    # - model: 模型类型（ModelFactory 注册名/别名）
+    # - params: 该成员独立的参数覆盖（在全局 model_params 之上合并）
+    # - scale: 该成员独立特征标准化（线性成员需要，树成员不需要）
+    # - impute: 该成员独立中位数填补（训练窗起始行长滞后特征为 NaN，
+    #   GBDT 原生容忍，线性/KNN 等成员需要）
+    ensemble_model_specs: List[Dict] = field(default_factory=list)
 
     # 可选预测方法详见 _PRED_METHODS。
     pred_method: str = "univariate-single-multistep-direct"
@@ -349,6 +367,11 @@ class OutputConfig:
     scenario_subpath: str = ""
     # 结果目录 setting 后缀（如 "-intraday"）；空=不加。用于同配置不同语义版本的结果隔离。
     setting_suffix: str = ""
+    # 测试可视化叠加参考序列：在测试图（test_prediction.png / window_plots）上以次坐标轴叠加一条参考曲线。
+    # plot_overlay_path 相对 data_dir 解析（也接受绝对路径）；plot_overlay_col 为叠加列名（文件需含 time + 该列）。
+    # 两者任一为空即关闭叠加（默认）。量级与目标差异大时用次坐标轴绘制，不压扁主曲线。
+    plot_overlay_path: str = ""
+    plot_overlay_col: str = ""
 
 
 @dataclass

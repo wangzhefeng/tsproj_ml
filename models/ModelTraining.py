@@ -22,6 +22,9 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 import numpy as np
 import pandas as pd
 from sklearn.multioutput import MultiOutputRegressor, RegressorChain
+from sklearn.preprocessing import StandardScaler
+from sklearn.impute import SimpleImputer
+from sklearn.pipeline import Pipeline
 from sklearn.model_selection import (
     TimeSeriesSplit, 
     GridSearchCV, 
@@ -155,6 +158,23 @@ class Trainer:
 
         return value
 
+    @staticmethod
+    def _thread_limited_params(model_type: str, params: Dict[str, Any], threads: int) -> Dict[str, Any]:
+        """
+        按模型类型把线程上限注入参数字典（返回新字典，不改入参）。
+
+        HistGB（无 n_jobs 构造参数，底层 OpenMP）与线性模型（单线程/BLAS）
+        无线程参数可注，原样返回；HistGB 的窗口并行超额订阅由
+        Tester._window_test 的 OMP_NUM_THREADS=1 兜底。
+        """
+        mt = str(model_type).lower()
+        params = copy.deepcopy(params)
+        if mt in ["lightgbm", "lgb", "xgboost", "xgb", "randomforest", "rf"]:
+            params["n_jobs"] = threads
+        elif mt in ["catboost", "cat"]:
+            params["thread_count"] = threads
+        return params
+
     def _apply_model_thread_limits(self):
         if not hasattr(self.args, "model_thread_count"):
             return
@@ -162,13 +182,7 @@ class Trainer:
         if raw_value is None:
             return
         model_threads = self._resolve_worker_count("model_thread_count", default=1)
-        mt = str(self.model_type).lower()
-        if mt in ["lightgbm", "lgb"]:
-            self.model_params["n_jobs"] = model_threads
-        elif mt in ["xgboost", "xgb"]:
-            self.model_params["n_jobs"] = model_threads
-        elif mt in ["catboost", "cat"]:
-            self.model_params["thread_count"] = model_threads
+        self.model_params = self._thread_limited_params(self.model_type, self.model_params, model_threads)
 
     def _get_tuning_param_grid(self, model_type: str) -> Dict[str, list]:
         mt = str(model_type).lower()
@@ -195,6 +209,23 @@ class Trainer:
                 "l2_leaf_reg": [3, 5, 7],
                 "bagging_temperature": [0, 0.5, 1.0],
             }
+        if mt in ["histgb", "histgradientboosting"]:
+            return {
+                "max_leaf_nodes": [15, 31, 63],
+                "learning_rate": [0.03, 0.05, 0.08],
+                "min_samples_leaf": [10, 20, 50],
+                "l2_regularization": [0.0, 1.0, 10.0],
+            }
+        if mt in ["ridge"]:
+            return {"alpha": [0.1, 1.0, 10.0, 100.0]}
+        if mt in ["elasticnet", "enet"]:
+            return {"alpha": [0.01, 0.1, 1.0], "l1_ratio": [0.2, 0.5, 0.8]}
+        if mt in ["lasso"]:
+            return {"alpha": [0.001, 0.01, 0.1, 1.0]}
+        if mt in ["quantileregressor", "qr"]:
+            return {"alpha": [0.0, 0.1, 1.0]}
+        if mt in ["seasonaltemplate", "st"]:
+            return {"day_type_split": [True, False], "equal_weight": [False, True]}
 
         return {}
 
@@ -274,12 +305,12 @@ class Trainer:
             logger.info(f"{self.log_prefix} FourMethods baseline training single-output regressor...")
             logger.info(f"{self.log_prefix} {'-' * 71}")
             model = estimator_wrapper
+            # fit kwargs 统一组装，各模型封装自行识别/忽略不支持的项
+            # （如 XGBoost/RF 忽略 categorical_feature；各封装均支持 sample_weight）
             fit_kwargs = {}
-            if str(model_type).lower() in ["lightgbm", "lgb"] and lgbm_categorical is not None:
+            if lgbm_categorical is not None:
                 fit_kwargs["categorical_feature"] = lgbm_categorical
-            if str(model_type).lower() in ["catboost", "cat"] and lgbm_categorical is not None:
-                fit_kwargs["categorical_feature"] = lgbm_categorical
-            if baseline_sample_weight is not None and str(model_type).lower() in ["lightgbm", "lgb", "xgboost", "xgb"]:
+            if baseline_sample_weight is not None:
                 fit_kwargs["sample_weight"] = baseline_sample_weight
             model.fit(X_train_df_processed, np.ravel(Y_train_df_processed.values), **fit_kwargs)
         else:
@@ -337,12 +368,15 @@ class Trainer:
         )
         if Y_train_df_processed.shape[1] == 1:
             model_q = estimator_wrapper_q
+            # fit kwargs 统一组装，各模型封装自行识别/忽略不支持的项
+            # （native_train_data 仅 CatBoost 封装使用，其余经 **kwargs 忽略；
+            #   CatBoost native 路径下权重已内嵌 Pool，封装会忽略显式 sample_weight）
             fit_kwargs_q = {}
-            if str(model_type).lower() in ["lightgbm", "lgb"] and lgbm_categorical is not None:
+            if lgbm_categorical is not None:
                 fit_kwargs_q["categorical_feature"] = lgbm_categorical
-            if str(model_type).lower() in ["catboost", "cat"] and getattr(self, "native_data_bundle", {}).get("enabled"):
+            if getattr(self, "native_data_bundle", {}).get("enabled"):
                 fit_kwargs_q["native_train_data"] = self.native_data_bundle.get("train_native")
-            if getattr(self, "sample_weight", None) is not None and str(model_type).lower() in ["lightgbm", "lgb", "xgboost", "xgb"]:
+            if getattr(self, "sample_weight", None) is not None:
                 fit_kwargs_q["sample_weight"] = self.sample_weight
             model_q.fit(X_train_df_processed, np.ravel(Y_train_df_processed.values), **fit_kwargs_q)
         else:
@@ -372,6 +406,11 @@ class Trainer:
             params_q["eval_metric"] = "quantile"
         elif mt in ["catboost", "cat"]:
             params_q["loss_function"] = f"Quantile:alpha={float(quantile)}"
+        elif mt in ["histgb", "histgradientboosting"]:
+            params_q["loss"] = "quantile"
+            params_q["quantile"] = float(quantile)
+        elif mt in ["quantileregressor", "qr"]:
+            params_q["quantile"] = float(quantile)
         else:
             logger.warning(f"{self.log_prefix} model_type={model_type} has no explicit quantile objective, using default params.")
         return params_q
@@ -386,19 +425,19 @@ class Trainer:
             log_prefix=self.log_prefix,
         )
 
-    def _prepare_training_data(self, X_train, Y_train, categorical_features):
+    def _prepare_training_data(self, X_train, Y_train, categorical_features, sample_weight=None):
         X_prepared = X_train.copy()
         Y_prepared = Y_train.copy()
-        # 1) 数据增强（仅训练集）
-        X_prepared, Y_prepared = self.augmenter.augment(
-            X_prepared, Y_prepared, categorical_features=categorical_features
+        # 1) 数据增强（仅训练集）；权重随增强同步扩展（增强行继承源行权重）
+        X_prepared, Y_prepared, sample_weight = self.augmenter.augment(
+            X_prepared, Y_prepared, categorical_features=categorical_features, sample_weight=sample_weight
         )
         # 2) 特征选择（fit on training split）
         selector = self._build_feature_selector(categorical_features=categorical_features)
         X_selected, selected_features = selector.fit_transform(
             X_prepared, Y_prepared, categorical_features=categorical_features
         )
-        return X_selected, Y_prepared, selected_features
+        return X_selected, Y_prepared, selected_features, sample_weight
 
     def _prepare_native_model_data(self, X_train, Y_train, categorical_features):
         native_bundle = prepare_native_train_eval_datasets(
@@ -430,8 +469,10 @@ class Trainer:
         y_values = np.ravel(Y_train_df_processed.values)
         model_type = str(self.model_type).lower()
         if model_type not in ["lightgbm", "lgb"]:
-            # 非 LightGBM(如 XGBoost 单输出点预测)也支持 sample_weight,直接传全量
-            if sample_weight is not None and model_type in ["xgboost", "xgb"]:
+            # 非 LightGBM 模型不做验证集切分（无早停）；sample_weight 统一传递，
+            # 各模型封装自行决定是否使用（CatBoost native 路径下权重已内嵌 Pool，
+            # 封装会忽略显式 sample_weight）
+            if sample_weight is not None:
                 fit_kwargs["sample_weight"] = sample_weight
             return X_train_df_processed, y_values, fit_kwargs
 
@@ -474,6 +515,10 @@ class Trainer:
         model_type = str(self.model_type).lower()
         sample_weight = getattr(self, "sample_weight", None)
         if model_type not in ["lightgbm", "lgb", "xgboost", "xgb", "catboost", "cat"]:
+            # RF 等无早停机制的模型：不做验证集切分，但统一传递 sample_weight
+            if sample_weight is not None:
+                for output_idx in range(Y_train_df_processed.shape[1]):
+                    fit_kwargs_list[output_idx]["sample_weight"] = sample_weight
             return X_train_df_processed, Y_train_df_processed, fit_kwargs_list
 
         total_rows = len(X_train_df_processed)
@@ -506,9 +551,12 @@ class Trainer:
             }
             if sw_fit is not None:
                 fit_kwargs["sample_weight"] = sw_fit
-            if model_type in ["lightgbm", "lgb"] and categorical_features:
+            # fit kwargs 统一组装，各模型封装自行识别/忽略不支持的项
+            # （categorical_feature 仅 LightGBM/CatBoost 使用，XGBoost 经 **kwargs 忽略；
+            #   native 容器多输出场景不启用，此处仅为接口一致性保留）
+            if categorical_features:
                 fit_kwargs["categorical_feature"] = categorical_features
-            if model_type in ["catboost", "cat"] and native_data_bundle.get("enabled"):
+            if native_data_bundle.get("enabled"):
                 fit_kwargs["native_train_data"] = native_data_bundle.get("train_native")
             fit_kwargs_list[output_idx] = fit_kwargs
 
@@ -595,26 +643,30 @@ class Trainer:
                 categorical_features=categorical_features,
             )
         # ------------------------------
-        # 数据增强 + 特征选择
+        # 时间衰减样本权重（在增强之前计算：基于原始时序位置定 age；
+        # 增强行随后通过 bootstrap 源行索引继承对应权重——
+        # 否则增强行 append 在末尾会按位置获得"最新"的最高权重，与设计意图相反）
         # ------------------------------
-        X_train_df, Y_train_df, selected_features = self._prepare_training_data(
-            X_train_df, Y_train_df, categorical_features
-        )
-        # ------------------------------
-        # 时间衰减样本权重(在增强之后计算:增强行位于末尾,age 最大,自然获得低权重)
-        # ------------------------------
-        self.sample_weight = None
+        base_sample_weight = None
         if bool(getattr(self.args, "enable_time_decay_sample_weight", False)):
-            self.sample_weight = compute_time_decay_weights(
+            base_sample_weight = compute_time_decay_weights(
                 n_samples=len(X_train_df),
                 n_per_day=int(getattr(self.args, "n_per_day", 1) or 1),
                 halflife_days=float(getattr(self.args, "decay_halflife_days", 14.0)),
             )
+        # ------------------------------
+        # 数据增强 + 特征选择
+        # ------------------------------
+        X_train_df, Y_train_df, selected_features, self.sample_weight = self._prepare_training_data(
+            X_train_df, Y_train_df, categorical_features, sample_weight=base_sample_weight
+        )
+        if self.sample_weight is not None and base_sample_weight is not None:
             logger.info(
                 f"{self.log_prefix} Time-decay sample_weight enabled: "
                 f"n_samples={len(self.sample_weight)}, halflife_days="
                 f"{getattr(self.args, 'decay_halflife_days', 14.0)}, "
-                f"latest_weight={float(self.sample_weight[-1]):.4f}, oldest_weight={float(self.sample_weight[0]):.4f}"
+                f"latest_weight={float(self.sample_weight[len(base_sample_weight) - 1]):.4f}, "
+                f"oldest_weight={float(self.sample_weight[0]):.4f}"
             )
         # ------------------------------
         # 学习率配置（固定 or 自动）
@@ -663,23 +715,52 @@ class Trainer:
                 logger.warning(
                     f"{self.log_prefix} time-decay sample_weight not supported for ensemble path; skipped."
                 )
-            logger.info(f"{self.log_prefix} Ensemble models: {self.args.ensemble_models}, Ensemble method: {self.args.ensemble_method}")
+            # 成员规格：ensemble_model_specs 非空时取代 ensemble_models，
+            # 每项 {model, params?, scale?}；否则由 ensemble_models 退化为 {model: mt}
+            ensemble_specs = list(getattr(self.args, "ensemble_model_specs", None) or []) or [
+                {"model": mt} for mt in self.args.ensemble_models
+            ]
+            member_names = [str(spec.get("model", "")) for spec in ensemble_specs]
+            logger.info(f"{self.log_prefix} Ensemble models: {member_names}, Ensemble method: {self.args.ensemble_method}")
             logger.info(f"{self.log_prefix} {'-' * 50}")
-           
+
+            # 成员线程上限：与单模型路径同一 model_thread_count 纪律
+            # （窗口并行测试时 payload 已强制为 1）
+            ensemble_threads = self._resolve_worker_count("model_thread_count", default=1)
             base_models = []
-            for model_type in self.args.ensemble_models:
+            for spec in ensemble_specs:
+                model_type = str(spec.get("model", "")).strip()
+                # 成员参数 = 全局 model_params 覆盖 + 该成员独立 params（成员优先）
+                member_params = {**self.model_param_overrides, **(spec.get("params") or {})}
+                member_params = self._thread_limited_params(model_type, member_params, ensemble_threads)
                 model_wrapper = self.model_factory.create_model(
                     model_type=model_type,
-                    model_params=self.model_param_overrides,
+                    model_params=member_params,
                 )
-                estimator = model_wrapper.model
+                # 多数封装的可训练对象是 wrapper.model（裸 sklearn 估计器）；
+                # SeasonalTemplateModel 等无底层估计器（model=None），权重在 wrapper 自身，
+                # 此时直接用 wrapper（同样满足 fit/predict 契约）
+                estimator = model_wrapper.model if model_wrapper.model is not None else model_wrapper
                 if Y_train_df_processed.shape[1] > 1:
                     estimator = MultiOutputRegressor(
                         estimator,
                         n_jobs=self._resolve_worker_count("multi_output_n_jobs", default=1),
                     )
-                base_models.append((model_type, estimator))
-            
+                # 成员独立预处理（线性成员需要；树成员保持原量纲/原生 NaN 处理）：
+                # scale -> StandardScaler；impute -> 中位数填补（训练窗起始行长滞后
+                # 特征为 NaN，GBDT 原生容忍，线性成员必须填补，predict 端同样生效）
+                member_preprocessor = None
+                if spec.get("scale") and spec.get("impute"):
+                    member_preprocessor = Pipeline([
+                        ("imputer", SimpleImputer(strategy="median")),
+                        ("scaler", StandardScaler()),
+                    ])
+                elif spec.get("scale"):
+                    member_preprocessor = StandardScaler()
+                elif spec.get("impute"):
+                    member_preprocessor = SimpleImputer(strategy="median")
+                base_models.append((model_type, estimator, member_preprocessor))
+           
             ensemble = TimeSeriesEnsembleRegressor(
                 base_models=base_models,
                 config=EnsembleConfig(
@@ -718,9 +799,11 @@ class Trainer:
                         Y_train_df_processed,
                         actual_categorical,
                     )
-                    if str(model_type).lower() in ["lightgbm", "lgb"] and lgbm_categorical is not None:
+                    # fit kwargs 统一组装，各模型封装自行识别/忽略不支持的项
+                    # （native_train_data 仅 CatBoost 封装使用，其余经 **kwargs 忽略）
+                    if lgbm_categorical is not None:
                         fit_kwargs["categorical_feature"] = lgbm_categorical
-                    if str(model_type).lower() in ["catboost", "cat"] and native_data_bundle.get("enabled"):
+                    if native_data_bundle.get("enabled"):
                         fit_kwargs["native_train_data"] = native_data_bundle.get("train_native")
                     model.fit(X_fit, y_fit, **fit_kwargs)
                 else:

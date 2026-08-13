@@ -1,0 +1,70 @@
+# B — 成员组合对比 S3: avg [lgb,xgb,cat] + st(季节模板) — recursive (15min 单变量, daily 日级)
+# 异构成员消融: 在 [lgb,xgb,cat] 基础上加入季节模板成员 st(NNLS 模板权重),
+# 验证「多样性收益」假设。per-model specs 的首次实战使用。
+base_config: config.univariate_config
+overrides:
+  output:
+    scenario_subpath: aidc_load_15min_daily/route_B/ensemble
+    setting_suffix: -ensc_st  # 消融变体结果隔离(不覆盖基线结果)
+  runtime:
+    is_testing: true
+    is_forecasting: true
+    history_days: 60
+    predict_steps: 96
+    window_days: 30
+    schedule_mode: daily  # 日界对齐: 预测下一完整自然日
+    now_time: '2026-07-28T23:45:00'
+  target_series:
+    data_dir: ./dataset/aidc_load_15min_daily/
+    data_path: B_Loads_15min_mean_20251001_20260728.csv
+    freq: 15min
+    target_ts_feat: time
+    target: value
+  exogenous_features:
+    enable_date_features: false
+    enable_weather_features: false
+    datetime_features:
+    - hour
+    - minute
+    - day
+    - day_of_week
+    - week_of_year
+    - month
+    - days_in_month
+    - quarter
+    - day_of_year
+    - year
+    datetime_categorical_features: []  # 空列表=关闭类别特征(不传 categorical_feature 给 LightGBM)
+  time_lag_features:
+    lags:
+    - 96
+    - 192
+    - 288
+    - 384
+    - 480
+    - 576
+    - 672
+  model_strategy:
+    model_type: lightgbm
+    pred_method: univariate-single-multistep-recursive
+    enable_ensemble: true
+    ensemble_method: averaging
+    ensemble_model_specs:  # 非空时取代 ensemble_models；成员级 params/scale
+    - model: lgb
+    - model: xgb
+    - model: cat
+    - model: st  # 季节模板基线(NNLS 滞后列权重; 同量纲无需 scale, NaN 内部自处理)
+  training_enhancement:
+    enable_time_decay_sample_weight: true  # ensemble 路径会被跳过(代码内 warning)
+    decay_halflife_days: 60
+  train_outlier:
+    enable_train_outlier_handling: false  # 已由 outlier_process 清洗
+  eval_mask:
+    mode: percentile
+    percentile: 5.0
+  preprocessing:
+    detrend_target: true  # 特征工程前对 y 线性去趋势,让模型预测平稳残差(与 scale_target 互斥)
+  performance:
+    window_parallel_workers: 8
+    multi_output_n_jobs: 1
+    model_thread_count: 8

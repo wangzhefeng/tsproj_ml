@@ -54,6 +54,21 @@ class Forecaster:
         self.args = args
         self.horizon = horizon
         self.model = model
+        # 解包 auxiliary bundle（MSMR/MSMDR + endogenous_backfill_strategy=auxiliary）
+        self.aux_forecaster = None
+        self.aux_trajectories = None
+        if isinstance(model, dict) and model.get("bundle_type") == "auxiliary_endogenous":
+            self.aux_forecaster = model.get("aux")
+            self.model = model.get("main")
+        # 解包 blend bundle（USBR/MSBR = Direct+Recursive 融合）
+        self.blend_direct_model = None
+        self.blend_recursive_model = None
+        self.blend_direct_pred = None
+        self.blend_recursive_pred = None
+        if isinstance(self.model, dict) and self.model.get("bundle_type") == "blend_direct_recursive":
+            self.blend_direct_model = self.model.get("direct")
+            self.blend_recursive_model = self.model.get("recursive")
+            self.model = self.blend_direct_model
         self.feature_scaler = feature_scaler
         self.target_scaler = target_scaler
         self.df_history = df_history
@@ -90,6 +105,12 @@ class Forecaster:
         self._msmr_runtime_cache = None
         # MSMDR 分块缓存
         self._msmdr_runtime_cache = None
+        # 预先预测非目标内生变量的未来轨迹（auxiliary 策略，供 MSMR/MSMDR 回填）
+        if self.aux_forecaster is not None:
+            self.aux_trajectories = self.aux_forecaster.predict_horizon(
+                self.df_history, self.df_future, self.horizon
+            )
+            logger.info(f"{self.log_prefix} Auxiliary trajectories predicted for {len(self.aux_trajectories)} endogenous cols.")
 
     def _should_log_step(self, step: int) -> bool:
         if not bool(getattr(self.args, "enable_step_logging", False)):
@@ -489,6 +510,60 @@ class Forecaster:
             return
         self.quantile_outputs = {q: np.asarray(v, dtype=float) for q, v in store.items()}
 
+    def _is_horizon_feature_mode(self) -> bool:
+        """USMD/MSMD 且 direct_strategy=horizon_feature 时推理走多行展开。"""
+        if str(getattr(self.args, "pred_method", "")).lower() not in (
+            "univariate-single-multistep-direct",
+            "multivariate-single-multistep-direct",
+        ):
+            return False
+        return str(getattr(self.args, "direct_strategy", "multioutput")).lower() == "horizon_feature"
+
+    def _resolve_forecast_horizon_period(self) -> int:
+        """horizon sin/cos 编码周期：子日频用 n_per_day（日周期），日频用 7（周周期）。"""
+        n_per_day = int(getattr(self.args, "n_per_day", 1) or 1)
+        if n_per_day > 1:
+            return n_per_day
+        return 7
+
+    _DERIVED_SUFFIX_MARKERS = ("lag_", "rolling_", "diff_")
+
+    def _classify_endogenous_derived(self, predictor_features: List[str], endogenous_features: List[str]) -> set:
+        """
+        识别由内生变量派生的列（滞后/滚动/差分/三角编码等）。
+        horizon_feature 模式下这些列用 anchor 值（MIMO 约束），外生列保留 future 按步值（horizon-aware）。
+        用已知派生模式白名单匹配，避免误伤以 {base}_ 开头的外生列（如 power_forecast）。
+        """
+        endo_set = set(endogenous_features)
+        derived = set()
+        for col in predictor_features:
+            if col in endo_set:
+                derived.add(col)
+                continue
+            for base in endo_set:
+                if not col.startswith(base + "_"):
+                    continue
+                tail = col[len(base) + 1:]
+                if (
+                    any(tail.startswith(m) for m in self._DERIVED_SUFFIX_MARKERS)
+                    or tail in ("sin", "cos")
+                ):
+                    derived.add(col)
+                    break
+        return derived
+
+    def _append_horizon_features(self, X_input: pd.DataFrame) -> pd.DataFrame:
+        """向推理输入追加 horizon 索引特征（+ 可选 sin/cos）。"""
+        h_name = str(getattr(self.args, "horizon_feature_name", "forecast_horizon_idx"))
+        h_vals = np.arange(1, len(X_input) + 1, dtype=float)
+        X_input = X_input.copy()
+        X_input[h_name] = h_vals
+        if bool(getattr(self.args, "enable_horizon_cyclical", True)):
+            period = float(self._resolve_forecast_horizon_period())
+            X_input[f"{h_name}_sin"] = np.sin(2 * np.pi * h_vals / period)
+            X_input[f"{h_name}_cos"] = np.cos(2 * np.pi * h_vals / period)
+        return X_input
+
     def _build_direct_forecast_input(self, endogenous_features: List[str]):
         """
         构建 Direct 策略输入：
@@ -519,7 +594,23 @@ class Forecaster:
             predictor_features, categorical_features
         )
         anchor_idx = max(len(self.df_history_for_lags) - 1, 0)
-        X_forecast_input = df_forecast_featured.reindex(columns=predictor_features).iloc[anchor_idx:anchor_idx + 1]
+        if self._is_horizon_feature_mode():
+            # horizon_feature 模式：展开 H 行，外生列按步取值（horizon-aware），
+            # 内生派生列用 anchor 值覆盖（MIMO 约束），追加 horizon 索引特征
+            H = min(self.horizon, len(self.df_future))
+            X_input = df_forecast_featured.reindex(columns=predictor_features).iloc[anchor_idx:anchor_idx + H].copy()
+            anchor_row = df_forecast_featured.reindex(columns=predictor_features).iloc[[anchor_idx]]
+            endo_derived = self._classify_endogenous_derived(predictor_features, endogenous_features)
+            for col in endo_derived:
+                if col in X_input.columns and col in anchor_row.columns:
+                    X_input[col] = anchor_row[col].values[0]
+            X_forecast_input = self._append_horizon_features(X_input)
+            logger.info(
+                f"{self.log_prefix} horizon_feature forecast input: {X_forecast_input.shape[0]} rows, "
+                f"endo_derived cols masked={len([c for c in endo_derived if c in X_input.columns])}"
+            )
+        else:
+            X_forecast_input = df_forecast_featured.reindex(columns=predictor_features).iloc[anchor_idx:anchor_idx + 1]
         return X_forecast_input, categorical_features
     # ------------------------------
     # 单变量（目标变量滞后特征）预测单变量（目标变量）
@@ -808,14 +899,23 @@ class Forecaster:
             df_future_exogenous_new_row = df_future_exogenous.copy().iloc[-1:]
             df_future_exogenous_new_row[self.target_feature] = y_pred_target
             runtime_cache["lag_state"][self.target_feature].append(y_pred_target)
-            # 5. 其他内生变量采用持久性策略，保证多变量滞后特征可继续构造
+            # 5. 其他内生变量回填：优先用 aux 轨迹，回退持久性
             for feat in self.endogenous_features:
                 if feat == self.target_feature:
                     continue
-                if feat in self.df_history_for_lags.columns:
-                    last_value = self.df_history_for_lags[feat].iloc[-1]
-                    df_future_exogenous_new_row[feat] = last_value
-                    runtime_cache["lag_state"][feat].append(last_value)
+                if (
+                    self.aux_trajectories is not None
+                    and feat in self.aux_trajectories
+                    and step < len(self.aux_trajectories[feat])
+                    and np.isfinite(self.aux_trajectories[feat][step])
+                ):
+                    val = float(self.aux_trajectories[feat][step])
+                elif feat in self.df_history_for_lags.columns:
+                    val = float(self.df_history_for_lags[feat].iloc[-1])
+                else:
+                    val = 0.0
+                df_future_exogenous_new_row[feat] = val
+                runtime_cache["lag_state"][feat].append(val)
 
             # 6.补齐其余列
             for col in self.df_history_for_lags.columns:
@@ -927,11 +1027,22 @@ class Forecaster:
                         if use_feature_cache:
                             runtime_cache["lag_state"][feat].append(float(df_new[feat].iloc[0]))
                         continue
-                    if feat in self.df_history_for_lags.columns:
-                        last_value = self.df_history_for_lags[feat].iloc[-1]
-                        df_new[feat] = last_value
-                        if use_feature_cache:
-                            runtime_cache["lag_state"][feat].append(float(last_value))
+                    # 优先用 aux 轨迹，回退持久性
+                    global_step = produced + i
+                    if (
+                        self.aux_trajectories is not None
+                        and feat in self.aux_trajectories
+                        and global_step < len(self.aux_trajectories[feat])
+                        and np.isfinite(self.aux_trajectories[feat][global_step])
+                    ):
+                        val = float(self.aux_trajectories[feat][global_step])
+                    elif feat in self.df_history_for_lags.columns:
+                        val = float(self.df_history_for_lags[feat].iloc[-1])
+                    else:
+                        val = 0.0
+                    df_new[feat] = val
+                    if use_feature_cache:
+                        runtime_cache["lag_state"][feat].append(val)
                 for col in self.df_history_for_lags.columns:
                     if col not in df_new.columns:
                         df_new[col] = self.df_history_for_lags[col].iloc[-1]
@@ -942,6 +1053,58 @@ class Forecaster:
     # ------------------------------
     # forecasting
     # ------------------------------
+    def _resolve_blend_weights(self) -> List[float]:
+        """解析 blend 权重：ridge_stacking 读 blend_weights.csv，否则用固定 blend_weights。"""
+        strategy = str(getattr(self.args, "blend_weight_strategy", "fixed")).lower()
+        if strategy == "ridge_stacking":
+            w_path = self.args.test_results_dir.joinpath("blend_weights.csv")
+            if w_path.exists():
+                df_w = pd.read_csv(w_path)
+                if len(df_w) > 0:
+                    w_d = float(df_w["direct_weight"].iloc[-1])
+                    w_r = float(df_w["recursive_weight"].iloc[-1])
+                    total = w_d + w_r
+                    if total > 0:
+                        return [w_d / total, w_r / total]
+                logger.warning(f"{self.log_prefix} blend_weights.csv empty or invalid; fallback to fixed.")
+            else:
+                logger.warning(f"{self.log_prefix} blend_weights.csv not found; fallback to fixed (need is_testing=True).")
+        weights = list(getattr(self.args, "blend_weights", [0.5, 0.5]))[:2]
+        total = sum(weights) or 1.0
+        return [w / total for w in weights]
+
+    def _blend_forecast(self) -> np.ndarray:
+        """Direct+Recursive 加权融合预测（USBR/MSBR）。"""
+        is_multi = str(self.args.pred_method).startswith("multivariate")
+        # 1. Direct 子预测
+        self.model = self.blend_direct_model
+        if is_multi:
+            d_pred = self.multivariate_single_multi_step_direct_forecast()
+        else:
+            d_pred = self.univariate_single_multi_step_direct_forecast()
+        d_pred = np.asarray(d_pred, dtype=float).flatten()
+        # 2. 重置 recursive 状态（Direct 推理可能改过 df_history_for_lags 列）
+        self.df_history_for_lags = self.df_history.iloc[-self.max_lag:].copy()
+        self._recursive_schema_cache = {}
+        # 3. Recursive 子预测
+        self.model = self.blend_recursive_model
+        if is_multi:
+            r_pred = self.multivariate_single_multi_step_recursive_forecast()
+        else:
+            r_pred = self.univariate_single_multi_step_recursive_forecast()
+        r_pred = np.asarray(r_pred, dtype=float).flatten()
+        # 保存分预测（供 cv_plot 记录和 ridge_stacking）
+        self.blend_direct_pred = d_pred
+        self.blend_recursive_pred = r_pred
+        # 4. 加权融合
+        n = min(len(d_pred), len(r_pred))
+        weights = self._resolve_blend_weights()
+        raw_pred = weights[0] * d_pred[:n] + weights[1] * r_pred[:n]
+        # 复位 main 指向 Direct 子模型（保持状态一致，避免后续复用异常）
+        self.model = self.blend_direct_model
+        logger.info(f"{self.log_prefix} Blend weights: direct={weights[0]:.4f}, recursive={weights[1]:.4f}")
+        return raw_pred
+
     def _predict_by_method(self) -> np.ndarray:
         """
         根据配置分发预测策略并返回一维预测数组
@@ -984,6 +1147,14 @@ class Forecaster:
             logger.info(f"{self.log_prefix} {'-' * 60}")
             raw_pred = self.multivariate_single_multi_step_direct_recursive_forecast()
             logger.info(f"{self.log_prefix} MSMDR forecast completed, predicted {len(raw_pred)} steps.")
+        elif self.args.pred_method in (
+            "univariate-single-multistep-blend-direct-recursive",
+            "multivariate-single-multistep-blend-direct-recursive",
+        ):
+            logger.info(f"{self.log_prefix} Forecast method: blend_direct_recursive(USBR/MSBR)")
+            logger.info(f"{self.log_prefix} {'-' * 60}")
+            raw_pred = self._blend_forecast()
+            logger.info(f"{self.log_prefix} USBR/MSBR forecast completed, predicted {len(raw_pred)} steps.")
         else:
             raise ValueError(f"{self.log_prefix} Unsupported pred_method: {self.args.pred_method}")
 

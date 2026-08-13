@@ -297,9 +297,14 @@ class TargetScaler:
         return self._restore_type(restored, original_type, original_shape, original_index, original_columns)
 
     @staticmethod
-    def get_prediction_target_columns(pred_method: str, target_output_features: List[str]) -> List[str]:
+    def get_prediction_target_columns(
+        pred_method: str,
+        target_output_features: List[str],
+        direct_strategy: str = "multioutput",
+    ) -> List[str]:
         """
         根据预测方法确定预测结果对应的目标列。
+        horizon_feature 模式下训练只 fit 了单列目标，推理 restore 也按单列。
         """
         direct_multi_step_methods = {
             "univariate-single-multistep-direct",
@@ -308,7 +313,16 @@ class TargetScaler:
             "multivariate-single-multistep-direct-recursive",
         }
         if pred_method in direct_multi_step_methods:
+            if str(direct_strategy).lower() == "horizon_feature":
+                return [target_output_features[0]]
             return list(target_output_features)
+        # Blend（Direct+Recursive）：预测混合了两策略，用 shift_0（=target 本身）近似 restore
+        blend_methods = {
+            "univariate-single-multistep-blend-direct-recursive",
+            "multivariate-single-multistep-blend-direct-recursive",
+        }
+        if pred_method in blend_methods:
+            return [target_output_features[-1]]
         return [target_output_features[0]]
 
     def restore_predictions(self, values, target_columns: List[str]):

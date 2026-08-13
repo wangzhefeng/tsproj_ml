@@ -33,6 +33,7 @@ UNIVARIATE_PRED_METHODS = {
     "univariate-single-multistep-direct",
     "univariate-single-multistep-recursive",
     "univariate-single-multistep-direct-recursive",
+    "univariate-single-multistep-blend-direct-recursive",
 }
 
 

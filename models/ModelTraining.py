@@ -254,6 +254,13 @@ class Trainer:
         if not self._is_fourmethods_univariate_method():
             return False
 
+        # horizon_feature 模式（USMD/MSMD + direct_strategy=horizon_feature）必须在
+        # train() 主路径完成宽表→长表 melt；baseline 路径会跳过 melt，导致训练侧
+        # 特征数（不含 h/h_sin/h_cos）与推理侧（含 h 三列）不一致，LightGBM 报
+        # feature count mismatch。故强制走主路径。
+        if self._should_use_horizon_feature():
+            return False
+
         enhancement_flags = [
             "scale_features",
             "scale_target",
@@ -458,6 +465,81 @@ class Trainer:
                 f"{native_bundle.get('reason')}"
             )
         return native_bundle
+
+    # ------------------------------
+    # horizon-as-feature（USMD/MSMD 长表训练）
+    # ------------------------------
+    def _should_use_horizon_feature(self) -> bool:
+        """USMD/MSMD 且 direct_strategy=horizon_feature 时启用长表 melt。"""
+        if str(getattr(self.args, "pred_method", "")).lower() not in (
+            "univariate-single-multistep-direct",
+            "multivariate-single-multistep-direct",
+        ):
+            return False
+        return str(getattr(self.args, "direct_strategy", "multioutput")).lower() == "horizon_feature"
+
+    def _is_blend_method(self) -> bool:
+        """USBR/MSBR = Direct+Recursive 加权融合。"""
+        return str(getattr(self.args, "pred_method", "")).lower() in (
+            "univariate-single-multistep-blend-direct-recursive",
+            "multivariate-single-multistep-blend-direct-recursive",
+        )
+
+    def _resolve_horizon_period(self, horizon: int) -> int:
+        """horizon sin/cos 编码周期：子日频用 n_per_day（日周期），日频用 7（周周期）。"""
+        n_per_day = int(getattr(self.args, "n_per_day", 1) or 1)
+        if n_per_day > 1:
+            return n_per_day
+        return 7
+
+    def _melt_to_horizon_long(self, X_train_df, Y_train_df, sample_weight):
+        """
+        Direct 宽表 (N × F, N × H) melt 为 horizon-as-feature 长表。
+
+        输出: X_long (N*H × (F+h_feats)), Y_long (N*H × 1), sw_long (N*H,), h_feature_names
+        行对齐: X_long[i*H + h] = X_train_df.iloc[i] + horizon=h+1,  Y_long[i*H+h] = Y_train_df.iloc[i, h]
+        """
+        H = int(Y_train_df.shape[1])
+        N = int(len(X_train_df))
+
+        h_feat_name = str(getattr(self.args, "horizon_feature_name", "forecast_horizon_idx"))
+        enable_cyc = bool(getattr(self.args, "enable_horizon_cyclical", True))
+        if h_feat_name in X_train_df.columns:
+            raise ValueError(
+                f"{self.log_prefix} horizon_feature_name '{h_feat_name}' collides with an existing "
+                f"training column; rename it via config.horizon_feature_name."
+            )
+
+        # X repeat: 每行复制 H 次（row0×H, row1×H, ...）
+        X_long = np.repeat(X_train_df.values, H, axis=0)
+        X_long_df = pd.DataFrame(X_long, columns=X_train_df.columns)
+
+        # horizon feature: h = 1..H, tile N 次
+        h_values = np.tile(np.arange(1, H + 1), N)
+        X_long_df[h_feat_name] = h_values
+        h_feature_names = [h_feat_name]
+
+        if enable_cyc:
+            period = self._resolve_horizon_period(H)
+            X_long_df[f"{h_feat_name}_sin"] = np.sin(2 * np.pi * h_values / period)
+            X_long_df[f"{h_feat_name}_cos"] = np.cos(2 * np.pi * h_values / period)
+            h_feature_names += [f"{h_feat_name}_sin", f"{h_feat_name}_cos"]
+
+        # Y melt: C-order flatten → y_long[i*H + h] = Y[i, h]，与 X repeat 对齐
+        y_long = Y_train_df.values.flatten()
+        y_col_name = Y_train_df.columns[0] if len(Y_train_df.columns) > 0 else "y"
+        Y_long_df = pd.DataFrame({y_col_name: y_long})
+
+        # sample_weight repeat（每行权重复制 H 次，保持与 X_long 行对齐）
+        sw_long = None
+        if sample_weight is not None:
+            sw_long = np.repeat(np.asarray(sample_weight), H)
+
+        logger.info(
+            f"{self.log_prefix} horizon_feature melt: {N}×{H} → {N * H} rows, "
+            f"added features: {h_feature_names}"
+        )
+        return X_long_df, Y_long_df, sw_long, h_feature_names
 
     def _prepare_single_output_fit_data(self, X_train_df_processed, Y_train_df_processed, categorical_features):
         """
@@ -682,6 +764,17 @@ class Trainer:
             self.model_params["learning_rate"] = resolved_lr
             logger.info(f"{self.log_prefix} Using learning_rate={resolved_lr:.6f}")
         # ------------------------------
+        # horizon_feature melt（USMD/MSMD 专用）：宽表→长表，Y 降为单列，
+        # 后续缩放/训练/分位数路径自动走单输出分支（成本 H×→1×）
+        # ------------------------------
+        if self._should_use_horizon_feature():
+            X_train_df, Y_train_df, self.sample_weight, horizon_h_features = self._melt_to_horizon_long(
+                X_train_df, Y_train_df, self.sample_weight
+            )
+            # 特征选择发生在 melt 之前（宽表），h 特征是新追加的，需补入 selected_features
+            if selected_features is not None:
+                selected_features = list(selected_features) + horizon_h_features
+        # ------------------------------
         # 归一化/标准化
         # ------------------------------
         # 特征预处理（训练模式）
@@ -786,7 +879,58 @@ class Trainer:
             # 单模型 - 点预测
             # ------------------------------
             if predict_type == "point":
-                if Y_train_df_processed.shape[1] == 1:
+                if self._is_blend_method():
+                    # ------------------------------
+                    # Blend（Direct+Recursive 融合）：分离 Y，分别训练两个子模型
+                    # ------------------------------
+                    logger.info(f"{self.log_prefix} Training blend (Direct+Recursive) model...")
+                    logger.info(f"{self.log_prefix} {'-' * 71}")
+                    rec_cols = [c for c in Y_train_df_processed.columns if str(c).endswith("_shift_0")]
+                    dir_cols = [c for c in Y_train_df_processed.columns if c not in rec_cols]
+                    if len(dir_cols) <= 1 or len(rec_cols) != 1:
+                        raise ValueError(
+                            f"{self.log_prefix} Blend requires >=1 direct target cols and exactly 1 recursive col "
+                            f"(shift_0); got dir={len(dir_cols)}, rec={len(rec_cols)}."
+                        )
+                    Y_direct = Y_train_df_processed[dir_cols]
+                    Y_recursive = Y_train_df_processed[rec_cols]
+
+                    # Direct 子模型（multioutput）
+                    logger.info(f"{self.log_prefix} Blend Direct sub-model ({len(dir_cols)} outputs)...")
+                    X_fit_d, Y_fit_d, fit_kwargs_list_d = self._prepare_multi_output_fit_data(
+                        X_train_df_processed, Y_direct, actual_categorical, native_data_bundle,
+                    )
+                    model_direct = DirectMultiOutputRegressor(
+                        estimator_factory=lambda: self._create_model_instance(
+                            model_type=model_type, model_params=self.model_params, log_params=False,
+                        ),
+                        n_jobs=self._resolve_worker_count("multi_output_n_jobs", default=1),
+                        log_prefix=self.log_prefix,
+                    )
+                    model_direct.fit(X_fit_d, Y_fit_d, fit_kwargs_list=fit_kwargs_list_d)
+
+                    # Recursive 子模型（单输出）
+                    logger.info(f"{self.log_prefix} Blend Recursive sub-model (1 output)...")
+                    X_fit_r, y_fit_r, fit_kwargs_r = self._prepare_single_output_fit_data(
+                        X_train_df_processed, Y_recursive, actual_categorical,
+                    )
+                    estimator_recursive = self._create_model_instance(
+                        model_type=model_type, model_params=self.model_params,
+                    )
+                    if lgbm_categorical is not None:
+                        fit_kwargs_r["categorical_feature"] = lgbm_categorical
+                    if native_data_bundle.get("enabled"):
+                        fit_kwargs_r["native_train_data"] = native_data_bundle.get("train_native")
+                    estimator_recursive.fit(X_fit_r, np.ravel(y_fit_r), **fit_kwargs_r)
+
+                    model = {
+                        "bundle_type": "blend_direct_recursive",
+                        "direct": model_direct,
+                        "recursive": estimator_recursive,
+                    }
+                    logger.info(f"{self.log_prefix} Blend training completed!")
+                    return model, feature_scaler, target_scaler, selected_features
+                elif Y_train_df_processed.shape[1] == 1:
                     logger.info(f"{self.log_prefix} Training single-output regressor...")
                     logger.info(f"{self.log_prefix} {'-' * 71}")
                     estimator_wrapper = self.model_factory.create_model(

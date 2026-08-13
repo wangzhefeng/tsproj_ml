@@ -1188,7 +1188,28 @@ class FeatureEngineer:
             if self.verbose:
                 logger.info(f"{self.log_prefix} after extend_direct_multi_step_targets df_series_featured: \n{df_series_featured.head()}")
                 logger.info(f"{self.log_prefix} after extend_direct_multi_step_targets df_series_featured shape: {df_series_featured.shape}")
-        
+        elif self.args.pred_method == "univariate-single-multistep-blend-direct-recursive":
+            # Blend = Direct(多步宽表 shift_1..H) + Recursive(1步 shift_0) 融合
+            df_series_featured = self.endogenous_feature_engineer.extend_lag_feature_univariate(
+                df=df_series_featured, target=target_feature, lags=lags,
+            )
+            df_series_featured = self.endogenous_feature_engineer.extend_direct_multi_step_targets(
+                df=df_series_featured, target=target_feature, horizon=horizon, start_step=1,
+            )
+            df_series_featured = self.endogenous_feature_engineer.extend_direct_multi_step_targets(
+                df=df_series_featured, target=target_feature, horizon=1, start_step=0,
+            )
+        elif self.args.pred_method == "multivariate-single-multistep-blend-direct-recursive":
+            df_series_featured = self.endogenous_feature_engineer.extend_lag_feature_multivariate(
+                df=df_series_featured, endogenous_cols=endogenous_features_with_target, lags=lags,
+            )
+            df_series_featured = self.endogenous_feature_engineer.extend_direct_multi_step_targets(
+                df=df_series_featured, target=target_feature, horizon=horizon, start_step=1,
+            )
+            df_series_featured = self.endogenous_feature_engineer.extend_direct_multi_step_targets(
+                df=df_series_featured, target=target_feature, horizon=1, start_step=0,
+            )
+
         # 获取所有生成的特征: 内生变量特征、多步预测目标特征
         endogenous_features, target_output_features = self.endogenous_feature_engineer.get_generated_features()
 

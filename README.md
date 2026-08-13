@@ -17,6 +17,8 @@
 | MSMD | `multivariate-single-multistep-direct` | 多变量，一个多输出模型直接预测目标 horizon |
 | MSMR | `multivariate-single-multistep-recursive` | 多变量递归预测目标，其他内生变量默认持久性回填 |
 | MSMDR | `multivariate-single-multistep-direct-recursive` | 多变量按块 direct，块间递归回填 |
+| USBR | `univariate-single-multistep-blend-direct-recursive` | 单变量，Direct+Recursive 加权融合 |
+| MSBR | `multivariate-single-multistep-blend-direct-recursive` | 多变量，Direct+Recursive 加权融合 |
 
 主要能力：
 

@@ -24,6 +24,12 @@ The general coding guidelines (Karpathy: think before coding, simplicity, surgic
 - **多输出方法的时间衰减样本权重不生效**：`enable_time_decay_sample_weight: true` 是全场景统一模板（单输出方法 USMDP/USMR 真实生效）。多输出方法（USMD/USMDR）走 sklearn `MultiOutputRegressor`/`DirectMultiOutputRegressor`，其 `fit` 接口不传递 `sample_weight`，运行时安全跳过（日志 WARNING），模型行为不变——这不是配置 bug，是 sklearn API 固有约束
 - **datetime_features 有两对同义项**：`feature_map`（`features/FeatureEngineering.py`）中 `weekday` ≡ `day_of_week`（同 `.dt.weekday`）、`week` ≡ `week_of_year`（同 `.dt.isocalendar().week`），配置中只应保留后者（pandas 规范名）
 
+### 预测增强策略（v1 新增，默认全关）
+- **`direct_strategy: horizon_feature`**（仅 USMD/MSMD）：把 horizon 索引作为特征，训练 N×H 行长表（成本 H×→1×），推理展开 H 行，外生列按步取值解决 MIMO 滞后陈旧。DirRec（USMDR/MSMDR）暂不支持（遗留）
+- **`endogenous_backfill_strategy: auxiliary`**（仅 MSMR/MSMDR）：为每个非目标内生变量训练独立递归模型（reduced-form：只用自身滞后+datetime 外生），替代持久性常量回填。辅助模型在 `models/AuxiliaryForecaster.py`，与主模型打包为 `{"bundle_type": "auxiliary_endogenous", ...}` dict。注意：辅助模型每滑窗×每内生列各训练一次（成本 = 窗口数 × 内生列数），窗口并行时各窗口独立训练不共享
+- **`pred_method: USBR/MSBR`**（Direct+Recursive Blend）：同时构造 Direct（shift_1..H）和 Recursive（shift_0）目标列，训练两个子模型后加权融合。`blend_weight_strategy: ridge_stacking` 在最近 N 个滑窗（`blend_weight_windows`）测试集上用 `Ridge(positive=True, fit_intercept=False)` 学凸组合权重，写入 `blend_weights.csv`。v1 硬性不支持（main.py 校验 raise）：blend×quantile、blend×ensemble、blend×scale_target、blend×detrend_target
+- **`enable_conformal_calibration: true`**（CQR 后处理）：滑窗测试阶段记录 `conformal_score` 到 `cv_plot_df.csv`，forecast 阶段对 `predict_q*` 边界列对称膨胀，保证边际覆盖率 ≥ 1−α。纯后处理不重训模型，依赖 `is_testing=true` 产出的校准集；score 需连续窗口至少 `conformal_min_scores` 个才生效。v1 硬性不支持 conformal×detrend_target（main.py 校验 raise）
+
 ### 模型工厂（ModelFactory）
 - **支持的模型类型**：LightGBM（`lgb`/`lightgbm`）、XGBoost（`xgb`/`xgboost`）、CatBoost（`cat`/`catboost`）、RandomForest（`rf`/`randomforest`）、HistGradientBoosting（`histgb`）、Ridge（`ridge`）、ElasticNet（`enet`/`elasticnet`）、Lasso（`lasso`）、QuantileRegressor（`qr`/`quantileregressor`）、SeasonalTemplate（`st`/`seasonaltemplate`，工作日/周末分组建模板 + NNLS 学权重）
 - **融合成员级规格**（`ensemble_model_specs`，非空时取代 `ensemble_models`）：每项 `{model, params?, scale?, impute?}`——`scale` 为该成员独立特征标准化（线性成员需要）、`impute` 为中位数填补（训练窗起始行长滞后特征为 NaN，GBDT 原生容忍，线性/KNN 等成员需要）。`ModelEnsemble.TimeSeriesEnsembleRegressor` 内部成员统一为三元组 `(name, model, preprocessor)`

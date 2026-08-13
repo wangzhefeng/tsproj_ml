@@ -174,6 +174,46 @@ class Model:
                         f"need window_days >= {min_window_days}."
                     )
         # ------------------------------
+        # 预测增强策略(v1)组合校验:不支持的模式必须显式拒绝,避免裸奔崩溃或静默错配
+        # ------------------------------
+        pred_method_l = str(self.args.pred_method).lower()
+        blend_methods = {
+            "univariate-single-multistep-blend-direct-recursive",
+            "multivariate-single-multistep-blend-direct-recursive",
+        }
+        if pred_method_l in blend_methods:
+            if str(getattr(self.args, "predict_type", "point")).lower() != "point":
+                raise ValueError(
+                    f"{self.log_prefix} USBR/MSBR blend only supports predict_type=point; "
+                    f"quantile blend is not implemented in v1 (got predict_type={self.args.predict_type}). "
+                    f"Use quantile with a non-blend method (e.g. USMD/MSMD)."
+                )
+            if bool(getattr(self.args, "enable_ensemble", False)):
+                raise ValueError(
+                    f"{self.log_prefix} USBR/MSBR blend + enable_ensemble is not supported in v1 "
+                    f"(ensemble path would train on the H+1-column blend target table and crash at forecast). "
+                    f"Disable ensemble, or use a non-blend method."
+                )
+            if resolve_scale_target_enabled(self.args):
+                raise ValueError(
+                    f"{self.log_prefix} USBR/MSBR blend + scale_target is not supported in v1 "
+                    f"(Direct/Recursive sub-models live in different scaled spaces; "
+                    f"blend weights and restore become ill-defined). Keep scale_target=false."
+                )
+            if resolve_detrend_target_enabled(self.args):
+                raise ValueError(
+                    f"{self.log_prefix} USBR/MSBR blend + detrend_target is not supported in v1 "
+                    f"(test-time blend sub-predictions stay in detrend space while eval targets are "
+                    f"restored to level space; ridge_stacking weights would be learned on mismatched spaces). "
+                    f"Keep detrend_target=false."
+                )
+        if bool(getattr(self.args, "enable_conformal_calibration", False)) and resolve_detrend_target_enabled(self.args):
+            raise ValueError(
+                f"{self.log_prefix} enable_conformal_calibration + detrend_target is not supported: "
+                f"test-time quantiles are not detrend-restored (calibration scores in detrend space) while "
+                f"forecast bands are in level space. Keep detrend_target=false when calibrating."
+            )
+        # ------------------------------
         # 日志打印
         # ------------------------------
         logger.info(f"{self.log_prefix} {'#' * 85}")
@@ -225,7 +265,8 @@ class Model:
         scenario_parts = [p for p in parts if p not in _DATASET_NOISE_SEGMENTS]
         return Path(*scenario_parts) if scenario_parts else Path()
 
-    def train(self, X_train: pd.DataFrame, Y_train: pd.DataFrame, categorical_features: List, mode: str="forecast", verbose: bool=False):
+    def train(self, X_train: pd.DataFrame, Y_train: pd.DataFrame, categorical_features: List, mode: str="forecast", verbose: bool=False,
+              df_history=None, endogenous_features_with_target=None):
         """
         模型训练
         """
@@ -253,6 +294,13 @@ class Model:
             target_scaler = target_scaler,
             categorical_features = categorical_features,
         )
+        # 多变量递归辅助预测器包装（MSMR/MSMDR + endogenous_backfill_strategy=auxiliary）
+        if df_history is not None and endogenous_features_with_target is not None:
+            from models.AuxiliaryForecaster import maybe_build_auxiliary_bundle
+            model = maybe_build_auxiliary_bundle(
+                self.args, model, df_history,
+                endogenous_features_with_target, self.args.target, self.log_prefix,
+            )
         # 模型保存
         if mode == "forecast":
             model_trainer.model_save(model, target_scaler)
@@ -456,6 +504,7 @@ class Model:
             pred_target_columns = target_scaler_forecasting.get_prediction_target_columns(
                 self.args.pred_method,
                 target_output_features,
+                direct_strategy=str(getattr(self.args, "direct_strategy", "multioutput")),
             )
             Y_pred = target_scaler_forecasting.restore_predictions(Y_pred, pred_target_columns)
         df_future_prediction["predict_value"] = np.asarray(Y_pred).reshape(-1)[:len(df_future_prediction)]
@@ -475,6 +524,50 @@ class Model:
                     df_future_prediction.loc[df_future_prediction.index[:min_len], q_col] = q_arr[:min_len]
                 else:
                     df_future_prediction[q_col] = q_arr
+        # Conformal CQR 校准（可选）：用滑窗 nonconformity scores 对 q_low/q_high 对称膨胀
+        if bool(getattr(self.args, "enable_conformal_calibration", False)):
+            quantile_cols_cal = [c for c in df_future_prediction.columns if str(c).startswith("predict_q")]
+            if len(quantile_cols_cal) >= 2:
+                from utils.conformal import calibrate_quantile_band
+                cv_path = self.args.test_results_dir.joinpath("cv_plot_df.csv")
+                if cv_path.exists():
+                    cv_df = pd.read_csv(cv_path)
+                    if "conformal_score" in cv_df.columns:
+                        n_cal_windows = int(getattr(self.args, "conformal_calibration_windows", 5))
+                        if "window" in cv_df.columns:
+                            recent_windows = sorted(cv_df["window"].unique())[-n_cal_windows:]
+                            cal_scores = cv_df[cv_df["window"].isin(recent_windows)]["conformal_score"].dropna().values
+                        else:
+                            cal_scores = cv_df["conformal_score"].dropna().values
+                        alpha = float(getattr(self.args, "conformal_alpha", 0.1))
+                        min_scores = int(getattr(self.args, "conformal_min_scores", 30))
+                        cal_low, cal_high, E_alpha = calibrate_quantile_band(
+                            df_future_prediction[quantile_cols_cal[0]].values,
+                            df_future_prediction[quantile_cols_cal[-1]].values,
+                            cal_scores, alpha, min_scores,
+                        )
+                        if cal_low is not None:
+                            df_future_prediction[quantile_cols_cal[0]] = cal_low
+                            df_future_prediction[quantile_cols_cal[-1]] = cal_high
+                            logger.info(
+                                f"{self.log_prefix} Conformal CQR calibrated: E_alpha={E_alpha:.4f}, "
+                                f"target coverage={1 - alpha:.2f}, n_scores={len(cal_scores)}"
+                            )
+                        else:
+                            logger.warning(
+                                f"{self.log_prefix} Conformal CQR skipped: only {len(cal_scores)} scores "
+                                f"(< {min_scores}); need more test windows"
+                            )
+                    else:
+                        logger.warning(
+                            f"{self.log_prefix} Conformal CQR skipped: no conformal_score column in cv_plot_df.csv "
+                            f"(need enable_conformal_calibration=true during testing)"
+                        )
+                else:
+                    logger.warning(
+                        f"{self.log_prefix} Conformal CQR skipped: cv_plot_df.csv not found "
+                        f"(need is_testing=True to produce calibration scores)"
+                    )
         # 分位数单调化(可选):逐行排序保证 q10<=q50<=q90
         df_future_prediction = monotonize_quantile_columns(
             df_future_prediction, bool(getattr(self.args, "quantile_monotone", False))
@@ -502,6 +595,51 @@ class Model:
         logger.info(f"{self.log_prefix} Model Forecasting runtime: {time.perf_counter() - forecast_start:.3f}s")
 
         return df_future_prediction
+
+    def _learn_blend_weights(self):
+        """Blend ridge_stacking：从 cv_plot_df 学 Direct/Recursive 最优权重，写 blend_weights.csv。"""
+        cv_path = self.args.test_results_dir.joinpath("cv_plot_df.csv")
+        if not cv_path.exists():
+            logger.warning(f"{self.log_prefix} ridge_stacking: cv_plot_df.csv not found; using fixed blend_weights.")
+            return
+        cv = pd.read_csv(cv_path)
+        needed = ["Y_trues", "blend_direct_pred", "blend_recursive_pred"]
+        if not all(c in cv.columns for c in needed):
+            logger.warning(f"{self.log_prefix} ridge_stacking: cv_plot_df missing blend columns; using fixed blend_weights.")
+            return
+        cv_clean = cv.dropna(subset=needed)
+        if len(cv_clean) < 10:
+            logger.warning(f"{self.log_prefix} ridge_stacking: only {len(cv_clean)} valid rows; using fixed blend_weights.")
+            return
+        # 与 conformal 校准一致：只用最近 N 个窗口的数据学权重（分布更贴合当前预测任务）
+        n_cal_windows = int(getattr(self.args, "blend_weight_windows", 5))
+        if "window" in cv_clean.columns:
+            recent_windows = sorted(cv_clean["window"].unique())[-n_cal_windows:]
+            cv_clean = cv_clean[cv_clean["window"].isin(recent_windows)]
+        if len(cv_clean) < 10:
+            logger.warning(f"{self.log_prefix} ridge_stacking: only {len(cv_clean)} rows in recent {n_cal_windows} windows; using fixed blend_weights.")
+            return
+        from sklearn.linear_model import Ridge
+        X_stack = cv_clean[["blend_direct_pred", "blend_recursive_pred"]].values
+        y_stack = cv_clean["Y_trues"].values
+        # 无截距凸组合：截距在归一化时会被丢弃，导致权重偏离最优（系统偏差大时尤其明显）
+        ridge = Ridge(alpha=1.0, positive=True, fit_intercept=False).fit(X_stack, y_stack)
+        w = ridge.coef_
+        total = float(w.sum())
+        if total <= 0:
+            w = np.array([0.5, 0.5])
+            total = 1.0
+        w_norm = w / total
+        w_df = pd.DataFrame([{
+            "direct_weight": float(w_norm[0]),
+            "recursive_weight": float(w_norm[1]),
+            "n_samples": len(cv_clean),
+        }])
+        w_df.to_csv(self.args.test_results_dir.joinpath("blend_weights.csv"), index=False)
+        logger.info(
+            f"{self.log_prefix} ridge_stacking weights: direct={w_norm[0]:.4f}, "
+            f"recursive={w_norm[1]:.4f} (n_samples={len(cv_clean)})"
+        )
 
     def run(self):
         run_start = time.perf_counter()
@@ -628,12 +766,24 @@ class Model:
                 categorical_features=categorical_features,
                 mode="forecast",
                 verbose=verbose_logging,
+                df_history=df_history,
+                endogenous_features_with_target=endogenous_features_with_target,
             )
 
             # 模型预测
             logger.info(f"{self.log_prefix} {'=' * 87}")
             logger.info(f"{self.log_prefix} Model Forecasting start...")
             logger.info(f"{self.log_prefix} {'=' * 87}")
+            # Blend ridge_stacking：forecast 前从测试结果学权重（需 is_testing=True 先产出 cv_plot_df）
+            if (
+                str(getattr(self.args, "pred_method", "")).lower()
+                in (
+                    "univariate-single-multistep-blend-direct-recursive",
+                    "multivariate-single-multistep-blend-direct-recursive",
+                )
+                and str(getattr(self.args, "blend_weight_strategy", "fixed")).lower() == "ridge_stacking"
+            ):
+                self._learn_blend_weights()
             df_future_predicted = self.forecast(
                 model=model,
                 scaler_forecasting=scaler_forecasting,

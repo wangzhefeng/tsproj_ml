@@ -42,6 +42,7 @@ from data_provider.outlier_handling import (
 )
 from utils.eval_mask import build_eval_mask
 from utils.quantile import monotonize_quantile_columns
+from utils.conformal import compute_nonconformity_scores
 from utils.log_util import logger
 
 # global variable
@@ -183,6 +184,13 @@ class Tester:
             target_scaler=target_scaler,
             categorical_features=categorical_features,
         )
+        # 多变量递归辅助预测器包装（滑窗测试段同样需要 aux 轨迹回填）
+        from models.AuxiliaryForecaster import maybe_build_auxiliary_bundle
+        model = maybe_build_auxiliary_bundle(
+            args, model, df_history_train,
+            payload["endogenous_features_with_target"],
+            payload["target_feature"], log_prefix,
+        )
         # ------------------------------
         # 窗口预测
         # ------------------------------
@@ -286,6 +294,34 @@ class Tester:
             for q, q_pred in sorted(predictor.quantile_outputs.items(), key=lambda x: float(x[0])):
                 q_col = f"predict_q{int(round(float(q) * 100)):02d}"
                 cv_plot_df_window[q_col] = np.asarray(q_pred).reshape(-1)[:n]
+            # conformal score 记录（若启用）：逐点 nonconformity score，供 forecast 阶段 CQR 校准
+            if bool(getattr(args, "enable_conformal_calibration", False)):
+                q_keys_sorted = sorted(predictor.quantile_outputs.keys(), key=float)
+                if len(q_keys_sorted) >= 2:
+                    q_low_pred = np.asarray(predictor.quantile_outputs[q_keys_sorted[0]]).reshape(-1)
+                    q_high_pred = np.asarray(predictor.quantile_outputs[q_keys_sorted[-1]]).reshape(-1)
+                    # restore quantile 到与 y_test_for_eval 一致的量纲，与 forecast 阶段
+                    # restore_predictions 使用相同的列语义（pred_target_columns），保证 score 空间一致。
+                    # 守卫：n != len(columns) 时逐列 restore 会 IndexError/错位，直接跳过 restore。
+                    if target_scaler is not None and getattr(target_scaler, "is_fitted", False):
+                        if len(q_low_pred) != len(pred_target_columns):
+                            logger.warning(
+                                f"{log_prefix} Conformal restore skipped: q length ({len(q_low_pred)}) "
+                                f"!= target columns ({len(pred_target_columns)}); using raw quantiles for window {window}."
+                            )
+                        else:
+                            q_low_pred = target_scaler.restore_predictions(q_low_pred, pred_target_columns).reshape(-1)
+                            q_high_pred = target_scaler.restore_predictions(q_high_pred, pred_target_columns).reshape(-1)
+                    # score 总是计算（scale_target=false 时 restore 为 no-op，score 在原始空间；
+                    #   scale_target=true 时 restore 后 score 在原始空间——两种情况一致）
+                    cv_plot_df_window["conformal_score"] = compute_nonconformity_scores(
+                        y_test_for_eval, q_low_pred[:n], q_high_pred[:n]
+                    )
+        # blend 分预测记录（供 ridge_stacking 在 forecast 阶段学权重）
+        if getattr(predictor, "blend_direct_pred", None) is not None:
+            n_blend = len(cv_plot_df_window)
+            cv_plot_df_window["blend_direct_pred"] = np.asarray(predictor.blend_direct_pred).reshape(-1)[:n_blend]
+            cv_plot_df_window["blend_recursive_pred"] = np.asarray(predictor.blend_recursive_pred).reshape(-1)[:n_blend]
 
         # 注入窗口编号，供后续 per-window 绘图使用
         if not cv_plot_df_window.empty:

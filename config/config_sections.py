@@ -21,6 +21,8 @@ _PRED_METHODS = [
     ("multivariate-single-multistep-direct", "msmd", "多变量输入，多步直接预测"),
     ("multivariate-single-multistep-recursive", "msmr", "多变量输入，多步递归预测"),
     ("multivariate-single-multistep-direct-recursive", "msmdr", "多变量输入，多步直接递归预测"),
+    ("univariate-single-multistep-blend-direct-recursive", "usbr", "单变量输入，Direct+Recursive 加权融合"),
+    ("multivariate-single-multistep-blend-direct-recursive", "msbr", "多变量输入，Direct+Recursive 加权融合"),
 ]
 
 # 派生映射：保持向后兼容
@@ -261,11 +263,32 @@ class ModelStrategyConfig:
     quantile_monotone: bool = False  # 分位数单调化开关:逐行排序 predict_q* 消除 quantile crossing(默认关)
     use_horizon_exogenous_for_direct: bool = False  # Direct 方法是否使用 horizon-aware 外生特征展开
     block_size: int = 0  # Direct-Recursive 方法的分块大小
+    # Direct 多步策略实现方式（仅 USMD/MSMD 生效）：
+    #   "multioutput"（默认，向后兼容）= 为每个 horizon 训练独立模型（H 个模型，成本高）
+    #   "horizon_feature" = 训练单个模型，把 horizon 索引作为特征（训练成本 H×→1×，
+    #                        推理时展开 H 行，外生列按步取值解决滞后陈旧）
+    direct_strategy: str = "multioutput"
+    horizon_feature_name: str = "forecast_horizon_idx"  # horizon 索引特征列名
+    enable_horizon_cyclical: bool = True  # 同时加 sin/cos 编码 h（捕获周期性）
 
     # 全局训练（面板数据）：跨多条序列联合训练单模型，需配合 series_id_feature 区分序列
     enable_global_training: bool = False  # 全局训练模式，跨序列联合训练
     # 全局训练时标识不同序列的列名（默认 series_id）
     series_id_feature: str = "series_id"
+
+    # 多变量递归（MSMR/MSMDR）非目标内生变量的未来值回填策略：
+    #   "persistence"（默认，向后兼容）= 取最后一个已知值常量外推
+    #   "auxiliary" = 为每个非目标内生变量训练独立递归模型（reduced-form：只用自身滞后+外生）
+    endogenous_backfill_strategy: str = "persistence"
+    auxiliary_model_type: str = "lightgbm"  # 辅助预测器模型类型
+    auxiliary_model_params: Dict = field(default_factory=dict)  # 辅助预测器独立参数
+
+    # Blend（Direct+Recursive 融合）权重策略：
+    #   "fixed" = 用 blend_weights 固定加权
+    #   "ridge_stacking" = 在滑窗测试集上用 Ridge 学权重，写入 test_scores_df 后 forecast 阶段读取
+    blend_weights: List[float] = field(default_factory=lambda: [0.5, 0.5])  # [direct_w, recursive_w]
+    blend_weight_strategy: str = "fixed"
+    blend_weight_windows: int = 5  # ridge_stacking 用最近 N 个滑窗的预测学权重（与 conformal 校准的窗口口径一致）
 
 
 @dataclass
@@ -338,6 +361,21 @@ class EvalMaskConfig:
 
 
 @dataclass
+class ConformalConfig:
+    """
+    分位数预测的 Conformal 校准配置（CQR, Romano 2019）。
+
+    在滑窗测试阶段累积 nonconformity score，forecast 阶段对 q_low/q_high
+    做对称膨胀，保证边际覆盖率 P(y ∈ [q_low_cal, q_high_cal]) ≥ 1−α。
+    纯后处理，不重训模型；依赖 is_testing=True 产出的 cv_plot_df.csv。
+    """
+    enable_conformal_calibration: bool = False  # 总开关
+    conformal_alpha: float = 0.1  # 目标误覆盖率（1-α=0.9 即 90% 覆盖）
+    conformal_calibration_windows: int = 5  # 用最近 N 个滑窗的 score 作校准集
+    conformal_min_scores: int = 30  # 校准集最少 score 数，不足则跳过+WARNING
+
+
+@dataclass
 class PerformanceConfig:
     """
     并行度和过程日志配置。
@@ -386,6 +424,7 @@ class BaseModelConfig(
     TrainingEnhancementConfig,
     TrainOutlierConfig,
     EvalMaskConfig,
+    ConformalConfig,
     PerformanceConfig,
     OutputConfig):
     """

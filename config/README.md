@@ -102,6 +102,35 @@ YAML 的 `overrides` 按 `config_sections.py` 的 dataclass 分组，字段名�
 
 其余分组（runtime、target_series、exogenous_features、time_lag_features、advanced_features、preprocessing、model_strategy、train_outlier、eval_mask、performance、output）的字段与默认值以 `config_sections.py` 为准。
 
+新增字段速查（`config_sections.py` 为权威定义）：
+
+| 分组 | 字段 | 说明 |
+|---|---|---|
+| `runtime` | `schedule_mode` | `daily`（默认，日界对齐预测下一完整自然日）/ `intraday`（保留调度时刻从 `now_time` 起预测） |
+| `exogenous_features` | `custom_features` | 自定义外生特征注册表（多文件来源），每项 `{name, history_path, future_path, ts_col, columns, categorical_columns}` |
+| `model_strategy` | `ensemble_model_specs` | 融合成员级规格（非空时取代 `ensemble_models`），每项 `{model, params?, scale?, impute?}` |
+| `output` | `setting_suffix` | 结果目录 setting 后缀（如 `-intraday`），同配置不同语义版本结果隔离 |
+| `output` | `plot_overlay_path` / `plot_overlay_col` | 测试图叠加参考序列（次坐标轴），路径相对 `data_dir` |
+
+## XGBoost 参数速查
+
+`model_strategy.model_params` 覆盖 XGBoost 参数时的经验注释（本项目默认值见 `models/ModelFactory.py` 的 `XGBoostModel.DEFAULT_PARAMS`）：
+
+| 参数 | 说明 |
+|---|---|
+| `booster` | 弱评估器类型，默认 `gbtree` |
+| `objective` | 训练目标；本项目默认 `reg:absoluteerror`（MAE 口径，抗异常值），sklearn 默认 `reg:squarederror` |
+| `tree_method` | 训练算法：`auto`/`exact`/`approx`/`hist`/`gpu_hist` |
+| `eval_metric` | 验证集评估指标；本项目默认 `mae` |
+| `max_depth` | 树深度，默认 6，常用 [3,10]；越大偏差越小、方差越大 |
+| `min_child_weight` | 叶子节点样本权重和的最小分裂阈值，默认 1；越大越欠拟合、越小越过拟合 |
+| `gamma`（`min_split_loss`） | 节点分裂所需的最小损失下降值，越大越保守，常用 [0,1,5] |
+| `subsample` | 行采样比例，默认 1，常用 [0.5,1]，防过拟合 |
+| `colsample_bytree` | 每棵树的列采样比例，默认 1，常用 [0.5,1]，防过拟合 |
+| `alpha`（`reg_alpha`） | L1 正则；高维下可加速，兼有特征选择效果 |
+| `lambda`（`reg_lambda`） | L2 正则，默认 1；增大可减少过拟合 |
+| `learning_rate`（`eta`） | 学习率，越小越稳但训练越慢，常与 `n_estimators` 联动调 |
+
 ## 配置生成
 
 `config/generate_configs.py` 从数据集叶子目录自动检测数据特征（数据文件、时间列、频率、`now_time`、外生文件），批量生成分组 YAML 配置。生成前建议使用 `--dry-run` 检查输出路径和文件名。

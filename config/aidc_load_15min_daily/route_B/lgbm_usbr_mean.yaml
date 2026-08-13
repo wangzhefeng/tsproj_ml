@@ -1,0 +1,83 @@
+# B — lightgbm — direct (15min 单变量, daily 日级)
+base_config: config.univariate_config
+overrides:
+  output:
+    scenario_subpath: aidc_load_15min_daily/route_B_blend
+  runtime:
+    is_testing: true
+    is_forecasting: true
+    history_days: 60
+    predict_steps: 96
+    window_days: 30
+    schedule_mode: daily  # 日界对齐: 预测下一完整自然日
+    now_time: '2026-07-28T23:45:00'
+  target_series:
+    data_dir: ./dataset/aidc_load_15min_daily/
+    data_path: B_Loads_15min_mean_20251001_20260728.csv
+    freq: 15min
+    target_ts_feat: time
+    target: value
+  exogenous_features:
+    enable_date_features: false
+    enable_weather_features: false
+    datetime_features:
+    - hour
+    - minute
+    - day
+    - day_of_week
+    - week_of_year
+    - month
+    - days_in_month
+    - quarter
+    - day_of_year
+    - year
+    datetime_categorical_features: []  # 空列表=关闭类别特征(不传 categorical_feature 给 LightGBM)
+  time_lag_features:
+    lags:
+    - 96
+    - 192
+    - 288
+    - 384
+    - 480
+    - 576
+    - 672
+  advanced_features:
+    enable_advanced_features: true
+    enable_rolling_features: true
+    rolling_columns:
+    - y
+    rolling_windows:
+    - 96
+    - 192
+    - 384
+    - 672
+    rolling_stats:
+    - mean
+    - std
+    - min
+    - max
+    enable_diff_features: true
+    diff_columns:
+    - y
+    diff_periods:
+    - 96
+    - 192
+    - 672
+  model_strategy:
+    model_type: lightgbm
+    pred_method: univariate-single-multistep-blend-direct-recursive
+    blend_weight_strategy: ridge_stacking
+  training_enhancement:
+    enable_time_decay_sample_weight: true
+    decay_halflife_days: 60  # 半衰期天数,按数据漂移速度调整
+  train_outlier:
+    enable_train_outlier_handling: false  # 已由 outlier_process 清洗
+  eval_mask:
+    mode: percentile
+    percentile: 5.0
+  preprocessing:
+    detrend_target: false  # blend 硬约束:不支持 detrend_target（见 main.py 硬校验）
+  performance:
+    window_parallel_workers: 8
+    multi_output_n_jobs: 8
+    model_thread_count: 1

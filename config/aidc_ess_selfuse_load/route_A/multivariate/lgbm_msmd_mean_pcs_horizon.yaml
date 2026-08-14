@@ -3,6 +3,7 @@ base_config: config.multivariate_config
 overrides:
   output:
     scenario_subpath: aidc_ess_selfuse_load/route_A/multivariate
+    setting_suffix: '-horizon'
     plot_overlay_path: A_ESS_PCS_merged_5min_20251001_20260728.csv
     plot_overlay_col: pcs_power
   runtime:

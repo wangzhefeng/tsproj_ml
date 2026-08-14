@@ -511,8 +511,8 @@ class Trainer:
             )
 
         # X repeat: 每行复制 H 次（row0×H, row1×H, ...）
-        X_long = np.repeat(X_train_df.values, H, axis=0)
-        X_long_df = pd.DataFrame(X_long, columns=X_train_df.columns)
+        # 用 pandas 原生 repeat 保留各列 dtype（np.repeat(.values) 会把混合 dtype 退化为 object）
+        X_long_df = X_train_df.loc[X_train_df.index.repeat(H)].reset_index(drop=True)
 
         # horizon feature: h = 1..H, tile N 次
         h_values = np.tile(np.arange(1, H + 1), N)

@@ -283,7 +283,7 @@ def detect_anomalies(
 
     # --- 1. 物理边界硬截 ---
     abs_high: float = float(params.abs_high_threshold)
-    absolute_low = y < params.abs_low_threshold
+    absolute_low = y <= params.abs_low_threshold
     if np.isfinite(abs_high):
         absolute_high = y > abs_high
     else:

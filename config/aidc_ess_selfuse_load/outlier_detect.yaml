@@ -17,7 +17,7 @@ tasks:
     review_daily_plots: true
     auto_clean_statistical: false
     abs_low_threshold: 0.0
-    abs_high_threshold: 500.0
+    abs_high_threshold: 200.0
     spike_window: 2
     spike_z_threshold: 8.0
     spike_abs_diff_threshold: 50.0
@@ -34,7 +34,7 @@ tasks:
     review_daily_plots: true
     auto_clean_statistical: false
     abs_low_threshold: 0.0
-    abs_high_threshold: 500.0
+    abs_high_threshold: 200.0
     spike_window: 2
     spike_z_threshold: 8.0
     spike_abs_diff_threshold: 50.0

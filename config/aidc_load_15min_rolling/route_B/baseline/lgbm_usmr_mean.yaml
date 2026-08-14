@@ -2,7 +2,7 @@
 base_config: config.univariate_config
 overrides:
   output:
-    scenario_subpath: aidc_load_15min_rolling/route_B
+    scenario_subpath: aidc_load_15min_rolling/route_B/baseline
   runtime:
     is_testing: true
     is_forecasting: true

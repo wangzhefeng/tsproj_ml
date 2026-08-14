@@ -2,7 +2,7 @@
 base_config: config.univariate_config
 overrides:
   output:
-    scenario_subpath: aidc_power_month/route_A
+    scenario_subpath: aidc_power_month/route_A/baseline
   runtime:
     is_testing: true
     is_forecasting: true

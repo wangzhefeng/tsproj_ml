@@ -3,6 +3,7 @@ base_config: config.univariate_config
 overrides:
   output:
     scenario_subpath: aidc_load_15min_short/route_A_blend
+    setting_suffix: -intraday  # 语义版本隔离(与 quantile 配置对齐)
   runtime:
     is_testing: true
     is_forecasting: true

@@ -3,7 +3,6 @@ base_config: config.univariate_config
 overrides:
   output:
     scenario_subpath: aidc_load_15min_rolling/route_A_conformal
-    setting_suffix: -intraday  # 新语义版本结果隔离(保留旧结果)
   runtime:
     is_testing: true
     is_forecasting: true

@@ -7,10 +7,11 @@
 
 | 文件 | 职责 |
 |---|---|
-| `FeatureEngineering.py` | 外生特征、内生滞后特征、多步目标列和高级统计特征构造 |
+| `FeatureEngineering.py` | 外生特征（含 `custom_features` 自定义外生注册表）、内生滞后特征、多步目标列和高级统计特征构造 |
 | `FeatureScalering.py` | 特征缩放、目标缩放、目标逆变换和训练/预测 schema 对齐 |
 | `FeatureSelection.py` | 基于 `SelectKBest` 的训练集特征选择，并在预测阶段复用选择结果 |
 | `DataAugment.py` | 训练集 bootstrap + numeric jitter 数据增强 |
+| `feature_engineering/` | 实验性特征子包（fft/wavelet/statistical/holiday/periodicity/weather 等），**未接入主流程**，修改不影响模型运行 |
 
 ## FeatureEngineering
 
@@ -40,9 +41,10 @@ categorical_features
 
 外生特征：
 
-- 日期时间特征：由 `enable_datetime_features` 和 `datetime_features` 控制。
+- 日期时间特征：由 `enable_datetime_features` 和 `datetime_features` 控制。注意 `feature_map` 中 `weekday` ≡ `day_of_week`、`week` ≡ `week_of_year` 两对同义项，配置中只应保留 pandas 规范名（后者）。
 - 日期类型特征：由 `enable_date_features`、`datetype_features` 控制。
 - 天气特征：由 `enable_weather_features`、`weather_features` 控制。
+- 自定义外生特征：`custom_features` 注册表（多文件来源，按精确时间戳 merge，历史/未来列名一致）。
 - Direct 方法可选 horizon-aware 外生展开：`use_horizon_exogenous_for_direct`。
 - Global 模式可透传 `series_id_feature` 作为静态类别特征。
 
@@ -51,11 +53,12 @@ categorical_features
 - 单变量方法只使用目标 `y` 构造滞后特征。
 - 多变量方法可使用配置中的其他内生变量。
 - `enable_lags_features=True` 时按 `lags` 生成 `<col>_lag_<n>`。
-- Direct 类方法会构造 `y_shift_1 ... y_shift_horizon` 这类多步目标列。
+- Direct 类方法会构造 `y_shift_1 ... y_shift_horizon` 这类多步目标列；blend 方法（USBR/MSBR）同时构造 Direct（`shift_1..H`）和 Recursive（`shift_0`）两套目标列。
+- `direct_strategy: horizon_feature`（仅 USMD/MSMD）时训练表 melt 为 N×H 长表，`forecast_horizon_idx`（可选 sin/cos 周期编码）作为特征。
 
 高级内生特征：
 
-- 总开关：`enable_advanced_features`。
+- 总开关：`enable_advanced_features`（默认关）。
 - 滚动统计：`enable_rolling_features`、`rolling_columns`、`rolling_windows`、`rolling_stats`。
 - 扩展窗口统计：`enable_expanding_features`。
 - 差分：`enable_diff_features`、`diff_columns`、`diff_periods`。
@@ -64,6 +67,8 @@ categorical_features
 - 周期编码：`enable_cyclical_features`。
 - 交互项：`enable_interaction_features`。
 - 多项式项：`enable_polynomial_features`。
+
+> 兼容性注意：`rolling_columns`/`diff_columns` 默认操作目标列 `y`，而未来预测模板没有 `y`——USMDP（逐点 direct）预测路径会因此特征数不匹配（LightGBM Fatal）。USMDP 场景必须保持 `enable_advanced_features: false`，或把操作列改为外生特征列。
 
 ## FeatureScalering
 

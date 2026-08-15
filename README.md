@@ -1,6 +1,6 @@
 # tsproj-ml
 
-基于机器学习回归器的时间序列多步预测项目。当前主链路围绕 LightGBM / XGBoost / CatBoost 构建，同时在模型工厂层保留 RandomForest 支持；支持单变量/多变量、多步逐点 direct、direct、recursive 和 direct-recursive 分块预测。
+基于机器学习回归器的时间序列多步预测项目。当前主链路围绕 LightGBM / XGBoost / CatBoost 构建，模型工厂层还支持 RandomForest、HistGradientBoosting、Ridge/ElasticNet/Lasso、QuantileRegressor 和 SeasonalTemplate（季节模板）；支持单变量/多变量、多步逐点 direct、direct、recursive、direct-recursive 分块和 direct+recursive 加权融合（blend）预测。
 
 本文档按当前代码和当前目录整理，未使用 `docs/` 和 `logs/` 目录中的历史材料作为事实来源。目录级细节可继续查阅 `config/README.md`、`dataset/README.md`、`data_provider/README.md`、`models/README.md`、`scripts/README.md` 和 `utils/README.md`。
 
@@ -23,15 +23,16 @@
 主要能力：
 
 - 树模型主链路：`lightgbm` / `xgboost` / `catboost`。
-- 工厂层额外支持：`randomforest` / `rf`。
-- 点预测与分位数预测：`predict_type="point"` 或 `"quantile"`。
-- 多输出训练策略：`multioutput`、`regressor_chain`，以及 direct 专用的逐 horizon 训练器。
-- 可选模型融合：`averaging`、`weighted`、`stacking`、`blending`。
-- 可选数据增强、特征选择、目标/特征缩放、自动学习率、`RandomizedSearchCV` + `TimeSeriesSplit` 调参。
+- 工厂层额外支持：`randomforest` / `histgb` / `ridge` / `elasticnet` / `lasso` / `quantileregressor` / `seasonaltemplate`（共 10 类，均带别名，见 `models/ModelFactory.py`）。
+- 点预测与分位数预测：`predict_type="point"` 或 `"quantile"`（可选 `quantile_monotone` 单调化）。
+- 多输出训练策略：`multioutput`、`regressor_chain`，以及 direct 专用的逐 horizon 训练器；`direct_strategy: horizon_feature` 可把 horizon 索引作为特征将训练成本从 H× 降到 1×（仅 USMD/MSMD）。
+- 可选模型融合：`averaging`、`weighted`、`stacking`、`blending`（支持成员级 `ensemble_model_specs`）。
+- 可选预测增强：多变量内生变量 auxiliary 回填（MSMR/MSMDR）、Direct+Recursive blend（USBR/MSBR）、conformal（CQR）分位数校准。
+- 可选数据增强、特征选择、目标/特征缩放、目标去趋势、时间衰减样本权重、自动学习率、`RandomizedSearchCV` + `TimeSeriesSplit` 调参。
 - 滑窗测试支持训练窗口异常值局部修复，测试真实值不被清洗。
-- 滑窗测试中的 `MAPE Accuracy = 1 - MAPE` 按 `eval_mask` 掩码过滤后计算（默认 `mode: percentile` 即窗口正样本 `P5`；可设 `min_value`/`max_value` 绝对上下限），近零/越界异常点不再制造失真指标。
+- 滑窗测试中的 `MAPE Accuracy = 1 - MAPE` 按 `eval_mask` 掩码过滤后计算（默认 `mode: percentile` 即窗口正样本 `P5`；可设 `min_value`/`max_value` 绝对上下限），近零/越界异常点不再制造失真指标；汇总指标用 median，并附季节 naive 对照列。
 - 预测输出保存历史上下文和预测绘图拼接数据，便于生产问题定位。
-- 未来预测图对历史上下文按 `eval_mask` 掩码断线显示；未来预测值本身不做裁剪。
+- 滑窗测试图（`test_prediction.png`）按 `eval_mask` 对无效点断线显示；未来预测图（`prediction.png`）绘制原始值保证线条连续，掩码结果保留在 `prediction_plot_concat.csv` 的 `plot_value`/`plot_valid` 列。
 
 ## 项目结构
 
@@ -58,25 +59,31 @@ tsproj_ml/
 │   ├── outlier_process.py       # 原始负荷数据异常标记、清洗与可视化（配置驱动）
 │   └── 其余工具脚本             # decomposition/difference/impute/normalization 等，当前未被模型代码引用
 ├── features/
-│   ├── FeatureEngineering.py    # 日期时间、日期类型、天气、滞后、高级特征
+│   ├── FeatureEngineering.py    # 日期时间、日期类型、天气、自定义外生、滞后、高级特征
 │   ├── FeatureScalering.py      # 特征/目标缩放与逆变换
 │   ├── FeatureSelection.py      # 训练集特征选择
-│   └── DataAugment.py           # 训练集数据增强
+│   ├── DataAugment.py           # 训练集数据增强
+│   └── feature_engineering/     # 实验性特征子包（fft/wavelet/statistical 等），未接入主流程
 ├── models/
-│   ├── ModelFactory.py          # 模型工厂和模型封装
-│   ├── ModelTraining.py         # 训练、调参、分位数、融合
+│   ├── ModelFactory.py          # 模型工厂和模型封装（10 类回归器）
+│   ├── ModelTraining.py         # 训练、调参、分位数、融合、blend 双子模型
 │   ├── ModelTesting.py          # 滑窗测试与指标保存
-│   ├── ModelForecasting.py      # 7 种预测策略
+│   ├── ModelForecasting.py      # 9 种预测策略的推理实现
 │   ├── ModelEnsemble.py         # 融合模型
+│   ├── AuxiliaryForecaster.py   # 非目标内生变量辅助递归预测器（auxiliary 回填）
 │   ├── ModelSaveLoad.py         # pickle 保存/加载
 │   └── losses.py, learning_rate.py
-├── scripts/                     # main.py 直跑脚本和维护说明（AIDC 专项脚本见 config/aidc_electricity_computility/electricity/2026-06-11/scripts/）
+├── scripts/                     # main.py 直跑脚本、配置 dry-run 校验和维护说明（AIDC 专项脚本见 config/aidc_electricity_computility/electricity/2026-06-11/scripts/）
+│   ├── check_model_configs.py   # 模型配置 dry-run 校验（复算 main.py 合法性校验，不训练不预测）
 │   ├── production_sync.md       # 生产包同步边界、可迁移模块和同步记录
 │   ├── run_model_test.sh        # main.py 直跑测试脚本
 │   └── template.sh              # main.py 直跑模板脚本
-├── tests/                       # unittest 回归测试
+├── tests/                       # unittest 回归测试（注意：当前被 .gitignore 忽略，未纳入版本控制）
 └── utils/
     ├── frequency.py             # pandas 频率解析
+    ├── eval_mask.py             # 评估/绘图有效点掩码
+    ├── conformal.py             # CQR 分位数 conformal 校准
+    ├── quantile.py              # 分位数列单调化
     ├── runtime_env.py           # 运行期环境变量辅助
     └── log_util.py              # 日志器
 ```
@@ -114,7 +121,7 @@ uv run python main.py
 使用方式：
 
 1. 打开 [main.py](/Users/wangzf/projects/tsproj_ml/main.py)。
-2. 修改 `CONFIG_YAML`，指向要测试的本地 YAML 配置文件；当前默认值是 `config/aidc_electricity_computility/electricity/2026-06-11/A1_01a/lgbm_msmd.yaml`。
+2. 修改 `CONFIG_YAML`，指向要测试的本地 YAML 配置文件；当前默认值是 `config/aidc_load_month/route_B/lgbm_usmd_prob_mean.yaml`。
 3. 如需调整数据路径、模型类型、预测策略、测试与预测开关，直接修改对应 YAML。
 4. 运行 `uv run python main.py`。
 
@@ -176,18 +183,20 @@ uv run python config/generate_configs.py \
   --dry-run
 ```
 
-确认输出路径后去掉 `--dry-run` 即可生成实际配置。当前 `2026-06-11/demand_load` 已按 6 个叶子数据集生成了 72 个 YAML 配置文件：
+确认输出路径后去掉 `--dry-run` 即可生成实际配置。当前 `2026-06-11/demand_load` 已按 6 个叶子数据集生成了 84 个模型 YAML 配置（另含 1 个 `outlier_detect.yaml`）：
 
 | 数据集 | 配置目录 | 文件数 |
 |---|---|---:|
-| `A1_201` | `config/aidc_electricity_computility/electricity/2026-06-11/A1_201` | 12 |
-| `A1_01a` | `config/aidc_electricity_computility/electricity/2026-06-11/A1_01a` | 12 |
-| `A1_IT` | `config/aidc_electricity_computility/electricity/2026-06-11/A1_IT` | 12 |
-| `A3_01e` | `config/aidc_electricity_computility/electricity/2026-06-11/A3_01e` | 12 |
+| `A1_201` | `config/aidc_electricity_computility/electricity/2026-06-11/A1_201` | 15 |
+| `A1_01a` | `config/aidc_electricity_computility/electricity/2026-06-11/A1_01a` | 15 |
+| `A1_IT` | `config/aidc_electricity_computility/electricity/2026-06-11/A1_IT` | 15 |
+| `A3_01e` | `config/aidc_electricity_computility/electricity/2026-06-11/A3_01e` | 15 |
 | `AIDC/route_A` | `config/aidc_electricity_computility/electricity/2026-06-11/AIDC/route_A` | 12 |
 | `AIDC/route_B` | `config/aidc_electricity_computility/electricity/2026-06-11/AIDC/route_B` | 12 |
 
-这些配置共用时间列 `count_data_time`、目标列 `h_total_use`、频率 `5min` 和 `now_time = 2026-06-11T23:55:00`。其中单变量 YAML 继续以 `df_power.csv` 为目标文件并使用 `config.univariate_config`，4 个房间场景新增的 `lgbm_msmd.yaml`、`lgbm_msmr.yaml`、`lgbm_msmdr.yaml` 为多变量配置，使用 `config.multivariate_config`，目标文件为筛后的 `df_selected.csv`。
+这些配置共用时间列 `count_data_time`、目标列 `h_total_use`、频率 `5min` 和 `now_time = 2026-06-11T23:55:00`。其中单变量 YAML 继续以 `df_power.csv` 为目标文件并使用 `config.univariate_config`，4 个房间场景的 `lgbm_msmd.yaml`、`lgbm_msmr.yaml`、`lgbm_msmdr.yaml` 为多变量配置，使用 `config.multivariate_config`，目标文件为筛后的 `df_selected.csv`。
+
+另有 `2026-08-10` 场景目录（`A2_IT`、`A3_IT`、`liantong_IT`、`yancheng_IT`，各 7 个 YAML：4 单变量 + 3 多变量 lgbm）；对应 `dataset/.../2026-08-10/` 房间目录当前为空，这些 YAML 的 `data_dir` 指向 2026-06-11 数据，作为新房间的配置模板复用。
 
 ## 数据契约
 
@@ -314,7 +323,7 @@ results/
 
 - `test_scores_df.csv` 额外记录 `MAPE Threshold`、`MAPE Upper Threshold`、`MAPE Valid Points`、`MAPE Excluded Points`、`MAPE Excluded Ratio`。
 - `cv_plot_df.csv` 额外记录测试图的有效性标记；被 `eval_mask` 判为异常的点在 `test_prediction.png` 中断线显示。
-- `prediction_plot_concat.csv` 保留历史与未来拼接后的原始值 `raw_value`，并额外输出 `plot_value`、`plot_valid`、`series_type`；`prediction.png` 用 `plot_value` 绘制历史上下文，用原始 `predict_value` 绘制未来预测。
+- `prediction_plot_concat.csv` 保留历史与未来拼接后的原始值 `raw_value`，并额外输出 `plot_value`（eval_mask 掩码后的绘图值，异常点为 NaN）、`plot_valid`、`series_type`；当前 `prediction.png` 的历史上下文直接绘制原始 `y`（保证线条连续），未来预测使用原始 `predict_value`，掩码列供排障和自定义绘图使用。
 
 离线原始负荷异常处理由 `data_process/outlier_process.py` 提供（配置驱动，用法同 `data_aggregate.py`）。配置示例：`config/aidc_electricity_computility/electricity/2026-06-11/outlier_detect.yaml`。输出文件名从源文件名派生，保存到源数据目录：
 
@@ -329,9 +338,9 @@ df_power_anomalies.png
 - 根 README 只做项目总览和主流程说明；配置映射、数据目录、目录职责请以对应子目录 README 为准。
 - 标准默认值由 Python dataclass 模板提供；新增具体数据配置优先用分组 YAML 管理。
 - `main.py` 是本地开发与测试的主入口；切换任务时直接修改 `CONFIG_YAML` 和对应 YAML 内容。
-- `now_time` 会被规整到整点作为历史结束/预测开始，历史区间为 `[now_time - history_days, now_time)`，预测区间为 `[now_time, now_time + predict_steps × freq)`。
+- `now_time` 为预测锚点：`schedule_mode=daily`（默认）时规整到次日 00:00 作为历史结束/预测开始（预测下一完整自然日），`intraday` 时保留调度时刻；历史区间为 `[now_time - history_days, now_time)`，预测区间为 `[now_time, now_time + predict_steps × freq)`。
 - 分位数预测训练多个子模型；点预测融合只在 `predict_type="point"` 时生效。
-- 多变量递归类方法对非目标内生变量目前主要采用持久性回填，不等同于为每个内生变量单独建模。
+- 多变量递归类方法（MSMR/MSMDR）对非目标内生变量默认持久性回填，可配置 `endogenous_backfill_strategy: auxiliary` 为每个内生变量训练独立递归辅助模型。
 - `.DS_Store`、`__pycache__/`、`logs/`、`results/` 不是源码或数据契约。
 
 ## 生产同步边界
@@ -394,6 +403,14 @@ uv run python main.py
 uv run python -m py_compile main.py run.py config/config_loader.py config/config_sections.py config/univariate_config.py config/multivariate_config.py config/generate_configs.py
 uv run python -m unittest discover -s tests -p "test_*.py"
 ```
+
+批量 YAML 配置的合法性 dry-run 校验（不训练不预测）：
+
+```bash
+env -u PYTHONPATH UV_CACHE_DIR=.uv_cache uv run --no-sync python scripts/check_model_configs.py 'config/<scenario>/**/*.yaml'
+```
+
+注意：`tests/` 已纳入版本控制；改动或迁移被测模块时需同步修复测试导入与接口断言，保持全套通过。
 
 如果改了 shell 脚本，再运行：
 

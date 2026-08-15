@@ -25,8 +25,9 @@
 
 - 日期：`date_history_path`、`date_future_path`、`date_ts_feat`
 - 天气：`weather_history_path`、`weather_future_path`、`weather_ts_feat`
+- 自定义外生注册表：`custom_features`（多文件来源，每项 `{name, history_path, future_path, ts_col, columns, categorical_columns}`，历史/未来列名一致）
 
-日期和天气外生文件同时存在历史/未来版本时，会先按时间列纵向拼接、排序、去重形成 canonical 全量表，再按 `forecast_start_time` 显式切成历史片段和未来片段供两个阶段分别使用。
+日期和天气外生文件同时存在历史/未来版本时，会先按时间列纵向拼接、排序、去重形成 canonical 全量表，再按 `forecast_start_time` 显式切成历史片段和未来片段供两个阶段分别使用。自定义外生特征走同一切分机制，特征合并（按精确时间戳 left merge）在 `features/FeatureEngineering.py` 的 `extend_custom_feature` 完成。
 
 ## 历史与未来边界
 

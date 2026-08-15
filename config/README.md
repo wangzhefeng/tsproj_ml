@@ -6,7 +6,7 @@
 
 ```text
 config/
-├── config_sections.py      # 共享配置分组 dataclass 定义（12 个分组 + BaseModelConfig）
+├── config_sections.py      # 共享配置分组 dataclass 定义（13 个分组 + BaseModelConfig）
 ├── config_loader.py        # YAML 配置加载器
 ├── generate_configs.py     # 从数据集目录批量生成分组 YAML 配置
 ├── univariate_config.py    # 单变量场景模板模块（ModelConfig 子类）
@@ -16,20 +16,21 @@ config/
 
 ## 模板模块
 
-`config_sections.py` 定义扁平组合配置基类 `BaseModelConfig`，由 12 个分组 dataclass 继承组合：
+`config_sections.py` 定义扁平组合配置基类 `BaseModelConfig`，由 13 个分组 dataclass 继承组合：
 
-- `RuntimeConfig`：运行模式（测试/预测）、时间窗口（`history_days`、`predict_steps`、`window_days`、`now_time`）
+- `RuntimeConfig`：运行模式（测试/预测）、时间窗口（`history_days`、`predict_steps`、`window_days`、`now_time`）、`schedule_mode`（`daily`/`intraday`）
 - `TargetSeriesConfig`：目标序列数据路径、频率、时间列、目标列、内生数值/类别/剔除列
-- `ExogenousFeatureConfig`：日期类型外生、气象外生、日期时间派生特征
+- `ExogenousFeatureConfig`：日期类型外生、气象外生、自定义外生注册表（`custom_features`）、日期时间派生特征
 - `TimeLagFeatureConfig`：滞后特征开关与滞后步数
 - `AdvancedFeatureConfig`：滚动/扩展窗口统计、差分、百分比变化、距事件、周期三角编码、交互、多项式特征
 - `PreprocessingConfig`：特征/目标缩放、去趋势、分组缩放、类别编码
-- `ModelStrategyConfig`：模型类型、融合模式、预测方法、多输出策略、分位数
+- `ModelStrategyConfig`：模型类型、融合模式（含成员级 `ensemble_model_specs`）、预测方法、多输出策略、分位数、`direct_strategy`、内生回填策略、blend 权重策略
 - `TrainingEnhancementConfig`：早停、时间衰减样本权重、超参调优、数据增强、特征选择、学习率策略
 - `TrainOutlierConfig`：滑窗测试训练窗口异常清洗
 - `EvalMaskConfig`：评估/绘图掩码（`percentile`/`absolute`/`combined`）
+- `ConformalConfig`：分位数预测的 CQR conformal 校准（校准窗口、α、最少 score 数）
 - `PerformanceConfig`：窗口/多输出/分位数/融合并行度、日志
-- `OutputConfig`：结果输出目录与场景子路径
+- `OutputConfig`：结果输出目录与场景子路径、setting 后缀、测试图叠加参考序列
 
 组合后的 `BaseModelConfig` 仍暴露扁平字段，运行代码、YAML 覆盖和 CLI 覆盖统一读写 `cfg.data_path`、`cfg.pred_method` 等属性。
 
@@ -90,7 +91,7 @@ YAML 的 `overrides` 按 `config_sections.py` 的 dataclass 分组，字段名�
 | `enable_feature_selection` | bool | `false` | 是否启用特征选择 |
 | `enable_auto_learning_rate` | bool | `false` | 是否自动估算学习率 |
 
-> 时间衰减权重兼容性：默认配置下（`multi_output_strategy: multioutput` + `predict_type: point` + `enable_ensemble: false`）所有 7 种预测方法均支持；`regressor_chain` 多输出、`ensemble`、多输出分位数路径不支持，开启时会 warning 跳过（不阻塞运行）。
+> 时间衰减权重兼容性：默认配置下（`multi_output_strategy: multioutput` + `predict_type: point` + `enable_ensemble: false`）所有 9 种预测方法均支持（多输出走项目自定义 `DirectMultiOutputRegressor`，逐输出转发 `sample_weight`）；`regressor_chain` 多输出、`ensemble`、多输出分位数路径不支持，开启时会 warning 跳过（不阻塞运行）。
 
 启用示例：
 
@@ -100,7 +101,7 @@ YAML 的 `overrides` 按 `config_sections.py` 的 dataclass 分组，字段名�
     decay_halflife_days: 14
 ```
 
-其余分组（runtime、target_series、exogenous_features、time_lag_features、advanced_features、preprocessing、model_strategy、train_outlier、eval_mask、performance、output）的字段与默认值以 `config_sections.py` 为准。
+其余分组（runtime、target_series、exogenous_features、time_lag_features、advanced_features、preprocessing、model_strategy、train_outlier、eval_mask、conformal、performance、output）的字段与默认值以 `config_sections.py` 为准。
 
 新增字段速查（`config_sections.py` 为权威定义）：
 
@@ -109,6 +110,10 @@ YAML 的 `overrides` 按 `config_sections.py` 的 dataclass 分组，字段名�
 | `runtime` | `schedule_mode` | `daily`（默认，日界对齐预测下一完整自然日）/ `intraday`（保留调度时刻从 `now_time` 起预测） |
 | `exogenous_features` | `custom_features` | 自定义外生特征注册表（多文件来源），每项 `{name, history_path, future_path, ts_col, columns, categorical_columns}` |
 | `model_strategy` | `ensemble_model_specs` | 融合成员级规格（非空时取代 `ensemble_models`），每项 `{model, params?, scale?, impute?}` |
+| `model_strategy` | `direct_strategy` | `multioutput`（默认，每 horizon 独立模型）/ `horizon_feature`（horizon 索引作特征，仅 USMD/MSMD，训练成本 H×→1×） |
+| `model_strategy` | `endogenous_backfill_strategy` | MSMR/MSMDR 非目标内生变量回填：`persistence`（默认）/ `auxiliary`（独立递归辅助模型） |
+| `model_strategy` | `blend_weight_strategy` | USBR/MSBR 融合权重：`fixed` / `ridge_stacking`（滑窗测试集上 Ridge 学权重） |
+| `conformal` | `enable_conformal_calibration` 等 | CQR 分位数校准：`conformal_alpha` / `conformal_calibration_windows` / `conformal_min_scores` |
 | `output` | `setting_suffix` | 结果目录 setting 后缀（如 `-intraday`），同配置不同语义版本结果隔离 |
 | `output` | `plot_overlay_path` / `plot_overlay_col` | 测试图叠加参考序列（次坐标轴），路径相对 `data_dir` |
 

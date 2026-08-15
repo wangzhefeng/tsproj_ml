@@ -7,11 +7,12 @@
 
 | 文件 | 职责 |
 |---|---|
-| `ModelFactory.py` | 统一创建 LightGBM、XGBoost、CatBoost、RandomForest 封装 |
-| `ModelTraining.py` | 训练、调参、分位数模型、融合、特征选择和数据增强入口 |
+| `ModelFactory.py` | 统一创建 10 类回归器封装（LightGBM、XGBoost、CatBoost、RandomForest、HistGradientBoosting、Ridge、ElasticNet、Lasso、QuantileRegressor、SeasonalTemplate） |
+| `ModelTraining.py` | 训练、调参、分位数模型、融合、blend 双子模型、时间衰减样本权重、特征选择和数据增强入口 |
 | `ModelTesting.py` | 滑窗测试、窗口内训练预测、指标计算和测试结果保存 |
-| `ModelForecasting.py` | 7 种多步预测策略的推理实现 |
-| `ModelEnsemble.py` | averaging、weighted、stacking、blending 融合回归器 |
+| `ModelForecasting.py` | 9 种多步预测策略的推理实现 |
+| `ModelEnsemble.py` | averaging、weighted、stacking、blending 融合回归器（成员级 preprocessor） |
+| `AuxiliaryForecaster.py` | 非目标内生变量的 reduced-form 递归辅助预测器（`endogenous_backfill_strategy: auxiliary`） |
 | `ModelSaveLoad.py` | pickle 模型和目标缩放器保存/加载 |
 | `learning_rate.py` | 固定/自动学习率解析 |
 | `losses.py` | 模型损失名称和调参 scorer 推断 |
@@ -28,12 +29,18 @@
 5. 可选超参数搜索。
 6. 按 `predict_type` 和 `enable_ensemble` 进入点预测、融合或分位数训练。
 
-支持模型：
+支持模型（`ModelFactory._models` 注册名，均带别名）：
 
 - `lightgbm` / `lgb`
 - `xgboost` / `xgb`
 - `catboost` / `cat`
 - `randomforest` / `rf`
+- `histgb` / `histgradientboosting`
+- `ridge`
+- `elasticnet` / `enet`
+- `lasso`
+- `quantileregressor` / `qr`
+- `seasonaltemplate` / `st`（工作日/周末分组建季节模板 + NNLS 学权重）
 
 ## 测试
 
@@ -58,9 +65,13 @@
 
 `train_outlier_report.csv` 始终写出；未启用或未发现训练异常时为空表头。
 
-`test_scores_df.csv` 中的 `MAPE` 与 `MAPE Accuracy` 采用业务口径：对每个测试窗口先取 `y_true > 0` 的点，再用这些正样本的 `P5` 作为相对阈值，只对 `y_true >= threshold` 的点计算指标。结果表会同步保存 `MAPE Threshold`、`MAPE Valid Points`、`MAPE Excluded Points`、`MAPE Excluded Ratio`。`cv_plot_df.csv` 也会保留对应的有效性标记，`test_prediction.png` 对无效点断线显示。
+`test_scores_df.csv` 中的 `MAPE` 与 `MAPE Accuracy` 采用业务口径：按 `eval_mask`（`utils/eval_mask.build_eval_mask`）过滤后计算——默认 `mode: percentile` 即取窗口正样本的 `P5` 作为相对阈值，只对 `y_true >= threshold` 的点计算指标；`absolute`/`combined` 模式可启用 `min_value` 绝对下限，`max_value` 上限与 mode 正交。结果表会同步保存 `MAPE Threshold`、`MAPE Upper Threshold`、`MAPE Valid Points`、`MAPE Excluded Points`、`MAPE Excluded Ratio`。`cv_plot_df.csv` 也会保留对应的有效性标记，`test_prediction.png` 对无效点断线显示。
 
 每个窗口同时输出季节 naive 对照列 `Naive MAPE` / `Naive MAPE Accuracy`：naive 值取测试点 `n_per_day` 步前（昨日同时刻）的实际值，与模型指标共用同一 eval_mask，用于判断模型是否跑赢持久性锚点；窗口历史不足一天时记 `NaN`。
+
+全部窗口的汇总指标由 `main.py` 用 **median（中位数）** 追加为「中位数」行——单窗口 MAPE 爆炸不会拖垮汇总。
+
+启用 `enable_conformal_calibration` 时，每个分位数窗口额外记录 `conformal_score`（CQR nonconformity score）到 `cv_plot_df.csv`，供 forecast 阶段校准分位数边界；blend 方法（USBR/MSBR）额外记录 `blend_direct_pred`/`blend_recursive_pred` 分预测列，供 `ridge_stacking` 学权重。
 
 ## 预测
 
@@ -75,6 +86,8 @@
 | MSMD | 多变量 direct 预测目标 |
 | MSMR | 多变量递归预测目标 |
 | MSMDR | 多变量分块 direct-recursive |
+| USBR | 单变量 Direct+Recursive 加权融合（blend） |
+| MSBR | 多变量 Direct+Recursive 加权融合（blend） |
 
 预测输出：
 
@@ -91,10 +104,10 @@
 `prediction_plot_concat.csv` 用于未来预测图排障，当前除 `time,value,series_type` 外还会保存：
 
 - `raw_value`：历史上下文真实值或未来预测原值
-- `plot_value`：用于 `prediction.png` 的绘图值；历史上下文低于正样本 `P5` 阈值的点写为 `NaN`
-- `plot_valid`：该点是否参与主图连线
+- `plot_value`：eval_mask 掩码后的绘图候选值；历史上下文被掩码判为异常的点写为 `NaN`
+- `plot_valid`：该点是否通过 eval_mask
 
-`prediction.png` 的历史上下文主线使用 `plot_value`，未来预测主线始终使用 `prediction.csv` 中的原始 `predict_value`，不做裁剪或平滑。
+`prediction.png` 的历史上下文主线当前直接绘制**原始 `y`**（保证线条连续不断线），未来预测主线使用 `prediction.csv` 中的原始 `predict_value`，不做裁剪或平滑；`plot_value`/`plot_valid` 保留在 CSV 中供排障和自定义绘图使用。（滑窗测试图 `test_prediction.png` 仍按 eval_mask 对无效点断线显示。）
 
 ## 与入口配置的关系
 

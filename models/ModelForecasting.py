@@ -228,9 +228,54 @@ class Forecaster:
     def _transform_features(self, X: pd.DataFrame, categorical_features: List[str]):
         """
         baseline 训练路径没有 feature scaler；此时预测阶段直接使用原始特征。
+
+        无 scaler 时仍需保证列 schema 与训练一致：未来帧外生列可能缺失
+        （如 weather_future 未覆盖预测期），LightGBM 会因特征数不一致直接报错。
+        从模型的 feature_name_ / 训练列恢复 schema，缺列用 NaN→dropna 前中位数兜底
+        与 _align_feature_schema 同语义（保持列序一致）。
         """
         if self.feature_scaler is None:
-            return X.copy()
+            X_out = X.copy()
+            # 恢复训练期列 schema（LightGBM booster 持有 feature_name_；
+            # 其他模型按传入列原样）
+            training_columns = None
+            model = getattr(self, "model", None)
+            if isinstance(model, dict):
+                inner = model.get("models")
+                if isinstance(inner, dict) and inner:
+                    first = next(iter(inner.values()))
+                    model = first
+            booster = getattr(model, "booster_", None)
+            if booster is not None:
+                try:
+                    training_columns = list(booster.feature_name())
+                except Exception:
+                    training_columns = None
+            inner_est = getattr(model, "estimators_", None)
+            if training_columns is None and inner_est:
+                leaf = inner_est[0]
+                while hasattr(leaf, "estimator"):
+                    leaf = leaf.estimator
+                leaf_booster = getattr(leaf, "booster_", None)
+                if leaf_booster is not None:
+                    try:
+                        training_columns = list(leaf_booster.feature_name())
+                    except Exception:
+                        training_columns = None
+            if training_columns:
+                missing_cols = [c for c in training_columns if c not in X_out.columns]
+                if missing_cols:
+                    logger.warning(
+                        f"{self.log_prefix} Missing columns at inference (no-scaler baseline): {missing_cols}"
+                    )
+                    # 缺列兜底：与 _align_feature_schema 一致用 0.0
+                    for col in missing_cols:
+                        X_out[col] = 0.0
+                extra_cols = [c for c in X_out.columns if c not in training_columns]
+                if extra_cols:
+                    X_out = X_out.drop(columns=extra_cols)
+                X_out = X_out[training_columns]
+            return X_out
         return self.feature_scaler.transform(X, categorical_features)
 
     @staticmethod

@@ -54,7 +54,7 @@ from models.ModelTraining import Trainer
 from models.ModelTesting import Tester
 from models.ModelForecasting import Forecaster
 from data_provider.outlier_handling import empty_train_outlier_report
-from utils.frequency import resolve_freq_step_minutes, resolve_samples_per_day
+from utils.frequency import resolve_freq_step_minutes, resolve_samples_per_day, is_monthly_freq
 from utils.quantile import monotonize_quantile_columns
 
 warnings.filterwarnings("ignore")
@@ -100,17 +100,28 @@ class Model:
         # 时间序列当前时刻（历史/未来分界点）
         #   schedule_mode=daily(默认): floor("1D")+1day 对齐到次日 00:00, 预测下一完整自然日
         #   schedule_mode=intraday   : 保留调度时刻, 预测从调度时刻起 predict_steps 步
+        #   月频(freq=1ME): 分界点推到下月月初(类比 daily 的 +1day), 使历史含完整月末点
         now_ts = pd.Timestamp(self.args.now_time).replace(tzinfo=None)
-        if str(getattr(self.args, "schedule_mode", "daily")).lower() == "intraday":
+        is_monthly = is_monthly_freq(self.args.freq)
+        if is_monthly:
+            # 月频分界点 = 下月月初（类比 daily 的 +1day），使历史含完整月末点
+            now_time = (now_ts.to_period("M") + 1).to_timestamp()
+            # 历史开始时刻 = now - history_days 月
+            start_time = now_time - pd.DateOffset(months=self.args.history_days)
+        elif str(getattr(self.args, "schedule_mode", "daily")).lower() == "intraday":
             now_time = now_ts
+            start_time = now_time - datetime.timedelta(days=self.args.history_days)
         else:
             now_time = now_ts.floor("1D") + datetime.timedelta(days=1)
+            start_time = now_time - datetime.timedelta(days=self.args.history_days)
         # 时间序列历史数据开始时刻（= now_time - history_days）
-        start_time = now_time - datetime.timedelta(days=self.args.history_days)
         # 预测数据长度（= predict_steps 个 freq 步长）
         self.horizon = int(self.args.predict_steps)
         # 时间序列未来结束时刻（= now_time + predict_steps × freq 步长）
-        future_time = now_time + datetime.timedelta(minutes=self.step_minutes * self.horizon)
+        if is_monthly:
+            future_time = now_time + pd.DateOffset(months=self.horizon)
+        else:
+            future_time = now_time + datetime.timedelta(minutes=self.step_minutes * self.horizon)
         # 数据划分时间戳
         self.train_start_time = start_time
         self.train_end_time = now_time

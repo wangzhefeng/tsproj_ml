@@ -13,13 +13,25 @@ from pandas.tseries.frequencies import to_offset
 # global variable
 LOGGING_LABEL = Path(__file__).name[:-3]
 
+# 月频（非固定时长）频率集合：pandas 月频 offset 无 .nanos，需单独处理
+_MONTHLY_FREQS = {"1ME", "1MS", "ME", "MS"}
+
+
+def is_monthly_freq(freq: str) -> bool:
+    """判断是否为月频（非固定时长）频率。"""
+    return str(freq) in _MONTHLY_FREQS
+
 
 def resolve_freq_step_minutes(freq: str) -> float:
     """
     解析 pandas 频率字符串对应的步长（分钟）。
 
     要求频率必须是固定时长，并且不超过 1 天。
+    月频（1ME/1MS）是非固定时长 offset，用 30 天近似，仅供 future_time 推算。
     """
+    if is_monthly_freq(freq):
+        return 30 * 24 * 60  # 近似 30 天 = 43200 分钟
+
     try:
         offset = to_offset(freq)
     except ValueError as exc:
@@ -51,7 +63,11 @@ def resolve_samples_per_day(freq: str) -> int:
     - 15min -> 96
     - 1h -> 24
     - 1D -> 1
+    月频（1ME/1MS）特判返回 1（每个月 1 个点，类比日频 n_per_day=1）。
     """
+    if is_monthly_freq(freq):
+        return 1
+
     day_minutes = 24 * 60
     step_minutes = resolve_freq_step_minutes(freq)
     quotient = day_minutes / step_minutes

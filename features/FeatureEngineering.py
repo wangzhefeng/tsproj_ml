@@ -348,7 +348,9 @@ class ExogenousFeatureEngineer:
                 list(pred_weather_features_map.values()),
             )
             # Filter df_weather for relevant columns and dropna
-            df_weather_filtered = df_weather[[col for col in [col_ts] + list(pred_weather_features_map.keys()) if col in df_weather.columns]].copy()
+            # （同时保留 pred_* 源列与白名单目标列——月度统计类数据源直接用白名单名）
+            _relevant_cols = [col_ts] + list(pred_weather_features_map.keys()) + list(pred_weather_features_map.values())
+            df_weather_filtered = df_weather[[col for col in _relevant_cols if col in df_weather.columns]].copy()
             df_weather_filtered.dropna(inplace=True, ignore_index=True)
             if df_weather_filtered.empty:
                 logger.warning(f"{self.log_prefix} df_weather_future became empty after dropping NaNs.")
@@ -371,6 +373,10 @@ class ExogenousFeatureEngineer:
                     elif pred_col == "pred_rain":
                         df_weather_filtered[pred_col] = df_weather_filtered[pred_col].apply(lambda x: x - 2.5)
                     df_copy[target_col] = df_copy["time"].map(df_weather_filtered.set_index(col_ts)[pred_col])
+                elif target_col in df_weather_filtered.columns:
+                    # 数据源已用白名单名（如月度统计文件的 rt_tt2/cal_rh 等），
+                    # 无 pred_→rt_ 映射需求，直接按时间戳对齐
+                    df_copy[target_col] = df_copy["time"].map(df_weather_filtered.set_index(col_ts)[target_col])
             
             # features to return
             weather_features = weather_features_cfg

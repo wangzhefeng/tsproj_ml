@@ -26,6 +26,10 @@ def _normalize_freq(freq: str) -> str:
 
 
 def _freq_to_timedelta(freq: str) -> pd.Timedelta:
+    # 月频是非固定频率（28~31 天），to_offset(freq).nanos 会 RAISE。
+    # 用 31 天作为上界做 target>=source 校验（月频 target 一定 >= 日频/小时频 source）。
+    if freq in ("1ME", "1MS", "ME", "MS"):
+        return pd.Timedelta(days=31)
     # cast：pandas stub 把 Timedelta 构造器标成 Timedelta | NaTType，固定频率下不会 NaT
     return cast(pd.Timedelta, pd.Timedelta(nanoseconds=int(pd.tseries.frequencies.to_offset(freq).nanos)))
 

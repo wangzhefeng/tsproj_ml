@@ -37,8 +37,10 @@ The general coding guidelines (Karpathy: think before coding, simplicity, surgic
 - **自定义外生特征注册表**（`custom_features`，`ExogenousFeatureConfig`）：多文件来源的通用外生特征通路，每项 `{name, history_path, future_path, ts_col, columns, categorical_columns}`，按精确时间戳 merge（与 weather 同机制），无 `rt_/pred_` 列名映射（历史/未来列名一致）。典型用途：计划类外生特征
 - **测试可视化叠加**（`plot_overlay_path`/`plot_overlay_col`，`OutputConfig`）：在测试图（test_prediction.png / window_plots）上以次坐标轴叠加一条参考曲线（如 PCS 功率），量级差异大时不压扁主曲线
 
-### 低频（日/周）数据配置约定
+### 低频（日/周/月）数据配置约定
 - **freq 必须写 `1D` 而非 `D`**：`default_lags_for_freq` 只认 `1D`，写 `D` 会落回 5min 基准 lags（`[288,576,...]`），与低频数据错配
+- **月频（`1ME`/`1MS`）已支持**（`utils/frequency.is_monthly_freq`）：`resolve_freq_step_minutes` 近似 30 天、`resolve_samples_per_day` 特判返回 1；`main.py` 月频分界点 = `(now_time.to_period("M")+1).to_timestamp()` 推到下月月初（月频下 `history_days` 语义变为月数、`future_time` 用 `DateOffset(months=horizon)`）；`data_aggregate._freq_to_timedelta` 月频用 31 天上界做 target≥source 校验
+- **月度气象外生**：`config/aidc_power_month/derive_weather_monthly.py` 把 1h 实测气象聚合成月频统计（ts 标签 = 月末 00:00，与目标序列对齐），统计列直接复用框架 weather 白名单名（rt_tt2/cal_rh/rt_ws10/rt_ssr）走原生 merge 通路；`FeatureEngineering.extend_future_weather_feature` 已支持白名单名直接映射（数据源列即白名单名时按时间戳对齐，无需 pred_→rt_ 映射）
 - **window_days 在低频下 ≈ 每窗训练样本数**：`main.py` 滞后校验要求 `window_days × n_per_day − horizon > max(lags)`，否则 RAISE（"Lag features would be all-NaN"；USMDP 逐点法不构造多步目标列，豁免该校验）；日频即 `window_days > max(lags) + predict_steps`
 - **history_days > window_days**：`main.py` 硬校验，否则 RAISE
 - **datetime 派生剔除子日粒度**：低频下 `datetime_features` 去掉 `minute`/`hour`，`datetime_categorical_features` 同步去对应 `dt_*` 项

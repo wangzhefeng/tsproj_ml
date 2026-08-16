@@ -19,25 +19,8 @@ overrides:
     target_ts_feat: time
     target: value
   exogenous_features:
-    enable_date_features: true
-    date_history_path: date_in_20251001_20260728.csv
-    date_future_path: date_future_in_20260729_20260805.csv
-    date_ts_feat: date
-    datetype_features:
-    - date_type
-    datetype_categorical_features:
-    - date_type  # date_type 按类别传给 LightGBM
-    enable_weather_features: true
-    weather_history_path: weather_in_20251001_20260728.csv
-    weather_future_path: weather_future_in_20260729_20260731.csv
-    weather_ts_feat: ts
-    weather_features:
-    - rt_ssr
-    - rt_ws10
-    - rt_tt2
-    - cal_rh
-    - rt_ps
-    - rt_rain
+    enable_date_features: false
+    enable_weather_features: false
     datetime_features:
     - hour
     - minute
@@ -50,6 +33,20 @@ overrides:
     - day_of_year
     - year
     datetime_categorical_features: []  # 空列表=关闭类别特征(不传 categorical_feature 给 LightGBM)
+    custom_features:
+    - name: weather_derived
+      history_path: weather_derived_in_20251001_20260728.csv
+      future_path: weather_derived_future_20260729_20260731.csv
+      ts_col: time
+      columns:
+      - rt_ssr
+      - rt_tt2
+      - cal_rh
+      - rt_ws10
+      - tt2_mean_3h
+      - tt2_diff_1h
+      - ssr_mean_3h
+      categorical_columns: []
   time_lag_features:
     lags:
     - 288

@@ -3,7 +3,7 @@ base_config: config.univariate_config
 overrides:
   output:
     scenario_subpath: aidc_ess_selfuse_load/route_A/add_weather_date
-    plot_overlay_path: A_ESS_PCS_merged_5min_20251001_20260728.csv
+    plot_overlay_path: forecasting_data/A_ESS_PCS_merged_5min_20251001_20260728.csv
     plot_overlay_col: pcs_power
   runtime:
     is_testing: true
@@ -14,7 +14,7 @@ overrides:
     now_time: '2026-07-28T23:55:00'
   target_series:
     data_dir: ./dataset/aidc_ess_selfuse_load/
-    data_path: outlier_analysis/GateEnergys/A_GateEnergys_5min_20251001_20260728_remove_outlier.csv
+    data_path: forecasting_data/A_GateEnergys_5min_20251001_20260728_remove_outlier.csv
     freq: 5min
     target_ts_feat: time
     target: value
@@ -35,8 +35,8 @@ overrides:
     datetime_categorical_features: []  # 空列表=关闭类别特征(不传 categorical_feature 给 LightGBM)
     custom_features:
     - name: weather_derived
-      history_path: weather_derived_in_20251001_20260728.csv
-      future_path: weather_derived_future_20260729_20260731.csv
+      history_path: exogenous_weather_raw/weather_derived_in_20251001_20260728.csv
+      future_path: exogenous_weather_raw/weather_derived_future_20260729_20260731.csv
       ts_col: time
       columns:
       - rt_ssr

@@ -6,8 +6,8 @@
 # 策略：物理边界硬截（abs_high 截掉设备不可能值）+ spike 检测孤立跳变。
 
 tasks:
-  - source_path: dataset/aidc_ess_selfuse_load/strategy_actual/A_PCSMerged_5min_20251001_20260728.csv
-    output_dir: dataset/aidc_ess_selfuse_load/outlier_analysis/PCSMerged
+  - source_path: dataset/aidc_ess_selfuse_load/endogenous_strategy_actual/A_PCSMerged_5min_20251001_20260728.csv
+    output_dir: dataset/aidc_ess_selfuse_load/endogenous_strategy_actual/outlier_analysis
     time_col: time
     target_col: value
     route: ESS_PCS_A
@@ -23,8 +23,8 @@ tasks:
     max_short_run_points: 0
     long_run_score_multiplier: 10.0
 
-  - source_path: dataset/aidc_ess_selfuse_load/strategy_actual/B_PCSMerged_5min_20251001_20260728.csv
-    output_dir: dataset/aidc_ess_selfuse_load/outlier_analysis/PCSMerged
+  - source_path: dataset/aidc_ess_selfuse_load/endogenous_strategy_actual/B_PCSMerged_5min_20251001_20260728.csv
+    output_dir: dataset/aidc_ess_selfuse_load/endogenous_strategy_actual/outlier_analysis
     time_col: time
     target_col: value
     route: ESS_PCS_B

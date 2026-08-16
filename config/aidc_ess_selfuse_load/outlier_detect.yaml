@@ -9,8 +9,8 @@
 # 统计可疑点不自动清洗；review_daily_plots 为其所在日期输出完整 5min 曲线供人工审核。
 
 tasks:
-  - source_path: dataset/aidc_ess_selfuse_load/A_GateEnergys_5min_20251001_20260728.csv
-    output_dir: dataset/aidc_ess_selfuse_load/outlier_analysis/GateEnergys
+  - source_path: dataset/aidc_ess_selfuse_load/EnergyStorages_PCSs_5min/A_GateEnergys_5min_20251001_20260728.csv
+    output_dir: dataset/aidc_ess_selfuse_load/EnergyStorages_PCSs_5min/outlier_analysis
     time_col: time
     target_col: value
     route: ESS_A
@@ -26,8 +26,8 @@ tasks:
     max_short_run_points: 0
     long_run_score_multiplier: 10.0
 
-  - source_path: dataset/aidc_ess_selfuse_load/B_GateEnergys_5min_20251001_20260728.csv
-    output_dir: dataset/aidc_ess_selfuse_load/outlier_analysis/GateEnergys
+  - source_path: dataset/aidc_ess_selfuse_load/EnergyStorages_PCSs_5min/B_GateEnergys_5min_20251001_20260728.csv
+    output_dir: dataset/aidc_ess_selfuse_load/EnergyStorages_PCSs_5min/outlier_analysis
     time_col: time
     target_col: value
     route: ESS_B

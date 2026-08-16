@@ -4,7 +4,7 @@ overrides:
   output:
     scenario_subpath: aidc_ess_selfuse_load/route_A/todo
     setting_suffix: '-h21w14'
-    plot_overlay_path: A_ESS_PCS_merged_5min_20251001_20260728.csv
+    plot_overlay_path: forecasting_data/A_ESS_PCS_merged_5min_20251001_20260728.csv
     plot_overlay_col: pcs_power
   runtime:
     is_testing: true
@@ -15,7 +15,7 @@ overrides:
     now_time: '2026-07-28T23:55:00'
   target_series:
     data_dir: ./dataset/aidc_ess_selfuse_load/
-    data_path: outlier_analysis/GateEnergys/A_GateEnergys_5min_20251001_20260728_remove_outlier.csv
+    data_path: forecasting_data/A_GateEnergys_5min_20251001_20260728_remove_outlier.csv
     freq: 5min
     target_ts_feat: time
     target: value

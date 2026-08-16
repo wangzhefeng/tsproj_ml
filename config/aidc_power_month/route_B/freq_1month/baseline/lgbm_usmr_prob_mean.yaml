@@ -1,0 +1,66 @@
+# B — lightgbm — direct (月频单变量 · 概率预测 quantile)
+# 月频 10 点 + 月度气象统计特征（weather_monthly_stats，历史段 rt_ 实测聚合）。
+# is_forecasting 暂关：2026-08 预测气象补充后开启。
+base_config: config.univariate_config
+overrides:
+  output:
+    scenario_subpath: aidc_power_month/route_B/freq_1month/baseline
+  runtime:
+    is_testing: true
+    is_forecasting: false  # 2026-08 预测气象待补充，补齐后再开启
+    history_days: 10
+    predict_steps: 1
+    window_days: 8    # 8 个月训练窗口（7 行训练 + 1 行目标）
+    now_time: '2026-07-31T00:00:00'  # 月频月末标签
+  target_series:
+    data_dir: ./dataset/aidc_power_month/freq_1month/
+    data_path: B_Loads_1month_sum_20251001_20260728.csv
+    freq: 1ME           # 月频（框架已扩展支持）
+    target_ts_feat: time
+    target: value
+  exogenous_features:
+    enable_date_features: false
+    enable_weather_features: true
+    weather_history_path: weather_monthly_stats_202510_202607.csv
+    weather_future_path: null   # 2026-08 预测气象待补充，补齐后改指实际文件
+    weather_ts_feat: ts
+    weather_features:
+    - rt_tt2   # 月均 2m 气温（Kelvin）
+    - cal_rh   # 月均相对湿度 %
+    - rt_ssr   # 月总辐射
+    - rt_ws10  # 月均 10m 风速
+    datetime_features:
+    - month
+    - quarter
+    - year
+    datetime_categorical_features: []
+  time_lag_features:
+    lags:
+    - 1
+    - 2
+    - 3
+  advanced_features:
+    enable_advanced_features: false
+  model_strategy:
+    model_type: lightgbm
+    model_params:
+      min_child_samples: 2   # 月频每窗训练行少(≤7)，默认 20 无法分裂
+    pred_method: univariate-single-multistep-recursive
+    predict_type: quantile
+    quantiles:
+    - 0.1
+    - 0.5
+    - 0.9
+  training_enhancement:
+    enable_time_decay_sample_weight: false
+  train_outlier:
+    enable_train_outlier_handling: false
+  eval_mask:
+    mode: percentile
+    percentile: 5.0
+  preprocessing:
+    detrend_target: false  # 月频 10 点训练数据少，去趋势 polyfit 会因 1-2 行数据崩溃
+  performance:
+    window_parallel_workers: 1
+    multi_output_n_jobs: 1
+    model_thread_count: 1

@@ -1,0 +1,17 @@
+# AIDC 月度用电量预测 — 日频用电量周期检测
+# 由 data_process/periodicity_analysis.py run_periodicity_analysis 加载
+# 三路检测: FFT 主导周期 + ACF 周期候选 + STL 季节性分解
+# 日频数据检测周/月周期 (seasonal_period=7 检周周期)
+
+tasks:
+  - source_path: dataset/aidc_power_month/freq_1day/A_Loads_1day_sum_20251001_20260728.csv
+    time_col: time
+    target_col: value
+    route: load_month_A_1day
+    seasonal_period: 7
+
+  - source_path: dataset/aidc_power_month/freq_1day/B_Loads_1day_sum_20251001_20260728.csv
+    time_col: time
+    target_col: value
+    route: load_month_B_1day
+    seasonal_period: 7

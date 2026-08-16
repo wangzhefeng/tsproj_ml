@@ -1,0 +1,27 @@
+# AIDC A/B 路清洗后 5min 负荷 → 月频电量（kWh）聚合配置
+# 由 data_process/data_aggregate.py run_aggregation 加载。
+# unit_scale = 1/12：5min 平均功率（kW）按月求和后转换为电量 kWh。
+# 月频是非固定频率（1ME），data_aggregate 已通过 _freq_to_timedelta 特判支持。
+
+tasks:
+  - source_path: dataset/aidc_load_5min/outlier_analysis/A_Loads_5min_20251001_20260728_remove_outlier.csv
+    time_col: time
+    target_col: value
+    source_freq: 5min
+    target_freq: 1ME
+    method: sum
+    fill_method: linear
+    fill_weeks: 4
+    unit_scale: 0.0833333333333333
+    output_path: dataset/aidc_power_month/freq_1month/A_Loads_1month_sum_20251001_20260728.csv
+
+  - source_path: dataset/aidc_load_5min/outlier_analysis/B_Loads_5min_20251001_20260728_remove_outlier.csv
+    time_col: time
+    target_col: value
+    source_freq: 5min
+    target_freq: 1ME
+    method: sum
+    fill_method: linear
+    fill_weeks: 4
+    unit_scale: 0.0833333333333333
+    output_path: dataset/aidc_power_month/freq_1month/B_Loads_1month_sum_20251001_20260728.csv

@@ -1,0 +1,17 @@
+# AIDC 月度用电量预测 — 月频电量周期检测
+# 由 data_process/periodicity_analysis.py run_periodicity_analysis 加载。
+# 月频数据仅 10 个点，ACF/FFT 周期检测在统计上不可靠（lag > 3 无意义），
+# 但仍执行以输出报告供参考。STL seasonal_period=3（季度）。
+
+tasks:
+  - source_path: dataset/aidc_power_month/freq_1month/A_Loads_1month_sum_20251001_20260728.csv
+    time_col: time
+    target_col: value
+    route: power_month_A_1month
+    seasonal_period: 3
+
+  - source_path: dataset/aidc_power_month/freq_1month/B_Loads_1month_sum_20251001_20260728.csv
+    time_col: time
+    target_col: value
+    route: power_month_B_1month
+    seasonal_period: 3

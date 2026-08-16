@@ -1,0 +1,18 @@
+# AIDC 月度用电量预测 — 日频电量峰谷检测
+# 由 data_process/peak_valley_detection.py run_peak_valley_detection 加载。
+# 仅使用模型同源的 1day_sum 数据，按周尺度过滤相邻局部极值。
+
+tasks:
+  - source_path: dataset/aidc_power_month/freq_1day/A_Loads_1day_sum_20251001_20260728.csv
+    time_col: time
+    target_col: value
+    route: power_month_A_1day
+    distance: 7
+    top_n: 20
+
+  - source_path: dataset/aidc_power_month/freq_1day/B_Loads_1day_sum_20251001_20260728.csv
+    time_col: time
+    target_col: value
+    route: power_month_B_1day
+    distance: 7
+    top_n: 20

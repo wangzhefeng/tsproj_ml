@@ -1,0 +1,27 @@
+# AIDC A/B 路清洗后 5min 负荷 → 月度用电量预测日频电量（kWh）
+# 由 data_process/data_aggregate.py run_aggregation 加载。
+# 该场景仅保留 1D sum：模型训练、周期性和峰谷分析共用同一日频电量数据。
+# unit_scale = 1/12：5min 平均功率（kW）按日求和后转换为电量 kWh。
+
+tasks:
+  - source_path: dataset/aidc_load_5min/outlier_analysis/A_Loads_5min_20251001_20260728_remove_outlier.csv
+    time_col: time
+    target_col: value
+    source_freq: 5min
+    target_freq: 1D
+    method: sum
+    fill_method: linear
+    fill_weeks: 4
+    unit_scale: 0.0833333333333333
+    output_path: dataset/aidc_power_month/freq_1day/A_Loads_1day_sum_20251001_20260728.csv
+
+  - source_path: dataset/aidc_load_5min/outlier_analysis/B_Loads_5min_20251001_20260728_remove_outlier.csv
+    time_col: time
+    target_col: value
+    source_freq: 5min
+    target_freq: 1D
+    method: sum
+    fill_method: linear
+    fill_weeks: 4
+    unit_scale: 0.0833333333333333
+    output_path: dataset/aidc_power_month/freq_1day/B_Loads_1day_sum_20251001_20260728.csv

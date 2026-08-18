@@ -4,7 +4,7 @@
 # 仅处理物理越界和两侧稳定同伴支持的孤立跳飞；持续负荷变化保留原值。
 
 tasks:
-  - source_path: dataset/aidc_load_5min/A_Loads_5min_20251001_20260728.csv
+  - source_path: dataset/aidc_load_5min/A_Loads_5min_20251001_20260731.csv
     time_col: time
     target_col: value
     route: power_A_5min
@@ -20,7 +20,7 @@ tasks:
     periodic_robust_z_threshold: .inf
     auto_clean_statistical: false
 
-  - source_path: dataset/aidc_load_5min/B_Loads_5min_20251001_20260728.csv
+  - source_path: dataset/aidc_load_5min/B_Loads_5min_20251001_20260731.csv
     time_col: time
     target_col: value
     route: power_B_5min

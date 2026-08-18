@@ -4,7 +4,7 @@
 # unit_scale = 1/12：5min 平均功率（kW）按日求和后转换为电量 kWh。
 
 tasks:
-  - source_path: dataset/aidc_load_5min/outlier_analysis/A_Loads_5min_20251001_20260728_remove_outlier.csv
+  - source_path: dataset/aidc_load_5min/outlier_analysis/A_Loads_5min_20251001_20260731_remove_outlier.csv
     time_col: time
     target_col: value
     source_freq: 5min
@@ -13,9 +13,9 @@ tasks:
     fill_method: linear
     fill_weeks: 4
     unit_scale: 0.0833333333333333
-    output_path: dataset/aidc_power_month/freq_1day/A_Loads_1day_sum_20251001_20260728.csv
+    output_path: dataset/aidc_power_month/freq_1day/A_Loads_1day_sum_20251001_20260731.csv
 
-  - source_path: dataset/aidc_load_5min/outlier_analysis/B_Loads_5min_20251001_20260728_remove_outlier.csv
+  - source_path: dataset/aidc_load_5min/outlier_analysis/B_Loads_5min_20251001_20260731_remove_outlier.csv
     time_col: time
     target_col: value
     source_freq: 5min
@@ -24,4 +24,4 @@ tasks:
     fill_method: linear
     fill_weeks: 4
     unit_scale: 0.0833333333333333
-    output_path: dataset/aidc_power_month/freq_1day/B_Loads_1day_sum_20251001_20260728.csv
+    output_path: dataset/aidc_power_month/freq_1day/B_Loads_1day_sum_20251001_20260731.csv

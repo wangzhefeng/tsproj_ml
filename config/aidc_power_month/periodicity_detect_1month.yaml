@@ -4,13 +4,13 @@
 # 但仍执行以输出报告供参考。STL seasonal_period=3（季度）。
 
 tasks:
-  - source_path: dataset/aidc_power_month/freq_1month/A_Loads_1month_sum_20251001_20260728.csv
+  - source_path: dataset/aidc_power_month/freq_1month/A_Loads_1month_sum_20251001_20260731.csv
     time_col: time
     target_col: value
     route: power_month_A_1month
     seasonal_period: 3
 
-  - source_path: dataset/aidc_power_month/freq_1month/B_Loads_1month_sum_20251001_20260728.csv
+  - source_path: dataset/aidc_power_month/freq_1month/B_Loads_1month_sum_20251001_20260731.csv
     time_col: time
     target_col: value
     route: power_month_B_1month

@@ -3,14 +3,14 @@
 # 月频数据仅 10 个点，top_n 和 distance 按月频尺度调整。
 
 tasks:
-  - source_path: dataset/aidc_power_month/freq_1month/A_Loads_1month_sum_20251001_20260728.csv
+  - source_path: dataset/aidc_power_month/freq_1month/A_Loads_1month_sum_20251001_20260731.csv
     time_col: time
     target_col: value
     route: power_month_A_1month
     distance: 2
     top_n: 5
 
-  - source_path: dataset/aidc_power_month/freq_1month/B_Loads_1month_sum_20251001_20260728.csv
+  - source_path: dataset/aidc_power_month/freq_1month/B_Loads_1month_sum_20251001_20260731.csv
     time_col: time
     target_col: value
     route: power_month_B_1month

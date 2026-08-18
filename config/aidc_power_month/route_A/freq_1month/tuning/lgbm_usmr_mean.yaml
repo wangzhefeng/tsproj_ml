@@ -1,21 +1,21 @@
 # A — lightgbm — direct (月频单变量 · 概率预测 quantile)
 # tuning 变体：window_days=10（全量窗口），history_days=12
 # 月频 10 点 + 月度气象统计特征（weather_monthly_stats，历史段 rt_ 实测聚合）。
-# is_forecasting 暂关：2026-08 预测气象补充后开启。
+# is_forecasting 已开启：2026-08 未来气象由 derive_weather_monthly_future.py 构造（08-01~14 实测 + 08-15~31 去年同期仿真）。
 base_config: config.univariate_config
 overrides:
   output:
     scenario_subpath: aidc_power_month/route_A/freq_1month/tuning
   runtime:
     is_testing: true
-    is_forecasting: false  # 2026-08 预测气象待补充，补齐后再开启
+    is_forecasting: true   # 2026-08 未来气象已补齐（前半月实测+去年同期仿真）
     history_days: 12   # window=10 硬校验要求 history>window；12 → 3 个滑窗与 baseline 可比（前 2 行为数据外 NaN，dropna 剔除）
     predict_steps: 1    # 月频预测 1 步 = 1 个月
     window_days: 10   # 全量 10 个月训练窗口（9 行训练 + 1 行目标）
     now_time: '2026-07-31T00:00:00'  # 月频月末标签
   target_series:
     data_dir: ./dataset/aidc_power_month/freq_1month/
-    data_path: A_Loads_1month_sum_20251001_20260728.csv
+    data_path: A_Loads_1month_sum_20251001_20260731.csv
     freq: 1ME           # 月频（框架已扩展支持）
     target_ts_feat: time
     target: value
@@ -23,7 +23,7 @@ overrides:
     enable_date_features: false
     enable_weather_features: true
     weather_history_path: weather_monthly_stats_202510_202607.csv
-    weather_future_path: null   # 2026-08 预测气象待补充，补齐后改指实际文件
+    weather_future_path: weather_monthly_stats_future_202608.csv  # 08-01~14 实测 + 08-15~31 去年同期仿真（derive_weather_monthly_future.py）
     weather_ts_feat: ts
     weather_features:
     - rt_tt2   # 月均 2m 气温（Kelvin）

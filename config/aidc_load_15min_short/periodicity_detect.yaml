@@ -2,14 +2,14 @@
 # 由 data_process/periodicity_analysis.py run_periodicity_analysis 加载
 
 tasks:
-  - source_path: dataset/aidc_load_15min_short/A_Loads_15min_mean_20251001_20260728.csv
+  - source_path: dataset/aidc_load_15min_short/A_Loads_15min_mean_20251001_20260731.csv
     time_col: time
     target_col: value
     route: power_A_15min_short
     max_lags: 400
     seasonal_period: 96
 
-  - source_path: dataset/aidc_load_15min_short/B_Loads_15min_mean_20251001_20260728.csv
+  - source_path: dataset/aidc_load_15min_short/B_Loads_15min_mean_20251001_20260731.csv
     time_col: time
     target_col: value
     route: power_B_15min_short

@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """aidc_load_5min 的 1h 气象数据 → 月频统计特征聚合。
 
-将 dataset/aidc_load_5min/weather_in_20251001_20260728.csv（1h 采样，rt_ 实测列）
+将 dataset/aidc_load_5min/weather_in_20250101_20260731.csv（1h 采样，rt_ 实测列）
 按月聚合出统计特征，ts 标签 = 月末 00:00:00（与 freq_1month 目标序列的时间标签
 对齐，供框架 weather 通路按精确时间戳 merge）。
 
@@ -23,7 +23,7 @@
 CSV 中供 custom_features 或人工分析使用（框架 weather 通路只用白名单 4 列）。
 
 输入:
-  dataset/aidc_load_5min/weather_in_20251001_20260728.csv
+  dataset/aidc_load_5min/weather_in_20250101_20260731.csv
 输出:
   dataset/aidc_power_month/freq_1month/weather_monthly_stats_202510_202607.csv
 
@@ -36,7 +36,7 @@ import numpy as np
 import pandas as pd
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
-SOURCE_PATH = PROJECT_ROOT / "dataset/aidc_load_5min/weather_in_20251001_20260728.csv"
+SOURCE_PATH = PROJECT_ROOT / "dataset/aidc_load_5min/weather_in_20250101_20260731.csv"
 OUTPUT_PATH = PROJECT_ROOT / "dataset/aidc_power_month/freq_1month/weather_monthly_stats_202510_202607.csv"
 
 

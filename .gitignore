@@ -158,6 +158,7 @@ lightning_logs/
 .uv_cache/
 .venv/
 .workbuddy/
+.zcode/
 dataset/
 logs/
 results/

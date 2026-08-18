@@ -13,6 +13,15 @@
     7. 缩短历史数据；
 2. 站用电
     - 典型曲线方法
-    - 非典型日处理, 异常处理
-    - 特殊事件识别、捕捉
+      - baseline 测试：无 date, weather, plan_strategy 特征
+      - add_exogenous_all: 加 date, weather, plan_strategy 特征
+    - 非典型日处理、异常处理；特殊事件识别、捕捉
+      - baseline 测试：无 date、weather、plan_strategy 标签、actual_strategy 标签特征
+      - add_exogenous_all：加 date、weather、plan_strategy 标签、actual_strategy 标签特征
+      - add_endogenous_exogenous：加 date、weather、plan_strategy 标签、actual_strategy 标签特征
     - EMS：两个源数据是否时间戳对齐，是否由于没对齐导致了异常值；站用电的影响因素
+    - 非典型日：
+      - 2026-07-23
+      - 2026-07-17
+      - 2026-07-16
+      - 2026-07-10

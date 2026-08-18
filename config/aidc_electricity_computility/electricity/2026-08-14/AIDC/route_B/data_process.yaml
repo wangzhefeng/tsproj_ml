@@ -1,0 +1,24 @@
+# 2026-08-14 / AIDC/route_B 点位功率清洗与聚合配置
+scene: AIDC/route_B
+enabled: true
+disabled_reason: ""
+dataset_dir: dataset/aidc_electricity_computility/electricity/2026-08-14/AIDC/route_B
+start_time: '2026-07-14 00:00:00'
+end_time: '2026-08-14 23:55:00'
+freq: 5min
+time_col: time
+value_col: value
+input_glob: '*.csv'
+exclude_globs:
+  - date_*.csv
+  - weather_*.csv
+  - df_power.csv
+  - df_power_audit.json
+output_file: df_power.csv
+audit_file: df_power_audit.json
+max_fill_gap_slots: 288
+outlier:
+  spike_half_window: 2
+  spike_z_threshold: 8.0
+  spike_abs_diff_mad_multiplier: 8.0
+  spike_min_abs_diff: 1.0

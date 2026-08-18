@@ -9,7 +9,6 @@
 | `build_strategy_features.py` | 薄 CLI 入口，只负责参数解析和调用流水线 |
 | `strategy_features.yaml` | v2 数据边界、运行阈值、相似日参数和 A/B 路数据源 |
 | `strategy_features/` | v2 可测试实现：时间窗口、状态编码、周期画像、相似日与主流水线 |
-| `route_{A,B}/add_strategy_features/` | v1 策略特征实验配置 |
 | `route_{A,B}/add_strategy_features_v2/` | v2 C0–C3 消融实验配置 |
 
 生成数据落在 `dataset/aidc_ess_selfuse_load/forecasting_data/strategy_features/`，由仓库级 `dataset/` 忽略规则排除，不提交 Git。

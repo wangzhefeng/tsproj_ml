@@ -49,6 +49,17 @@ SIMILAR_DAY_FEATURE_COLUMNS = [
     "template_feature_ready",
 ]
 
+JOINT_CLUSTER_FEATURE_COLUMNS = [
+    "joint_cluster_lag1_c0",
+    "joint_cluster_lag1_c1",
+    "joint_cluster_lag1_c2",
+    "joint_cluster_lag1_c3",
+    "joint_cluster_lag1_c4",
+    "joint_cluster_lag1_distance",
+    "joint_cluster_lag1_rare",
+    "joint_cluster_feature_ready",
+]
+
 MODEL_FEATURE_COLUMNS = [
     "time",
     "pcs_plan",
@@ -59,6 +70,7 @@ MODEL_FEATURE_COLUMNS = [
     *PLAN_CYCLE_FEATURE_COLUMNS,
     *LAG_FEATURE_COLUMNS,
     *SIMILAR_DAY_FEATURE_COLUMNS,
+    *JOINT_CLUSTER_FEATURE_COLUMNS,
 ]
 
 CRITICAL_FUTURE_COLUMNS = set(MODEL_FEATURE_COLUMNS) - {"time"}

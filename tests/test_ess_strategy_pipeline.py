@@ -9,6 +9,7 @@ import yaml
 
 from config.aidc_ess_selfuse_load.strategy_features.contracts import (
     FORBIDDEN_FUTURE_PATTERNS,
+    JOINT_CLUSTER_FEATURE_COLUMNS,
     MODEL_FEATURE_COLUMNS,
 )
 from config.aidc_ess_selfuse_load.strategy_features.pipeline import (
@@ -115,6 +116,16 @@ class EssStrategyPipelineTest(unittest.TestCase):
                 "count_scale": 10.0,
                 "min_effective_samples": 2.0,
             },
+            "joint_clustering": {
+                "enabled": True,
+                "reference_fit_end": "2026-01-16",
+                "pca_variance_ratio": 0.90,
+                "candidate_clusters": [2, 3],
+                "max_clusters": 5,
+                "rare_cluster_min_days": 3,
+                "random_state": 42,
+                "n_init": 20,
+            },
             "routes": {
                 route: {
                     "target_path": f"{route}_target.csv",
@@ -163,8 +174,20 @@ class EssStrategyPipelineTest(unittest.TestCase):
                 "calendar_day_quality",
                 "dispatch_cycle_summary",
                 "similar_day_matches",
+                "joint_cluster_assignments_A_fit-20260116" if route == "A" else "joint_cluster_assignments_B_fit-20260116",
             ):
-                self.assertTrue((audit_dir / f"{name}_{route}.csv").exists())
+                path = (
+                    audit_dir / f"{name}.csv"
+                    if name.startswith("joint_cluster_assignments")
+                    else audit_dir / f"{name}_{route}.csv"
+                )
+                self.assertTrue(path.exists())
+            artifact_path = (
+                output_dir
+                / "artifacts"
+                / f"joint_cluster_{route}_fit-20260116.joblib"
+            )
+            self.assertTrue(artifact_path.exists())
             audit_path = audit_dir / f"feature_build_audit_{route}.json"
             self.assertTrue(audit_path.exists())
             audit = json.loads(audit_path.read_text(encoding="utf-8"))
@@ -185,6 +208,21 @@ class EssStrategyPipelineTest(unittest.TestCase):
                 len(pd.date_range(self.data_start.normalize(), self.future_start, freq="1D")),
             )
             self.assertEqual(int(future["plan_is_novel"].sum()), 0)
+            self.assertEqual(audit["joint_clustering"]["fit_end"], "2026-01-16T00:00:00")
+            self.assertIn(audit["joint_clustering"]["selected_k"], (2, 3))
+            self.assertEqual(
+                audit["leakage_checks"]["future_joint_source_max"],
+                "2026-01-18T00:00:00",
+            )
+            self.assertEqual(int(future["joint_cluster_feature_ready"].sum()), 288)
+            np.testing.assert_allclose(
+                future[[f"joint_cluster_lag1_c{i}" for i in range(5)]].sum(axis=1),
+                1.0,
+            )
+            self.assertEqual(
+                list(future.columns[-len(JOINT_CLUSTER_FEATURE_COLUMNS) :]),
+                JOINT_CLUSTER_FEATURE_COLUMNS,
+            )
 
     def test_plan_and_lags_use_exact_timestamp_alignment(self):
         missing_source = pd.Timestamp("2026-01-10 12:00:00")
@@ -246,6 +284,7 @@ class EssStrategyPipelineTest(unittest.TestCase):
             "summarize_dispatch_profiles",
             "build_strategy_features",
             "MODEL_FEATURE_COLUMNS",
+            "JointClusteringConfig",
         ):
             self.assertIn(name, package.__all__)
             self.assertTrue(hasattr(package, name))
@@ -338,6 +377,35 @@ class EssStrategyPipelineTest(unittest.TestCase):
                 )
                 self.assertNotIn(key, seen)
                 seen.add(key)
+
+    def test_c5_joint_configs_are_testing_only_and_select_joint_columns(self):
+        root = Path(__file__).resolve().parent.parent / "config/aidc_ess_selfuse_load"
+        for route in ("A", "B"):
+            path = (
+                root
+                / f"route_{route}/add_strategy_features_v2/lgbm_usmdp_mean_c5_joint.yaml"
+            )
+            loaded = yaml.safe_load(path.read_text(encoding="utf-8"))
+            overrides = loaded["overrides"]
+            self.assertEqual(
+                overrides["output"]["setting_suffix"], "-v2-c5-joint"
+            )
+            self.assertTrue(overrides["runtime"]["is_testing"])
+            self.assertFalse(overrides["runtime"]["is_forecasting"])
+            self.assertEqual(
+                overrides["model_strategy"]["pred_method"],
+                "univariate-single-multistep-direct-pointwise",
+            )
+            self.assertEqual(overrides["model_strategy"]["predict_type"], "point")
+            self.assertFalse(overrides["time_lag_features"]["enable_lags_features"])
+            self.assertEqual(overrides["time_lag_features"]["lags"], [])
+            columns = overrides["exogenous_features"]["custom_features"][0][
+                "columns"
+            ]
+            self.assertEqual(
+                columns[-len(JOINT_CLUSTER_FEATURE_COLUMNS) :],
+                JOINT_CLUSTER_FEATURE_COLUMNS,
+            )
 
     def test_validate_only_writes_nothing_and_overwrite_requires_force(self):
         output_dir = self.data_root / "forecasting_data" / "strategy_features"

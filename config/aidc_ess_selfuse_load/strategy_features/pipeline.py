@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 from typing import Any, Mapping
 
+import joblib
 import numpy as np
 import pandas as pd
 import yaml
@@ -18,6 +19,12 @@ from .contracts import (
     MODEL_FEATURE_COLUMNS,
     PLAN_CYCLE_FEATURE_COLUMNS,
     SIMILAR_DAY_FEATURE_COLUMNS,
+)
+from .joint_clustering import (
+    JointClusterArtifact,
+    JointClusteringConfig,
+    build_joint_lag_features,
+    fit_joint_cluster_artifact,
 )
 from .profiles import summarize_dispatch_profiles
 from .similar_day import SimilarDayConfig, estimate_similar_day_template
@@ -50,6 +57,8 @@ class StrategyFeatureConfig:
     dispatch_start_hour: int
     thresholds: OperatingThresholds
     similar_day: SimilarDayConfig
+    joint_clustering: JointClusteringConfig
+    joint_reference_fit_end: pd.Timestamp
     routes: dict[str, RoutePaths]
     data_root: Path
     output_dir: Path
@@ -62,6 +71,8 @@ class RouteBuildResult:
     calendar_day_quality: pd.DataFrame
     dispatch_cycle_summary: pd.DataFrame
     similar_day_matches: pd.DataFrame
+    joint_cluster_assignments: pd.DataFrame
+    joint_cluster_artifact: JointClusterArtifact
     audit: dict[str, Any]
 
 
@@ -98,6 +109,7 @@ def load_strategy_config(
         "dispatch_cycle",
         "states",
         "similar_day",
+        "joint_clustering",
         "routes",
     }
     missing = sorted(required - set(raw))
@@ -139,6 +151,21 @@ def load_strategy_config(
         min_effective_samples=float(similar["min_effective_samples"]),
     )
 
+    joint = _require_mapping(raw["joint_clustering"], "joint_clustering")
+    if joint.get("enabled") is not True:
+        raise ValueError("joint_clustering.enabled must be true for the P6 pipeline")
+    joint_reference_fit_end = pd.Timestamp(joint["reference_fit_end"]).normalize()
+    joint_clustering = JointClusteringConfig(
+        pca_variance_ratio=float(joint["pca_variance_ratio"]),
+        candidate_clusters=tuple(int(value) for value in joint["candidate_clusters"]),
+        max_clusters=int(joint["max_clusters"]),
+        rare_cluster_min_days=int(joint["rare_cluster_min_days"]),
+        random_state=int(joint["random_state"]),
+        n_init=int(joint["n_init"]),
+    )
+    if joint_clustering.max_clusters != 5:
+        raise ValueError("joint_clustering.max_clusters must be 5")
+
     route_config = _require_mapping(raw["routes"], "routes")
     if set(route_config) != {"A", "B"}:
         raise ValueError("routes must contain exactly A and B")
@@ -157,6 +184,8 @@ def load_strategy_config(
         raise ValueError("data_start must be a natural-day boundary")
     if as_of_time != as_of_time.normalize() + pd.Timedelta(hours=23, minutes=55):
         raise ValueError("as_of_time must be the final 5-minute slot of a natural day")
+    if not data_start <= joint_reference_fit_end <= as_of_time.normalize():
+        raise ValueError("joint_clustering.reference_fit_end must be within the history range")
 
     return StrategyFeatureConfig(
         logic_version=2,
@@ -169,6 +198,8 @@ def load_strategy_config(
         dispatch_start_hour=22,
         thresholds=thresholds,
         similar_day=similar_day,
+        joint_clustering=joint_clustering,
+        joint_reference_fit_end=joint_reference_fit_end,
         routes=routes,
         data_root=root,
         output_dir=root / "forecasting_data" / "strategy_features",
@@ -491,6 +522,7 @@ def _build_model_frame(
     plan_summary: pd.DataFrame,
     lag_features: pd.DataFrame,
     similar_features: pd.DataFrame,
+    joint_features: pd.DataFrame,
 ) -> pd.DataFrame:
     plan_values = plan_series.reindex(grid)
     plan_states = encode_plan_direction(plan_values.reset_index(drop=True))
@@ -503,6 +535,7 @@ def _build_model_frame(
             _broadcast_plan_features(grid, plan_summary).reset_index(drop=True),
             lag_features.reset_index(drop=True),
             similar_features.reset_index(drop=True),
+            joint_features.reset_index(drop=True),
         ],
         axis=1,
     )
@@ -633,6 +666,24 @@ def _build_route(
         scope = "future" if missing_plan_days[0] in future_days else "history"
         raise ValueError(f"{scope} plan day {missing_plan_days[0].date()} is incomplete")
     target_days = _complete_day_dictionary(target_series, history_days)
+    actual_days = _complete_day_dictionary(actual_series, history_days)
+
+    joint_artifact = fit_joint_cluster_artifact(
+        target_days,
+        actual_days,
+        plan_days,
+        fit_end=config.joint_reference_fit_end,
+        config=config.joint_clustering,
+    )
+    history_joint, history_joint_assignments = build_joint_lag_features(
+        history_grid, joint_artifact, target_days, actual_days, plan_days
+    )
+    future_joint, future_joint_assignments = build_joint_lag_features(
+        future_grid, joint_artifact, target_days, actual_days, plan_days
+    )
+    joint_assignments = pd.concat(
+        [history_joint_assignments, future_joint_assignments], ignore_index=True
+    )
 
     history_similar, history_matches = _build_similar_features(
         history_grid, history_days, plan_days, target_days, config, future=False
@@ -641,10 +692,20 @@ def _build_route(
         future_grid, future_days, plan_days, target_days, config, future=True
     )
     history = _build_model_frame(
-        history_grid, plan_series, plan_summary, history_lag, history_similar
+        history_grid,
+        plan_series,
+        plan_summary,
+        history_lag,
+        history_similar,
+        history_joint,
     )
     future = _build_model_frame(
-        future_grid, plan_series, plan_summary, future_lag, future_similar
+        future_grid,
+        plan_series,
+        plan_summary,
+        future_lag,
+        future_similar,
+        future_joint,
     )
     if list(history.columns) != MODEL_FEATURE_COLUMNS or list(future.columns) != MODEL_FEATURE_COLUMNS:
         raise AssertionError("history/future schema contract mismatch")
@@ -659,9 +720,22 @@ def _build_route(
     )
     matches = pd.concat([history_matches, future_matches], ignore_index=True)
     future_source_max = future_lag_sources.dropna().max()
-    leakage_pass = bool(
+    future_joint_rows = joint_assignments.loc[
+        joint_assignments["target_day"].isin(future_days)
+        & joint_assignments["ready"].eq(1)
+    ]
+    future_joint_source_max = future_joint_rows["source_day"].max()
+    lag_leakage_pass = bool(
         pd.isna(future_source_max) or pd.Timestamp(future_source_max) <= config.as_of_time
     )
+    joint_leakage_pass = bool(
+        (
+            pd.isna(future_joint_source_max)
+            or pd.Timestamp(future_joint_source_max) <= config.as_of_time
+        )
+        and joint_artifact.fit_end <= config.as_of_time.normalize()
+    )
+    leakage_pass = lag_leakage_pass and joint_leakage_pass
     audit = {
         "logic_version": config.logic_version,
         "route": route,
@@ -695,6 +769,25 @@ def _build_route(
             "future_lag": future["lag_feature_ready"].value_counts().to_dict(),
             "history_template": history["template_feature_ready"].value_counts().to_dict(),
             "future_template": future["template_feature_ready"].value_counts().to_dict(),
+            "history_joint": history["joint_cluster_feature_ready"].value_counts().to_dict(),
+            "future_joint": future["joint_cluster_feature_ready"].value_counts().to_dict(),
+        },
+        "joint_clustering": {
+            "fit_start": joint_artifact.fit_start.isoformat(),
+            "fit_end": joint_artifact.fit_end.isoformat(),
+            "reference_days": len(joint_artifact.reference_days),
+            "selected_k": joint_artifact.selected_k,
+            "silhouette_scores": joint_artifact.silhouette_scores,
+            "cluster_counts": joint_artifact.cluster_counts,
+            "rare_clusters": list(joint_artifact.rare_clusters),
+            "pca_components": {
+                view: int(pca.n_components_)
+                for view, pca in joint_artifact.pcas.items()
+            },
+            "pca_explained_variance": {
+                view: float(pca.explained_variance_ratio_.sum())
+                for view, pca in joint_artifact.pcas.items()
+            },
         },
         "similar_day_distance_quantiles": {
             str(quantile): float(matches["distance"].dropna().quantile(quantile))
@@ -728,6 +821,14 @@ def _build_route(
                 if future_lag_sources.notna().any()
                 else None
             ),
+            "future_joint_source_max": (
+                pd.Timestamp(future_joint_source_max).isoformat()
+                if not pd.isna(future_joint_source_max)
+                else None
+            ),
+            "joint_artifact_fit_end_at_or_before_as_of": (
+                joint_artifact.fit_end <= config.as_of_time.normalize()
+            ),
             "future_forbidden_column_matches": 0,
             "future_target_or_actual_rows_ignored": True,
         },
@@ -740,18 +841,28 @@ def _build_route(
         calendar_day_quality=calendar_quality,
         dispatch_cycle_summary=dispatch_summary,
         similar_day_matches=matches,
+        joint_cluster_assignments=joint_assignments,
+        joint_cluster_artifact=joint_artifact,
         audit=audit,
     )
 
 
 def _output_paths(config: StrategyFeatureConfig, route: str) -> dict[str, Path]:
     audit_dir = config.output_dir / "audit"
+    artifact_dir = config.output_dir / "artifacts"
+    fit_tag = config.joint_reference_fit_end.strftime("%Y%m%d")
     return {
         "history": config.output_dir / f"model_features_history_{route}.csv",
         "future": config.output_dir / f"model_features_future_{route}.csv",
         "calendar": audit_dir / f"calendar_day_quality_{route}.csv",
         "dispatch": audit_dir / f"dispatch_cycle_summary_{route}.csv",
         "matches": audit_dir / f"similar_day_matches_{route}.csv",
+        "joint_assignments": (
+            audit_dir / f"joint_cluster_assignments_{route}_fit-{fit_tag}.csv"
+        ),
+        "joint_artifact": (
+            artifact_dir / f"joint_cluster_{route}_fit-{fit_tag}.joblib"
+        ),
         "audit": audit_dir / f"feature_build_audit_{route}.json",
     }
 
@@ -783,11 +894,16 @@ def build_strategy_features(
         paths = paths_by_route[route]
         paths["history"].parent.mkdir(parents=True, exist_ok=True)
         paths["calendar"].parent.mkdir(parents=True, exist_ok=True)
+        paths["joint_artifact"].parent.mkdir(parents=True, exist_ok=True)
         result.history.to_csv(paths["history"], index=False)
         result.future.to_csv(paths["future"], index=False)
         result.calendar_day_quality.to_csv(paths["calendar"], index=False)
         result.dispatch_cycle_summary.to_csv(paths["dispatch"], index=False)
         result.similar_day_matches.to_csv(paths["matches"], index=False)
+        result.joint_cluster_assignments.to_csv(
+            paths["joint_assignments"], index=False
+        )
+        joblib.dump(result.joint_cluster_artifact, paths["joint_artifact"])
         paths["audit"].write_text(
             json.dumps(result.audit, ensure_ascii=False, indent=2), encoding="utf-8"
         )

@@ -2,7 +2,7 @@
 
 基于机器学习回归器的时间序列多步预测项目。当前主链路围绕 LightGBM / XGBoost / CatBoost 构建，模型工厂层还支持 RandomForest、HistGradientBoosting、Ridge/ElasticNet/Lasso、QuantileRegressor 和 SeasonalTemplate（季节模板）；支持单变量/多变量、多步逐点 direct、direct、recursive、direct-recursive 分块和 direct+recursive 加权融合（blend）预测。
 
-本文档按当前代码和当前目录整理，未使用 `docs/` 和 `logs/` 目录中的历史材料作为事实来源。目录级细节可继续查阅 `config/README.md`、`dataset/README.md`、`data_provider/README.md`、`models/README.md`、`scripts/README.md` 和 `utils/README.md`。
+本文档按当前代码和当前目录整理，未使用 `docs/` 和 `logs/` 目录中的历史材料作为事实来源。目录级细节可继续查阅 `config/README.md`、`dataset/README.md`、`data_provider/README.md`、`models/README.md`、`utils/README.md` 和 `docs/production_sync.md`。
 
 ## 当前能力
 
@@ -58,6 +58,8 @@ tsproj_ml/
 │   ├── fill_method_backtest.py  # 缺失填充方法掩码回测（MAPE 分桶对比）
 │   ├── outlier_process.py       # 原始负荷数据异常标记、清洗与可视化（配置驱动）
 │   └── 其余工具脚本             # decomposition/difference/impute/normalization 等，当前未被模型代码引用
+├── docs/
+│   └── production_sync.md       # 生产包同步边界、可迁移模块和同步记录
 ├── features/
 │   ├── FeatureEngineering.py    # 日期时间、日期类型、天气、自定义外生、滞后、高级特征
 │   ├── FeatureScalering.py      # 特征/目标缩放与逆变换
@@ -73,12 +75,9 @@ tsproj_ml/
 │   ├── AuxiliaryForecaster.py   # 非目标内生变量辅助递归预测器（auxiliary 回填）
 │   ├── ModelSaveLoad.py         # pickle 保存/加载
 │   └── losses.py, learning_rate.py
-├── scripts/                     # main.py 直跑脚本、配置 dry-run 校验和维护说明（AIDC 专项脚本见 config/aidc_electricity_computility/electricity/2026-06-11/scripts/）
-│   ├── check_model_configs.py   # 模型配置 dry-run 校验（复算 main.py 合法性校验，不训练不预测）
-│   ├── production_sync.md       # 生产包同步边界、可迁移模块和同步记录
-│   ├── run_model_test.sh        # main.py 直跑测试脚本
-│   └── template.sh              # main.py 直跑模板脚本
-├── tests/                       # unittest 回归测试（注意：当前被 .gitignore 忽略，未纳入版本控制）
+├── scripts/                     # 项目级维护工具
+│   └── check_model_configs.py   # 模型配置 dry-run 校验（复算 main.py 合法性校验，不训练不预测）
+├── tests/                       # 已纳入版本控制的 unittest 回归测试
 └── utils/
     ├── frequency.py             # pandas 频率解析
     ├── eval_mask.py             # 评估/绘图有效点掩码
@@ -345,7 +344,7 @@ df_power_anomalies.png
 
 ## 生产同步边界
 
-`scripts/production_sync.md` 是生产包同步边界和同步记录文档，不是运行脚本。本仓库 `tsproj_ml` 是时间序列预测核心库，生产包只作为 adapter。核心算法、特征工程、评估、损失函数和通用数据质量逻辑应先在本仓库优化，再按需同步到生产包。
+`docs/production_sync.md` 是生产包同步边界和同步记录文档。本仓库 `tsproj_ml` 是时间序列预测核心库，生产包只作为 adapter。核心算法、特征工程、评估、损失函数和通用数据质量逻辑应先在本仓库优化，再按需同步到生产包。
 
 允许从本仓库向生产包迁移的核心模块包括：
 
@@ -368,7 +367,7 @@ df_power_anomalies.png
 
 维护方式：
 
-- 涉及生产同步时先更新或查阅 `scripts/production_sync.md`，不要靠临时复制代码。
+- 涉及生产同步时先更新或查阅 `docs/production_sync.md`，不要靠临时复制代码。
 - 每次同步记录使用文档中的模板，说明变更摘要、是否需要迁移项目 2、项目 2 适配点和验证结果。
 - 如果生产包中只有部署入口、平台父类、生产字段或路径适配变化，不应回迁到本仓库。
 - 如果生产包中出现可复用的预测、评估、特征或数据质量逻辑，应先抽象成本仓库核心模块，再由生产包做最小 adapter 适配。
@@ -411,12 +410,6 @@ env -u PYTHONPATH UV_CACHE_DIR=.uv_cache uv run --no-sync python scripts/check_m
 ```
 
 注意：`tests/` 已纳入版本控制；改动或迁移被测模块时需同步修复测试导入与接口断言，保持全套通过。
-
-如果改了 shell 脚本，再运行：
-
-```bash
-bash -n scripts/run_model_test.sh scripts/template.sh
-```
 
 ## 版本与依赖
 

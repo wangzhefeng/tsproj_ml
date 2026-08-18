@@ -1,0 +1,40 @@
+logic_version: 2
+data_start: '2025-11-01T00:00:00'
+as_of_time: '2026-07-28T23:55:00'
+forecast_steps: 288
+freq: 5min
+points_per_day: 288
+
+calendar_day:
+  start_hour: 0
+
+dispatch_cycle:
+  start_hour: 22
+
+states:
+  actual_charge_threshold_kw: -1500.0
+  actual_discharge_threshold_kw: 5000.0
+
+similar_day:
+  lookback_days: 180
+  k_neighbors: 5
+  min_history_days: 14
+  robust_template_days: 7
+  novelty_low_quantile: 0.75
+  novelty_high_quantile: 0.95
+  curve_weight: 0.60
+  duration_energy_weight: 0.25
+  transition_weight: 0.15
+  power_scale_kw: 9000.0
+  count_scale: 10.0
+  min_effective_samples: 2.0
+
+routes:
+  A:
+    target_path: forecasting_data/A_GateEnergys_5min_20251001_20260728_remove_outlier.csv
+    endogenous_path: forecasting_data/A_ESS_PCS_merged_5min_20251001_20260728.csv
+    plan_path: exogenous_strategy_plan/up_sampled/A_PCS_plan_5min_20251001_20260731.csv
+  B:
+    target_path: forecasting_data/B_GateEnergys_5min_20251001_20260728_remove_outlier.csv
+    endogenous_path: forecasting_data/B_ESS_PCS_merged_5min_20251001_20260728.csv
+    plan_path: exogenous_strategy_plan/up_sampled/B_PCS_plan_5min_20251001_20260731.csv

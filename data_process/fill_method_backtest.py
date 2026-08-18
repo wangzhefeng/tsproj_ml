@@ -21,8 +21,8 @@ sys.path.insert(0, str(PROJECT_ROOT))
 
 from data_process.data_aggregate import _FILLERS  # noqa: E402
 
-DATASET_DIR = PROJECT_ROOT / "dataset" / "aidc_power"
-DATE_RANGE = "20251001_20260728"
+DATASET_DIR = PROJECT_ROOT / "dataset" / "aidc_load_5min"
+DATE_RANGE = "20251001_20260731"
 SOURCE_FREQ_MINUTES = 5
 SLOTS_PER_DAY = 24 * 60 // SOURCE_FREQ_MINUTES  # 288
 

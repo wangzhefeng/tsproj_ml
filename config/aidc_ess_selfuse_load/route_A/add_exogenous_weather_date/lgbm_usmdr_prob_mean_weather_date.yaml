@@ -35,8 +35,8 @@ overrides:
     datetime_categorical_features: []  # 空列表=关闭类别特征(不传 categorical_feature 给 LightGBM)
     custom_features:
     - name: weather_derived
-      history_path: exogenous_weather_raw/weather_derived_in_20251001_20260728.csv
-      future_path: exogenous_weather_raw/weather_derived_future_20260729_20260731.csv
+      history_path: exogenous_weather_raw/weather_derived_in_20250101_20260731.csv
+      future_path: exogenous_weather_raw/weather_derived_future_20260801_20260814.csv
       ts_col: time
       columns:
       - rt_ssr

@@ -67,6 +67,37 @@ overrides:
             _, target_problems = checker.check_model_yaml(str(config_path))
         self.assertTrue(any("不能依赖目标列 y" in problem for problem in target_problems))
 
+    def test_config_checker_allows_advanced_context_beyond_max_lag_when_history_covers_it(self):
+        checker = load_config_checker()
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            config_path = Path(tmp_dir) / "usmd_long_context.yaml"
+            config_path.write_text(
+                """base_config: config.univariate_config
+overrides:
+  runtime:
+    history_length: 60
+    predict_steps: 288
+    window_length: 30
+  time_lag_features:
+    lags: [288, 2016]
+  advanced_features:
+    enable_advanced_features: true
+    enable_rolling_features: true
+    rolling_columns: [y]
+    rolling_windows: [2016, 4032, 8064]
+    rolling_stats: [mean]
+    enable_diff_features: true
+    diff_columns: [y]
+    diff_periods: [288, 2016, 8064]
+  model_strategy:
+    pred_method: univariate-single-multistep-direct
+""",
+                encoding="utf-8",
+            )
+            _, problems = checker.check_model_yaml(str(config_path))
+
+        self.assertFalse(any(problem.startswith("advanced 窗口/周期") for problem in problems))
+
     def test_aidc_multivariate_yaml_configs_use_selected_dataset_contract(self):
         root = ROOT / "config/aidc_electricity_computility/electricity/2026-06-11"
         expected_paths = [

@@ -13,9 +13,9 @@
   - detrend_target 与 scale_target 互斥
   - n_windows > 0（滑窗数）
   - advanced_features：USMDP 不能直接依赖 y；仅操作历史/未来都存在的列才可用
-    （USMDP 不自动生成 y_lag_*，引用它们会被跳过并提示）；rolling_windows/
-    diff_periods <= max(lags)（预测路径 df_history_for_lags 只有 max_lag 行，
-    超限特征在预测时退化/NaN）
+    （USMDP 不自动生成 y_lag_*，引用它们会被跳过并提示）；预测上下文取
+    max(lags, 已启用 rolling_windows/diff_periods/pct_change_periods)，且不得超过
+    history_length × n_per_day
 
 退出码：0 = 全部通过（可能有提示性警告），1 = 存在硬校验失败。
 """
@@ -100,13 +100,19 @@ def check_model_yaml(f: str) -> tuple[object, list[str]]:
                 "提示：USMDP 不会自动生成 y_lag_*；rolling_columns 中的 y_lag_* "
                 "会被特征工程跳过，当前配置不会形成该消融特征。"
             )
-        roll_win = list(getattr(cfg, "rolling_windows", []) or [])
-        diff_per = list(getattr(cfg, "diff_periods", []) or [])
-        over = [w for w in roll_win if w > max_lag] + [p for p in diff_per if p > max_lag]
-        if over:
+        fixed_lookbacks = [max_lag]
+        if getattr(cfg, "enable_rolling_features", False):
+            fixed_lookbacks.extend(getattr(cfg, "rolling_windows", []) or [])
+        if getattr(cfg, "enable_diff_features", False):
+            fixed_lookbacks.extend(getattr(cfg, "diff_periods", []) or [])
+        if getattr(cfg, "enable_pct_change_features", False):
+            fixed_lookbacks.extend(getattr(cfg, "pct_change_periods", []) or [])
+        required_context = max(fixed_lookbacks)
+        available_history = cfg.history_length * n_per_day
+        if required_context > available_history:
             problems.append(
-                f"advanced 窗口/周期 {over} > max_lag({max_lag})：预测时"
-                "(df_history_for_lags 仅 max_lag 行) 滚动退化为累计值、diff 为 NaN"
+                f"advanced context {required_context} exceeds available history "
+                f"{available_history} (= history_length × n_per_day)"
             )
     return cfg, problems
 

@@ -32,6 +32,23 @@ class Forecaster:
     """
     预测辅助类-所有预测方法的公共逻辑
     """
+
+    @staticmethod
+    def _resolve_history_context_length(args: Dict) -> int:
+        """返回预测阶段构造启用特征所需的最大固定回看步数。"""
+        lengths = [max(getattr(args, "lags", []) or [1])]
+        if not getattr(args, "enable_advanced_features", False):
+            return max(lengths)
+
+        fixed_lookbacks = (
+            ("enable_rolling_features", "rolling_windows"),
+            ("enable_diff_features", "diff_periods"),
+            ("enable_pct_change_features", "pct_change_periods"),
+        )
+        for enabled_attr, periods_attr in fixed_lookbacks:
+            if getattr(args, enabled_attr, False):
+                lengths.extend(getattr(args, periods_attr, []) or [])
+        return max(lengths)
     
     def __init__(self,
                  args: Dict,
@@ -85,12 +102,17 @@ class Forecaster:
         self.log_prefix = log_prefix
         logger.info(f"{self.log_prefix} Forecaster params init...")
         logger.info(f"{self.log_prefix} {'-' * 71}")
-        # 最大滞后数量
+        # 最大滞后数量（仅用于 lag 特征和递归 lag state）
         self.max_lag = max(self.args.lags) if self.args.lags else 1
+        self.history_context_length = self._resolve_history_context_length(self.args)
         logger.info(f"{self.log_prefix} Forecaster max_lag: {self.max_lag}")
+        logger.info(
+            f"{self.log_prefix} Forecaster history context length: "
+            f"{self.history_context_length}"
+        )
         
-        # 获取足够的历史数据以构建滞后特征
-        self.df_history_for_lags = self.df_history.iloc[-self.max_lag:].copy()
+        # 保留构造启用 lag/rolling/diff 等特征所需的完整历史上下文。
+        self.df_history_for_lags = self.df_history.iloc[-self.history_context_length:].copy()
         logger.info(f"{self.log_prefix} Forecaster df_history_for_lags shape: {self.df_history_for_lags.shape}")
         logger.info(f"{self.log_prefix} Forecaster df_history_for_lags columns: {self.df_history_for_lags.columns.tolist()}")
         # 复用特征工程器，避免递归预测中反复实例化
@@ -170,8 +192,8 @@ class Forecaster:
                 row = row.fillna(self.df_history_for_lags.iloc[-1])
 
         self.df_history_for_lags.loc[len(self.df_history_for_lags)] = row.iloc[0]
-        if len(self.df_history_for_lags) > self.max_lag:
-            self.df_history_for_lags = self.df_history_for_lags.iloc[-self.max_lag:].reset_index(drop=True)
+        if len(self.df_history_for_lags) > self.history_context_length:
+            self.df_history_for_lags = self.df_history_for_lags.iloc[-self.history_context_length:].reset_index(drop=True)
 
     def _slice_future_aux_by_forecast(self, df_forecast: pd.DataFrame):
         """根据当前预测窗口切出必要的日期/天气特征子集。"""
@@ -617,7 +639,7 @@ class Forecaster:
         """
         for endo_feat in endogenous_features:
             if endo_feat not in self.df_history_for_lags.columns and endo_feat in self.df_history.columns:
-                self.df_history_for_lags[endo_feat] = self.df_history[endo_feat].iloc[-self.max_lag:]
+                self.df_history_for_lags[endo_feat] = self.df_history[endo_feat].iloc[-self.history_context_length:]
 
         df_forecast = pd.concat([self.df_history_for_lags, self.df_future.copy()], ignore_index=True, copy=False)
         df_date_future_slice, df_weather_future_slice = self._slice_future_aux_by_forecast(df_forecast)
@@ -1016,7 +1038,7 @@ class Forecaster:
         # 确保所有内生变量都在历史数据中
         for endo_feat in self.endogenous_features:
             if endo_feat not in self.df_history_for_lags.columns and endo_feat in self.df_history.columns:
-                self.df_history_for_lags[endo_feat] = self.df_history[endo_feat].iloc[-self.max_lag:]
+                self.df_history_for_lags[endo_feat] = self.df_history[endo_feat].iloc[-self.history_context_length:]
 
         other_endogenous = [feat for feat in self.endogenous_features if feat != self.target_feature]
 
@@ -1129,7 +1151,7 @@ class Forecaster:
             d_pred = self.univariate_single_multi_step_direct_forecast()
         d_pred = np.asarray(d_pred, dtype=float).flatten()
         # 2. 重置 recursive 状态（Direct 推理可能改过 df_history_for_lags 列）
-        self.df_history_for_lags = self.df_history.iloc[-self.max_lag:].copy()
+        self.df_history_for_lags = self.df_history.iloc[-self.history_context_length:].copy()
         self._recursive_schema_cache = {}
         # 3. Recursive 子预测
         self.model = self.blend_recursive_model
@@ -1183,7 +1205,7 @@ class Forecaster:
                 d_pred = self.univariate_single_multi_step_direct_forecast()
             d_pred = np.asarray(d_pred, dtype=float).flatten()
             # 2. 重置 recursive 状态（Direct 推理可能改过 df_history_for_lags / schema）
-            self.df_history_for_lags = self.df_history.iloc[-self.max_lag:].copy()
+            self.df_history_for_lags = self.df_history.iloc[-self.history_context_length:].copy()
             self._recursive_schema_cache = {}
             # 3. Recursive 子预测
             self.model = recursive_q

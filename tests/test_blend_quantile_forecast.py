@@ -38,6 +38,7 @@ class BlendQuantileForecastTest(unittest.TestCase):
         forecaster.model = original_bundle
         forecaster.df_history = pd.DataFrame({"y": [1.0, 2.0]})
         forecaster.max_lag = 1
+        forecaster.history_context_length = 1
         forecaster._recursive_schema_cache = {}
         forecaster._is_quantile_bundle = lambda: True
         forecaster._resolve_blend_weights = lambda: np.array([0.25, 0.75])

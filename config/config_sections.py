@@ -228,7 +228,15 @@ class PreprocessingConfig:
     scale_target: bool = False  # 是否对目标变量 Y 进行归一化/标准化
     inverse_target: bool = False  # 预测结果是否对目标变量 Y 进行逆变换
     target_scaler_type: str = "minmax"  # 目标变量 Y 的缩放方法: "none"、"standard"、"minmax"、"log1p"、"robust" 或 "yeo-johnson"
-    detrend_target: bool = False  # 是否在特征工程前对原始 y 做线性去趋势(与 scale_target 互斥)
+    # 目标分解：none / linear / stl / mstl。STL/MSTL 仅在每个可见训练窗口内拟合。
+    decomposition_method: str = "none"
+    decomposition_periods: List[int] = field(default_factory=list)
+    decomposition_robust: bool = True
+    decomposition_trend_degree: int = 1  # 线性/二次多项式趋势
+    decomposition_trend_forecast: str = "polynomial"  # polynomial / damped
+    decomposition_damping: float = 0.98
+    decomposition_trend_lookback: int = 28
+    decomposition_seasonal_cycles: int = 4
     use_grouped_scaling: bool = False  # 是否对特征使用分组归一化/标准化
     encode_categorical_features: bool = False  # 是否对类别特征进行编码
 

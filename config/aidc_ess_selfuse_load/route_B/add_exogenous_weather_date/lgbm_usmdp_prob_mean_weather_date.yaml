@@ -73,7 +73,7 @@ overrides:
     mode: percentile
     percentile: 5.0
   preprocessing:
-    detrend_target: true  # 特征工程前对 y 线性去趋势(与 scale_target 互斥)
+    decomposition_method: linear  # 窗口内线性目标分解（与 scale_target 互斥）
   performance:
     window_parallel_workers: 8
     multi_output_n_jobs: 1

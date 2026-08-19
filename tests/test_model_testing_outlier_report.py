@@ -56,7 +56,7 @@ class _FakeForecaster:
         selected_features,
         log_prefix,
         df_custom_future=None,
-        target_detrender=None,
+        target_decomposer=None,
     ):
         self.horizon = horizon
         _FakeForecaster.captured_test_frame = df_future.copy()
@@ -134,6 +134,68 @@ class ModelTestingOutlierReportTest(unittest.TestCase):
         self.assertNotEqual(captured_train["df"].iloc[3]["y"], 21000.0)
         self.assertEqual(_FakeForecaster.captured_test_frame["time"].tolist(), self._history_frame().iloc[6:8]["time"].tolist())
         self.assertNotIn("y", _FakeForecaster.captured_test_frame.columns)
+
+    def test_window_test_fits_linear_decomposition_on_train_slice_only(self):
+        history = pd.DataFrame(
+            {
+                "time": pd.date_range("2026-01-01", periods=8, freq="1D"),
+                "y": [10.0, 12.0, 14.0, 16.0, 18.0, 20.0, 1000.0, 2000.0],
+            }
+        )
+        args = SimpleNamespace(
+            decomposition_method="linear",
+            decomposition_periods=[],
+            decomposition_trend_degree=1,
+            decomposition_trend_forecast="polynomial",
+            decomposition_damping=0.98,
+            enable_train_outlier_handling=False,
+            mode="percentile",
+            percentile=5.0,
+            min_value=None,
+            max_value=None,
+            pred_method="univariate-single-multistep-direct-output",
+            n_per_day=1,
+        )
+        captured_train = {}
+
+        def fake_build_window_train_xy(
+            args,
+            log_prefix,
+            df_history_train,
+            df_date_history,
+            df_weather_history,
+            endogenous_features_with_target,
+            target_feature,
+            horizon,
+            df_custom_history=None,
+        ):
+            captured_train["df"] = df_history_train.copy()
+            return (
+                pd.DataFrame({"feature": [1.0, 2.0]}),
+                pd.Series([0.0, 0.0]),
+                ["y_t+1"],
+                [],
+            )
+
+        payload = {
+            "args": args,
+            "log_prefix": "[test]",
+            "horizon": 2,
+            "window_len": 6,
+            "window": 1,
+            "df_history": history,
+            "df_date_history": None,
+            "df_weather_history": None,
+            "endogenous_features_with_target": ["y"],
+            "target_feature": "y",
+        }
+
+        with patch.object(Tester, "_build_window_train_xy", side_effect=fake_build_window_train_xy), \
+             patch("models.ModelTesting.Trainer", _FakeTrainer), \
+             patch("models.ModelTesting.Forecaster", _FakeForecaster):
+            Tester._window_test(payload)
+
+        np.testing.assert_allclose(captured_train["df"]["y"], 0.0, atol=1e-10)
 
     def test_test_results_save_always_writes_train_outlier_report(self):
         with tempfile.TemporaryDirectory() as tmpdir:

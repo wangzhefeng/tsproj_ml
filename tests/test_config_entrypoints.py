@@ -33,6 +33,65 @@ def load_config_checker():
 
 
 class ConfigEntrypointTest(unittest.TestCase):
+    def test_model_config_exposes_flat_target_decomposition_fields(self):
+        cfg = load_model_config(instantiate=True)
+
+        self.assertEqual(cfg.decomposition_method, "none")
+        self.assertFalse(hasattr(cfg, "detrend_target"))
+        self.assertEqual(cfg.decomposition_periods, [])
+        self.assertEqual(cfg.decomposition_trend_degree, 1)
+        self.assertEqual(cfg.decomposition_trend_forecast, "polynomial")
+        self.assertAlmostEqual(cfg.decomposition_damping, 0.98)
+        self.assertEqual(cfg.decomposition_seasonal_cycles, 4)
+
+    def test_config_checker_rejects_invalid_mstl_periods(self):
+        checker = load_config_checker()
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            config_path = Path(tmp_dir) / "invalid_mstl.yaml"
+            config_path.write_text(
+                """base_config: config.univariate_config
+overrides:
+  runtime:
+    history_length: 60
+    predict_steps: 96
+    window_length: 30
+  target_series:
+    freq: 15min
+  preprocessing:
+    decomposition_method: mstl
+    decomposition_periods: [96]
+""",
+                encoding="utf-8",
+            )
+            _, problems = checker.check_model_yaml(str(config_path))
+
+        self.assertTrue(any("mstl 至少需要两个周期" in problem for problem in problems))
+
+    def test_config_checker_allows_exactly_two_decomposition_cycles(self):
+        checker = load_config_checker()
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            config_path = Path(tmp_dir) / "stl_two_cycles.yaml"
+            config_path.write_text(
+                """base_config: config.univariate_config
+overrides:
+  runtime:
+    history_length: 12
+    predict_steps: 2
+    window_length: 10
+  target_series:
+    freq: 1D
+  preprocessing:
+    decomposition_method: stl
+    decomposition_periods: [4]
+  model_strategy:
+    pred_method: univariate-single-multistep-direct-pointwise
+""",
+                encoding="utf-8",
+            )
+            _, problems = checker.check_model_yaml(str(config_path))
+
+        self.assertFalse(any("不足两个完整周期" in problem for problem in problems))
+
     def test_usmdp_advanced_feature_checker_distinguishes_target_and_missing_lags(self):
         checker = load_config_checker()
         rolllag_path = (

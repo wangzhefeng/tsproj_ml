@@ -59,7 +59,7 @@ overrides:
     mode: percentile
     percentile: 5.0
   preprocessing:
-    detrend_target: false  # 月频 10 点训练数据少，去趋势 polyfit 会因 1-2 行数据崩溃
+    decomposition_method: none  # 月频样本过少，关闭目标分解
   performance:
     window_parallel_workers: 1
     multi_output_n_jobs: 1

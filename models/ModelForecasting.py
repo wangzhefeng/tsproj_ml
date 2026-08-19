@@ -65,7 +65,7 @@ class Forecaster:
                  target_output_features: List[str],
                  categorical_features: List[str],
                  selected_features: List[str] = None,
-                 target_detrender=None,
+                 target_decomposer=None,
                  df_custom_future=None,
                  log_prefix: str = "[Forecaster]"):
         self.args = args
@@ -98,7 +98,7 @@ class Forecaster:
         self.target_output_features = target_output_features
         self.categorical_features = categorical_features
         self.selected_features = selected_features
-        self.target_detrender = target_detrender
+        self.target_decomposer = target_decomposer
         self.log_prefix = log_prefix
         logger.info(f"{self.log_prefix} Forecaster params init...")
         logger.info(f"{self.log_prefix} {'-' * 71}")
@@ -1237,6 +1237,22 @@ class Forecaster:
         )
         return point_pred
 
+    def _restore_target_decomposition(self, values) -> np.ndarray:
+        """给点预测和全部分位数加回同一确定性趋势/季节分量。"""
+        result = np.asarray(values).reshape(-1)
+        decomposer = getattr(self, "target_decomposer", None)
+        if decomposer is None or not getattr(decomposer, "is_fitted", False):
+            return result
+        n = min(len(result), len(self.df_future))
+        future_times = self.df_future["time"].iloc[:n]
+        restored = decomposer.restore(result[:n], future_times)
+        if self.quantile_outputs:
+            self.quantile_outputs = {
+                q: decomposer.restore(np.asarray(pred).reshape(-1)[:n], future_times)
+                for q, pred in self.quantile_outputs.items()
+            }
+        return restored
+
     def _predict_by_method(self) -> np.ndarray:
         """
         根据配置分发预测策略并返回一维预测数组
@@ -1308,16 +1324,8 @@ class Forecaster:
         else:
             result = pred_arr[:, 0]
 
-        # 目标去趋势还原:点对点加回线性趋势,使调用方拿到电平预测(覆盖点预测+分位数)
-        if getattr(self, "target_detrender", None) is not None and self.target_detrender.is_fitted:
-            n = min(len(result), len(self.df_future))
-            future_times = self.df_future["time"].iloc[:n]
-            result = self.target_detrender.restore(result[:n], future_times)
-            if self.quantile_outputs:
-                self.quantile_outputs = {
-                    q: self.target_detrender.restore(np.asarray(p).reshape(-1)[:n], future_times)
-                    for q, p in self.quantile_outputs.items()
-                }
+        # 目标分解还原：给点预测和全部分位数加回相同的确定性分量。
+        result = self._restore_target_decomposition(result)
 
         logger.info(
             f"{self.log_prefix} Forecast method runtime: "

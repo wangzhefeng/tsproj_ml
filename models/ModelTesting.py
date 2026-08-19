@@ -34,6 +34,7 @@ from features.FeatureScalering import (
     resolve_feature_scaler_type,
     resolve_target_scaler_type,
 )
+from features.TargetDecomposition import TargetDecomposer
 from models.ModelTraining import Trainer
 from models.ModelForecasting import Forecaster
 from data_provider.outlier_handling import (
@@ -110,7 +111,6 @@ class Tester:
         horizon = payload["horizon"]
         window_len = payload["window_len"]
         window = payload["window"]
-        target_detrender = payload.get("target_detrender")
         train_outlier_report = empty_train_outlier_report()
 
         # 滑窗数据分割：先切原始历史，再在窗口内构造训练标签，避免 Direct 标签跨入测试期
@@ -136,6 +136,14 @@ class Tester:
             window=window,
             log_prefix=log_prefix,
         )
+        # 每个滑窗只在训练段拟合目标分解器，禁止测试段及更晚数据参与预处理。
+        target_decomposer = TargetDecomposer(args, log_prefix=log_prefix, verbose=False)
+        if target_decomposer.enabled:
+            df_history_train = target_decomposer.fit_transform(
+                df_history_train,
+                time_col="time",
+                target_col=payload["target_feature"],
+            )
         build_result = Tester._build_window_train_xy(
             args=args,
             log_prefix=log_prefix,
@@ -157,10 +165,8 @@ class Tester:
         X_train, Y_train, target_output_features, categorical_features = build_result
         # 窗口目标特征处理
         Y_train = Y_train.to_frame() if isinstance(Y_train, pd.Series) else Y_train
+        # 测试标签始终保留原始电平，不经过分解，避免测试信息进入分解器。
         y_test_raw = df_history_test[payload["target_feature"]].to_numpy()
-        # detrend 开启时 df_history_test 来自 detrended 序列,评分前还原到电平空间
-        if target_detrender is not None and target_detrender.is_fitted:
-            y_test_raw = target_detrender.restore(y_test_raw, df_history_test["time"])
         # ------------------------------
         # 窗口训练
         # ------------------------------
@@ -211,7 +217,7 @@ class Tester:
             target_output_features=target_output_features,
             categorical_features=categorical_features,
             selected_features=selected_features,
-            target_detrender=target_detrender,
+            target_decomposer=target_decomposer,
             log_prefix=log_prefix,
         )
         y_pred = predictor._predict_by_method()
@@ -255,7 +261,6 @@ class Tester:
             window_len=window_len,
             target_feature=payload["target_feature"],
             n_per_day=int(getattr(args, "n_per_day", 1) or 1),
-            target_detrender=target_detrender,
         )
         if y_naive is not None:
             y_naive = np.asarray(y_naive).reshape(-1)
@@ -454,7 +459,6 @@ class Tester:
         window_len: int,
         target_feature: str,
         n_per_day: int,
-        target_detrender=None,
     ):
         """
         季节 naive 对照序列：测试期第 i 点的 naive 值 = 该点 n_per_day 步前
@@ -468,10 +472,6 @@ class Tester:
         if naive_start < 0:
             return None
         y_naive = df_history[target_feature].iloc[naive_start: test_end + 1 - n_per_day].to_numpy()
-        # detrend 开启时 df_history 为 detrended 序列，还原到电平空间（与 y_test_raw 同口径）
-        if target_detrender is not None and target_detrender.is_fitted:
-            naive_times = df_history["time"].iloc[naive_start: test_end + 1 - n_per_day]
-            y_naive = target_detrender.restore(y_naive, naive_times)
         return y_naive
 
     @staticmethod

@@ -57,7 +57,7 @@ overrides:
     percentile: 5.0
   preprocessing:
     scale_features: true   # 线性模型：特征标准化必开
-    detrend_target: false
+    decomposition_method: none
 
   performance:
     window_parallel_workers: 1

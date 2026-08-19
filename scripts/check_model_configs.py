@@ -10,7 +10,7 @@
 复算的校验（与 main.py.__init__ 一致）：
   - window_length < history_length
   - window_len - horizon > max(lags)（滞后特征非全 NaN；USMDP 逐点法除外）
-  - detrend_target 与 scale_target 互斥
+  - 目标分解方法/周期合法，且与 scale_target 互斥
   - n_windows > 0（滑窗数）
   - advanced_features：USMDP 不能直接依赖 y；仅操作历史/未来都存在的列才可用
     （USMDP 不自动生成 y_lag_*，引用它们会被跳过并提示）；预测上下文取
@@ -60,8 +60,26 @@ def check_model_yaml(f: str) -> tuple[object, list[str]]:
                 "(Lag features would be all-NaN)"
             )
 
-    if getattr(cfg, "detrend_target", False) and getattr(cfg, "scale_target", False):
-        problems.append("detrend_target 与 scale_target 同时开启（互斥）")
+    method = str(getattr(cfg, "decomposition_method", "none") or "none").lower()
+    if method not in {"none", "linear", "stl", "mstl"}:
+        problems.append(f"未知 decomposition_method: {method}")
+    decomposition_enabled = method != "none"
+    if decomposition_enabled and getattr(cfg, "scale_target", False):
+        problems.append("目标分解与 scale_target 同时开启（互斥）")
+    periods = [int(period) for period in (getattr(cfg, "decomposition_periods", []) or [])]
+    if method == "stl" and len(periods) != 1:
+        problems.append("stl 需要且只能配置一个周期")
+    if method == "mstl" and len(periods) < 2:
+        problems.append("mstl 至少需要两个周期")
+    if method in {"stl", "mstl"}:
+        if any(period < 2 for period in periods):
+            problems.append("decomposition_periods 必须全部 >= 2")
+        train_rows = window_len - horizon
+        too_long = [period for period in periods if 2 * period > train_rows]
+        if too_long:
+            problems.append(
+                f"decomposition_periods={too_long} 在最短训练窗 {train_rows} 点内不足两个完整周期"
+            )
 
     n_windows = (cfg.history_length * n_per_day - window_len) // horizon + 1
     if n_windows <= 0:

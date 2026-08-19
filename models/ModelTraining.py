@@ -1115,7 +1115,7 @@ class Trainer:
             logger.info(f"{self.log_prefix} Quantile model training completed!")
             return quantile_bundle, feature_scaler, target_scaler, selected_features
 
-    def model_save(self, model, target_scaler=None):
+    def model_save(self, model, target_scaler=None, target_decomposer=None):
         """
         模型保存
         """
@@ -1128,6 +1128,11 @@ class Trainer:
                 save_file_path=self.args.checkpoints_dir.joinpath("target_scaler.pkl")
             )
             target_scaler_deploy.save_model(target_scaler)
+        if target_decomposer is not None and getattr(target_decomposer, "is_fitted", False):
+            target_decomposer_deploy = ModelDeployPkl(
+                save_file_path=self.args.checkpoints_dir.joinpath("target_decomposer.pkl")
+            )
+            target_decomposer_deploy.save_model(target_decomposer)
         logger.info(f"{self.log_prefix} Model saved to {self.args.checkpoints_dir.joinpath('model.pkl')}")
 
 

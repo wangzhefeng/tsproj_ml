@@ -82,7 +82,7 @@ overrides:
     mode: percentile
     percentile: 5.0
   preprocessing:
-    detrend_target: false  # conformal 硬约束:不支持 detrend_target（见 main.py 硬校验）
+    decomposition_method: none  # conformal 硬约束：不支持目标分解
   performance:
     window_parallel_workers: 8
     multi_output_n_jobs: 8

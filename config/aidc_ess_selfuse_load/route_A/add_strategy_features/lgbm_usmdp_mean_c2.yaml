@@ -88,7 +88,7 @@ overrides:
     mode: percentile
     percentile: 5.0
   preprocessing:
-    detrend_target: true
+    decomposition_method: linear  # 窗口内线性目标分解（与 scale_target 互斥）
   performance:
     window_parallel_workers: 8
     multi_output_n_jobs: 1

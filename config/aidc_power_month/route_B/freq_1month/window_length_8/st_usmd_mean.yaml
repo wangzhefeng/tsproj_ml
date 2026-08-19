@@ -53,7 +53,7 @@ overrides:
     mode: percentile
     percentile: 5.0
   preprocessing:
-    detrend_target: false
+    decomposition_method: none
 
   performance:
     window_parallel_workers: 1

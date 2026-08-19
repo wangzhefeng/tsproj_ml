@@ -41,11 +41,6 @@ def resolve_inverse_target_enabled(args) -> bool:
     return bool(getattr(args, "inverse_target", getattr(args, "inverse", False)))
 
 
-def resolve_detrend_target_enabled(args) -> bool:
-    """是否在特征工程前对目标序列做线性去趋势。"""
-    return bool(getattr(args, "detrend_target", False))
-
-
 def resolve_feature_scaler_type(args) -> str:
     """获取预测特征 X 的缩放方法。"""
     return str(getattr(args, "feature_scaler_type", "standard")).lower()
@@ -54,74 +49,6 @@ def resolve_feature_scaler_type(args) -> str:
 def resolve_target_scaler_type(args) -> str:
     """获取目标变量 Y 的缩放方法。"""
     return str(getattr(args, "target_scaler_type", "standard")).lower()
-
-
-class TargetDetrender:
-    """
-    目标变量线性去趋势器。
-
-    在特征工程之前对整条 y 序列做点对点线性去趋势 (y - trend(t))，使
-    target 与 lag/rolling/diff 等特征一致地落在 detrended 空间；预测输出
-    时由 Forecaster 点对点还原 (y_pred + trend(t_future))，让调用方拿到电平值。
-
-    - 点对点、无状态逆变换 (无 cumsum)，跨滑窗一致、可外推。
-    - 只存 origin_ns/slope/intercept，可 pickle 过 ProcessPoolExecutor。
-    - 与 TargetScaler 正交：开启 detrend 时不应同时 scale_target。
-    """
-
-    def __init__(self, args=None, log_prefix: str = "[TargetDetrender]", verbose: bool = False):
-        self.args = args
-        self.log_prefix = log_prefix
-        self.verbose = verbose
-        self.enabled = resolve_detrend_target_enabled(args) if args is not None else True
-        self.is_fitted = False
-        self.time_col = "time"
-        self.target_col = "y"
-        self.origin_ns = None  # 起始时刻的 int64 纳秒 epoch
-        self.slope = None      # 每日斜率 b
-        self.intercept = None  # 截距 a
-
-    def _t_idx(self, times) -> np.ndarray:
-        """(timestamp - origin) 折算为「天」的浮点；日频即 0,1,2,..."""
-        ts = pd.to_datetime(times).astype("int64").to_numpy()
-        return (ts - self.origin_ns) / 86400.0 / 1e9
-
-    def fit(self, df: pd.DataFrame, time_col: str = "time", target_col: str = "y") -> "TargetDetrender":
-        self.time_col, self.target_col = time_col, target_col
-        if not self.enabled:
-            return self
-        origin = pd.to_datetime(df[time_col]).min()
-        self.origin_ns = int(origin.value)
-        x = self._t_idx(df[time_col])
-        y = df[target_col].to_numpy(dtype=float)
-        mask = ~np.isnan(y)
-        self.slope, self.intercept = np.polyfit(x[mask], y[mask], 1)
-        self.is_fitted = True
-        if self.verbose:
-            logger.info(
-                f"{self.log_prefix} fitted linear trend: "
-                f"slope={self.slope:.6f}/day, intercept={self.intercept:.6f}, origin={origin}"
-            )
-        return self
-
-    def _trend(self, times) -> np.ndarray:
-        return self.intercept + self.slope * self._t_idx(times)
-
-    def detrend(self, df: pd.DataFrame) -> pd.DataFrame:
-        """返回副本，target_col 残差化：y - trend(time)。"""
-        if not self.enabled or not self.is_fitted:
-            return df.copy()
-        out = df.copy()
-        out[self.target_col] = (
-            out[self.target_col].to_numpy(dtype=float) - self._trend(out[self.time_col])
-        )
-        return out
-
-    def restore(self, values, times) -> np.ndarray:
-        """点对点还原：values + trend(times)。"""
-        if not self.enabled or not self.is_fitted:
-            return np.asarray(values)
-        return np.asarray(values, dtype=float) + self._trend(times)
 
 
 class TargetScaler:

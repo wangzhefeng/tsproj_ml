@@ -41,8 +41,6 @@ from data_provider.data_loader import DataLoader
 from features.FeatureScalering import (
     FeatureScaler,
     TargetScaler,
-    TargetDetrender,
-    resolve_detrend_target_enabled,
     resolve_feature_scaler_type,
     resolve_inverse_target_enabled,
     resolve_scale_features_enabled,
@@ -50,6 +48,7 @@ from features.FeatureScalering import (
     resolve_target_scaler_type,
 )
 from features.FeatureEngineering import FeatureEngineer
+from features.TargetDecomposition import TargetDecomposer, resolve_decomposition_method
 from models.ModelTraining import Trainer
 from models.ModelTesting import Tester
 from models.ModelForecasting import Forecaster
@@ -162,12 +161,30 @@ class Model:
         block_size = int(getattr(self.args, 'block_size', 0) or 0)
         if block_size < 0:
             raise ValueError(f"{self.log_prefix} block_size ({block_size}) must be >= 0.")
-        # detrend_target 与 scale_target 互斥:两者同开会双重加趋势且逆变换顺序错乱
-        if resolve_detrend_target_enabled(self.args) and resolve_scale_target_enabled(self.args):
+        # 目标分解与 target scaling 互斥。
+        decomposition_method = resolve_decomposition_method(self.args)
+        if decomposition_method != "none" and resolve_scale_target_enabled(self.args):
             raise ValueError(
-                f"{self.log_prefix} detrend_target and scale_target are mutually exclusive "
-                f"(both enabled would double-apply the trend). Keep scale_target=false when detrending."
+                f"{self.log_prefix} target decomposition and scale_target are mutually exclusive. "
+                f"Keep scale_target=false when decomposition_method={decomposition_method}."
             )
+        decomposition_periods = [
+            int(period) for period in (getattr(self.args, "decomposition_periods", []) or [])
+        ]
+        if decomposition_method == "stl" and len(decomposition_periods) != 1:
+            raise ValueError(f"{self.log_prefix} decomposition_method=stl requires exactly one period.")
+        if decomposition_method == "mstl" and len(decomposition_periods) < 2:
+            raise ValueError(f"{self.log_prefix} decomposition_method=mstl requires at least two periods.")
+        if decomposition_method in {"stl", "mstl"}:
+            decomposition_train_rows = self.window_len - self.horizon
+            if any(
+                period < 2 or 2 * period > decomposition_train_rows
+                for period in decomposition_periods
+            ):
+                raise ValueError(
+                    f"{self.log_prefix} decomposition_periods={decomposition_periods} require at least "
+                    f"two full cycles in each {decomposition_train_rows}-point training window."
+                )
         # 滞后特征可用性校验:滑窗训练行数 = window_len - horizon 必须 > max(lags),
         # 否则 shift(lag) 产出的滞后列全 NaN,模型无声退化(仅对真正构造 lag 列的方法校验)。
         if self.args.pred_method != "univariate-single-multistep-direct-pointwise":
@@ -205,18 +222,16 @@ class Model:
                     f"(Direct/Recursive sub-models live in different scaled spaces; "
                     f"blend weights and restore become ill-defined). Keep scale_target=false."
                 )
-            if resolve_detrend_target_enabled(self.args):
+            if decomposition_method != "none":
                 raise ValueError(
-                    f"{self.log_prefix} USBR/MSBR blend + detrend_target is not supported in v1 "
-                    f"(test-time blend sub-predictions stay in detrend space while eval targets are "
-                    f"restored to level space; ridge_stacking weights would be learned on mismatched spaces). "
-                    f"Keep detrend_target=false."
+                    f"{self.log_prefix} USBR/MSBR blend + target decomposition is not supported: "
+                    f"ridge_stacking component predictions would remain in residual space. "
+                    f"Keep decomposition_method=none."
                 )
-        if bool(getattr(self.args, "enable_conformal_calibration", False)) and resolve_detrend_target_enabled(self.args):
+        if bool(getattr(self.args, "enable_conformal_calibration", False)) and decomposition_method != "none":
             raise ValueError(
-                f"{self.log_prefix} enable_conformal_calibration + detrend_target is not supported: "
-                f"test-time quantiles are not detrend-restored (calibration scores in detrend space) while "
-                f"forecast bands are in level space. Keep detrend_target=false when calibrating."
+                f"{self.log_prefix} enable_conformal_calibration + target decomposition is not supported. "
+                f"Keep decomposition_method=none."
             )
         # ------------------------------
         # 日志打印
@@ -308,7 +323,11 @@ class Model:
             )
         # 模型保存
         if mode == "forecast":
-            model_trainer.model_save(model, target_scaler)
+            model_trainer.model_save(
+                model,
+                target_scaler,
+                target_decomposer=getattr(self, "target_decomposer", None),
+            )
         logger.info(f"{self.log_prefix} Model Training runtime: {time.perf_counter() - train_start:.3f}s")
 
         return model, scaler, target_scaler, selected_features
@@ -382,7 +401,6 @@ class Model:
                 "categorical_features": categorical_features,
                 "train_start_time": self.train_start_time,
                 "train_end_time": self.train_end_time,
-                "target_detrender": getattr(self, "target_detrender", None),
             }
             for window in window_indices
         ]
@@ -485,7 +503,7 @@ class Model:
             target_output_features=target_output_features,
             categorical_features=categorical_features,
             selected_features=selected_features,
-            target_detrender=getattr(self, "target_detrender", None),
+            target_decomposer=getattr(self, "target_decomposer", None),
             log_prefix=self.log_prefix,
         )
         Y_pred = predictor._predict_by_method()
@@ -677,21 +695,27 @@ class Model:
          target_feature,
          df_custom_history) = dataloader.process_history_data(input_data=input_data)
         # ------------------------------
-        # 目标去趋势(可选):特征工程前对整条 y 线性去趋势,
-        # 使 target/lag/rolling/diff 一致落在 detrended 空间;Forecaster 输出时点对点还原电平
+        # 目标分解（可选）：最终 forecast 在全部已知历史上拟合；滑窗测试会在
+        # 各自训练段内重新拟合独立分解器，禁止未来窗口参与预处理。
         # ------------------------------
         self.df_history_levels = df_history.copy()
-        self.target_detrender = TargetDetrender(
+        self.target_decomposer = TargetDecomposer(
             self.args,
             log_prefix=self.log_prefix,
             verbose=bool(getattr(self.args, "enable_step_logging", False)),
         )
-        if self.target_detrender.enabled:
-            self.target_detrender.fit(df_history, time_col="time", target_col="y")
-            df_history = self.target_detrender.detrend(df_history)
-            logger.info(f"{self.log_prefix} 目标去趋势(detrend_target): 启用")
+        if self.target_decomposer.enabled:
+            df_history = self.target_decomposer.fit_transform(
+                df_history,
+                time_col="time",
+                target_col="y",
+            )
+            logger.info(
+                f"{self.log_prefix} 目标分解: 启用 "
+                f"(method={self.target_decomposer.method})"
+            )
         else:
-            logger.info(f"{self.log_prefix} 目标去趋势(detrend_target): 禁用")
+            logger.info(f"{self.log_prefix} 目标分解: 禁用")
         # ------------------------------
         # 特征工程
         # ------------------------------
@@ -737,7 +761,7 @@ class Model:
             logger.info(f"{self.log_prefix} Model Testing...")
             logger.info(f"{self.log_prefix} {'#' * 90}")
             test_scores_df, cv_plot_df = self.test(
-                df_history=df_history,
+                df_history=self.df_history_levels,
                 df_date_history=df_date_history,
                 df_weather_history=df_weather_history,
                 endogenous_features_with_target=endogenous_features_with_target,

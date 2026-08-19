@@ -94,7 +94,7 @@ tsproj_ml/
 `main.Model.run()` 是当前主线：
 
 1. `DataLoader.load_data()` 读取目标序列、日期外生、天气外生。
-2. `DataLoader.process_history_data()` 根据 `now_time/history_days/freq` 构造历史时间轴，并把目标列统一映射为 `y`。
+2. `DataLoader.process_history_data()` 根据 `now_time/history_length/freq` 构造历史时间轴，并把目标列统一映射为 `y`。
 3. 单变量策略只保留 `time + y`；多变量策略保留配置中的其他内生变量。
 4. `FeatureEngineer.create_features()` 生成外生、滞后和可选高级特征，并构造多步目标列。
 5. 若 `is_testing=True`，`Tester._window_test()` 做滑窗验证，可按窗口并行。
@@ -209,9 +209,9 @@ uv run python config/generate_configs.py \
 | `target` | 目标值列，进入主链路后映射为 `y` |
 | `freq` | pandas 固定频率，如 `5min`、`15min`、`1h` |
 | `now_time` | 预测基准时间 |
-| `history_days` | 历史窗口天数 |
+| `history_length` | 历史窗口天数 |
 | `predict_steps` | 预测步数（以 `freq` 为单位，如 15min 下 1 天 = 96、4 小时 = 16） |
-| `window_days` | 滑窗测试的训练+测试窗口天数 |
+| `window_length` | 滑窗测试的训练+测试窗口天数 |
 
 可选外生输入：
 
@@ -297,7 +297,7 @@ uv run python config/generate_configs.py \
 
 `<scenario>` 由 YAML 中的 `scenario_subpath` 显式指定（如 `aidc_load_month/route_A`），使结果路径与 config 目录布局对齐；未指定时回退为从 `data_dir` 自动推导（去掉 `dataset/` 前缀和 `demand_load` 段）。多组配置共用同一 `data_dir` 时（如三个 `aidc_power_*` 场景共用 `dataset/aidc_power/`）必须显式指定，否则结果会混入同一目录。不同场景的结果因此互不覆盖。
 
-`<setting>` 由 `{model_type}-{data_name}-{pred_method_code}-{window_days}` 组成，例如 `lightgbm-df_power-usmr-15`。
+`<setting>` 由 `{model_type}-{data_name}-{pred_method_code}-{window_length}` 组成，例如 `lightgbm-df_power-usmr-15`。
 
 ```text
 results/
@@ -337,7 +337,7 @@ df_power_anomalies.png
 - 根 README 只做项目总览和主流程说明；配置映射、数据目录、目录职责请以对应子目录 README 为准。
 - 标准默认值由 Python dataclass 模板提供；新增具体数据配置优先用分组 YAML 管理。
 - `main.py` 是本地开发与测试的主入口；切换任务时直接修改 `CONFIG_YAML` 和对应 YAML 内容。
-- `now_time` 为预测锚点：`schedule_mode=daily`（默认）时规整到次日 00:00 作为历史结束/预测开始（预测下一完整自然日），`intraday` 时保留调度时刻；历史区间为 `[now_time - history_days, now_time)`，预测区间为 `[now_time, now_time + predict_steps × freq)`。
+- `now_time` 为预测锚点：`schedule_mode=daily`（默认）时规整到次日 00:00 作为历史结束/预测开始（预测下一完整自然日），`intraday` 时保留调度时刻；历史区间为 `[now_time - history_length, now_time)`，预测区间为 `[now_time, now_time + predict_steps × freq)`。
 - 分位数预测训练多个子模型；点预测融合只在 `predict_type="point"` 时生效。
 - 多变量递归类方法（MSMR/MSMDR）对非目标内生变量默认持久性回填，可配置 `endogenous_backfill_strategy: auxiliary` 为每个内生变量训练独立递归辅助模型。
 - `.DS_Store`、`__pycache__/`、`logs/`、`results/` 不是源码或数据契约。

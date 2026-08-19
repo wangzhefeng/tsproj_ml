@@ -33,7 +33,7 @@
 
 `main.Model` 计算时间窗口后传给 `DataLoader`：
 
-- 历史区间：`[now_time - history_days, now_time)`
+- 历史区间：`[now_time - history_length, now_time)`
 - 预测区间：`[now_time, now_time + predict_steps × freq)`
 
 `process_history_data()` 会按历史区间构造模板并映射真实目标；`process_future_data()`

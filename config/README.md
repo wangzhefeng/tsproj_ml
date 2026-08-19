@@ -18,7 +18,7 @@ config/
 
 `config_sections.py` 定义扁平组合配置基类 `BaseModelConfig`，由 13 个分组 dataclass 继承组合：
 
-- `RuntimeConfig`：运行模式（测试/预测）、时间窗口（`history_days`、`predict_steps`、`window_days`、`now_time`）、`schedule_mode`（`daily`/`intraday`）
+- `RuntimeConfig`：运行模式（测试/预测）、时间窗口（`history_length`、`predict_steps`、`window_length`、`now_time`）、`schedule_mode`（`daily`/`intraday`）
 - `TargetSeriesConfig`：目标序列数据路径、频率、时间列、目标列、内生数值/类别/剔除列
 - `ExogenousFeatureConfig`：日期类型外生、气象外生、自定义外生注册表（`custom_features`）、日期时间派生特征
 - `TimeLagFeatureConfig`：滞后特征开关与滞后步数

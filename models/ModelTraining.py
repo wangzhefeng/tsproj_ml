@@ -396,6 +396,44 @@ class Trainer:
             model_q.fit(X_train_df_processed, Y_train_df_processed)
         return quantile, model_q
 
+    def _train_blend_quantile_single_model(
+        self,
+        quantile: float,
+        model_type: str,
+        X_train_df_processed,
+        Y_direct,
+        Y_recursive,
+        lgbm_categorical,
+        actual_categorical,
+    ):
+        """为 blend（USBR/MSBR）训练单个分位数的 Direct+Recursive 子模型对。
+
+        Direct 子模型走多输出分位数（sklearn MultiOutputRegressor 包装，不透传
+        sample_weight，与 `_train_quantile_single_model` 多输出分支一致）；Recursive
+        子模型走单输出分位数估计器（支持 sample_weight 与 early stopping）。
+        """
+        params_q = self._inject_quantile_params(model_type=model_type, params=self.model_params, quantile=quantile)
+        # Direct 子模型（多输出 quantile）
+        estimator_wrapper_q = self._create_model_instance(model_type=model_type, model_params=params_q)
+        if getattr(self, "sample_weight", None) is not None:
+            logger.warning(
+                f"{self.log_prefix} time-decay sample_weight not supported for "
+                f"blend Direct multi-output quantile (sklearn wrapper); skipped for Direct sub-model."
+            )
+        direct_q = self._build_multi_output_model(estimator_wrapper_q.model, n_outputs=Y_direct.shape[1])
+        direct_q.fit(X_train_df_processed, Y_direct)
+        # Recursive 子模型（单输出 quantile）
+        estimator_recursive_q = self._create_model_instance(model_type=model_type, model_params=params_q)
+        X_fit_r, y_fit_r, fit_kwargs_r = self._prepare_single_output_fit_data(
+            X_train_df_processed, Y_recursive, actual_categorical,
+        )
+        if lgbm_categorical is not None:
+            fit_kwargs_r["categorical_feature"] = lgbm_categorical
+        if getattr(self, "native_data_bundle", {}).get("enabled"):
+            fit_kwargs_r["native_train_data"] = self.native_data_bundle.get("train_native")
+        estimator_recursive_q.fit(X_fit_r, np.ravel(y_fit_r), **fit_kwargs_r)
+        return quantile, {"direct": direct_q, "recursive": estimator_recursive_q}
+
     def _inject_quantile_params(self, model_type: str, params: Dict, quantile: float) -> Dict:
         """
         为不同回归器注入分位数预测参数
@@ -997,32 +1035,75 @@ class Trainer:
             quantile_models = {}
             logger.info(f"{self.log_prefix} Training quantile models for quantiles={quantiles}")
             logger.info(f"{self.log_prefix} {'-' * 71}")
+            # Blend（USBR/MSBR）在 quantile 模式下：每个分位数训练 Direct+Recursive 子模型对
+            is_blend = self._is_blend_method()
+            Y_direct = None
+            Y_recursive = None
+            if is_blend:
+                rec_cols = [c for c in Y_train_df_processed.columns if str(c).endswith("_shift_0")]
+                dir_cols = [c for c in Y_train_df_processed.columns if c not in rec_cols]
+                if len(dir_cols) <= 1 or len(rec_cols) != 1:
+                    raise ValueError(
+                        f"{self.log_prefix} Blend quantile requires >=1 direct target cols and exactly 1 "
+                        f"recursive col (shift_0); got dir={len(dir_cols)}, rec={len(rec_cols)}."
+                    )
+                Y_direct = Y_train_df_processed[dir_cols]
+                Y_recursive = Y_train_df_processed[rec_cols]
+                logger.info(
+                    f"{self.log_prefix} Blend quantile: {len(dir_cols)} direct outputs + 1 recursive output per quantile."
+                )
             quantile_workers = self._resolve_worker_count("quantile_parallel_workers", default=1)
             if quantile_workers > 1 and len(quantiles) > 1:
                 with ThreadPoolExecutor(max_workers=quantile_workers) as executor:
-                    futures = [
-                        executor.submit(
-                            self._train_quantile_single_model,
+                    if is_blend:
+                        futures = [
+                            executor.submit(
+                                self._train_blend_quantile_single_model,
+                                q,
+                                model_type,
+                                X_train_df_processed,
+                                Y_direct,
+                                Y_recursive,
+                                lgbm_categorical,
+                                actual_categorical,
+                            )
+                            for q in quantiles
+                        ]
+                    else:
+                        futures = [
+                            executor.submit(
+                                self._train_quantile_single_model,
+                                q,
+                                model_type,
+                                X_train_df_processed,
+                                Y_train_df_processed,
+                                lgbm_categorical,
+                            )
+                            for q in quantiles
+                        ]
+                    for future in as_completed(futures):
+                        q, model_q = future.result()
+                        quantile_models[q] = model_q
+            else:
+                for q in quantiles:
+                    if is_blend:
+                        q_key, model_q = self._train_blend_quantile_single_model(
+                            q,
+                            model_type,
+                            X_train_df_processed,
+                            Y_direct,
+                            Y_recursive,
+                            lgbm_categorical,
+                            actual_categorical,
+                        )
+                    else:
+                        q_key, model_q = self._train_quantile_single_model(
                             q,
                             model_type,
                             X_train_df_processed,
                             Y_train_df_processed,
                             lgbm_categorical,
                         )
-                        for q in quantiles
-                    ]
-                    for future in as_completed(futures):
-                        q, model_q = future.result()
-                        quantile_models[q] = model_q
-            else:
-                for q in quantiles:
-                    q_key, model_q = self._train_quantile_single_model(
-                        q,
-                        model_type,
-                        X_train_df_processed,
-                        Y_train_df_processed,
-                        lgbm_categorical,
-                    )
                     quantile_models[q_key] = model_q
             median_q = min(quantiles, key=lambda x: abs(x - 0.5))
             quantile_bundle = {

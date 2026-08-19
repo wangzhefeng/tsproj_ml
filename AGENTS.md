@@ -14,7 +14,7 @@ The general coding guidelines (Karpathy: think before coding, simplicity, surgic
 - `now_time` 配置值 = 最后一个已知数据点（如 `2026-06-11T23:55:00`）
 - **`schedule_mode`**（`RuntimeConfig`，默认 `daily`）：`daily` = 日界对齐（`floor("1D") + 1day` → 次日 00:00，预测下一完整自然日）；`intraday` = 保留调度时刻（从 `now_time` 起 `predict_steps` 步）。日志/文件名的时间戳仍按 `now_time` 原值
 - 内部分界点 = `schedule_mode=daily` 时 `floor("1D") + 1day` = 次日 00:00:00；`intraday` 时 = `now_time` 本身
-- `start_time = now_time - history_days`，`future_time = now_time + predict_steps × freq 步长`
+- `start_time = now_time - history_length`，`future_time = now_time + predict_steps × freq 步长`
 - **`predict_steps` 以 `freq` 为单位计步**（取代旧 `predict_days`）：15min 下 1 天 = 96、4 小时 = 16；5min 下 1 天 = 288；日频下 = 天数。`horizon = predict_steps`，不再经 `n_per_day` 换算
 - `pd.date_range` 使用 `inclusive="left"`，end 为排除边界——所以终日 23:55 是最后一个被包含的点
 
@@ -27,7 +27,7 @@ The general coding guidelines (Karpathy: think before coding, simplicity, surgic
 ### 预测增强策略（v1 新增，默认全关）
 - **`direct_strategy: horizon_feature`**（仅 USMD/MSMD）：把 horizon 索引作为特征，训练 N×H 行长表（成本 H×→1×），推理展开 H 行，外生列按步取值解决 MIMO 滞后陈旧。DirRec（USMDR/MSMDR）暂不支持（遗留）
 - **`endogenous_backfill_strategy: auxiliary`**（仅 MSMR/MSMDR）：为每个非目标内生变量训练独立递归模型（reduced-form：只用自身滞后+datetime 外生），替代持久性常量回填。辅助模型在 `models/AuxiliaryForecaster.py`，与主模型打包为 `{"bundle_type": "auxiliary_endogenous", ...}` dict。注意：辅助模型每滑窗×每内生列各训练一次（成本 = 窗口数 × 内生列数），窗口并行时各窗口独立训练不共享
-- **`pred_method: USBR/MSBR`**（Direct+Recursive Blend）：同时构造 Direct（shift_1..H）和 Recursive（shift_0）目标列，训练两个子模型后加权融合。`blend_weight_strategy: ridge_stacking` 在最近 N 个滑窗（`blend_weight_windows`）测试集上用 `Ridge(positive=True, fit_intercept=False)` 学凸组合权重，写入 `blend_weights.csv`。v1 硬性不支持（main.py 校验 raise）：blend×quantile、blend×ensemble、blend×scale_target、blend×detrend_target
+- **`pred_method: USBR/MSBR`**（Direct+Recursive Blend）：同时构造 Direct（shift_1..H）和 Recursive（shift_0）目标列，训练两个子模型后加权融合。`blend_weight_strategy: ridge_stacking` 在最近 N 个滑窗（`blend_weight_windows`）测试集上用 `Ridge(positive=True, fit_intercept=False)` 学凸组合权重，写入 `blend_weights.csv`。**blend×quantile 已支持**：每个分位数训练 Direct（多输出 quantile）+ Recursive（单输出 quantile）子模型对，推理时逐分位数做 Direct+Recursive 加权融合，所有分位数共用同一组 ridge_stacking 权重（权重学自 median 分位数的 Direct/Recursive 分量）。v1 硬性不支持（main.py 校验 raise）：blend×ensemble、blend×scale_target、blend×detrend_target
 - **`enable_conformal_calibration: true`**（CQR 后处理）：滑窗测试阶段记录 `conformal_score` 到 `cv_plot_df.csv`，forecast 阶段取最近 `conformal_calibration_windows`（默认 5）个窗口的 score 作校准集，对 `predict_q*` 首尾边界列对称膨胀，保证边际覆盖率 ≥ 1−α。纯后处理不重训模型，依赖 `is_testing=true` 产出的校准集；校准集 score 点数 < `conformal_min_scores`（默认 30）则跳过并 WARNING。v1 硬性不支持 conformal×detrend_target（main.py 校验 raise）
 
 ### 模型工厂（ModelFactory）
@@ -39,10 +39,10 @@ The general coding guidelines (Karpathy: think before coding, simplicity, surgic
 
 ### 低频（日/周/月）数据配置约定
 - **freq 必须写 `1D` 而非 `D`**：`default_lags_for_freq` 只认 `1D`，写 `D` 会落回 5min 基准 lags（`[288,576,...]`），与低频数据错配
-- **月频（`1ME`/`1MS`）已支持**（`utils/frequency.is_monthly_freq`）：`resolve_freq_step_minutes` 近似 30 天、`resolve_samples_per_day` 特判返回 1；`main.py` 月频分界点 = `(now_time.to_period("M")+1).to_timestamp()` 推到下月月初（月频下 `history_days` 语义变为月数、`future_time` 用 `DateOffset(months=horizon)`）；`data_aggregate._freq_to_timedelta` 月频用 31 天上界做 target≥source 校验
-- **月度气象外生**：`config/aidc_power_month/derive_weather_monthly.py` 把 1h 实测气象聚合成月频统计（ts 标签 = 月末 00:00，与目标序列对齐），统计列直接复用框架 weather 白名单名（rt_tt2/cal_rh/rt_ws10/rt_ssr）走原生 merge 通路；`FeatureEngineering.extend_future_weather_feature` 已支持白名单名直接映射（数据源列即白名单名时按时间戳对齐，无需 pred_→rt_ 映射）
-- **window_days 在低频下 ≈ 每窗训练样本数**：`main.py` 滞后校验要求 `window_days × n_per_day − horizon > max(lags)`，否则 RAISE（"Lag features would be all-NaN"；USMDP 逐点法不构造多步目标列，豁免该校验）；日频即 `window_days > max(lags) + predict_steps`
-- **history_days > window_days**：`main.py` 硬校验，否则 RAISE
+- **月频（`1ME`/`1MS`）已支持**（`utils/frequency.is_monthly_freq`）：`resolve_freq_step_minutes` 近似 30 天、`resolve_samples_per_day` 特判返回 1；`main.py` 月频分界点 = `(now_time.to_period("M")+1).to_timestamp()` 推到下月月初（月频下 `history_length` 语义变为月数、`future_time` 用 `DateOffset(months=horizon)`）；`data_aggregate._freq_to_timedelta` 月频用 31 天上界做 target≥source 校验
+- **月度/日度气象外生**（aidc_power_month）：`config/aidc_power_month/derive_weather_monthly.py` / `derive_weather_daily.py` 把 1h 实测气象聚合成月/日频统计（月频 ts 标签 = 月末 00:00、日频 = 当日 00:00，与目标序列对齐），统计列直接复用框架 weather 白名单名（rt_tt2/cal_rh/rt_ws10/rt_ssr）走原生 merge 通路；`FeatureEngineering.extend_future_weather_feature` 已支持白名单名直接映射（数据源列即白名单名时按时间戳对齐，无需 pred_→rt_ 映射）。未来段由 `derive_weather_monthly_future.py` / `derive_weather_daily_future.py` 构造（已过日期用实测 rt_ 列 + 未到日期用去年同期实测仿真，不用 pred_ 预报列——pred_ws10/pred_ssrd 存在系统性高估）；滑窗测试段的天气特征一律从历史统计文件取（`ModelTesting` 把 `df_weather_history` 作为 future 传入），故历史文件需覆盖全部测试窗
+- **window_length 在低频下 ≈ 每窗训练样本数**：`main.py` 滞后校验要求 `window_length × n_per_day − horizon > max(lags)`，否则 RAISE（"Lag features would be all-NaN"；USMDP 逐点法不构造多步目标列，豁免该校验）；日频即 `window_length > max(lags) + predict_steps`
+- **history_length > window_length**：`main.py` 硬校验，否则 RAISE
 - **datetime 派生剔除子日粒度**：低频下 `datetime_features` 去掉 `minute`/`hour`，`datetime_categorical_features` 同步去对应 `dt_*` 项
 
 ### 性能并行约定（PerformanceConfig）

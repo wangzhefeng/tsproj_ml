@@ -1150,6 +1150,71 @@ class Forecaster:
         logger.info(f"{self.log_prefix} Blend weights: direct={weights[0]:.4f}, recursive={weights[1]:.4f}")
         return raw_pred
 
+    def _blend_forecast_quantile(self) -> np.ndarray:
+        """USBR/MSBR 的 quantile 融合预测：每个分位数独立做 Direct+Recursive 加权融合。
+
+        权重（direct_weight/recursive_weight）学自 cv_plot_df 中 median 分位数的
+        Direct/Recursive 分量，所有分位数共用同一组权重（权重语义是子模型贡献比例，
+        对分位数边界同样适用）。
+        """
+        if not self._is_quantile_bundle():
+            raise ValueError(f"{self.log_prefix} blend quantile requires a quantile bundle.")
+        is_multi = str(self.args.pred_method).startswith("multivariate")
+        original_model = self.model
+        quantile_models = self.model.get("models", {})
+        weights = self._resolve_blend_weights()
+        median_q = float(self.model.get("median_quantile", 0.5))
+        quantile_preds = {}
+        blend_direct_ref = None
+        blend_recursive_ref = None
+        for q_key, blend_bundle in quantile_models.items():
+            q = float(q_key)
+            direct_q = blend_bundle.get("direct")
+            recursive_q = blend_bundle.get("recursive")
+            if direct_q is None or recursive_q is None:
+                raise ValueError(
+                    f"{self.log_prefix} blend quantile bundle for q={q} missing direct/recursive sub-model."
+                )
+            # 1. Direct 子预测
+            self.model = direct_q
+            if is_multi:
+                d_pred = self.multivariate_single_multi_step_direct_forecast()
+            else:
+                d_pred = self.univariate_single_multi_step_direct_forecast()
+            d_pred = np.asarray(d_pred, dtype=float).flatten()
+            # 2. 重置 recursive 状态（Direct 推理可能改过 df_history_for_lags / schema）
+            self.df_history_for_lags = self.df_history.iloc[-self.max_lag:].copy()
+            self._recursive_schema_cache = {}
+            # 3. Recursive 子预测
+            self.model = recursive_q
+            if is_multi:
+                r_pred = self.multivariate_single_multi_step_recursive_forecast()
+            else:
+                r_pred = self.univariate_single_multi_step_recursive_forecast()
+            r_pred = np.asarray(r_pred, dtype=float).flatten()
+            n = min(len(d_pred), len(r_pred))
+            quantile_preds[q] = weights[0] * d_pred[:n] + weights[1] * r_pred[:n]
+            if abs(q - median_q) < 1e-9:
+                blend_direct_ref = d_pred
+                blend_recursive_ref = r_pred
+        # 记录 median 分位数的 Direct/Recursive 分量，供 cv_plot 与 ridge_stacking
+        if blend_direct_ref is not None:
+            self.blend_direct_pred = blend_direct_ref
+            self.blend_recursive_pred = blend_recursive_ref
+        self.quantile_outputs = quantile_preds
+        # point = median 分位数融合结果
+        point_pred = quantile_preds.get(median_q)
+        if point_pred is None:
+            median_q = min(quantile_preds.keys(), key=lambda x: abs(x - median_q))
+            point_pred = quantile_preds[median_q]
+        # 复位 main 指向 quantile bundle，避免后续复用异常
+        self.model = original_model
+        logger.info(
+            f"{self.log_prefix} Blend quantile weights: direct={weights[0]:.4f}, "
+            f"recursive={weights[1]:.4f} (n_quantiles={len(quantile_preds)})"
+        )
+        return point_pred
+
     def _predict_by_method(self) -> np.ndarray:
         """
         根据配置分发预测策略并返回一维预测数组
@@ -1196,10 +1261,16 @@ class Forecaster:
             "univariate-single-multistep-blend-direct-recursive",
             "multivariate-single-multistep-blend-direct-recursive",
         ):
-            logger.info(f"{self.log_prefix} Forecast method: blend_direct_recursive(USBR/MSBR)")
-            logger.info(f"{self.log_prefix} {'-' * 60}")
-            raw_pred = self._blend_forecast()
-            logger.info(f"{self.log_prefix} USBR/MSBR forecast completed, predicted {len(raw_pred)} steps.")
+            if str(getattr(self.args, "predict_type", "point")).lower() == "quantile":
+                logger.info(f"{self.log_prefix} Forecast method: blend_direct_recursive_quantile(USBR/MSBR)")
+                logger.info(f"{self.log_prefix} {'-' * 60}")
+                raw_pred = self._blend_forecast_quantile()
+                logger.info(f"{self.log_prefix} USBR/MSBR quantile forecast completed, predicted {len(raw_pred)} steps.")
+            else:
+                logger.info(f"{self.log_prefix} Forecast method: blend_direct_recursive(USBR/MSBR)")
+                logger.info(f"{self.log_prefix} {'-' * 60}")
+                raw_pred = self._blend_forecast()
+                logger.info(f"{self.log_prefix} USBR/MSBR forecast completed, predicted {len(raw_pred)} steps.")
         else:
             raise ValueError(f"{self.log_prefix} Unsupported pred_method: {self.args.pred_method}")
 

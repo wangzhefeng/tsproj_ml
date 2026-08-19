@@ -1,18 +1,19 @@
-# B — lightgbm — direct (15min 单变量, daily 日级)
+# B — lightgbm — direct (15min 单变量) · 4h 超短期 horizon=16
 base_config: config.univariate_config
 overrides:
   output:
-    scenario_subpath: aidc_load_15min_daily/route_B_horizon
+    scenario_subpath: aidc_load_15min_short/route_B/params_tuning/lgbm_usmd_mean_horizon.yaml
+    setting_suffix: -intraday  # 语义版本隔离(与 quantile 配置对齐)
   runtime:
     is_testing: true
     is_forecasting: true
-    history_length: 60
-    predict_steps: 96
-    window_length: 30
-    schedule_mode: daily  # 日界对齐: 预测下一完整自然日
-    now_time: '2026-07-31T23:45:00'
+    history_length: 30
+    predict_steps: 16  # 4h = 16 x 15min
+    window_length: 14
+    schedule_mode: intraday  # 保留调度时刻: 从调度时刻起预测
+    now_time: '2026-07-31T14:00:00'
   target_series:
-    data_dir: ./dataset/aidc_load_15min_daily/
+    data_dir: ./dataset/aidc_load_15min_short/
     data_path: B_Loads_15min_mean_20251001_20260731.csv
     freq: 15min
     target_ts_feat: time
@@ -33,23 +34,25 @@ overrides:
     - year
     datetime_categorical_features: []  # 空列表=关闭类别特征(不传 categorical_feature 给 LightGBM)
   time_lag_features:
-    lags:
+    lags:  # 4h 超短期: 近邻滞后(15min~4h) + 日/周周期
+    - 1
+    - 2
+    - 3
+    - 4
+    - 8
+    - 12
+    - 16
     - 96
     - 192
-    - 288
-    - 384
-    - 480
-    - 576
     - 672
   advanced_features:
     enable_advanced_features: true
     enable_rolling_features: true
     rolling_columns:
     - y
-    rolling_windows:
+    rolling_windows:  # 4h/1d/7d
+    - 16
     - 96
-    - 192
-    - 384
     - 672
     rolling_stats:
     - mean
@@ -59,9 +62,9 @@ overrides:
     enable_diff_features: true
     diff_columns:
     - y
-    diff_periods:
+    diff_periods:  # 相邻点/日/周
+    - 1
     - 96
-    - 192
     - 672
   model_strategy:
     model_type: lightgbm
@@ -69,7 +72,7 @@ overrides:
     direct_strategy: horizon_feature
   training_enhancement:
     enable_time_decay_sample_weight: true
-    decay_halflife_days: 60  # 半衰期天数,按数据漂移速度调整
+    decay_halflife_days: 14  # 半衰期天数,超短期更倚重近期数据
   train_outlier:
     enable_train_outlier_handling: false  # 已由 outlier_process 清洗
   eval_mask:

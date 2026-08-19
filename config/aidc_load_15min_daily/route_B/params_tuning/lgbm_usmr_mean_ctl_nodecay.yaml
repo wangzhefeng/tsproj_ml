@@ -4,7 +4,7 @@
 base_config: config.univariate_config
 overrides:
   output:
-    scenario_subpath: aidc_load_15min_daily/route_B/baseline
+    scenario_subpath: aidc_load_15min_daily/route_B/params_tuning/lgbm_usmr_mean_ctl_nodecay.yaml
     setting_suffix: -ctl_nodecay  # 消融对照结果隔离(不覆盖基线结果)
   runtime:
     is_testing: true

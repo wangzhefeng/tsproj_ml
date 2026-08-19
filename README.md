@@ -28,7 +28,7 @@
 - 多输出训练策略：`multioutput`、`regressor_chain`，以及 direct 专用的逐 horizon 训练器；`direct_strategy: horizon_feature` 可把 horizon 索引作为特征将训练成本从 H× 降到 1×（仅 USMD/MSMD）。
 - 可选模型融合：`averaging`、`weighted`、`stacking`、`blending`（支持成员级 `ensemble_model_specs`）。
 - 可选预测增强：多变量内生变量 auxiliary 回填（MSMR/MSMDR）、Direct+Recursive blend（USBR/MSBR）、conformal（CQR）分位数校准。
-- 可选数据增强、特征选择、目标/特征缩放、目标去趋势、时间衰减样本权重、自动学习率、`RandomizedSearchCV` + `TimeSeriesSplit` 调参。
+- 可选数据增强、特征选择、目标/特征缩放、窗口内因果目标分解、时间衰减样本权重、自动学习率、`RandomizedSearchCV` + `TimeSeriesSplit` 调参。
 - 滑窗测试支持训练窗口异常值局部修复，测试真实值不被清洗。
 - 滑窗测试中的 `MAPE Accuracy = 1 - MAPE` 按 `eval_mask` 掩码过滤后计算（默认 `mode: percentile` 即窗口正样本 `P5`；可设 `min_value`/`max_value` 绝对上下限），近零/越界异常点不再制造失真指标；汇总指标用 median，并附季节 naive 对照列。
 - 预测输出保存历史上下文和预测绘图拼接数据，便于生产问题定位。

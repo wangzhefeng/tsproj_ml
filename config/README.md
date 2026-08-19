@@ -23,7 +23,7 @@ config/
 - `ExogenousFeatureConfig`：日期类型外生、气象外生、自定义外生注册表（`custom_features`）、日期时间派生特征
 - `TimeLagFeatureConfig`：滞后特征开关与滞后步数
 - `AdvancedFeatureConfig`：滚动/扩展窗口统计、差分、百分比变化、距事件、周期三角编码、交互、多项式特征
-- `PreprocessingConfig`：特征/目标缩放、去趋势、分组缩放、类别编码
+- `PreprocessingConfig`：特征/目标缩放、窗口内因果目标分解（`linear`/`stl`/`mstl`）、分组缩放、类别编码
 - `ModelStrategyConfig`：模型类型、融合模式（含成员级 `ensemble_model_specs`）、预测方法、多输出策略、分位数、`direct_strategy`、内生回填策略、blend 权重策略
 - `TrainingEnhancementConfig`：早停、时间衰减样本权重、超参调优、数据增强、特征选择、学习率策略
 - `TrainOutlierConfig`：滑窗测试训练窗口异常清洗
@@ -76,6 +76,31 @@ overrides:
 ## 配置分组参考
 
 YAML 的 `overrides` 按 `config_sections.py` 的 dataclass 分组，字段名即各分组内的属性名。所有字段均有 dataclass 默认值，YAML 只需写需要覆盖的字段。
+
+### preprocessing：目标分解
+
+目标分解必须遵守时间因果边界：滑窗测试在每个训练段内独立拟合，测试标签始终保留原始电平；最终预测才使用全部已知历史拟合。`decomposition_method` 是唯一入口：`none` 关闭，`linear`/`stl`/`mstl` 启用对应方法。
+
+| 字段 | 默认值 | 说明 |
+|---|---|---|
+| `decomposition_method` | `none` | `none` / `linear` / `stl` / `mstl` |
+| `decomposition_periods` | `[]` | STL 一个周期；MSTL 至少两个周期；每个训练窗须覆盖至少两个完整周期 |
+| `decomposition_robust` | `true` | STL robust 拟合开关 |
+| `decomposition_trend_degree` | `1` | 趋势外推多项式阶数，只允许 1 或 2 |
+| `decomposition_trend_forecast` | `polynomial` | `polynomial` / `damped` |
+| `decomposition_damping` | `0.98` | damped 趋势的阻尼系数，范围 `(0, 1]` |
+| `decomposition_trend_lookback` | `28` | damped 趋势末端斜率估计使用的最近样本数 |
+| `decomposition_seasonal_cycles` | `4` | 未来季节模板取最近周期的相位均值 |
+
+`scale_target`、USBR/MSBR blend、CQR conformal 暂不与目标分解组合。point 与全部 quantile 会加回同一确定性趋势/季节分量；启用分解的最终训练会额外保存 `target_decomposer.pkl`。
+
+```yaml
+  preprocessing:
+    decomposition_method: mstl
+    decomposition_periods: [96, 672]
+    decomposition_trend_degree: 1
+    decomposition_trend_forecast: polynomial
+```
 
 ### training_enhancement
 

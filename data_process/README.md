@@ -1,6 +1,6 @@
 # data_process 说明
 
-`data_process/` 提供时间序列离线数据处理工具，覆盖五条链路：**频率聚合与缺失填充**、**填充方法回测**、**原始数据异常检测与清洗**、**周期自动检测**、**峰谷检测与提取**。均为配置驱动、与模型运行解耦的通用算法工具，不依赖具体数据集。
+`data_process/` 提供时间序列离线数据处理工具，覆盖六条链路：**频率聚合与缺失填充**、**填充方法回测**、**原始数据异常检测与清洗**、**周期自动检测**、**峰谷检测与提取**、**负荷事件检测与标签投影**。均与模型运行解耦；前五条为配置驱动 CLI，事件检测核心作为可复用算法库由场景入口调用。
 
 ## 模块结构
 
@@ -10,10 +10,11 @@ data_process/
 ├── fill_method_backtest.py    # 填充方法回测：掩码真实观测，按缺口长度分桶对比 MAPE
 ├── outlier_process.py         # 原始序列异常标记、清洗与可视化
 ├── periodicity_analysis.py    # 周期自动检测：FFT 主导周期 + ACF 周期候选 + STL 季节性分解
-└── peak_valley_detection.py   # 峰谷检测与提取：find_peaks + 幅度排序 Top-N
+├── peak_valley_detection.py   # 峰谷检测与提取：find_peaks + 幅度排序 Top-N
+└── load_event_detection.py    # 负荷事件检测核心：日级分段/短时偏移/日内残差突变 + 标签投影
 ```
 
-五个工具各自独立可运行，均接受 YAML 配置作为位置参数，支持 `--force` 忽略缓存/旧输出强制重建：
+前五个配置驱动工具各自独立可运行，均接受 YAML 配置作为位置参数，支持 `--force` 忽略缓存/旧输出强制重建：
 
 ```bash
 uv run python data_process/<tool>.py <config.yaml> [--force]
@@ -227,11 +228,35 @@ tasks:
 
 ---
 
+## 6. 负荷事件检测与标签投影
+
+`load_event_detection.py` 是跨频率共享的纯算法库：输入规则日频或高频负荷序列，返回统一 `LoadEvent` 结构，并可投影为逐日或逐点标签。场景脚本负责数据读取、特征拼接、产物落盘和可视化。
+
+### 事件分类与探测器
+
+| 事件 | 含义 | 探测方法 |
+|---|---|---|
+| `shift_up` / `shift_down` | 持久水平阶跃 | 自顶向下日级贪心分段，比较分裂点两侧局部中位数 |
+| `stress_up` / `stress_down` | 在限定天数内回落的临时水平偏移 | 相邻段回落判定，补充前后侧窗对比的 1~2 天短时偏移 |
+| `burst_up` / `burst_down` | 高频持续冲击 | 高频残差超过滚动 MAD 阈值且连续点数位于 burst 区间 |
+| `spike_up` / `spike_down` | 高频瞬时突变 | 同一残差检测中连续点数不超过 spike 上限 |
+
+日内检测会抑制靠近日级事件边界、方向一致且幅度较小的残差伪影；否则居中基线跨越水平阶跃时可能把阶跃边缘误标为 spike/burst。
+
+### 标签与泄漏边界
+
+- `project_events_to_days()` / `project_events_to_points()` 生成 `lbl_*` 事件标签；事件优先级为 spike > burst > stress > shift。
+- 日级分段和日内 MAD 检测使用居中窗口，含未来观测；其 `lbl_*` 输出仅适用于离线分析、样本筛选和评估，不能直接作为在线预测特征。
+- 若场景需要可建模特征，应单独构造 trailing 的 `feat_*` 特征，并将跨频率统计按可用时间滞后后再合并。
+
+---
+
 ## 验证
 
-本模块无 pytest 套件，修改后验证方式为：
+修改后验证方式为：
 
 - `uv run python -m py_compile data_process/*.py` 确认语法。
 - 用最小 YAML 实跑 `data_aggregate`/`outlier_process`/`periodicity_analysis`/`peak_valley_detection`，检查输出文件、审计 JSON（聚合）与各 `*_analysis/` 产物。
 - 填充方法变更时运行 `fill_method_backtest` 对比 MAPE，确认无回归。
 - 周期检测修改后，用已知周期序列（如合成正弦波）验证 FFT/ACF 能还原周期。
+- 事件检测修改后运行 `uv run python -m unittest tests.test_load_event_detection`；合成序列应覆盖持久阶跃、临时偏移、日内 burst/spike、边界伪影抑制和逐日/逐点标签投影。

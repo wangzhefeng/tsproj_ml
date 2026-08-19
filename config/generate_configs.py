@@ -88,9 +88,9 @@ YAML_OVERRIDE_GROUPS = {
     "runtime": [
         "is_testing",
         "is_forecasting",
-        "history_days",
+        "history_length",
         "predict_steps",
-        "window_days",
+        "window_length",
         "now_time",
     ],
     "target_series": [
@@ -394,11 +394,11 @@ def parse_args(argv: Optional[List[str]] = None):
                         help="仅打印将生成的文件, 不实际创建")
 
     # ---- 窗口参数 ----
-    parser.add_argument("--history-days", type=int, default=31,
+    parser.add_argument("--history-length", type=int, default=31,
                         help="历史数据天数 (默认: 31)")
     parser.add_argument("--predict-steps", type=int, default=None,
                         help="预测步数, 以 freq 为单位 (默认: 1 天对应的步数)")
-    parser.add_argument("--window-days", type=int, default=15,
+    parser.add_argument("--window-length", type=int, default=15,
                         help="滑动窗口天数 (默认: 15)")
 
     return parser.parse_args(argv)
@@ -430,9 +430,9 @@ def _to_yaml_value(value: Any) -> Any:
 def _build_generation_overrides(params: dict) -> dict:
     """只写生成场景显式覆盖的字段，避免 YAML 重复完整基类默认值。"""
     return {
-        "history_days": params["history_days"],
+        "history_length": params["history_length"],
         "predict_steps": params["predict_steps"],
-        "window_days": params["window_days"],
+        "window_length": params["window_length"],
         "now_time": params["now_time_iso"],
         "data_dir": params["data_dir"],
         "data_path": params["data_path"],
@@ -594,9 +594,9 @@ def main(argv: Optional[List[str]] = None):
 
             # 构建参数字典
             params = {
-                "history_days": args.history_days,
+                "history_length": args.history_length,
                 "predict_steps": args.predict_steps if args.predict_steps is not None else resolve_samples_per_day(freq),
-                "window_days": args.window_days,
+                "window_length": args.window_length,
                 "now_time_iso": now_time_iso,
                 "data_dir": data_dir_rel,
                 "data_path": data_path,

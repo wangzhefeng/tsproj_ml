@@ -72,12 +72,12 @@ def _apply_overrides(cfg, args):
     if args.pred_method is not None:
         cfg.pred_method = args.pred_method
 
-    if args.history_days is not None:
-        cfg.history_days = args.history_days
+    if args.history_length is not None:
+        cfg.history_length = args.history_length
     if args.predict_steps is not None:
         cfg.predict_steps = args.predict_steps
-    if args.window_days is not None:
-        cfg.window_days = args.window_days
+    if args.window_length is not None:
+        cfg.window_length = args.window_length
 
     if args.is_testing is not None:
         cfg.is_testing = _parse_bool_flag(args.is_testing)
@@ -187,9 +187,9 @@ def args_parse():
     parser.add_argument("--target-ts-feat", type=str, default=None)
     parser.add_argument("--freq", type=str, default=None)
 
-    parser.add_argument("--history-days", type=int, default=None)
+    parser.add_argument("--history-length", type=int, default=None)
     parser.add_argument("--predict-steps", type=int, default=None)
-    parser.add_argument("--window-days", type=int, default=None)
+    parser.add_argument("--window-length", type=int, default=None)
     parser.add_argument("--lags", type=str, default=None, help="comma separated list, e.g. 288,576")
 
     parser.add_argument("--scale", default=None, help="bool flag, supports 1/0/true/false")

@@ -67,14 +67,14 @@ def default_lags_for_freq(freq: str, days: int = 7) -> List[int]:
 class RuntimeConfig:
     """运行模式和时间窗口配置。
 
-    `now_time` 是预测锚点；运行时根据 `history_days`、`predict_steps`
-    和 `window_days` 推导历史窗口、预测窗口和滑窗长度。
+    `now_time` 是预测锚点；运行时根据 `history_length`、`predict_steps`
+    和 `window_length` 推导历史窗口、预测窗口和滑窗长度。
     """
     is_testing: bool = False  # 模型测试
     is_forecasting: bool = True  # 模型预测
-    history_days: int = 31  # 历史数据天数
+    history_length: int = 31  # 历史数据天数
     predict_steps: int = 288  # 预测步数（以 freq 为单位；默认 288 = 5min 基准下 1 天）
-    window_days: int = 15  # 滑动窗口天数
+    window_length: int = 15  # 滑动窗口天数
     now_time: datetime.datetime = field(default_factory=lambda: datetime.datetime(2026, 6, 11, 23, 55, 0))  # 预测推理开始时间
     schedule_mode: str = "daily"  # 调度模式: daily=日界对齐(预测下一完整自然日) | intraday=保留调度时刻(从调度时刻起预测)
 

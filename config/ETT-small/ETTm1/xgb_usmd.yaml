@@ -4,9 +4,9 @@ overrides:
   runtime:
     is_testing: false
     is_forecasting: true
-    history_days: 31
+    history_length: 31
     predict_steps: 96
-    window_days: 15
+    window_length: 15
     now_time: '2018-06-26T19:45:00'
   target_series:
     data_dir: ./dataset/ETT-small/

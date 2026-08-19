@@ -9,9 +9,9 @@ overrides:
   runtime:
     is_testing: true
     is_forecasting: true
-    history_days: 60
+    history_length: 60
     predict_steps: 288
-    window_days: 30
+    window_length: 30
     now_time: '2026-07-28T23:55:00'
   target_series:
     data_dir: ./dataset/aidc_ess_selfuse_load/

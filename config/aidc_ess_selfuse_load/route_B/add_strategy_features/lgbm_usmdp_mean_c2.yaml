@@ -1,0 +1,95 @@
+# B — lightgbm — USMDP point — ESS strategy features v2 C2
+base_config: config.univariate_config
+overrides:
+  output:
+    scenario_subpath: aidc_ess_selfuse_load/route_B/add_strategy_features
+    setting_suffix: -v2-c2
+    plot_overlay_path: forecasting_data/B_ESS_PCS_merged_5min_20251001_20260728.csv
+    plot_overlay_col: pcs_power
+  runtime:
+    is_testing: true
+    is_forecasting: true
+    history_length: 60
+    predict_steps: 288
+    window_length: 30
+    now_time: '2026-07-28T23:55:00'
+  target_series:
+    data_dir: ./dataset/aidc_ess_selfuse_load/
+    data_path: forecasting_data/B_GateEnergys_5min_20251001_20260728_remove_outlier.csv
+    freq: 5min
+    target_ts_feat: time
+    target: value
+  exogenous_features:
+    enable_date_features: false
+    enable_weather_features: false
+    datetime_features:
+    - hour
+    - minute
+    - day
+    - day_of_week
+    - week_of_year
+    - month
+    - days_in_month
+    - quarter
+    - day_of_year
+    - year
+    datetime_categorical_features: []
+    custom_features:
+    - name: strategy_features_v2_c2
+      history_path: forecasting_data/strategy_features/model_features_history_B.csv
+      future_path: forecasting_data/strategy_features/model_features_future_B.csv
+      ts_col: time
+      columns:
+      - pcs_plan
+      - plan_direction_charge
+      - plan_direction_standby
+      - plan_direction_discharge
+      - plan_power_abs
+      - plan_cycle_charge_hours
+      - plan_cycle_standby_hours
+      - plan_cycle_discharge_hours
+      - plan_cycle_charge_segment_count
+      - plan_cycle_standby_segment_count
+      - plan_cycle_discharge_segment_count
+      - plan_cycle_charge_energy_kwh
+      - plan_cycle_discharge_energy_kwh
+      - plan_cycle_switch_count
+      - plan_cycle_max_ramp
+      - plan_cycle_first_charge_slot_sin
+      - plan_cycle_first_charge_slot_cos
+      - plan_cycle_first_discharge_slot_sin
+      - plan_cycle_first_discharge_slot_cos
+      - plan_cycle_has_charge
+      - plan_cycle_has_discharge
+      - ess_lag_288
+      - pcs_actual_lag_288
+      - actual_operating_charge_lag_288
+      - actual_operating_standby_lag_288
+      - actual_operating_discharge_lag_288
+      - last_completed_cycle_charge_hours
+      - last_completed_cycle_standby_hours
+      - last_completed_cycle_discharge_hours
+      - last_completed_cycle_plan_state_agreement
+      - lag_feature_ready
+      categorical_columns: []
+  time_lag_features:
+    enable_lags_features: false
+    lags: []
+  model_strategy:
+    model_type: lightgbm
+    pred_method: univariate-single-multistep-direct-pointwise
+    predict_type: point
+  training_enhancement:
+    enable_time_decay_sample_weight: true
+    decay_halflife_days: 60
+  train_outlier:
+    enable_train_outlier_handling: false
+  eval_mask:
+    mode: percentile
+    percentile: 5.0
+  preprocessing:
+    detrend_target: true
+  performance:
+    window_parallel_workers: 8
+    multi_output_n_jobs: 1
+    model_thread_count: 8

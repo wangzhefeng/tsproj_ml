@@ -144,7 +144,7 @@ class AidcDateWindowModelConfigTest(unittest.TestCase):
                     self.assertEqual(cfg.pred_method, method)
                     self.assertTrue(cfg.is_testing)
                     self.assertFalse(cfg.is_forecasting)
-                    self.assertEqual(cfg.history_days, 32)
+                    self.assertEqual(cfg.history_length, 32)
                     self.assertEqual(cfg.data_path, "df_power.csv")
                     self.assertEqual(cfg.target_ts_feat, "time")
                     self.assertEqual(cfg.target, "value")
@@ -164,7 +164,7 @@ class AidcDateWindowModelConfigTest(unittest.TestCase):
 
         for config_path in config_paths:
             raw = yaml.safe_load(config_path.read_text(encoding="utf-8"))
-            self.assertEqual(raw["overrides"]["runtime"]["window_days"], 15, config_path)
+            self.assertEqual(raw["overrides"]["runtime"]["window_length"], 15, config_path)
             exogenous = raw["overrides"]["exogenous_features"]
             self.assertIs(exogenous["enable_date_features"], True, config_path)
             self.assertEqual(exogenous["datetype_features"], ["date_type"], config_path)

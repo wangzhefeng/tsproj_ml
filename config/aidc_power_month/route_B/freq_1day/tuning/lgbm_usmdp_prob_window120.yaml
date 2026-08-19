@@ -6,9 +6,9 @@ overrides:
   runtime:
     is_testing: true
     is_forecasting: true
-    history_days: 304
+    history_length: 304
     predict_steps: 30
-    window_days: 120
+    window_length: 120
     now_time: '2026-07-31T00:00:00'
   target_series:
     data_dir: ./dataset/aidc_power_month/freq_1day/

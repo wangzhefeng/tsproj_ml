@@ -657,16 +657,16 @@ def _build_route(
         future_grid, target_series, actual_series, actual_with_states, actual_summary
     )
 
-    history_days = pd.date_range(history_grid[0].normalize(), history_grid[-1].normalize(), freq="1D")
+    history_length = pd.date_range(history_grid[0].normalize(), history_grid[-1].normalize(), freq="1D")
     future_days = pd.DatetimeIndex(future_grid.normalize().unique())
-    all_days = history_days.append(future_days)
+    all_days = history_length.append(future_days)
     plan_days = _complete_day_dictionary(plan_series, all_days)
     missing_plan_days = [day for day in all_days if day not in plan_days]
     if missing_plan_days:
         scope = "future" if missing_plan_days[0] in future_days else "history"
         raise ValueError(f"{scope} plan day {missing_plan_days[0].date()} is incomplete")
-    target_days = _complete_day_dictionary(target_series, history_days)
-    actual_days = _complete_day_dictionary(actual_series, history_days)
+    target_days = _complete_day_dictionary(target_series, history_length)
+    actual_days = _complete_day_dictionary(actual_series, history_length)
 
     joint_artifact = fit_joint_cluster_artifact(
         target_days,
@@ -686,7 +686,7 @@ def _build_route(
     )
 
     history_similar, history_matches = _build_similar_features(
-        history_grid, history_days, plan_days, target_days, config, future=False
+        history_grid, history_length, plan_days, target_days, config, future=False
     )
     future_similar, future_matches = _build_similar_features(
         future_grid, future_days, plan_days, target_days, config, future=True
@@ -716,7 +716,7 @@ def _build_route(
     history_timestamp_audit = audit_history_timestamps(target_history_frame["time"])
     actual_timestamp_audit = audit_history_timestamps(endogenous_history_frame["time"])
     calendar_quality = _calendar_quality(
-        history_days, target_series, actual_series, plan_series
+        history_length, target_series, actual_series, plan_series
     )
     matches = pd.concat([history_matches, future_matches], ignore_index=True)
     future_source_max = future_lag_sources.dropna().max()
@@ -756,7 +756,7 @@ def _build_route(
             "incomplete_actual_days": [day.isoformat() for day in actual_timestamp_audit.incomplete_days],
         },
         "excluded_calendar_days": [
-            day.isoformat() for day in history_days if day not in target_days
+            day.isoformat() for day in history_length if day not in target_days
         ],
         "fallback_counts": (
             matches.sort_values(["target_day", "rank"])

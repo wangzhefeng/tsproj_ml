@@ -21,9 +21,9 @@ class ModelConfig:
     # ------------------------------
     is_testing: bool = False  # 模型测试
     is_forecasting: bool = True  # 模型预测
-    history_days: int = 31  # 历史数据天数
+    history_length: int = 31  # 历史数据天数
     predict_days: int = 1  # 预测未来 1 天的数据
-    window_days: int = 15  # 滑动窗口天数
+    window_length: int = 15  # 滑动窗口天数
     # 预测推理开始的时间
     now_time: datetime.datetime = field(default_factory=lambda: datetime.datetime(2026, 1, 14, 0, 0, 0))
     start_time: Optional[datetime.datetime] = None
@@ -260,7 +260,7 @@ class ModelConfig:
 
         time_range = model_cfgs.get("time_range", {})
         if isinstance(time_range, dict):
-            self.history_days = int(time_range.get("before_days", self.history_days))
+            self.history_length = int(time_range.get("before_days", self.history_length))
             self.predict_days = int(time_range.get("after_days", self.predict_days))
             self.now_time = time_range.get("now_time", self.now_time)
             self.start_time = time_range.get("start_time", self.start_time)

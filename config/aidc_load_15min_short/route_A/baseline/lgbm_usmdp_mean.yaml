@@ -7,9 +7,9 @@ overrides:
   runtime:
     is_testing: true
     is_forecasting: true
-    history_days: 30
+    history_length: 30
     predict_steps: 16  # 4h = 16 x 15min
-    window_days: 14
+    window_length: 14
     schedule_mode: intraday  # 保留调度时刻: 从调度时刻起预测
     now_time: '2026-07-31T14:00:00'
   target_series:

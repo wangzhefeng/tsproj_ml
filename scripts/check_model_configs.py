@@ -8,12 +8,14 @@
     （无参数时默认 glob config/**/*.yaml，会命中聚合/异常配置，按文件名前缀跳过即可）
 
 复算的校验（与 main.py.__init__ 一致）：
-  - window_days < history_days
+  - window_length < history_length
   - window_len - horizon > max(lags)（滞后特征非全 NaN；USMDP 逐点法除外）
   - detrend_target 与 scale_target 互斥
   - n_windows > 0（滑窗数）
-  - advanced_features：USMDP 不兼容；rolling_windows/diff_periods <= max(lags)
-    （预测路径 df_history_for_lags 只有 max_lag 行，超限特征在预测时退化/NaN）
+  - advanced_features：USMDP 不能直接依赖 y；仅操作历史/未来都存在的列才可用
+    （USMDP 不自动生成 y_lag_*，引用它们会被跳过并提示）；rolling_windows/
+    diff_periods <= max(lags)（预测路径 df_history_for_lags 只有 max_lag 行，
+    超限特征在预测时退化/NaN）
 
 退出码：0 = 全部通过（可能有提示性警告），1 = 存在硬校验失败。
 """
@@ -40,14 +42,14 @@ def check_model_yaml(f: str) -> tuple[object, list[str]]:
     """加载单个模型 YAML，返回 (cfg, problems)。problems 空 = 通过。"""
     cfg = load_yaml_config(f)
     n_per_day = resolve_samples_per_day(cfg.freq)
-    window_len = cfg.window_days * n_per_day
+    window_len = cfg.window_length * n_per_day
     horizon = int(cfg.predict_steps)
     max_lag = max(cfg.lags or [0])
     problems: list[str] = []
 
-    if cfg.window_days >= cfg.history_days:
+    if cfg.window_length >= cfg.history_length:
         problems.append(
-            f"window_days({cfg.window_days}) >= history_days({cfg.history_days})"
+            f"window_length({cfg.window_length}) >= history_length({cfg.history_length})"
         )
 
     if cfg.pred_method != "univariate-single-multistep-direct-pointwise":
@@ -61,15 +63,42 @@ def check_model_yaml(f: str) -> tuple[object, list[str]]:
     if getattr(cfg, "detrend_target", False) and getattr(cfg, "scale_target", False):
         problems.append("detrend_target 与 scale_target 同时开启（互斥）")
 
-    n_windows = (cfg.history_days * n_per_day - window_len) // horizon + 1
+    n_windows = (cfg.history_length * n_per_day - window_len) // horizon + 1
     if n_windows <= 0:
         problems.append(f"n_windows={n_windows} <= 0，测试会被跳过")
 
     adv = getattr(cfg, "enable_advanced_features", False)
     if adv:
-        if cfg.pred_method == "univariate-single-multistep-direct-pointwise":
+        is_usmdp = cfg.pred_method == "univariate-single-multistep-direct-pointwise"
+        target_dependent_features = {
+            "rolling": bool(getattr(cfg, "enable_rolling_features", False))
+            and "y" in (getattr(cfg, "rolling_columns", []) or []),
+            "expanding": bool(getattr(cfg, "enable_expanding_features", False))
+            and "y" in (getattr(cfg, "expanding_columns", []) or []),
+            "diff": bool(getattr(cfg, "enable_diff_features", False))
+            and "y" in (getattr(cfg, "diff_columns", []) or []),
+            "pct_change": bool(getattr(cfg, "enable_pct_change_features", False))
+            and "y" in (getattr(cfg, "pct_change_columns", []) or []),
+            "time_since": bool(getattr(cfg, "enable_time_since_features", False))
+            and "y" in (getattr(cfg, "time_since_columns", []) or []),
+            "polynomial": bool(getattr(cfg, "enable_polynomial_features", False))
+            and "y" in (getattr(cfg, "polynomial_columns", []) or []),
+            "interaction": bool(getattr(cfg, "enable_interaction_features", False))
+            and any("y" in pair for pair in (getattr(cfg, "interaction_column_pairs", []) or [])),
+        }
+        enabled_target_ops = [name for name, enabled in target_dependent_features.items() if enabled]
+        if is_usmdp and enabled_target_ops:
             problems.append(
-                "USMDP + advanced_features 不兼容（训练有 rolling/diff，预测 df_future 无 y）"
+                "USMDP advanced_features 不能依赖目标列 y（预测 df_future 无 y）："
+                + ", ".join(enabled_target_ops)
+            )
+        roll_columns = list(getattr(cfg, "rolling_columns", []) or [])
+        if is_usmdp and bool(getattr(cfg, "enable_rolling_features", False)) and any(
+            column.startswith("y_lag_") for column in roll_columns
+        ):
+            problems.append(
+                "提示：USMDP 不会自动生成 y_lag_*；rolling_columns 中的 y_lag_* "
+                "会被特征工程跳过，当前配置不会形成该消融特征。"
             )
         roll_win = list(getattr(cfg, "rolling_windows", []) or [])
         diff_per = list(getattr(cfg, "diff_periods", []) or [])
@@ -100,19 +129,21 @@ def main() -> int:
         n_per_day = resolve_samples_per_day(cfg.freq)
         horizon = int(cfg.predict_steps)
         max_lag = max(cfg.lags or [0])
-        n_windows = (cfg.history_days * n_per_day - cfg.window_days * n_per_day) // horizon + 1
+        n_windows = (cfg.history_length * n_per_day - cfg.window_length * n_per_day) // horizon + 1
         adv = getattr(cfg, "enable_advanced_features", False)
         print(f"{f}")
         print(f"    method={method} freq={cfg.freq} n_per_day={n_per_day} "
-              f"history={cfg.history_days}d window={cfg.window_days}d horizon={horizon} "
+              f"history={cfg.history_length}d window={cfg.window_length}d horizon={horizon} "
               f"max_lag={max_lag} n_windows={n_windows} adv={adv} now_time={cfg.now_time}")
         if problems:
-            # 硬校验 vs 提示：advanced 窗口超限是提示（不崩溃）；其余为硬失败
-            hard = [p for p in problems if not p.startswith("advanced 窗口")]
+            # 硬校验 vs 提示：高级窗口超限和 USMDP 未生成 y_lag_* 都是提示
+            soft_prefixes = ("advanced 窗口", "提示：")
+            hard = [p for p in problems if not p.startswith(soft_prefixes)]
+            soft = [p for p in problems if p.startswith(soft_prefixes)]
             if hard:
                 hard_failures.append((f, hard))
-            else:
-                warnings.append((f, [p for p in problems if p.startswith("advanced 窗口")]))
+            if soft:
+                warnings.append((f, soft))
 
     print("\n=== 汇总 ===")
     if hard_failures:

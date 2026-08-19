@@ -5,6 +5,7 @@ import sys
 import tempfile
 import unittest
 import datetime
+import importlib.util
 from dataclasses import fields, is_dataclass
 from pathlib import Path
 from types import SimpleNamespace
@@ -19,9 +20,53 @@ from features.FeatureEngineering import FeatureEngineer
 
 
 ROOT = Path(__file__).resolve().parent.parent
+CHECKER_PATH = ROOT / "scripts" / "check_model_configs.py"
+
+
+def load_config_checker():
+    spec = importlib.util.spec_from_file_location("check_model_configs", CHECKER_PATH)
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"Unable to load config checker: {CHECKER_PATH}")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 class ConfigEntrypointTest(unittest.TestCase):
+    def test_usmdp_advanced_feature_checker_distinguishes_target_and_missing_lags(self):
+        checker = load_config_checker()
+        rolllag_path = (
+            ROOT
+            / "config/aidc_ess_selfuse_load/route_A/tuning/"
+            "lgbm_usmdp_prob_mean_rolllag.yaml"
+        )
+        _, rolllag_problems = checker.check_model_yaml(str(rolllag_path))
+        self.assertTrue(any(problem.startswith("提示：USMDP 不会自动生成 y_lag_*") for problem in rolllag_problems))
+        self.assertFalse(any("不能依赖目标列 y" in problem for problem in rolllag_problems))
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            config_path = Path(tmp_dir) / "usmdp_target_advanced.yaml"
+            config_path.write_text(
+                """base_config: config.univariate_config
+overrides:
+  runtime:
+    history_length: 60
+    predict_steps: 288
+    window_length: 30
+  advanced_features:
+    enable_advanced_features: true
+    enable_rolling_features: true
+    rolling_columns: [y]
+    rolling_windows: [288]
+    rolling_stats: [mean]
+  model_strategy:
+    pred_method: univariate-single-multistep-direct-pointwise
+""",
+                encoding="utf-8",
+            )
+            _, target_problems = checker.check_model_yaml(str(config_path))
+        self.assertTrue(any("不能依赖目标列 y" in problem for problem in target_problems))
+
     def test_aidc_multivariate_yaml_configs_use_selected_dataset_contract(self):
         root = ROOT / "config/aidc_electricity_computility/electricity/2026-06-11"
         expected_paths = [
@@ -234,7 +279,7 @@ class ConfigEntrypointTest(unittest.TestCase):
         result = self._run_python(
             "import config.generate_configs as g; "
             "params={"
-            "'history_days':31,'predict_steps':96,'window_days':15,"
+            "'history_length':31,'predict_steps':96,'window_length':15,"
             "'now_time_iso':'2018-06-26T19:45:00',"
             "'data_dir':'./dataset/example/','data_path':'df_power.csv','freq':'5min',"
             "'target_ts_feat':'count_data_time','target':'h_total_use',"
@@ -263,11 +308,11 @@ class ConfigEntrypointTest(unittest.TestCase):
         cfg = load_yaml_config(
             ROOT / "config/aidc_electricity_computility/electricity/2026-06-11/A1_01a/lgbm_usmr.yaml"
         )
-        # 当前配置 max(lags)=864、predict_steps=288（5min）：window_days=4 时
-        # 滑窗训练行数 = 4*288-288 = 864 <= 864 触发校验，最小 window_days = (864+288)//288+1 = 5
-        cfg.window_days = 4
+        # 当前配置 max(lags)=864、predict_steps=288（5min）：window_length=4 时
+        # 滑窗训练行数 = 4*288-288 = 864 <= 864 触发校验，最小 window_length = (864+288)//288+1 = 5
+        cfg.window_length = 4
 
-        with self.assertRaisesRegex(ValueError, r"need window_days >= 5\."):
+        with self.assertRaisesRegex(ValueError, r"need window_length >= 5\."):
             Model(cfg)
 
 

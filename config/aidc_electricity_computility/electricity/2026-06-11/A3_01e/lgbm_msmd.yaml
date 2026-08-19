@@ -4,9 +4,9 @@ overrides:
   runtime:
     is_testing: true
     is_forecasting: false
-    history_days: 19
+    history_length: 19
     predict_steps: 288
-    window_days: 15
+    window_length: 15
     now_time: '2026-06-11T23:55:00'
   target_series:
     data_dir: ./dataset/aidc_electricity_computility/electricity/2026-06-11/demand_load/A3_01e/

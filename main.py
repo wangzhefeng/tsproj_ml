@@ -80,7 +80,7 @@ class Model:
         _predict_suffix = "-quantile" if str(getattr(self.args, "predict_type", "point")).lower() == "quantile" else ""
         # 可选自定义后缀（如 "-intraday"），用于同配置不同语义版本的结果隔离
         _custom_suffix = str(getattr(self.args, "setting_suffix", "") or "").strip()
-        self.setting = f"{self.args.model_type}-{data_name}-{pred_method_code}-{self.args.window_days}{_predict_suffix}{_custom_suffix}"
+        self.setting = f"{self.args.model_type}-{data_name}-{pred_method_code}-{self.args.window_length}{_predict_suffix}{_custom_suffix}"
         self.log_prefix = f"[{self.setting}]"
         # ------------------------------
         # 数据参数
@@ -106,15 +106,15 @@ class Model:
         if is_monthly:
             # 月频分界点 = 下月月初（类比 daily 的 +1day），使历史含完整月末点
             now_time = (now_ts.to_period("M") + 1).to_timestamp()
-            # 历史开始时刻 = now - history_days 月
-            start_time = now_time - pd.DateOffset(months=self.args.history_days)
+            # 历史开始时刻 = now - history_length 月
+            start_time = now_time - pd.DateOffset(months=self.args.history_length)
         elif str(getattr(self.args, "schedule_mode", "daily")).lower() == "intraday":
             now_time = now_ts
-            start_time = now_time - datetime.timedelta(days=self.args.history_days)
+            start_time = now_time - datetime.timedelta(days=self.args.history_length)
         else:
             now_time = now_ts.floor("1D") + datetime.timedelta(days=1)
-            start_time = now_time - datetime.timedelta(days=self.args.history_days)
-        # 时间序列历史数据开始时刻（= now_time - history_days）
+            start_time = now_time - datetime.timedelta(days=self.args.history_length)
+        # 时间序列历史数据开始时刻（= now_time - history_length）
         # 预测数据长度（= predict_steps 个 freq 步长）
         self.horizon = int(self.args.predict_steps)
         # 时间序列未来结束时刻（= now_time + predict_steps × freq 步长）
@@ -131,10 +131,10 @@ class Model:
         # 模型测试、预测
         # ------------------------------
         # 测试窗口数据长度(训练+测试)
-        self.window_len = int(self.args.window_days * self.n_per_day)
+        self.window_len = int(self.args.window_length * self.n_per_day)
         # 测试滑动窗口数量, >=1, 1: 单个窗口
-        # self.n_windows = int(self.args.history_days * self.n_per_day - self.window_len - self.horizon + 1) // self.horizon
-        self.n_windows = int(self.args.history_days * self.n_per_day - self.window_len) // self.horizon + 1
+        # self.n_windows = int(self.args.history_length * self.n_per_day - self.window_len - self.horizon + 1) // self.horizon
+        self.n_windows = int(self.args.history_length * self.n_per_day - self.window_len) // self.horizon + 1
         self.args.horizon = self.horizon
         self.args.n_windows = self.n_windows
         self.args.n_per_day = self.n_per_day
@@ -150,10 +150,10 @@ class Model:
         # ------------------------------
         # 参数合法性校验
         # ------------------------------
-        if self.args.window_days >= self.args.history_days:
+        if self.args.window_length >= self.args.history_length:
             raise ValueError(
-                f"{self.log_prefix} window_days ({self.args.window_days}) must be less than "
-                f"history_days ({self.args.history_days})."
+                f"{self.log_prefix} window_length ({self.args.window_length}) must be less than "
+                f"history_length ({self.args.history_length})."
             )
         if self.n_windows <= 0:
             logger.warning(
@@ -178,11 +178,11 @@ class Model:
                 if min_train_rows <= max_lag:
                     min_window_days = (max_lag + self.horizon) // self.n_per_day + 1
                     raise ValueError(
-                        f"{self.log_prefix} window_days ({self.args.window_days}) too small for lags: "
+                        f"{self.log_prefix} window_length ({self.args.window_length}) too small for lags: "
                         f"sliding-window train rows = window_len - horizon = {self.window_len} - {self.horizon} "
                         f"= {min_train_rows}, but max(lags) = {max_lag}. "
                         f"Lag features would be all-NaN. To keep at least one valid lag row, "
-                        f"need window_days >= {min_window_days}."
+                        f"need window_length >= {min_window_days}."
                     )
         # ------------------------------
         # 预测增强策略(v1)组合校验:不支持的模式必须显式拒绝,避免裸奔崩溃或静默错配
@@ -193,12 +193,6 @@ class Model:
             "multivariate-single-multistep-blend-direct-recursive",
         }
         if pred_method_l in blend_methods:
-            if str(getattr(self.args, "predict_type", "point")).lower() != "point":
-                raise ValueError(
-                    f"{self.log_prefix} USBR/MSBR blend only supports predict_type=point; "
-                    f"quantile blend is not implemented in v1 (got predict_type={self.args.predict_type}). "
-                    f"Use quantile with a non-blend method (e.g. USMD/MSMD)."
-                )
             if bool(getattr(self.args, "enable_ensemble", False)):
                 raise ValueError(
                     f"{self.log_prefix} USBR/MSBR blend + enable_ensemble is not supported in v1 "

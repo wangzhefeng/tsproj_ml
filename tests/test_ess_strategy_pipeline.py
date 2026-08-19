@@ -361,7 +361,7 @@ class EssStrategyPipelineTest(unittest.TestCase):
         seen = set()
         for route in ("A", "B"):
             for group in ("c0", "c1", "c2", "c3"):
-                path = root / f"route_{route}/add_strategy_features_v2/lgbm_usmdp_mean_{group}.yaml"
+                path = root / f"route_{route}/add_strategy_features/lgbm_usmdp_mean_{group}.yaml"
                 loaded = yaml.safe_load(path.read_text(encoding="utf-8"))
                 overrides = loaded["overrides"]
                 self.assertEqual(
@@ -383,7 +383,7 @@ class EssStrategyPipelineTest(unittest.TestCase):
         for route in ("A", "B"):
             path = (
                 root
-                / f"route_{route}/add_strategy_features_v2/lgbm_usmdp_mean_c5_joint.yaml"
+                / f"route_{route}/add_strategy_features/lgbm_usmdp_mean_c5_joint.yaml"
             )
             loaded = yaml.safe_load(path.read_text(encoding="utf-8"))
             overrides = loaded["overrides"]

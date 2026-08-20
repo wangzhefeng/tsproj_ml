@@ -33,6 +33,71 @@ from utils.weather_contract import (
 LOGGING_LABEL = Path(__file__).name[:-3]
 
 
+def materialize_custom_future_sources(
+    custom_history: Optional[List[Dict[str, Any]]],
+    custom_future: Optional[List[Dict[str, Any]]],
+    future_times,
+    cutoff,
+) -> List[Dict[str, Any]]:
+    """按 custom source 的 future_strategy 构造预测期外生帧。
+
+    ``explicit``（默认）保留显式 future 文件；``freeze_last_observation``
+    只读取 cutoff 及以前的最后一条历史状态，并重复到全部 future_times。
+    """
+    history_sources = list(custom_history or [])
+    future_sources = list(custom_future or [])
+    history_by_name = {str(source.get("name", "custom")): source for source in history_sources}
+    future_by_name = {str(source.get("name", "custom")): source for source in future_sources}
+    names = list(dict.fromkeys([*history_by_name, *future_by_name]))
+    resolved = []
+    future_index = pd.DatetimeIndex(pd.to_datetime(future_times))
+    cutoff_ts = pd.Timestamp(cutoff)
+
+    for name in names:
+        history_source = history_by_name.get(name)
+        future_source = future_by_name.get(name)
+        strategy_source = history_source or future_source or {}
+        strategy = str(strategy_source.get("future_strategy", "explicit") or "explicit").lower()
+        if strategy == "explicit":
+            if future_source is not None:
+                resolved.append(future_source)
+            continue
+        if strategy != "freeze_last_observation":
+            raise ValueError(
+                f"Custom source '{name}' has unsupported future_strategy='{strategy}'."
+            )
+        if history_source is None:
+            raise ValueError(
+                f"Custom source '{name}' requires history data for freeze_last_observation."
+            )
+
+        ts_col = history_source.get("ts_col")
+        columns = list(history_source.get("columns") or [])
+        history_frame = history_source.get("df")
+        if not ts_col or history_frame is None or history_frame.empty:
+            raise ValueError(
+                f"Custom source '{name}' has no usable history for freeze_last_observation."
+            )
+        frame = history_frame.copy()
+        frame[ts_col] = pd.to_datetime(frame[ts_col])
+        frame = frame[frame[ts_col] <= cutoff_ts].sort_values(ts_col)
+        if frame.empty:
+            raise ValueError(
+                f"Custom source '{name}' has no history at or before cutoff {cutoff_ts}."
+            )
+        missing = [column for column in columns if column not in frame.columns]
+        if missing:
+            raise ValueError(f"Custom source '{name}' missing columns {missing}.")
+
+        last_row = frame.iloc[-1]
+        frozen = pd.DataFrame({ts_col: future_index})
+        for column in columns:
+            frozen[column] = last_row[column]
+        resolved.append({**history_source, "df": frozen})
+
+    return resolved
+
+
 UNIVARIATE_PRED_METHODS = {
     "univariate-single-multistep-direct-pointwise",
     "univariate-single-multistep-direct",
@@ -208,8 +273,17 @@ class DataLoader:
                 ts_col=ts_col,
                 label=f"Custom[{name}]",
             )
-            base = {"name": name, "ts_col": ts_col, "columns": columns,
-                    "categorical_columns": categorical_columns}
+            base = {
+                "name": name,
+                "ts_col": ts_col,
+                "columns": columns,
+                "categorical_columns": categorical_columns,
+                "future_strategy": str(source.get("future_strategy", "explicit") or "explicit"),
+                # custom 数据在每个时间戳何时可获得：
+                # - contemporaneous（默认）：时间戳当期开始即已知；
+                # - end_of_period：当期结束后才可得（如当日完整负荷状态）。
+                "availability": str(source.get("availability", "contemporaneous") or "contemporaneous"),
+            }
             if df_history is not None and not df_history.empty:
                 input_data["custom_history"].append({**base, "df": df_history})
             if df_future is not None and not df_future.empty:
@@ -430,7 +504,13 @@ class DataLoader:
                 "Future weather",
             )
 
-        return (df_future_template, df_date_future, df_weather_future, input_data["custom_future"])
+        df_custom_future = materialize_custom_future_sources(
+            custom_history=input_data.get("custom_history"),
+            custom_future=input_data.get("custom_future"),
+            future_times=df_future_template["time"],
+            cutoff=self.forecast_start_time - pd.Timedelta(nanoseconds=1),
+        )
+        return (df_future_template, df_date_future, df_weather_future, df_custom_future)
 
 
 def _to_single_output_label(y: Any) -> Optional[np.ndarray]:

@@ -90,8 +90,15 @@ class Model:
         # 可选自定义后缀（如 "-intraday"），用于同配置不同语义版本的结果隔离
         _custom_suffix = str(getattr(self.args, "setting_suffix", "") or "").strip()
         _horizon_suffix = "-calendar-month" if self.horizon_mode == "calendar_month" else ""
+        # calendar_month 模式下 window_length 只是遗留兼容字段，真实训练长度是
+        # train_window_length；setting 编码真实值，避免结果目录名误导（150→120）。
+        _window_token = (
+            str(int(getattr(self.args, "train_window_length", 0) or 0))
+            if self.horizon_mode == "calendar_month"
+            else str(self.args.window_length)
+        )
         self.setting = (
-            f"{self.args.model_type}-{data_name}-{pred_method_code}-{self.args.window_length}"
+            f"{self.args.model_type}-{data_name}-{pred_method_code}-{_window_token}"
             f"{_predict_suffix}{_custom_suffix}{_horizon_suffix}"
         )
         self.log_prefix = f"[{self.setting}]"

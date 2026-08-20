@@ -92,6 +92,9 @@ class ExogenousFeatureEngineer:
         self.exogenous_features = []
         # 收集类别特征
         self.categorical_features = []
+        # future_strategy=freeze_last_observation 的 custom 列：属于预测原点冻结状态，
+        # Direct horizon 展开时不得 shift 到目标期真实值。
+        self.origin_frozen_features = []
     
     def extend_datetime_feature(self, df: pd.DataFrame, step_minutes: float, n_per_day: int):
         """
@@ -312,6 +315,10 @@ class ExogenousFeatureEngineer:
             df_sel = df_custom[keep_cols].copy()
             df_sel[col_ts] = pd.to_datetime(df_sel[col_ts])
             df_sel = df_sel.drop_duplicates(subset=col_ts, keep="last").sort_values(col_ts)
+            history_shift_steps = int(source.get("_history_shift_steps", 0) or 0)
+            if history_shift_steps:
+                offset = pd.tseries.frequencies.to_offset(self.args.freq)
+                df_sel[col_ts] = df_sel[col_ts] + history_shift_steps * offset
             for col in keep_cols[1:]:
                 if col in categorical_columns:
                     df_sel[col] = df_sel[col].astype("category")
@@ -323,6 +330,8 @@ class ExogenousFeatureEngineer:
             added = keep_cols[1:]
             self.exogenous_features.extend(added)
             self.categorical_features.extend([c for c in added if c in categorical_columns])
+            if str(source.get("future_strategy", "explicit")).lower() == "freeze_last_observation":
+                self.origin_frozen_features.extend(added)
             if self.verbose:
                 logger.info(f"{self.log_prefix} after extend_custom_feature[{name}] added: {added}")
         return df_copy
@@ -398,6 +407,10 @@ class ExogenousFeatureEngineer:
         获取所有生成的特征列表
         """
         return self.exogenous_features, self.categorical_features
+
+    def get_origin_frozen_features(self) -> List[str]:
+        """返回预测期必须冻结在原点、禁止 horizon shift 的 custom 列。"""
+        return list(dict.fromkeys(self.origin_frozen_features))
     
     def reset(self):
         """
@@ -405,6 +418,7 @@ class ExogenousFeatureEngineer:
         """
         self.exogenous_features = []
         self.categorical_features = []
+        self.origin_frozen_features = []
 
 
 class EndogenousFeatureEngineer:
@@ -1019,9 +1033,31 @@ class FeatureEngineer:
         # 特征工程: 自定义外生特征（注册表多来源；历史段优先，未来段回退）
         custom_sources = df_custom_history if df_custom_history else df_custom_future
         if custom_sources:
+            # end_of_period 状态在当期结束后才可用。Recursive/Pointwise 的训练
+            # 目标与特征同一时间戳，需把 source 时间戳向后移 1 个 freq 步，使
+            # 行 t 合并到 state(t-1)；Direct/DirRec 的行 t 是预测原点，保留
+            # state(t) 并在所有 horizon 冻结。
+            is_history = bool(df_custom_history)
+            shift_history_for_method = str(self.args.pred_method).lower() in {
+                "univariate-single-multistep-direct-pointwise",
+                "univariate-single-multistep-recursive",
+                "multivariate-single-multistep-recursive",
+            }
+            prepared_sources = []
+            for source in custom_sources:
+                prepared = dict(source)
+                availability = str(prepared.get("availability", "contemporaneous") or "contemporaneous").lower()
+                if availability not in {"contemporaneous", "end_of_period"}:
+                    raise ValueError(
+                        f"Custom source '{prepared.get('name', 'custom')}' has unsupported "
+                        f"availability='{availability}'."
+                    )
+                if is_history and availability == "end_of_period" and shift_history_for_method:
+                    prepared["_history_shift_steps"] = 1
+                prepared_sources.append(prepared)
             df_featured = self.exogenous_feature_engineer.extend_custom_feature(
                 df=df_featured,
-                custom_sources=custom_sources,
+                custom_sources=prepared_sources,
             )
         # 特征工程: 日期时间特征
         if getattr(self.args, "enable_datetime_features", True):
@@ -1057,30 +1093,50 @@ class FeatureEngineer:
 
         return df_featured, exogenous_features, categorical_features
 
-    def _expand_horizon_exogenous_for_direct(self, df: pd.DataFrame, exogenous_features: List[str], horizon: int):
+    def _expand_horizon_exogenous_for_direct(
+        self,
+        df: pd.DataFrame,
+        exogenous_features: List[str],
+        horizon: int,
+        origin_frozen_features: Optional[List[str]] = None,
+    ):
         """
         Direct 多步预测场景下，将外生特征扩展为 horizon-aware 形式：
         exog_h1, exog_h2, ..., exog_hH
+
+        行 t 的 col_h(h) = 外生列在目标日 t+h 的值（对齐该 horizon 的实际
+        预测目标），帧尾目标日不存在时为 NaN（由训练 dropna 剔除），禁止
+        回看原点日取值。h=1 即 shift(-1)，以此类推。
         """
         if horizon <= 1 or not exogenous_features:
             return df, exogenous_features
 
         df_copy = df.copy()
         expanded_features = []
+        frozen_set = set(origin_frozen_features or [])
         for h in range(1, horizon + 1):
-            shift_steps = -(h - 1)
+            shift_steps = -h
             for col in exogenous_features:
+                # 预测原点状态（freeze_last_observation）只保留基础列，所有 h
+                # 共享原点值；生成 state_h 会把训练期真实未来状态泄漏给模型。
+                if col in frozen_set:
+                    continue
                 col_h = f"{col}_h{h}"
-                if shift_steps == 0:
-                    df_copy[col_h] = df_copy[col]
-                else:
-                    df_copy[col_h] = df_copy[col].shift(shift_steps)
+                shifted = df_copy[col].shift(shift_steps)
+                # bool 列 shift 后因 NaN 会退化为 object；LightGBM 只接受
+                # int/float/bool，故显式转成 0/1/NaN float。其它 dtype 保持。
+                if pd.api.types.is_bool_dtype(df_copy[col].dtype):
+                    shifted = shifted.astype(float)
+                df_copy[col_h] = shifted
                 expanded_features.append(col_h)
 
         if self.verbose:
             logger.info(f"{self.log_prefix} horizon-aware exogenous features generated: {len(expanded_features)}")
 
-        return df_copy, expanded_features
+        # 保留基础外生列用于推理端统一 schema；训练端 horizon_feature melt
+        # 会按 h 从 *_h{h} 折叠回基础列名。普通 multioutput Direct 同时拿到
+        # 基础列与 horizon-aware 列，目标日外生可供各输出模型使用。
+        return df_copy, list(exogenous_features) + expanded_features
 
     def create_endogenous_basic_features(self, df_series, target_feature, endogenous_features_with_target, horizon):
         """
@@ -1383,6 +1439,7 @@ class FeatureEngineer:
             df_custom_history=df_custom_history,
             df_custom_future=df_custom_future,
         )
+        origin_frozen_features = self.exogenous_feature_engineer.get_origin_frozen_features()
         align_direct_to_target = bool(
             getattr(self.args, "align_direct_features_to_target", False)
         ) and self.args.pred_method in [
@@ -1400,14 +1457,21 @@ class FeatureEngineer:
                 if col in df_series_featured.columns:
                     df_series_featured[col] = df_series_featured[col].shift(-1)
         # Direct 系列方法下，按 horizon 展开外生特征
-        if getattr(self.args, "use_horizon_exogenous_for_direct", False) and self.args.pred_method in [
+        should_expand_horizon_exogenous = (
+            getattr(self.args, "use_horizon_exogenous_for_direct", False)
+            or str(getattr(self.args, "direct_strategy", "multioutput")).lower() == "horizon_feature"
+        )
+        if should_expand_horizon_exogenous and self.args.pred_method in [
             "univariate-single-multistep-direct",
             "multivariate-single-multistep-direct",
+            "univariate-single-multistep-direct-recursive",
+            "multivariate-single-multistep-direct-recursive",
         ]:
             (df_series_featured, exogenous_features) = self._expand_horizon_exogenous_for_direct(
                 df=df_series_featured,
                 exogenous_features=exogenous_features,
                 horizon=horizon,
+                origin_frozen_features=origin_frozen_features,
             )
         # Global 模式：保留序列 ID 作为静态外生类别特征
         if getattr(self.args, "enable_global_training", False):

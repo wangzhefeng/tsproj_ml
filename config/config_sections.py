@@ -145,6 +145,8 @@ class ExogenousFeatureConfig:
     #   ts_col: 时间戳列名（精确时间戳 merge，与 weather 同粒度）
     #   columns: 使用的特征列名白名单
     #   categorical_columns: 其中按类别传给 LightGBM 的列名（默认 []）
+    #   future_strategy: explicit / freeze_last_observation
+    #   availability: contemporaneous（默认）/ end_of_period（当期结束后才可得）
     # 与 weather 通路的区别：无 rt_/pred_ 列名映射（历史/未来列名一致）、无硬编码列白名单。
     custom_features: List[Dict[str, Any]] = field(default_factory=list)
 

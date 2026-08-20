@@ -1,0 +1,142 @@
+# A — qr — direct (日频单变量 · 线性分位数 prob quantile) # + 日度气象外生 · STL 周周期目标分解 · 预测原点负荷状态
+base_config: config.univariate_config
+overrides:
+  output:
+    scenario_subpath: aidc_power_month/route_A/freq_1day/add_load_state
+    setting_suffix: -decomp-stl7-load-state
+  runtime:
+    horizon_mode: calendar_month  # 预测 forecast_start 所在的完整自然月
+    train_window_length: 120  # 固定训练天数，保持旧配置有效训练长度
+    forecast_mode: forecast
+    is_testing: true
+    is_forecasting: true
+    history_length: 304
+    predict_steps: 30
+    window_length: 150
+    now_time: '2026-07-31T00:00:00'
+  target_series:
+    data_dir: ./dataset/aidc_power_month/freq_1day/
+    data_path: A_Loads_1day_sum_20251001_20260731.csv
+    freq: 1D
+    target_ts_feat: time
+    target: value
+  exogenous_features:
+    weather_backtest_path: weather_daily_stats_backtest_proxy_20260101_20260731.csv
+    strict_weather_information_set: true
+    weather_history_source: actual
+    weather_backtest_source: proxy
+    weather_future_source: proxy
+    enable_date_features: false
+    enable_weather_features: true
+    weather_history_path: weather_daily_stats_20251001_20260731.csv
+    weather_future_path: weather_daily_stats_future_20260801_20260831.csv  # 纯上一年同日代理，不含2026-08实测（derive_weather_daily_future.py）
+    weather_ts_feat: ts
+    weather_features:
+    - rt_tt2   # 日均 2m 气温（Kelvin）
+    - cal_rh   # 日均相对湿度 %
+    - rt_ssr   # 日总辐射
+    - rt_ws10  # 日均 10m 风速
+    datetime_features:
+    - day
+    - day_of_week
+    - week_of_year
+    - month
+    - days_in_month
+    - quarter
+    - day_of_year
+    - year
+    - is_month_start
+    - is_month_end
+    - is_quarter_start
+    - is_quarter_end
+    datetime_categorical_features: []  # 空列表=关闭类别特征(不传 categorical_feature 给 LightGBM)
+    custom_features:
+    - name: load_state
+      history_path: load_state_features/A_load_state_history.csv
+      future_path: null
+      future_strategy: freeze_last_observation
+      availability: end_of_period  # 当日结束后可得；框架按方法对齐训练时点
+      ts_col: time
+      columns:
+      - state_z30_robust
+      - state_z30_ready
+      - state_slope30
+      - state_slope30_ready
+      - state_intraday_std
+      - state_intraday_range
+      - state_intraday_p95_p5_gap
+      - state_intraday_cv
+      - state_intraday_max_abs_step
+      - state_intraday_peak_time_frac
+      - state_intraday_range_pct
+      - state_route_diff_pct
+      - state_last_day_volatile
+      - state_volatile_count_7d
+      - state_volatile_count_30d
+      categorical_columns: []
+  time_lag_features:
+    lags:
+    - 1
+    - 2
+    - 3
+    - 4
+    - 5
+    - 6
+    - 7
+    - 14
+    - 28
+  advanced_features:
+    enable_advanced_features: true
+    enable_rolling_features: true
+    rolling_columns:
+    - y
+    rolling_windows:
+    - 7
+    - 14
+    - 28
+    rolling_stats:
+    - mean
+    - std
+    - min
+    - max
+    enable_diff_features: true
+    diff_columns:
+    - y
+    diff_periods:
+    - 1
+    - 7
+    - 28
+  model_strategy:
+    use_horizon_exogenous_for_direct: true  # 目标日天气/日历按 horizon 对齐
+    quantile_monotone: true  # 逐行排序消除 quantile crossing
+    align_direct_features_to_target: false
+    model_type: qr
+    pred_method: univariate-single-multistep-direct
+    predict_type: quantile  # 概率预测:输出各分位数(predict_qXX)
+    quantiles:
+    - 0.1
+    - 0.5
+    - 0.9
+    enable_conformal_calibration: false  # 目标分解暂不与 CQR conformal 组合
+  training_enhancement:
+    enable_time_decay_sample_weight: false  # 多输出分位数路径不透传 sample_weight
+  train_outlier:
+    enable_train_outlier_handling: false  # 日频稀疏点不宜插值清洗
+  eval_mask:
+    mode: percentile
+    percentile: 5.0
+  preprocessing:
+    target_calendar_normalization: none
+    scale_features: true  # 线性分位数回归需标准化特征
+    scale_target: false  # 目标分解与 target scaling 互斥
+    decomposition_method: stl
+    decomposition_periods:
+    - 7  # 日频周周期；每窗 120 个训练点，满足至少两个完整周期
+    decomposition_robust: true
+    decomposition_trend_degree: 1
+    decomposition_trend_forecast: polynomial
+    decomposition_seasonal_cycles: 4
+  performance:
+    window_parallel_workers: 8
+    multi_output_n_jobs: 8
+    model_thread_count: 1

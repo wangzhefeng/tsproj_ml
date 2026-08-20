@@ -75,6 +75,7 @@ overrides:
     - 7
     - 28
   model_strategy:
+    quantile_monotone: true  # 逐行排序消除 quantile crossing
     align_direct_features_to_target: false
     model_type: qr
     pred_method: univariate-single-multistep-direct

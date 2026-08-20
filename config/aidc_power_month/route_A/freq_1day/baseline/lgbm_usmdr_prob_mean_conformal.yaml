@@ -54,6 +54,7 @@ overrides:
     - 14
     - 28
   model_strategy:
+    quantile_monotone: true  # 逐行排序消除 quantile crossing
     align_direct_features_to_target: false
     model_type: lightgbm
     pred_method: univariate-single-multistep-direct-recursive
@@ -64,7 +65,7 @@ overrides:
     - 0.9
     enable_conformal_calibration: true
   training_enhancement:
-    enable_time_decay_sample_weight: true
+    enable_time_decay_sample_weight: false  # 多输出 quantile 不透传 sample_weight，显式关闭避免假启用
     decay_halflife_days: 60  # 半衰期天数,按数据漂移速度调整
   train_outlier:
     enable_train_outlier_handling: false  # 日频稀疏点不宜插值清洗

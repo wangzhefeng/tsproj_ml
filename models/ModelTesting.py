@@ -38,6 +38,7 @@ from features.TargetDecomposition import TargetDecomposer
 from features.TargetNormalization import CalendarDayTargetNormalizer
 from models.ModelTraining import Trainer
 from models.ModelForecasting import Forecaster
+from data_provider.data_loader import materialize_custom_future_sources
 from data_provider.outlier_handling import (
     empty_train_outlier_report,
     handle_train_outliers,
@@ -244,6 +245,14 @@ class Tester:
             df_weather_backtest=payload.get("df_weather_backtest"),
             log_prefix=log_prefix,
         )
+        df_custom_future_for_test = materialize_custom_future_sources(
+            custom_history=payload.get("df_custom_history"),
+            # explicit 策略维持既有 CV 语义：历史归档按测试期时间戳对齐；
+            # freeze 策略会忽略 cutoff 之后的行并冻结训练末状态。
+            custom_future=payload.get("df_custom_history"),
+            future_times=df_future_for_test["time"],
+            cutoff=df_history_train["time"].max(),
+        )
         predictor = Forecaster(
             args=args,
             horizon=min(horizon, len(df_future_for_test)),
@@ -254,7 +263,7 @@ class Tester:
             df_future=df_future_for_test,
             df_date_future=payload["df_date_history"],
             df_weather_future=df_weather_future_for_test,
-            df_custom_future=payload.get("df_custom_history"),
+            df_custom_future=df_custom_future_for_test,
             endogenous_features=payload["endogenous_features_with_target"],
             target_feature=payload["target_feature"],
             target_output_features=target_output_features,

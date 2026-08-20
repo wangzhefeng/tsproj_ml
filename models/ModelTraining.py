@@ -14,6 +14,7 @@
 # python libraries
 import copy
 import os
+import re
 from pathlib import Path
 import math
 from typing import Any, Dict, List, Optional
@@ -548,12 +549,36 @@ class Trainer:
             return n_per_day
         return 7
 
+    _DERIVED_SUFFIX_MARKERS = ("lag_", "rolling_", "diff_")
+
+    @staticmethod
+    def _classify_endogenous_derived_for_melt(columns) -> set:
+        """识别宽表特征列中由目标序列派生的列（滞后/滚动/差分等）。
+
+        与 Forecaster._classify_endogenous_derived 同一约定：按列名模式
+        白名单匹配（y_lag_*、y_rolling_*、y_diff_* 等），其余列按外生
+        处理（天气/日历/自定义计划类，预测目标日可知）。
+        """
+        derived = set()
+        for col in columns:
+            name = str(col)
+            if name == "y" or name.startswith("y_"):
+                derived.add(col)
+                continue
+            for marker in Trainer._DERIVED_SUFFIX_MARKERS:
+                if f"_{marker}" in name:
+                    derived.add(col)
+                    break
+        return derived
+
     def _melt_to_horizon_long(self, X_train_df, Y_train_df, sample_weight):
         """
         Direct 宽表 (N × F, N × H) melt 为 horizon-as-feature 长表。
 
         输出: X_long (N*H × (F+h_feats)), Y_long (N*H × 1), sw_long (N*H,), h_feature_names
-        行对齐: X_long[i*H + h] = X_train_df.iloc[i] + horizon=h+1,  Y_long[i*H+h] = Y_train_df.iloc[i, h]
+        行对齐: X_long[i*H + h] = lag/rolling 等内生派生列取原点行 i（预测
+        原点可知状态）+ 外生列取目标日 i+h+1（与推理端按未来行取外生一致），
+        Y_long[i*H+h] = Y_train_df.iloc[i, h]
         """
         H = int(Y_train_df.shape[1])
         N = int(len(X_train_df))
@@ -569,6 +594,26 @@ class Trainer:
         # X repeat: 每行复制 H 次（row0×H, row1×H, ...）
         # 用 pandas 原生 repeat 保留各列 dtype（np.repeat(.values) 会把混合 dtype 退化为 object）
         X_long_df = X_train_df.loc[X_train_df.index.repeat(H)].reset_index(drop=True)
+
+        # FeatureEngineering 在 dropna 前已生成目标日外生列 base_h1..base_hH；
+        # melt 按每个长表行的 h 选择对应列并折叠回 base 名，避免 dropna 后丢失
+        # 尾部目标日外生。内生派生列保持原点行 i 的值。
+        expanded_map = {}
+        for col in X_train_df.columns:
+            match = re.match(r"^(.+)_h(\d+)$", str(col))
+            if match:
+                expanded_map.setdefault(match.group(1), {})[int(match.group(2))] = col
+        expanded_cols = {col for by_h in expanded_map.values() for col in by_h.values()}
+        if expanded_cols:
+            X_long_df = X_long_df.drop(columns=list(expanded_cols), errors="ignore")
+            origin_rows = np.repeat(np.arange(N), H)
+            h_for_row = np.tile(np.arange(1, H + 1), N)
+            for base, by_h in expanded_map.items():
+                values = np.full(N * H, np.nan, dtype=float)
+                for h, source_col in by_h.items():
+                    mask = h_for_row == h
+                    values[mask] = X_train_df[source_col].to_numpy(dtype=float)[origin_rows[mask]]
+                X_long_df[base] = values
 
         # horizon feature: h = 1..H, tile N 次
         h_values = np.tile(np.arange(1, H + 1), N)

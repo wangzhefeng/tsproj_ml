@@ -23,6 +23,11 @@ import xgboost as xgb
 import catboost as cab
 
 from utils.log_util import logger
+from utils.weather_contract import (
+    validate_weather_availability,
+    validate_weather_coverage,
+    validate_weather_information_contract,
+)
 
 # global variable
 LOGGING_LABEL = Path(__file__).name[:-3]
@@ -110,6 +115,7 @@ class DataLoader:
             "date_history": None,
             "date_future": None,
             "weather_history": None,
+            "weather_backtest": None,
             "weather_future": None,
             "custom_history": [],
             "custom_future": [],
@@ -146,8 +152,28 @@ class DataLoader:
         # ------------------------------
         # 加载气象数据
         # ------------------------------
+        validate_weather_information_contract(self.args)
         df_weather_history_raw = self._load_optional_frame(self.args.weather_history_path, "Weather history")
+        df_weather_backtest_raw = self._load_optional_frame(
+            getattr(self.args, "weather_backtest_path", None),
+            "Weather backtest",
+        )
         df_weather_future_raw = self._load_optional_frame(self.args.weather_future_path, "Weather future")
+        if bool(getattr(self.args, "strict_weather_information_set", False)):
+            if df_weather_backtest_raw is not None:
+                validate_weather_availability(
+                    df_weather_backtest_raw,
+                    ts_col=self.args.weather_ts_feat,
+                    label="Backtest weather",
+                    require_before_target_month=True,
+                )
+            if df_weather_future_raw is not None:
+                validate_weather_availability(
+                    df_weather_future_raw,
+                    ts_col=self.args.weather_ts_feat,
+                    label="Future weather",
+                    forecast_origin=self.args.now_time,
+                )
         (
             _df_weather_all,
             df_weather_history,
@@ -159,6 +185,7 @@ class DataLoader:
             label="Weather",
         )
         input_data["weather_history"] = df_weather_history
+        input_data["weather_backtest"] = df_weather_backtest_raw
         input_data["weather_future"] = df_weather_future
         # ------------------------------
         # 加载自定义外生特征（注册表，多来源）
@@ -355,6 +382,16 @@ class DataLoader:
         return (df_history, df_date_history, df_weather_history, endogenous_features_with_target, target_feature,
                 input_data["custom_history"])
 
+    def process_weather_backtest_data(self, input_data: Dict) -> Optional[pd.DataFrame]:
+        """处理独立的滑窗 ex-ante 气象文件，不与历史实测 canonical merge。"""
+        df_weather_backtest = input_data.get("weather_backtest")
+        if df_weather_backtest is None:
+            return None
+        return self.__process_df_timestamp(
+            df=df_weather_backtest,
+            col_ts=self.args.weather_ts_feat,
+        )
+
     def process_future_data(self, input_data: Dict):
         """
         处理未来预测阶段所需的外生数据。
@@ -381,6 +418,17 @@ class DataLoader:
             logger.info(f"{self.log_prefix} after __process_df_timestamp df_weather_future shape: {df_weather_future.shape}")
         else:
             logger.info(f"{self.log_prefix} after __process_df_timestamp df_weather_future: {df_weather_future}")
+
+        if (
+            bool(getattr(self.args, "strict_weather_information_set", False))
+            and bool(getattr(self.args, "enable_weather_features", False))
+        ):
+            validate_weather_coverage(
+                df_weather_future,
+                df_future_template["time"],
+                self.args.weather_ts_feat,
+                "Future weather",
+            )
 
         return (df_future_template, df_date_future, df_weather_future, input_data["custom_future"])
 

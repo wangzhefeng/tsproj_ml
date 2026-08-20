@@ -14,7 +14,7 @@
 # python libraries
 import os
 from pathlib import Path
-from typing import List, Optional
+from typing import Any, Dict, List, Optional, cast
 
 import numpy as np
 import pandas as pd
@@ -35,6 +35,7 @@ from features.FeatureScalering import (
     resolve_target_scaler_type,
 )
 from features.TargetDecomposition import TargetDecomposer
+from features.TargetNormalization import CalendarDayTargetNormalizer
 from models.ModelTraining import Trainer
 from models.ModelForecasting import Forecaster
 from data_provider.outlier_handling import (
@@ -44,6 +45,7 @@ from data_provider.outlier_handling import (
 from utils.eval_mask import build_eval_mask
 from utils.quantile import monotonize_quantile_columns
 from utils.conformal import compute_nonconformity_scores
+from utils.weather_contract import validate_weather_coverage
 from utils.log_util import logger
 
 # global variable
@@ -97,6 +99,33 @@ class Tester:
         self.window_len = window_len
 
     @staticmethod
+    def _resolve_window_weather_future(
+        args,
+        df_history_test: pd.DataFrame,
+        df_weather_history: Optional[pd.DataFrame],
+        df_weather_backtest: Optional[pd.DataFrame],
+        log_prefix: str,
+    ) -> Optional[pd.DataFrame]:
+        """选择滑窗预测可用的气象信息集。
+
+        严格模式必须使用独立的 ex-ante backtest 文件，禁止把含测试月整月
+        实测值的 weather_history 当成未来气象。旧配置未启用严格模式时保持
+        原行为，避免影响其它场景。
+        """
+        if not bool(getattr(args, "enable_weather_features", False)):
+            return None
+        if not bool(getattr(args, "strict_weather_information_set", False)):
+            return df_weather_history
+        validate_weather_coverage(
+            df_weather_backtest,
+            df_history_test["time"],
+            getattr(args, "weather_ts_feat", "ts"),
+            "Backtest weather",
+        )
+        assert df_weather_backtest is not None
+        return df_weather_backtest.copy()
+
+    @staticmethod
     def _window_test(payload):
         """
         单个滑动窗口测试任务
@@ -120,6 +149,7 @@ class Tester:
             horizon=horizon,
             window_len=window_len,
             log_prefix=log_prefix,
+            split_indices=payload.get("split_indices"),
         )
         if split_result is None:
             return {
@@ -135,6 +165,12 @@ class Tester:
             target_feature=payload["target_feature"],
             window=window,
             log_prefix=log_prefix,
+        )
+        target_calendar_normalizer = CalendarDayTargetNormalizer(args)
+        df_history_train = target_calendar_normalizer.transform_history(
+            df_history_train,
+            time_col="time",
+            target_col=payload["target_feature"],
         )
         # 每个滑窗只在训练段拟合目标分解器，禁止测试段及更晚数据参与预处理。
         target_decomposer = TargetDecomposer(args, log_prefix=log_prefix, verbose=False)
@@ -201,6 +237,13 @@ class Tester:
         # 窗口预测
         # ------------------------------
         df_future_for_test = Tester._build_test_future_frame(df_history_test)
+        df_weather_future_for_test = Tester._resolve_window_weather_future(
+            args=args,
+            df_history_test=df_history_test,
+            df_weather_history=payload["df_weather_history"],
+            df_weather_backtest=payload.get("df_weather_backtest"),
+            log_prefix=log_prefix,
+        )
         predictor = Forecaster(
             args=args,
             horizon=min(horizon, len(df_future_for_test)),
@@ -210,7 +253,7 @@ class Tester:
             df_history=df_history_train,
             df_future=df_future_for_test,
             df_date_future=payload["df_date_history"],
-            df_weather_future=payload["df_weather_history"],
+            df_weather_future=df_weather_future_for_test,
             df_custom_future=payload.get("df_custom_history"),
             endogenous_features=payload["endogenous_features_with_target"],
             target_feature=payload["target_feature"],
@@ -248,6 +291,17 @@ class Tester:
             )
         else:
             y_test_for_eval = np.asarray(y_test_raw).reshape(-1)
+        prediction_times = df_history_test["time"].iloc[:len(np.asarray(y_pred).reshape(-1))]
+        y_pred = target_calendar_normalizer.restore_predictions(y_pred, prediction_times)
+        quantile_outputs = getattr(predictor, "quantile_outputs", None)
+        if quantile_outputs:
+            predictor.quantile_outputs = {
+                q: target_calendar_normalizer.restore_predictions(
+                    q_pred,
+                    df_history_test["time"].iloc[:len(np.asarray(q_pred).reshape(-1))],
+                )
+                for q, q_pred in quantile_outputs.items()
+            }
         # 对齐预测结果与评估标签长度
         if len(y_pred) != len(y_test_for_eval):
             min_len = min(len(y_pred), len(y_test_for_eval))
@@ -261,6 +315,7 @@ class Tester:
             window_len=window_len,
             target_feature=payload["target_feature"],
             n_per_day=int(getattr(args, "n_per_day", 1) or 1),
+            split_indices=payload.get("split_indices"),
         )
         if y_naive is not None:
             y_naive = np.asarray(y_naive).reshape(-1)
@@ -281,6 +336,7 @@ class Tester:
             min_value=args.min_value,
             max_value=args.max_value,
             y_naive=y_naive,
+            horizon_mode=str(getattr(args, "horizon_mode", "fixed_steps")),
         )
         # 测试集预测数据
         cv_plot_df_window = Tester._evaluate_result(
@@ -343,6 +399,68 @@ class Tester:
     # Model sliding window testing
     # ------------------------------
     @staticmethod
+    def _build_calendar_month_folds(
+        df_history: pd.DataFrame,
+        train_window_len: int,
+    ) -> List[Dict[str, Any]]:
+        """按完整自然月构造由近到远的滑窗，并固定每窗训练行数。"""
+        if train_window_len <= 0:
+            raise ValueError("train_window_len must be > 0 for calendar_month folds.")
+        if "time" not in df_history.columns:
+            raise ValueError("calendar_month folds require a time column.")
+
+        times = pd.DatetimeIndex(pd.to_datetime(df_history["time"]))
+        if len(times) < 2:
+            return []
+        if not times.is_monotonic_increasing or times.has_duplicates:
+            raise ValueError("calendar_month folds require strictly increasing unique timestamps.")
+        expected_step = pd.Timedelta(days=1)
+        if any(diff != expected_step for diff in times[1:] - times[:-1]):
+            raise ValueError("calendar_month folds currently require a complete regular 1D index.")
+
+        last_time = pd.Timestamp(int(times.asi8[-1]))
+        current_end = cast(pd.Timestamp, last_time + pd.offsets.MonthBegin(1))
+        folds: List[Dict[str, Any]] = []
+        while True:
+            test_end_time = cast(pd.Timestamp, pd.Timestamp(current_end))
+            test_start_time = cast(
+                pd.Timestamp,
+                (test_end_time - pd.offsets.MonthBegin(1)).normalize(),
+            )
+            test_start = int(times.asi8.searchsorted(test_start_time.value, side="left"))
+            test_end = int(times.asi8.searchsorted(test_end_time.value, side="left"))
+            expected_horizon = int(test_start_time.days_in_month)
+
+            if test_start >= len(times) or times[test_start] != test_start_time:
+                break
+            if test_end - test_start != expected_horizon:
+                raise ValueError(
+                    f"calendar_month fold {test_start_time:%Y-%m} is incomplete: "
+                    f"expected {expected_horizon} daily rows, got {test_end - test_start}."
+                )
+
+            train_end = test_start
+            train_start = train_end - int(train_window_len)
+            if train_start < 0:
+                break
+            folds.append(
+                {
+                    "window": len(folds) + 1,
+                    "train_start": train_start,
+                    "train_end": train_end,
+                    "test_start": test_start,
+                    "test_end": test_end,
+                    "horizon": expected_horizon,
+                    "train_start_time": times[train_start],
+                    "train_end_time": test_start_time,
+                    "test_start_time": test_start_time,
+                    "test_end_time": test_end_time,
+                }
+            )
+            current_end = test_start_time
+        return folds
+
+    @staticmethod
     def _evaluate_split_index(window: int, total_data_points: int, horizon: int, window_len: int):
         """
         数据分割索引构建
@@ -364,18 +482,26 @@ class Tester:
         horizon: int,
         window_len: int,
         log_prefix: str,
+        split_indices: Optional[Dict[str, int]] = None,
     ):
         """
         训练、测试数据集分割
         """
         # 滑窗数据分割索引
         total_data_points = len(df_history)
-        train_start, train_end, test_start, test_end = Tester._evaluate_split_index(
-            window, total_data_points, horizon, window_len
-        )
+        if split_indices is None:
+            train_start, train_end, test_start, test_end_inclusive = Tester._evaluate_split_index(
+                window, total_data_points, horizon, window_len
+            )
+            test_end = test_end_inclusive + 1
+        else:
+            train_start = int(split_indices["train_start"])
+            train_end = int(split_indices["train_end"])
+            test_start = int(split_indices["test_start"])
+            test_end = int(split_indices["test_end"])
         logger.info(f"{log_prefix} split indexes:: [train_start:train_end]: [{train_start}:{train_end}]")
-        logger.info(f"{log_prefix} split indexes:: [test_start:test_end]: [{test_start}:{test_end+1}]")
-        if train_start >= train_end or test_start >= test_end + 1 or train_start < 0 or test_end >= total_data_points:
+        logger.info(f"{log_prefix} split indexes:: [test_start:test_end]: [{test_start}:{test_end}]")
+        if train_start >= train_end or test_start >= test_end or train_start < 0 or test_end > total_data_points:
             logger.warning(
                 f"{log_prefix} Insufficient data for window {window} "
                 f"(train_start={train_start}, train_end={train_end}, "
@@ -386,7 +512,7 @@ class Tester:
 
         # 滑窗数据分割
         df_history_train = df_history.iloc[train_start:train_end]
-        df_history_test = df_history.iloc[test_start:test_end+1]
+        df_history_test = df_history.iloc[test_start:test_end]
         logger.info(f"{log_prefix} df_history_train.shape: {df_history_train.shape}, df_history_test.shape: {df_history_test.shape}")
 
         if df_history_train.empty or df_history_test.empty:
@@ -459,19 +585,25 @@ class Tester:
         window_len: int,
         target_feature: str,
         n_per_day: int,
+        split_indices: Optional[Dict[str, int]] = None,
     ):
         """
         季节 naive 对照序列：测试期第 i 点的 naive 值 = 该点 n_per_day 步前
         （昨日同时刻）的实际值，全部取自预测原点之前/之中的已知实际数据。
         历史不足一天时返回 None（naive 指标列记 NaN）。
         """
-        _, _, test_start, test_end = Tester._evaluate_split_index(
-            window, len(df_history), horizon, window_len
-        )
+        if split_indices is None:
+            _, _, test_start, test_end_inclusive = Tester._evaluate_split_index(
+                window, len(df_history), horizon, window_len
+            )
+            test_end = test_end_inclusive + 1
+        else:
+            test_start = int(split_indices["test_start"])
+            test_end = int(split_indices["test_end"])
         naive_start = test_start - n_per_day
         if naive_start < 0:
             return None
-        y_naive = df_history[target_feature].iloc[naive_start: test_end + 1 - n_per_day].to_numpy()
+        y_naive = df_history[target_feature].iloc[naive_start: test_end - n_per_day].to_numpy()
         return y_naive
 
     @staticmethod
@@ -486,6 +618,7 @@ class Tester:
         min_value: float = None,
         max_value: float = None,
         y_naive: Optional[np.ndarray] = None,
+        horizon_mode: str = "fixed_steps",
     ):
         """
         模型评估
@@ -527,6 +660,27 @@ class Tester:
             "MAPE Excluded Points": mape_meta["excluded_points"],
             "MAPE Excluded Ratio": mape_meta["excluded_ratio"],
         }
+        if str(horizon_mode).lower() == "calendar_month":
+            actual_total = float(np.sum(y_test))
+            predicted_total = float(np.sum(y_pred))
+            monthly_total_mape = (
+                abs(actual_total - predicted_total) / abs(actual_total)
+                if abs(actual_total) > 1e-12
+                else np.nan
+            )
+            month_start = cast(
+                pd.Timestamp,
+                pd.Timestamp(str(df_history_test["time"].iloc[0])),
+            )
+            test_scores.update(
+                {
+                    "Calendar Month": month_start.strftime("%Y-%m"),
+                    "Forecast Steps": len(y_test),
+                    "Monthly Actual Total": actual_total,
+                    "Monthly Predicted Total": predicted_total,
+                    "Monthly Total MAPE": monthly_total_mape,
+                }
+            )
         test_scores_df = pd.DataFrame(test_scores, index=[window])
         test_scores_df["time_range"] = f"{df_history_test['time'].min()}~{df_history_test['time'].max()}"
         test_scores_df = test_scores_df[["time_range"] + list(test_scores.keys())]

@@ -448,7 +448,13 @@ class EndogenousFeatureEngineer:
         
         return df_copy
 
-    def extend_lag_feature_univariate(self, df: pd.DataFrame, target: str, lags: List[int]):
+    def extend_lag_feature_univariate(
+        self,
+        df: pd.DataFrame,
+        target: str,
+        lags: List[int],
+        shift_offset: int = 0,
+    ):
         """
         扩展单变量滞后特征(for univariate time series)
         
@@ -467,7 +473,12 @@ class EndogenousFeatureEngineer:
         lag_features = []
         for lag in lags:
             col_name = f'{target}_lag_{lag}'
-            df_lags[col_name] = df_lags[target].shift(lag)
+            shift_steps = lag + shift_offset
+            if shift_steps < 0:
+                raise ValueError(
+                    f"Lag {lag} with shift_offset {shift_offset} resolves to a future target value."
+                )
+            df_lags[col_name] = df_lags[target].shift(shift_steps)
             lag_features.append(col_name)
         # 特征收集
         if lag_features:
@@ -1077,10 +1088,22 @@ class FeatureEngineer:
         """
         df_series_featured = df_series.copy()
         self.endogenous_feature_engineer.reset()
+        align_direct_to_target = bool(
+            getattr(self.args, "align_direct_features_to_target", False)
+        ) and self.args.pred_method in [
+            "univariate-single-multistep-direct",
+            "univariate-single-multistep-direct-recursive",
+        ]
         configured_lags = self.args.lags if getattr(self.args, "enable_lags_features", True) else []
         lags = _filter_supported_lags(configured_lags, n_samples=len(df_series), log_prefix=self.log_prefix)
 
         if self.args.pred_method == "univariate-single-multistep-direct-pointwise":
+            if bool(getattr(self.args, "align_direct_features_to_target", False)):
+                df_series_featured = self.endogenous_feature_engineer.extend_lag_feature_univariate(
+                    df=df_series_featured,
+                    target=target_feature,
+                    lags=lags,
+                )
             df_series_featured = self.endogenous_feature_engineer.extend_direct_multi_step_targets(
                 df = df_series_featured,
                 target = target_feature,
@@ -1094,6 +1117,7 @@ class FeatureEngineer:
                 df = df_series_featured,
                 target = target_feature,
                 lags = lags,
+                shift_offset=-1 if align_direct_to_target else 0,
             )
             if self.verbose:
                 logger.info(f"{self.log_prefix} after extend_lag_feature_univariate df_series_featured: \n{df_series_featured.head()}")
@@ -1130,6 +1154,7 @@ class FeatureEngineer:
                 df = df_series_featured,
                 target = target_feature,
                 lags = lags,
+                shift_offset=-1 if align_direct_to_target else 0,
             )
             if self.verbose:
                 logger.info(f"{self.log_prefix} after extend_lag_feature_univariate df_series_featured: \n{df_series_featured.head()}")
@@ -1322,10 +1347,10 @@ class FeatureEngineer:
 
     def create_features(self,
                         df_series: pd.DataFrame,
-                        df_date_history: pd.DataFrame=None,
-                        df_date_future: pd.DataFrame=None,
-                        df_weather_history: pd.DataFrame=None,
-                        df_weather_future: pd.DataFrame=None,
+                        df_date_history: Optional[pd.DataFrame]=None,
+                        df_date_future: Optional[pd.DataFrame]=None,
+                        df_weather_history: Optional[pd.DataFrame]=None,
+                        df_weather_future: Optional[pd.DataFrame]=None,
                         df_custom_history=None,
                         df_custom_future=None,
                         endogenous_features_with_target: List[str]=["y"],
@@ -1358,6 +1383,22 @@ class FeatureEngineer:
             df_custom_history=df_custom_history,
             df_custom_future=df_custom_future,
         )
+        align_direct_to_target = bool(
+            getattr(self.args, "align_direct_features_to_target", False)
+        ) and self.args.pred_method in [
+            "univariate-single-multistep-direct",
+            "univariate-single-multistep-direct-recursive",
+        ]
+        if align_direct_to_target:
+            if horizon != 1:
+                raise ValueError(
+                    "align_direct_features_to_target currently supports horizon=1 only."
+                )
+            # Direct 的训练目标位于 t+1；把 t+1 的可预知外生量移到特征行 t，
+            # 使训练与预测都使用目标月份的气象/日历，而不是预测原点月份。
+            for col in exogenous_features:
+                if col in df_series_featured.columns:
+                    df_series_featured[col] = df_series_featured[col].shift(-1)
         # Direct 系列方法下，按 horizon 展开外生特征
         if getattr(self.args, "use_horizon_exogenous_for_direct", False) and self.args.pred_method in [
             "univariate-single-multistep-direct",

@@ -1,11 +1,11 @@
 # -*- coding: utf-8 -*-
 """2026-08 未来日度气象统计构造：前半月实测 + 后半月去年同期仿真。
 
-为 freq_1day 场景的 is_forecasting 提供未来 30 天（2026-08-01 ~ 08-30，
-predict_steps=30、date_range inclusive="left" 的精确未来索引）的日度气象特征：
+为 freq_1day 自然月场景的 is_forecasting 提供未来 31 天（2026-08-01 ~ 08-31）
+日度气象特征：
   - 2026-08-01 ~ 08-14：weather_future_in_20260801_20260814.csv 的 rt_ 实测列
     （生成该文件时这段已成过去，rt_ 列已由实测回填，优于 pred_ 预报列）
-  - 2026-08-15 ~ 08-30：weather_in_20250101_20260731.csv 的 2025-08-15 ~ 08-30
+  - 2026-08-15 ~ 08-31：weather_in_20250101_20260731.csv 的 2025-08-15 ~ 08-31
     去年同期逐日替换（整日取自去年同日期，保持日内相关结构）
 
 为什么不用 pred_ 预报列：历史逐时配对统计显示 pred_ws10 相对 rt_ws10 系统性
@@ -32,13 +32,13 @@ import pandas as pd
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 ACTUAL_PATH = PROJECT_ROOT / "dataset/aidc_load_5min/weather_future_in_20260801_20260814.csv"
 HISTORY_PATH = PROJECT_ROOT / "dataset/aidc_load_5min/weather_in_20250101_20260731.csv"
-OUTPUT_PATH = PROJECT_ROOT / "dataset/aidc_power_month/freq_1day/weather_daily_stats_future_20260801_20260830.csv"
+OUTPUT_PATH = PROJECT_ROOT / "dataset/aidc_power_month/freq_1day/weather_daily_stats_future_20260801_20260831.csv"
 
 # 实测段 / 仿真段的日界
 ACTUAL_START, ACTUAL_END = "2026-08-01", "2026-08-14"
-SIM_LAST_YEAR_START, SIM_LAST_YEAR_END = "2025-08-15", "2025-08-30"
-# 未来窗口总天数（= freq_1day predict_steps，date_range inclusive="left" 上界 08-31）
-FUTURE_DAYS = 30
+SIM_LAST_YEAR_START, SIM_LAST_YEAR_END = "2025-08-15", "2025-08-31"
+# 未来窗口总天数（2026-08 完整自然月）
+FUTURE_DAYS = 31
 
 
 def _calc_rh(tt2_k: pd.Series, dt_k: pd.Series) -> pd.Series:
@@ -88,14 +88,14 @@ def _aggregate_daily(seg: pd.DataFrame, label: str) -> pd.DataFrame:
 
 def build_future_daily_stats() -> pd.DataFrame:
     # ------------------------------------------------------------------
-    # 1. 实测段（2026-08-01~14）与去年同期仿真段（2025-08-15~30）各自聚合成日统计
+    # 1. 实测段（2026-08-01~14）与去年同期仿真段（2025-08-15~31）各自聚合成日统计
     # ------------------------------------------------------------------
     actual = _aggregate_daily(
         _load_rt_segment(ACTUAL_PATH, ACTUAL_START, ACTUAL_END, "实测段 2026-08-01~14"),
         "实测段",
     )
     sim = _aggregate_daily(
-        _load_rt_segment(HISTORY_PATH, SIM_LAST_YEAR_START, SIM_LAST_YEAR_END, "仿真段 2025-08-15~30（去年同期）"),
+        _load_rt_segment(HISTORY_PATH, SIM_LAST_YEAR_START, SIM_LAST_YEAR_END, "仿真段 2025-08-15~31（去年同期）"),
         "仿真段",
     )
 
@@ -103,7 +103,7 @@ def build_future_daily_stats() -> pd.DataFrame:
     sim["ts"] = sim["ts"] + pd.DateOffset(years=1)
 
     # ------------------------------------------------------------------
-    # 平移后直接拼接。校验总天数 = 30
+    # 平移后直接拼接。校验总天数 = 31
     # ------------------------------------------------------------------
     composed = pd.concat([actual, sim], ignore_index=True).sort_values("ts").reset_index(drop=True)
     if len(composed) != FUTURE_DAYS:

@@ -7,6 +7,9 @@ overrides:
     plot_overlay_path: forecasting_data/A_ESS_PCS_merged_5min_20251001_20260728.csv
     plot_overlay_col: pcs_power
   runtime:
+    horizon_mode: fixed_steps
+    train_window_length: null
+    forecast_mode: forecast
     is_testing: true
     is_forecasting: true
     history_length: 60
@@ -24,6 +27,11 @@ overrides:
     target_series_categorical_features: []
     target_series_drop_features: []
   exogenous_features:
+    weather_backtest_path: null
+    strict_weather_information_set: false
+    weather_history_source: ''
+    weather_backtest_source: ''
+    weather_future_source: ''
     enable_date_features: false
     enable_weather_features: false
     datetime_features:
@@ -69,6 +77,7 @@ overrides:
     - 2016
     - 8064
   model_strategy:
+    align_direct_features_to_target: false
     model_type: lightgbm
     pred_method: multivariate-single-multistep-direct
     direct_strategy: horizon_feature
@@ -81,6 +90,7 @@ overrides:
     mode: percentile
     percentile: 5.0
   preprocessing:
+    target_calendar_normalization: none
     decomposition_method: linear  # 窗口内线性目标分解（与 scale_target 互斥）
   performance:
     window_parallel_workers: 8

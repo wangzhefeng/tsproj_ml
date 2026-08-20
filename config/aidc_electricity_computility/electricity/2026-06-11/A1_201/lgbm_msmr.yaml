@@ -2,6 +2,9 @@
 base_config: config.multivariate_config
 overrides:
   runtime:
+    horizon_mode: fixed_steps
+    train_window_length: null
+    forecast_mode: forecast
     is_testing: true
     is_forecasting: false
     history_length: 65
@@ -60,6 +63,11 @@ overrides:
     target_series_categorical_features: []
     target_series_drop_features: []
   exogenous_features:
+    weather_backtest_path: null
+    strict_weather_information_set: false
+    weather_history_source: ''
+    weather_backtest_source: ''
+    weather_future_source: ''
     date_history_path: df_date.csv
     date_future_path: df_date_future.csv
     date_ts_feat: date
@@ -80,7 +88,10 @@ overrides:
     enable_rolling_features: false
     enable_diff_features: false
     enable_pct_change_features: false
+  preprocessing:
+    target_calendar_normalization: none
   model_strategy:
+    align_direct_features_to_target: false
     model_type: lightgbm
     pred_method: multivariate-single-multistep-recursive
   train_outlier:

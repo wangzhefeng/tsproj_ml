@@ -59,7 +59,7 @@ class Forecaster:
                  df_history: pd.DataFrame,
                  df_future: pd.DataFrame,
                  df_date_future: pd.DataFrame,
-                 df_weather_future: pd.DataFrame,
+                 df_weather_future: Optional[pd.DataFrame],
                  endogenous_features: List[str],
                  target_feature: str,
                  target_output_features: List[str],
@@ -689,20 +689,37 @@ class Forecaster:
         # 多步预测值收集器
         Y_preds = np.array([])
         # 预测阶段始终使用未来日期/天气进行特征工程，避免被 is_testing 分支误跳过
+        if bool(getattr(self.args, "align_direct_features_to_target", False)):
+            if self.horizon != 1:
+                raise ValueError(
+                    "USMDP align_direct_features_to_target currently supports horizon=1 only."
+                )
+            df_pointwise = pd.concat(
+                [self.df_history_for_lags, self.df_future.copy()],
+                ignore_index=True,
+                copy=False,
+            )
+            df_date_future, df_weather_future = self._slice_future_aux_by_forecast(df_pointwise)
+        else:
+            df_pointwise = self.df_future
+            df_date_future = self.df_date_future
+            df_weather_future = self.df_weather_future
         (df_future_featured,
          predictor_features,
          target_output_features,
          categorical_features) = self.feature_engineer.create_features(
-            df_series=self.df_future,
+            df_series=df_pointwise,
             df_date_history=None,
-            df_date_future=self.df_date_future,
+            df_date_future=df_date_future,
             df_weather_history=None,
-            df_weather_future=self.df_weather_future,
+            df_weather_future=df_weather_future,
             df_custom_future=self.df_custom_future,
             endogenous_features_with_target=self.endogenous_features,
             target_feature=self.target_feature,
             horizon=self.horizon,
         )
+        if bool(getattr(self.args, "align_direct_features_to_target", False)):
+            df_future_featured = df_future_featured.iloc[-len(self.df_future):].copy()
         if predictor_features:
             X_test_future = df_future_featured[predictor_features].copy()
         else:

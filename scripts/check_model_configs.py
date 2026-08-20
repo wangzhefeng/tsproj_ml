@@ -24,12 +24,15 @@ from __future__ import annotations
 import glob
 import sys
 from pathlib import Path
+from typing import Any, cast
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import yaml  # noqa: E402
+import pandas as pd  # noqa: E402
 
 from config.config_loader import load_yaml_config  # noqa: E402
+from models.ModelTesting import Tester  # noqa: E402
 from utils.frequency import resolve_samples_per_day  # noqa: E402
 
 PROJ = Path(__file__).resolve().parent.parent
@@ -38,25 +41,67 @@ PROJ = Path(__file__).resolve().parent.parent
 _NON_MODEL_PREFIXES = ("aggregate", "outlier_detect", "outlier")
 
 
-def check_model_yaml(f: str) -> tuple[object, list[str]]:
-    """加载单个模型 YAML，返回 (cfg, problems)。problems 空 = 通过。"""
-    cfg = load_yaml_config(f)
+def _resolve_runtime_shape(cfg) -> tuple[str, int, int, int, int]:
+    """返回 horizon_mode、最终 horizon、训练行数、窗口数、有效训练天数。"""
+    horizon_mode = str(getattr(cfg, "horizon_mode", "fixed_steps") or "fixed_steps").lower()
     n_per_day = resolve_samples_per_day(cfg.freq)
-    window_len = cfg.window_length * n_per_day
+    if horizon_mode == "calendar_month":
+        if str(cfg.freq) != "1D":
+            raise ValueError("horizon_mode=calendar_month currently requires freq=1D")
+        train_window_length = getattr(cfg, "train_window_length", None)
+        if train_window_length is None or int(train_window_length) <= 0:
+            raise ValueError("calendar_month requires train_window_length > 0")
+        now_time = cast(pd.Timestamp, pd.Timestamp(cfg.now_time))
+        forecast_start = now_time.normalize() + pd.Timedelta(days=1)
+        if forecast_start.day != 1:
+            raise ValueError("calendar_month requires forecast_start at month start")
+        horizon = int(forecast_start.days_in_month)
+        train_rows = int(train_window_length) * n_per_day
+        history_start = forecast_start - pd.Timedelta(days=int(cfg.history_length))
+        theoretical_history = pd.DataFrame(
+            {"time": pd.date_range(history_start, forecast_start, freq="1D", inclusive="left")}
+        )
+        n_windows = len(
+            Tester._build_calendar_month_folds(
+                theoretical_history,
+                train_window_len=train_rows,
+            )
+        )
+        return horizon_mode, horizon, train_rows, n_windows, int(train_window_length)
+    if horizon_mode != "fixed_steps":
+        raise ValueError(f"unknown horizon_mode={horizon_mode}")
+    window_len = int(cfg.window_length) * n_per_day
     horizon = int(cfg.predict_steps)
+    train_rows = window_len - horizon
+    n_windows = (int(cfg.history_length) * n_per_day - window_len) // horizon + 1
+    return horizon_mode, horizon, train_rows, n_windows, int(cfg.window_length)
+
+
+def check_model_yaml(f: str) -> tuple[Any, list[str]]:
+    """加载单个模型 YAML，返回 (cfg, problems)。problems 空 = 通过。"""
+    cfg: Any = load_yaml_config(f)
+    n_per_day = resolve_samples_per_day(cfg.freq)
     max_lag = max(cfg.lags or [0])
     problems: list[str] = []
+    try:
+        horizon_mode, horizon, train_rows, n_windows, effective_train_length = _resolve_runtime_shape(cfg)
+    except ValueError as exc:
+        horizon_mode = str(getattr(cfg, "horizon_mode", "fixed_steps"))
+        horizon = int(cfg.predict_steps)
+        train_rows = int(cfg.window_length) * n_per_day - horizon
+        n_windows = 0
+        effective_train_length = int(cfg.window_length)
+        problems.append(str(exc))
 
-    if cfg.window_length >= cfg.history_length:
+    if effective_train_length >= cfg.history_length:
         problems.append(
-            f"window_length({cfg.window_length}) >= history_length({cfg.history_length})"
+            f"effective_train_length({effective_train_length}) >= history_length({cfg.history_length})"
         )
 
     if cfg.pred_method != "univariate-single-multistep-direct-pointwise":
-        min_train_rows = window_len - horizon
-        if min_train_rows <= max_lag:
+        if train_rows <= max_lag:
             problems.append(
-                f"lag 校验失败: window_len-horizon={min_train_rows} <= max_lag={max_lag} "
+                f"lag 校验失败: train_rows={train_rows} <= max_lag={max_lag} "
                 "(Lag features would be all-NaN)"
             )
 
@@ -74,14 +119,12 @@ def check_model_yaml(f: str) -> tuple[object, list[str]]:
     if method in {"stl", "mstl"}:
         if any(period < 2 for period in periods):
             problems.append("decomposition_periods 必须全部 >= 2")
-        train_rows = window_len - horizon
         too_long = [period for period in periods if 2 * period > train_rows]
         if too_long:
             problems.append(
                 f"decomposition_periods={too_long} 在最短训练窗 {train_rows} 点内不足两个完整周期"
             )
 
-    n_windows = (cfg.history_length * n_per_day - window_len) // horizon + 1
     if n_windows <= 0:
         problems.append(f"n_windows={n_windows} <= 0，测试会被跳过")
 
@@ -132,6 +175,10 @@ def check_model_yaml(f: str) -> tuple[object, list[str]]:
                 f"advanced context {required_context} exceeds available history "
                 f"{available_history} (= history_length × n_per_day)"
             )
+    cfg._resolved_horizon_mode = horizon_mode
+    cfg._resolved_horizon = horizon
+    cfg._resolved_train_rows = train_rows
+    cfg._resolved_n_windows = n_windows
     return cfg, problems
 
 
@@ -151,13 +198,15 @@ def main() -> int:
         cfg, problems = check_model_yaml(f)
         method = cfg.pred_method
         n_per_day = resolve_samples_per_day(cfg.freq)
-        horizon = int(cfg.predict_steps)
+        horizon_mode = cfg._resolved_horizon_mode
+        horizon = cfg._resolved_horizon
+        train_rows = cfg._resolved_train_rows
         max_lag = max(cfg.lags or [0])
-        n_windows = (cfg.history_length * n_per_day - cfg.window_length * n_per_day) // horizon + 1
+        n_windows = cfg._resolved_n_windows
         adv = getattr(cfg, "enable_advanced_features", False)
         print(f"{f}")
-        print(f"    method={method} freq={cfg.freq} n_per_day={n_per_day} "
-              f"history={cfg.history_length}d window={cfg.window_length}d horizon={horizon} "
+        print(f"    method={method} freq={cfg.freq} horizon_mode={horizon_mode} n_per_day={n_per_day} "
+              f"history={cfg.history_length}d train_rows={train_rows} horizon={horizon} "
               f"max_lag={max_lag} n_windows={n_windows} adv={adv} now_time={cfg.now_time}")
         if problems:
             # 硬校验 vs 提示：高级窗口超限和 USMDP 未生成 y_lag_* 都是提示

@@ -75,8 +75,11 @@ class RuntimeConfig:
     history_length: int = 31  # 历史数据天数
     predict_steps: int = 288  # 预测步数（以 freq 为单位；默认 288 = 5min 基准下 1 天）
     window_length: int = 15  # 滑动窗口天数
+    horizon_mode: str = "fixed_steps"  # fixed_steps=固定 predict_steps | calendar_month=下一个完整自然月（当前仅 1D）
+    train_window_length: Optional[int] = None  # calendar_month 模式每个滑窗固定训练天数；该模式下必填
     now_time: datetime.datetime = field(default_factory=lambda: datetime.datetime(2026, 6, 11, 23, 55, 0))  # 预测推理开始时间
     schedule_mode: str = "daily"  # 调度模式: daily=日界对齐(预测下一完整自然日) | intraday=保留调度时刻(从调度时刻起预测)
+    forecast_mode: str = "forecast"  # forecast=仅预测原点可得信息 | nowcast=允许目标期部分实测 | oracle=离线上限实验
 
 
 @dataclass
@@ -115,7 +118,12 @@ class ExogenousFeatureConfig:
     # 气象数据配置
     enable_weather_features: bool = True
     weather_history_path: Optional[str] = "df_weather.csv"
+    weather_backtest_path: Optional[str] = None  # 滑窗测试使用的 ex-ante 预报/代理，禁止复用测试期实测
     weather_future_path: Optional[str] = "df_weather_future.csv"
+    strict_weather_information_set: bool = False
+    weather_history_source: str = ""  # actual / forecast / proxy / mixed
+    weather_backtest_source: str = ""  # strict 模式仅允许 forecast / proxy
+    weather_future_source: str = ""  # forecast 模式仅允许 forecast / proxy
     weather_ts_feat: Optional[str] = "ts"
     weather_features: List[str] = field(
         default_factory=lambda: [
@@ -228,6 +236,7 @@ class PreprocessingConfig:
     scale_target: bool = False  # 是否对目标变量 Y 进行归一化/标准化
     inverse_target: bool = False  # 预测结果是否对目标变量 Y 进行逆变换
     target_scaler_type: str = "minmax"  # 目标变量 Y 的缩放方法: "none"、"standard"、"minmax"、"log1p"、"robust" 或 "yeo-johnson"
+    target_calendar_normalization: str = "none"  # none / per_calendar_day（月总量÷当月天数）
     # 目标分解：none / linear / stl / mstl。STL/MSTL 仅在每个可见训练窗口内拟合。
     decomposition_method: str = "none"
     decomposition_periods: List[int] = field(default_factory=list)
@@ -270,6 +279,7 @@ class ModelStrategyConfig:
     quantiles: List[float] = field(default_factory=lambda: [0.1, 0.5, 0.9])  # 分位数预测配置，predict_type=quantile 时生效
     quantile_monotone: bool = False  # 分位数单调化开关:逐行排序 predict_q* 消除 quantile crossing(默认关)
     use_horizon_exogenous_for_direct: bool = False  # Direct 方法是否使用 horizon-aware 外生特征展开
+    align_direct_features_to_target: bool = False  # horizon=1 时 Direct 的 lag1=当前值，外生特征取目标时点
     block_size: int = 0  # Direct-Recursive 方法的分块大小
     # Direct 多步策略实现方式（仅 USMD/MSMD 生效）：
     #   "multioutput"（默认，向后兼容）= 为每个 horizon 训练独立模型（H 个模型，成本高）

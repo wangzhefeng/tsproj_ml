@@ -4,6 +4,9 @@ overrides:
   output:
     scenario_subpath: aidc_load_month/route_B
   runtime:
+    horizon_mode: fixed_steps
+    train_window_length: null
+    forecast_mode: forecast
     is_testing: true
     is_forecasting: true
     history_length: 304
@@ -17,6 +20,11 @@ overrides:
     target_ts_feat: time
     target: value
   exogenous_features:
+    weather_backtest_path: null
+    strict_weather_information_set: false
+    weather_history_source: ''
+    weather_backtest_source: ''
+    weather_future_source: ''
     enable_date_features: false
     enable_weather_features: false
     datetime_features:
@@ -47,6 +55,7 @@ overrides:
     - 14
     - 28
   model_strategy:
+    align_direct_features_to_target: false
     model_type: lightgbm
     pred_method: univariate-single-multistep-direct-recursive
     predict_type: quantile  # 概率预测:输出各分位数(predict_qXX)
@@ -63,6 +72,7 @@ overrides:
     mode: percentile
     percentile: 5.0
   preprocessing:
+    target_calendar_normalization: none
     decomposition_method: linear  # 窗口内线性目标分解（与 scale_target 互斥）
   performance:
     window_parallel_workers: 8

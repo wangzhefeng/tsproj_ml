@@ -2,6 +2,9 @@
 base_config: config.multivariate_config
 overrides:
   runtime:
+    horizon_mode: fixed_steps
+    train_window_length: null
+    forecast_mode: forecast
     is_testing: false
     is_forecasting: true
     history_length: 31
@@ -24,6 +27,11 @@ overrides:
     target_series_categorical_features: []
     target_series_drop_features: []
   exogenous_features:
+    weather_backtest_path: null
+    strict_weather_information_set: false
+    weather_history_source: ''
+    weather_backtest_source: ''
+    weather_future_source: ''
     enable_date_features: true
     date_history_path: ETTm1_exogenous/df_date.csv
     date_future_path: ETTm1_exogenous/df_date_future.csv
@@ -143,6 +151,7 @@ overrides:
     - y
     polynomial_degree: 2
   preprocessing:
+    target_calendar_normalization: none
     scale_features: false
     feature_scaler_type: minmax
     scale_target: false
@@ -151,6 +160,7 @@ overrides:
     use_grouped_scaling: false
     encode_categorical_features: false
   model_strategy:
+    align_direct_features_to_target: false
     model_type: lightgbm
     model_params: {}
     enable_ensemble: false

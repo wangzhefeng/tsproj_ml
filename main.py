@@ -49,12 +49,14 @@ from features.FeatureScalering import (
 )
 from features.FeatureEngineering import FeatureEngineer
 from features.TargetDecomposition import TargetDecomposer, resolve_decomposition_method
+from features.TargetNormalization import CalendarDayTargetNormalizer
 from models.ModelTraining import Trainer
 from models.ModelTesting import Tester
 from models.ModelForecasting import Forecaster
 from data_provider.outlier_handling import empty_train_outlier_report
 from utils.frequency import resolve_freq_step_minutes, resolve_samples_per_day, is_monthly_freq
 from utils.quantile import monotonize_quantile_columns
+from utils.weather_contract import validate_weather_information_contract
 
 warnings.filterwarnings("ignore")
 
@@ -73,13 +75,25 @@ class Model:
         初始化模型
         """
         self.args = args
+        self.horizon_mode = str(
+            getattr(self.args, "horizon_mode", "fixed_steps") or "fixed_steps"
+        ).lower()
+        if self.horizon_mode not in {"fixed_steps", "calendar_month"}:
+            raise ValueError(
+                f"Unsupported horizon_mode={self.horizon_mode}. "
+                "Supported: fixed_steps, calendar_month."
+            )
         data_name = Path(self.args.data_path).stem if getattr(self.args, "data_path", None) else "unknown_data"
         pred_method_code = PRED_METHOD_CODE.get(self.args.pred_method, str(self.args.pred_method).lower())
         # 概率预测(quantile)用独立 setting 后缀,避免与点预测版本的结果目录/模型撞车
         _predict_suffix = "-quantile" if str(getattr(self.args, "predict_type", "point")).lower() == "quantile" else ""
         # 可选自定义后缀（如 "-intraday"），用于同配置不同语义版本的结果隔离
         _custom_suffix = str(getattr(self.args, "setting_suffix", "") or "").strip()
-        self.setting = f"{self.args.model_type}-{data_name}-{pred_method_code}-{self.args.window_length}{_predict_suffix}{_custom_suffix}"
+        _horizon_suffix = "-calendar-month" if self.horizon_mode == "calendar_month" else ""
+        self.setting = (
+            f"{self.args.model_type}-{data_name}-{pred_method_code}-{self.args.window_length}"
+            f"{_predict_suffix}{_custom_suffix}{_horizon_suffix}"
+        )
         self.log_prefix = f"[{self.setting}]"
         # ------------------------------
         # 数据参数
@@ -113,14 +127,34 @@ class Model:
         else:
             now_time = now_ts.floor("1D") + datetime.timedelta(days=1)
             start_time = now_time - datetime.timedelta(days=self.args.history_length)
-        # 时间序列历史数据开始时刻（= now_time - history_length）
-        # 预测数据长度（= predict_steps 个 freq 步长）
-        self.horizon = int(self.args.predict_steps)
-        # 时间序列未来结束时刻（= now_time + predict_steps × freq 步长）
+        # 历史数据开始时刻（= now_time - history_length）
+        # 预测跨度：默认固定 predict_steps；calendar_month 自动覆盖目标自然月。
+        future_time = None
+        if self.horizon_mode == "calendar_month":
+            if str(self.args.freq) != "1D":
+                raise ValueError("horizon_mode=calendar_month currently requires freq=1D.")
+            if str(getattr(self.args, "schedule_mode", "daily")).lower() != "daily":
+                raise ValueError("horizon_mode=calendar_month requires schedule_mode=daily.")
+            if now_time.day != 1:
+                raise ValueError(
+                    f"horizon_mode=calendar_month requires forecast_start at month start; got {now_time}."
+                )
+            train_window_length = getattr(self.args, "train_window_length", None)
+            if train_window_length is None or int(train_window_length) <= 0:
+                raise ValueError(
+                    "horizon_mode=calendar_month requires train_window_length > 0."
+                )
+            self.horizon = int(now_time.days_in_month)
+            future_time = now_time + pd.DateOffset(months=1)
+        else:
+            self.horizon = int(self.args.predict_steps)
+        # 时间序列未来结束时刻
         if is_monthly:
             future_time = now_time + pd.DateOffset(months=self.horizon)
-        else:
+        elif self.horizon_mode != "calendar_month":
             future_time = now_time + datetime.timedelta(minutes=self.step_minutes * self.horizon)
+        if future_time is None:
+            raise RuntimeError("Failed to resolve forecast_end_time.")
         # 数据划分时间戳
         self.train_start_time = start_time
         self.train_end_time = now_time
@@ -131,12 +165,25 @@ class Model:
         # ------------------------------
         # 测试窗口数据长度(训练+测试)
         self.window_len = int(self.args.window_length * self.n_per_day)
-        # 测试滑动窗口数量, >=1, 1: 单个窗口
-        # self.n_windows = int(self.args.history_length * self.n_per_day - self.window_len - self.horizon + 1) // self.horizon
-        self.n_windows = int(self.args.history_length * self.n_per_day - self.window_len) // self.horizon + 1
+        if self.horizon_mode == "calendar_month":
+            self.train_window_len = int(self.args.train_window_length * self.n_per_day)
+            theoretical_history = pd.DataFrame(
+                {"time": pd.date_range(start_time, now_time, freq="1D", inclusive="left")}
+            )
+            self.n_windows = len(
+                Tester._build_calendar_month_folds(
+                    theoretical_history,
+                    train_window_len=self.train_window_len,
+                )
+            )
+        else:
+            self.train_window_len = self.window_len - self.horizon
+            # 测试滑动窗口数量, >=1, 1: 单个窗口
+            self.n_windows = int(self.args.history_length * self.n_per_day - self.window_len) // self.horizon + 1
         self.args.horizon = self.horizon
         self.args.n_windows = self.n_windows
         self.args.n_per_day = self.n_per_day
+        self.args.train_window_len = self.train_window_len
         # ------------------------------
         # 模型训练、测试、预测结果保存路径
         # ------------------------------
@@ -149,11 +196,28 @@ class Model:
         # ------------------------------
         # 参数合法性校验
         # ------------------------------
-        if self.args.window_length >= self.args.history_length:
+        effective_train_length = (
+            int(self.args.train_window_length)
+            if self.horizon_mode == "calendar_month"
+            else int(self.args.window_length)
+        )
+        if effective_train_length >= self.args.history_length:
             raise ValueError(
-                f"{self.log_prefix} window_length ({self.args.window_length}) must be less than "
+                f"{self.log_prefix} effective training length ({effective_train_length}) must be less than "
                 f"history_length ({self.args.history_length})."
             )
+        target_calendar_normalization = str(
+            getattr(self.args, "target_calendar_normalization", "none") or "none"
+        ).lower()
+        if target_calendar_normalization == "per_calendar_day" and not is_monthly:
+            raise ValueError(
+                f"{self.log_prefix} target_calendar_normalization=per_calendar_day is only valid for monthly freq."
+            )
+        if bool(getattr(self.args, "align_direct_features_to_target", False)) and self.horizon != 1:
+            raise ValueError(
+                f"{self.log_prefix} align_direct_features_to_target currently requires predict_steps=1."
+            )
+        validate_weather_information_contract(self.args)
         if self.n_windows <= 0:
             logger.warning(
                 f"{self.log_prefix} n_windows={self.n_windows} (<= 0). Testing will be skipped."
@@ -176,7 +240,7 @@ class Model:
         if decomposition_method == "mstl" and len(decomposition_periods) < 2:
             raise ValueError(f"{self.log_prefix} decomposition_method=mstl requires at least two periods.")
         if decomposition_method in {"stl", "mstl"}:
-            decomposition_train_rows = self.window_len - self.horizon
+            decomposition_train_rows = self.train_window_len
             if any(
                 period < 2 or 2 * period > decomposition_train_rows
                 for period in decomposition_periods
@@ -185,19 +249,30 @@ class Model:
                     f"{self.log_prefix} decomposition_periods={decomposition_periods} require at least "
                     f"two full cycles in each {decomposition_train_rows}-point training window."
                 )
-        # 滞后特征可用性校验:滑窗训练行数 = window_len - horizon 必须 > max(lags),
+        # 滞后特征可用性校验:滑窗训练行数必须 > max(lags),
         # 否则 shift(lag) 产出的滞后列全 NaN,模型无声退化(仅对真正构造 lag 列的方法校验)。
-        if self.args.pred_method != "univariate-single-multistep-direct-pointwise":
+        constructs_lags = (
+            self.args.pred_method != "univariate-single-multistep-direct-pointwise"
+            or bool(getattr(self.args, "align_direct_features_to_target", False))
+        )
+        if constructs_lags:
             effective_lags = [int(l) for l in (getattr(self.args, "lags", []) or []) if int(l) > 0]
             if effective_lags:
                 max_lag = max(effective_lags)
-                min_train_rows = self.window_len - self.horizon
+                if (
+                    bool(getattr(self.args, "align_direct_features_to_target", False))
+                    and self.args.pred_method in {
+                        "univariate-single-multistep-direct",
+                        "univariate-single-multistep-direct-recursive",
+                    }
+                ):
+                    max_lag -= 1
+                min_train_rows = self.train_window_len
                 if min_train_rows <= max_lag:
                     min_window_days = (max_lag + self.horizon) // self.n_per_day + 1
                     raise ValueError(
                         f"{self.log_prefix} window_length ({self.args.window_length}) too small for lags: "
-                        f"sliding-window train rows = window_len - horizon = {self.window_len} - {self.horizon} "
-                        f"= {min_train_rows}, but max(lags) = {max_lag}. "
+                        f"sliding-window train rows = {min_train_rows}, but max(lags) = {max_lag}. "
                         f"Lag features would be all-NaN. To keep at least one valid lag row, "
                         f"need window_length >= {min_window_days}."
                     )
@@ -336,6 +411,7 @@ class Model:
              df_history,
              df_date_history,
              df_weather_history,
+             df_weather_backtest,
              endogenous_features_with_target,
              target_feature,
              categorical_features,
@@ -361,12 +437,45 @@ class Model:
         # 模型滑窗测试过程
         # ------------------------------
         window_stride = max(1, int(getattr(self.args, "test_window_stride", 1) or 1))
-        window_indices = list(range(1, int(self.n_windows + 1), window_stride))
+        if self.horizon_mode == "calendar_month":
+            calendar_folds = Tester._build_calendar_month_folds(
+                df_history,
+                train_window_len=self.train_window_len,
+            )
+            self.n_windows = len(calendar_folds)
+            self.args.n_windows = self.n_windows
+            window_specs = [
+                {
+                    "window": fold["window"],
+                    "horizon": fold["horizon"],
+                    "window_len": self.train_window_len + fold["horizon"],
+                    "split_indices": {
+                        "train_start": fold["train_start"],
+                        "train_end": fold["train_end"],
+                        "test_start": fold["test_start"],
+                        "test_end": fold["test_end"],
+                    },
+                }
+                for fold in calendar_folds[::window_stride]
+            ]
+        else:
+            window_specs = [
+                {
+                    "window": window,
+                    "horizon": self.horizon,
+                    "window_len": self.window_len,
+                    "split_indices": None,
+                }
+                for window in range(1, int(self.n_windows + 1), window_stride)
+            ]
         max_test_windows = getattr(self.args, "max_test_windows", None)
         if max_test_windows is not None:
             max_test_windows = max(1, int(max_test_windows))
-            window_indices = window_indices[:max_test_windows]
-        logger.info(f"{self.log_prefix} Testing windows selected: {window_indices}")
+            window_specs = window_specs[:max_test_windows]
+        logger.info(
+            f"{self.log_prefix} Testing windows selected: "
+            f"{[(spec['window'], spec['horizon']) for spec in window_specs]}"
+        )
         
         window_workers = int(getattr(self.args, "window_parallel_workers", 1) or 1)
         if (
@@ -389,12 +498,14 @@ class Model:
                 "args": payload_args,
                 "force_single_thread_env": window_workers > 1,
                 "log_prefix": self.log_prefix,
-                "horizon": self.horizon,
-                "window_len": self.window_len,
-                "window": window,
+                "horizon": spec["horizon"],
+                "window_len": spec["window_len"],
+                "window": spec["window"],
+                "split_indices": spec["split_indices"],
                 "df_history": df_history,
                 "df_date_history": df_date_history,
                 "df_weather_history": df_weather_history,
+                "df_weather_backtest": df_weather_backtest,
                 "df_custom_history": df_custom_history,
                 "endogenous_features_with_target": endogenous_features_with_target,
                 "target_feature": target_feature,
@@ -402,7 +513,7 @@ class Model:
                 "train_start_time": self.train_start_time,
                 "train_end_time": self.train_end_time,
             }
-            for window in window_indices
+            for spec in window_specs
         ]
         window_results = []
         if window_workers > 1 and len(payloads) > 1:
@@ -439,7 +550,7 @@ class Model:
             cv_plot_df = pd.concat([cv_plot_df, result["cv_plot_df"]], axis=0)
         # 模型测试评价指标数据处理
         if not test_scores_df.empty:
-            test_scores_df_median = test_scores_df.drop(columns=["time_range"]).median()
+            test_scores_df_median = test_scores_df.drop(columns=["time_range"]).median(numeric_only=True)
             test_scores_df_median = test_scores_df_median.to_frame().T.reset_index(drop=True, inplace=False)
             test_scores_df_median["time_range"] = "中位数"
             test_scores_df = pd.concat([test_scores_df, test_scores_df_median], axis=0)
@@ -530,6 +641,15 @@ class Model:
                 direct_strategy=str(getattr(self.args, "direct_strategy", "multioutput")),
             )
             Y_pred = target_scaler_forecasting.restore_predictions(Y_pred, pred_target_columns)
+        target_calendar_normalizer = getattr(
+            self,
+            "target_calendar_normalizer",
+            CalendarDayTargetNormalizer(self.args),
+        )
+        Y_pred = target_calendar_normalizer.restore_predictions(
+            Y_pred,
+            df_future_prediction["time"].iloc[:len(np.asarray(Y_pred).reshape(-1))],
+        )
         df_future_prediction["predict_value"] = np.asarray(Y_pred).reshape(-1)[:len(df_future_prediction)]
         # 分位数预测结果（若启用）
         if getattr(predictor, "quantile_outputs", None):
@@ -542,6 +662,10 @@ class Model:
                         np.asarray(q_pred).reshape(-1),
                         pred_target_columns,
                     ).reshape(-1)
+                q_arr = target_calendar_normalizer.restore_predictions(
+                    q_arr,
+                    df_future_prediction["time"].iloc[:len(q_arr)],
+                )
                 if len(q_arr) != len(df_future_prediction):
                     min_len = min(len(q_arr), len(df_future_prediction))
                     df_future_prediction.loc[df_future_prediction.index[:min_len], q_col] = q_arr[:min_len]
@@ -694,11 +818,19 @@ class Model:
          endogenous_features_with_target,
          target_feature,
          df_custom_history) = dataloader.process_history_data(input_data=input_data)
+        df_weather_backtest = dataloader.process_weather_backtest_data(input_data=input_data)
         # ------------------------------
         # 目标分解（可选）：最终 forecast 在全部已知历史上拟合；滑窗测试会在
         # 各自训练段内重新拟合独立分解器，禁止未来窗口参与预处理。
         # ------------------------------
         self.df_history_levels = df_history.copy()
+        assert isinstance(df_history, pd.DataFrame)
+        self.target_calendar_normalizer = CalendarDayTargetNormalizer(self.args)
+        df_history = self.target_calendar_normalizer.transform_history(
+            df_history,
+            time_col="time",
+            target_col="y",
+        )
         self.target_decomposer = TargetDecomposer(
             self.args,
             log_prefix=self.log_prefix,
@@ -764,6 +896,7 @@ class Model:
                 df_history=self.df_history_levels,
                 df_date_history=df_date_history,
                 df_weather_history=df_weather_history,
+                df_weather_backtest=df_weather_backtest,
                 endogenous_features_with_target=endogenous_features_with_target,
                 target_feature=target_feature,
                 categorical_features=categorical_features,

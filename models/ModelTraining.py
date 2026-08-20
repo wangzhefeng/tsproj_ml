@@ -392,8 +392,26 @@ class Trainer:
                     f"{self.log_prefix} time-decay sample_weight not supported for "
                     f"multi-output quantile (sklearn wrapper); skipped."
                 )
-            model_q = self._build_multi_output_model(estimator_wrapper_q.model, n_outputs=Y_train_df_processed.shape[1])
-            model_q.fit(X_train_df_processed, Y_train_df_processed)
+            if str(model_type).lower() in {"quantileregressor", "qr"}:
+                # QuantileRegressor 不接受 lag/rolling 热身区间产生的 NaN；裸估计器经
+                # sklearn MultiOutputRegressor 会绕过 _LinearModelBase 的行过滤。
+                # 保留项目 wrapper，让每个输出使用统一的线性模型 NaN 处理契约。
+                model_q = DirectMultiOutputRegressor(
+                    estimator_factory=lambda: self._create_model_instance(
+                        model_type=model_type,
+                        model_params=params_q,
+                        log_params=False,
+                    ),
+                    n_jobs=self._resolve_worker_count("multi_output_n_jobs", default=1),
+                    log_prefix=self.log_prefix,
+                )
+                model_q.fit(X_train_df_processed, Y_train_df_processed)
+            else:
+                model_q = self._build_multi_output_model(
+                    estimator_wrapper_q.model,
+                    n_outputs=Y_train_df_processed.shape[1],
+                )
+                model_q.fit(X_train_df_processed, Y_train_df_processed)
         return quantile, model_q
 
     def _train_blend_quantile_single_model(

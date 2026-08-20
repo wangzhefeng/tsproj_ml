@@ -88,7 +88,24 @@ runtime:
   schedule_mode: daily
 ```
 
-`calendar_month` 当前仅支持 `freq: 1D`：forecast_start 必须为月初，最终 horizon 自动取目标月的 28/29/30/31 天，forecast_end 为下月月初；滑窗测试按完整自然月切分，每个 fold 使用自己的 horizon，同时固定最近 `train_window_length` 天作为训练段。setting 自动追加 `-calendar-month`，与历史固定步长结果隔离。测试汇总额外包含 `Calendar Month`、`Forecast Steps`、月实际/预测总量和 `Monthly Total MAPE`。未来气象文件必须覆盖目标自然月最后一天。
+`calendar_month` 当前仅支持 `freq: 1D`：forecast_start 必须为月初，最终 horizon 自动取目标月的 28/29/30/31 天，forecast_end 为下月月初；滑窗测试按完整自然月切分，每个 fold 使用自己的 horizon，同时固定最近 `train_window_length` 天作为训练段。setting 编码真实 `train_window_length` 并追加 `-calendar-month`（不再使用遗留 `window_length` 数字），与历史固定步长结果隔离。测试汇总额外包含 `Calendar Month`、`Forecast Steps`、月实际/预测总量和 `Monthly Total MAPE`。未来气象文件必须覆盖目标自然月最后一天。
+
+### exogenous_features：严格气象信息集
+
+月初预测完整自然月时，天气必须区分历史实测、回测 ex-ante 代理/预报和正式未来代理/预报：
+
+```yaml
+exogenous_features:
+  strict_weather_information_set: true
+  weather_history_source: actual
+  weather_backtest_path: weather_daily_stats_backtest_proxy_*.csv
+  weather_backtest_source: proxy
+  weather_future_source: proxy
+```
+
+strict 模式要求 backtest 每行 `available_at` 早于目标月、future 每行不晚于 `now_time`，且目标时间戳全覆盖；不允许把测试月实测天气当未来天气。Direct/DirRec 使用天气时必须启用 `use_horizon_exogenous_for_direct: true`，训练侧 `*_h1..*_hH` 按目标日构造；horizon-feature melt 按 h 折叠回基础列名，与推理端未来逐日外生一致。USBR 的 Direct/Recursive 共享 X 暂不支持目标日天气，保留为无天气 control。
+
+USMDP 当前不生成目标 lag，配置必须显式 `enable_lags_features: false`、`lags: []`，语义是日历/天气逐点模板；需要目标历史递归回填时使用 USMR。
 
 ### preprocessing：目标分解
 
@@ -148,7 +165,7 @@ runtime:
 | `runtime` | `schedule_mode` | `daily`（默认，日界对齐预测下一完整自然日）/ `intraday`（保留调度时刻从 `now_time` 起预测） |
 | `runtime` | `horizon_mode` | `fixed_steps`（默认，固定 `predict_steps`）/ `calendar_month`（当前仅 `1D + daily`，自动预测完整目标月并按自然月回测） |
 | `runtime` | `train_window_length` | `calendar_month` 必填；每个自然月 fold 固定训练天数，与 28～31 天动态测试跨度解耦 |
-| `exogenous_features` | `custom_features` | 自定义外生特征注册表（多文件来源），每项 `{name, history_path, future_path, ts_col, columns, categorical_columns}` |
+| `exogenous_features` | `custom_features` | 自定义外生特征注册表；`future_strategy` 可设 `explicit` 或 `freeze_last_observation`。后者可配 `availability: end_of_period`：Direct/DirRec 保留原点状态且不做 horizon shift，Recursive/Pointwise 训练历史向后对齐 1 个 freq 步，future 继续冻结 cutoff 前最后状态 |
 | `model_strategy` | `ensemble_model_specs` | 融合成员级规格（非空时取代 `ensemble_models`），每项 `{model, params?, scale?, impute?}` |
 | `model_strategy` | `direct_strategy` | `multioutput`（默认，每 horizon 独立模型）/ `horizon_feature`（horizon 索引作特征，仅 USMD/MSMD，训练成本 H×→1×） |
 | `model_strategy` | `endogenous_backfill_strategy` | MSMR/MSMDR 非目标内生变量回填：`persistence`（默认）/ `auxiliary`（独立递归辅助模型） |

@@ -18,13 +18,13 @@ config/
 
 `config_sections.py` 定义扁平组合配置基类 `BaseModelConfig`，由 13 个分组 dataclass 继承组合：
 
-- `RuntimeConfig`：运行模式（测试/预测）、时间窗口（`history_length`、`predict_steps`、`window_length`、`now_time`）、`schedule_mode`（`daily`/`intraday`）
+- `RuntimeConfig`：运行模式（测试/预测）、时间窗口（`history_length`、`predict_steps`、`window_length`、`now_time`）、跨度口径（`horizon_mode`、`train_window_length`）、`schedule_mode`（`daily`/`intraday`）和信息口径（`forecast_mode`）
 - `TargetSeriesConfig`：目标序列数据路径、频率、时间列、目标列、内生数值/类别/剔除列
-- `ExogenousFeatureConfig`：日期类型外生、气象外生、自定义外生注册表（`custom_features`）、日期时间派生特征
+- `ExogenousFeatureConfig`：日期类型外生、气象历史/回测/未来三段信息集及来源声明、自定义外生注册表（`custom_features`）、日期时间派生特征
 - `TimeLagFeatureConfig`：滞后特征开关与滞后步数
 - `AdvancedFeatureConfig`：滚动/扩展窗口统计、差分、百分比变化、距事件、周期三角编码、交互、多项式特征
-- `PreprocessingConfig`：特征/目标缩放、窗口内因果目标分解（`linear`/`stl`/`mstl`）、分组缩放、类别编码
-- `ModelStrategyConfig`：模型类型、融合模式（含成员级 `ensemble_model_specs`）、预测方法、多输出策略、分位数、`direct_strategy`、内生回填策略、blend 权重策略
+- `PreprocessingConfig`：特征/目标缩放、月总量按日历天数归一化、窗口内因果目标分解（`linear`/`stl`/`mstl`）、分组缩放、类别编码
+- `ModelStrategyConfig`：模型类型、融合模式（含成员级 `ensemble_model_specs`）、预测方法、多输出策略、分位数、Direct 目标时点对齐、`direct_strategy`、内生回填策略、blend 权重策略
 - `TrainingEnhancementConfig`：早停、时间衰减样本权重、超参调优、数据增强、特征选择、学习率策略
 - `TrainOutlierConfig`：滑窗测试训练窗口异常清洗
 - `EvalMaskConfig`：评估/绘图掩码（`percentile`/`absolute`/`combined`）
@@ -76,6 +76,19 @@ overrides:
 ## 配置分组参考
 
 YAML 的 `overrides` 按 `config_sections.py` 的 dataclass 分组，字段名即各分组内的属性名。所有字段均有 dataclass 默认值，YAML 只需写需要覆盖的字段。
+
+### runtime：自然月动态 horizon
+
+`horizon_mode: fixed_steps`（默认）保持 `horizon = predict_steps`。日频预测完整自然月时使用：
+
+```yaml
+runtime:
+  horizon_mode: calendar_month
+  train_window_length: 120
+  schedule_mode: daily
+```
+
+`calendar_month` 当前仅支持 `freq: 1D`：forecast_start 必须为月初，最终 horizon 自动取目标月的 28/29/30/31 天，forecast_end 为下月月初；滑窗测试按完整自然月切分，每个 fold 使用自己的 horizon，同时固定最近 `train_window_length` 天作为训练段。setting 自动追加 `-calendar-month`，与历史固定步长结果隔离。测试汇总额外包含 `Calendar Month`、`Forecast Steps`、月实际/预测总量和 `Monthly Total MAPE`。未来气象文件必须覆盖目标自然月最后一天。
 
 ### preprocessing：目标分解
 
@@ -133,6 +146,8 @@ YAML 的 `overrides` 按 `config_sections.py` 的 dataclass 分组，字段名�
 | 分组 | 字段 | 说明 |
 |---|---|---|
 | `runtime` | `schedule_mode` | `daily`（默认，日界对齐预测下一完整自然日）/ `intraday`（保留调度时刻从 `now_time` 起预测） |
+| `runtime` | `horizon_mode` | `fixed_steps`（默认，固定 `predict_steps`）/ `calendar_month`（当前仅 `1D + daily`，自动预测完整目标月并按自然月回测） |
+| `runtime` | `train_window_length` | `calendar_month` 必填；每个自然月 fold 固定训练天数，与 28～31 天动态测试跨度解耦 |
 | `exogenous_features` | `custom_features` | 自定义外生特征注册表（多文件来源），每项 `{name, history_path, future_path, ts_col, columns, categorical_columns}` |
 | `model_strategy` | `ensemble_model_specs` | 融合成员级规格（非空时取代 `ensemble_models`），每项 `{model, params?, scale?, impute?}` |
 | `model_strategy` | `direct_strategy` | `multioutput`（默认，每 horizon 独立模型）/ `horizon_feature`（horizon 索引作特征，仅 USMD/MSMD，训练成本 H×→1×） |

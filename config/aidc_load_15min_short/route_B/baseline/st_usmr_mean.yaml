@@ -3,7 +3,6 @@ base_config: config.univariate_config
 overrides:
   output:
     scenario_subpath: aidc_load_15min_short/route_B/baseline
-    setting_suffix: -intraday
   runtime:
     horizon_mode: fixed_steps
     train_window_length: null

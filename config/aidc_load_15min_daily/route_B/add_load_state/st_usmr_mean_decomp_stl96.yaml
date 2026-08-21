@@ -1,9 +1,9 @@
-# B — aidc_load_15min_daily — add_load_state — 15min 模型测试配置；由 aidc_power_month/freq_1day/add_load_state 同名模板按频率语义转换
+# B — aidc_load_15min_daily — add_load_state — 15min 模型测试配置；由 aidc_power_month/freq_1day/add_decomposition 同名模板按频率语义转换；no-op control：SeasonalTemplate 不消费 load-state 特征
 base_config: config.univariate_config
 overrides:
   output:
     scenario_subpath: aidc_load_15min_daily/route_B/add_load_state
-    setting_suffix: -decomp-stl96-load-state
+    setting_suffix: -decomp-stl96-control-no-state
   runtime:
     horizon_mode: fixed_steps
     train_window_length: null
@@ -49,30 +49,6 @@ overrides:
     - day_of_year
     - year
     datetime_categorical_features: []
-    custom_features:
-    - name: load_state
-      history_path: load_state_features/B_load_state_history.csv
-      future_path: null
-      future_strategy: freeze_last_observation
-      availability: end_of_period
-      ts_col: time
-      columns:
-      - state_roll_1h_mean
-      - state_roll_1h_std
-      - state_roll_4h_mean
-      - state_roll_4h_std
-      - state_roll_24h_mean
-      - state_roll_24h_std
-      - state_roll_24h_range
-      - state_roll_7d_mean
-      - state_roll_7d_std
-      - state_diff_15min
-      - state_diff_1h
-      - state_diff_24h_pct
-      - state_robust_z_7d
-      - state_weekly_base_dev_pct
-      - state_route_diff_pct
-      categorical_columns: []
   time_lag_features:
     lags:
     - 96

@@ -1,8 +1,9 @@
-# A — aidc_load_15min_daily — add_exogenous_weather — 15min 模型测试配置；由 aidc_power_month/freq_1day/add_exogenous_weather 同名模板按频率语义转换
+# A — aidc_load_15min_daily — add_exogenous_weather — 15min 模型测试配置；由 aidc_power_month/freq_1day/baseline 同名模板按频率语义转换；no-op control：SeasonalTemplate 不消费天气特征
 base_config: config.univariate_config
 overrides:
   output:
     scenario_subpath: aidc_load_15min_daily/route_A/add_exogenous_weather
+    setting_suffix: -control-no-weather
   runtime:
     horizon_mode: fixed_steps
     train_window_length: null
@@ -21,21 +22,13 @@ overrides:
     target_ts_feat: time
     target: value
   exogenous_features:
-    weather_backtest_path: weather_15min_backtest_proxy_20260101_20260731.csv
-    strict_weather_information_set: true
-    weather_history_source: actual
-    weather_backtest_source: proxy
-    weather_future_source: proxy
+    weather_backtest_path: null
+    strict_weather_information_set: false
+    weather_history_source: ''
+    weather_backtest_source: ''
+    weather_future_source: ''
     enable_date_features: false
-    enable_weather_features: true
-    weather_history_path: weather_15min_20250101_20260731.csv
-    weather_future_path: weather_15min_future_proxy_20260731_20260831.csv
-    weather_ts_feat: ts
-    weather_features:
-    - rt_tt2
-    - cal_rh
-    - rt_ssr
-    - rt_ws10
+    enable_weather_features: false
     datetime_features:
     - hour
     - minute

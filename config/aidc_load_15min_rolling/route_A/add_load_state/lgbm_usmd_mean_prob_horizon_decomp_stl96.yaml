@@ -3,7 +3,7 @@ base_config: config.univariate_config
 overrides:
   output:
     scenario_subpath: aidc_load_15min_rolling/route_A/add_load_state
-    setting_suffix: -horizon-decomp-stl96-load-state-intraday
+    setting_suffix: -horizon-decomp-stl96-load-state
   runtime:
     horizon_mode: fixed_steps
     train_window_length: null

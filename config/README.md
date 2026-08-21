@@ -171,7 +171,7 @@ USMDP 当前不生成目标 lag，配置必须显式 `enable_lags_features: fals
 | `model_strategy` | `endogenous_backfill_strategy` | MSMR/MSMDR 非目标内生变量回填：`persistence`（默认）/ `auxiliary`（独立递归辅助模型） |
 | `model_strategy` | `blend_weight_strategy` | USBR/MSBR 融合权重：`fixed` / `ridge_stacking`（滑窗测试集上 Ridge 学权重） |
 | `conformal` | `enable_conformal_calibration` 等 | CQR 分位数校准：`conformal_alpha` / `conformal_calibration_windows` / `conformal_min_scores` |
-| `output` | `setting_suffix` | 结果目录 setting 后缀（如 `-intraday`），同配置不同语义版本结果隔离 |
+| `output` | `setting_suffix` | 结果目录 setting 后缀（如 `-control-no-weather`），同配置不同语义版本结果隔离；消融矩阵的 no-op control 用 `-control-no-<feature>` 标注 |
 | `output` | `plot_overlay_path` / `plot_overlay_col` | 测试图叠加参考序列（次坐标轴），路径相对 `data_dir` |
 
 ## XGBoost 参数速查

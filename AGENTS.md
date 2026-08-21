@@ -65,6 +65,7 @@ The general coding guidelines (Karpathy: think before coding, simplicity, surgic
 - `prediction.png` 历史上下文绘制**原始 `y`**（保证线条连续，不再断线）；eval_mask 掩码结果保留在 `prediction_plot_concat.csv` 的 `plot_value`/`plot_valid` 列；未来预测原值在 `prediction.csv` 的 `predict_value`。（注：`test_prediction.png` 滑窗测试图仍按 eval_mask 断线显示无效点）
 - `detrend_target` 与 `scale_target` 互斥：两者同开会双重加趋势且逆变换顺序错乱，`main.py` 校验 RAISE
 - `n_windows <= 0`（滑窗数为 0）不 RAISE，仅 WARNING 并跳过测试
+- **消融矩阵的 no-op control**：矩阵中不消费目标特征的模型保留为对照组——SeasonalTemplate（`st`）不消费 custom/load-state/weather 特征、USBR 不接入天气特征；此类配置删除特征注入块，注释与 `setting_suffix` 显式标注 `-control-no-<feature>`（如 `-decomp-linear-control-no-state`、`-conformal-control-no-weather`），保证与实验组同目录可对照
 - `EvalMaskConfig`（评估/绘图掩码，不改数据）≠ `TrainOutlierConfig`（滑窗训练窗口清洗，插值改数据）
 - 本地默认入口：修改 `main.py` 中的 `CONFIG_YAML`（当前指向 `config/aidc_load_month/route_B/lgbm_usmd_prob_mean.yaml`），再直接运行 `uv run python main.py`
 - `run.py` 保留为兼容入口，但当前文档和脚本不再把它作为推荐运行方式

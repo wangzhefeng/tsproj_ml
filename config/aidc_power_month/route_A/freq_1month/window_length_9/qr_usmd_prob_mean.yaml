@@ -50,6 +50,7 @@ overrides:
   advanced_features:
     enable_advanced_features: false
   model_strategy:
+    quantile_monotone: true
     model_type: qr
     pred_method: univariate-single-multistep-direct
     align_direct_features_to_target: true  # one-step: lag1=最新已知月，天气=目标月

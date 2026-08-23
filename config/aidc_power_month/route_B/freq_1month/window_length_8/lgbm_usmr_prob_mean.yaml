@@ -50,6 +50,7 @@ overrides:
   advanced_features:
     enable_advanced_features: false
   model_strategy:
+    quantile_monotone: true
     model_type: lightgbm
     model_params:
       min_child_samples: 2   # 月频每窗训练行少(≤7)，默认 20 无法分裂

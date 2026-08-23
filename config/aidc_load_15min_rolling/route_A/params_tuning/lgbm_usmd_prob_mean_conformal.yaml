@@ -72,6 +72,7 @@ overrides:
     - 192
     - 672
   model_strategy:
+    quantile_monotone: true
     align_direct_features_to_target: false
     model_type: lightgbm
     pred_method: univariate-single-multistep-direct

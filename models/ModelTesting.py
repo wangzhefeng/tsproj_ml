@@ -48,6 +48,7 @@ from utils.quantile import monotonize_quantile_columns
 from utils.conformal import compute_nonconformity_scores
 from utils.weather_contract import validate_weather_coverage
 from utils.log_util import logger
+from utils.exogenous_contract import select_asof_rows
 
 # global variable
 LOGGING_LABEL = Path(__file__).name[:-3]
@@ -105,6 +106,7 @@ class Tester:
         df_history_test: pd.DataFrame,
         df_weather_history: Optional[pd.DataFrame],
         df_weather_backtest: Optional[pd.DataFrame],
+        fold_origin: pd.Timestamp,
         log_prefix: str,
     ) -> Optional[pd.DataFrame]:
         """选择滑窗预测可用的气象信息集。
@@ -117,14 +119,15 @@ class Tester:
             return None
         if not bool(getattr(args, "strict_weather_information_set", False)):
             return df_weather_history
-        validate_weather_coverage(
-            df_weather_backtest,
-            df_history_test["time"],
-            getattr(args, "weather_ts_feat", "ts"),
-            "Backtest weather",
-        )
         assert df_weather_backtest is not None
-        return df_weather_backtest.copy()
+        return select_asof_rows(
+            df_weather_backtest,
+            expected_times=df_history_test["time"],
+            forecast_origin=fold_origin,
+            ts_col=getattr(args, "weather_ts_feat", "ts"),
+            available_at_col="available_at",
+            label="Backtest weather",
+        )
 
     @staticmethod
     def _window_test(payload):
@@ -243,6 +246,7 @@ class Tester:
             df_history_test=df_history_test,
             df_weather_history=payload["df_weather_history"],
             df_weather_backtest=payload.get("df_weather_backtest"),
+            fold_origin=df_history_train["time"].max(),
             log_prefix=log_prefix,
         )
         df_custom_future_for_test = materialize_custom_future_sources(

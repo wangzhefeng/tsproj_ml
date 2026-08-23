@@ -112,6 +112,7 @@ class ExogenousFeatureConfig:
     date_history_path: Optional[str] = "df_date.csv"
     date_future_path: Optional[str] = "df_date_future.csv"
     date_ts_feat: Optional[str] = "date"
+    strict_date_information_set: bool = False
     datetype_features: List[str] = field(default_factory=lambda: ["date_type"])
     datetype_categorical_features: List[str] = field(default_factory=list)
 
@@ -146,7 +147,7 @@ class ExogenousFeatureConfig:
     #   columns: 使用的特征列名白名单
     #   categorical_columns: 其中按类别传给 LightGBM 的列名（默认 []）
     #   future_strategy: explicit / freeze_last_observation
-    #   availability: contemporaneous（默认）/ end_of_period（当期结束后才可得）
+    #   availability: contemporaneous / forecast_origin / end_of_period
     # 与 weather 通路的区别：无 rt_/pred_ 列名映射（历史/未来列名一致）、无硬编码列白名单。
     custom_features: List[Dict[str, Any]] = field(default_factory=list)
 

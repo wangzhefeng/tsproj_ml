@@ -186,69 +186,46 @@ class ExogenousFeatureEngineer:
                 "weather_features",
                 ["rt_ssr", "rt_ws10", "rt_tt2", "cal_rh", "rt_ps", "rt_rain"],
             )
-            weather_features_raw = ["rt_ssr", "rt_ws10", "rt_tt2", "rt_dt", "rt_ps", "rt_rain"]
-            # Ensure df_weather has these columns
-            df_weather_filtered = df_weather[[col for col in [col_ts] + weather_features_raw if col in df_weather.columns]].copy()
+            weather_features_cfg = list(weather_features_cfg)
+            # 原生 weather 通路允许配置声明预先派生的数值列；cal_rh 若源文件已
+            # 提供则直接保留，否则才读取 rt_tt2/rt_dt 现场计算。
+            dependency_cols = []
+            if "cal_rh" in weather_features_cfg and "cal_rh" not in df_weather.columns:
+                dependency_cols = ["rt_tt2", "rt_dt"]
+            weather_source_cols = list(dict.fromkeys(weather_features_cfg + dependency_cols))
+            df_weather_filtered = df_weather[
+                [col for col in [col_ts] + weather_source_cols if col in df_weather.columns]
+            ].copy()
             # 仅删除时间戳缺失，保留其余缺失值，避免时间不对齐时样本被全部清空
             df_weather_filtered = df_weather_filtered.dropna(subset=[col_ts]).reset_index(drop=True)
             if df_weather_filtered.empty:
                 logger.warning(f"{self.log_prefix} df_weather became empty after dropping NaNs.")
                 return df_copy
 
-            # 将除了timeStamp的列转为float类型
-            for col in weather_features_raw:
+            # 将天气数值列统一转成 float 兼容类型。
+            for col in weather_source_cols:
                 if col in df_weather_filtered.columns:
-                    # df_weather_filtered[col] = df_weather_filtered[col].apply(lambda x: float(x))
                     df_weather_filtered[col] = pd.to_numeric(df_weather_filtered[col], errors='coerce')
 
-            # 计算相对湿度
-            df_weather_filtered["cal_rh"] = np.nan
-            # This calculation is for specific units (Kelvin), ensure consistency
-            # Assuming rt_tt2 and rt_dt are in Kelvin based on the calculation method
-            # If not, convert to Kelvin first (e.g., Celsius + 273.15)
-            # This needs to be vectorized for efficiency
-            valid_idx = df_weather_filtered["rt_tt2"].notna() & df_weather_filtered["rt_dt"].notna()
-            
-            # Constants for Tetens formula variation
-            A = 17.27
-            B = 237.7
-            
-            # Convert temperature from Kelvin to Celsius for the formula if needed, or adjust formula
-            # Assuming values are in Celsius and formula used is for Celsius, then converting to K-like internally
-            # Given the original code: (df_weather.loc[i, "rt_dt"] - 273.15) and (df_weather.loc[i, "rt_tt2"] - 273.15)
-            # This suggests rt_dt and rt_tt2 are in Kelvin, but the 35.86 value is unusual.
-            # I will use a more standard formula for relative humidity from dew point and temperature.
-            # Using August-Roche-Magnus approximation (values in Celsius)
-            # es = a * exp((b*T) / (c+T))
-            
-            # Simplified for existing structure:
-            # Check for non-NaN values for rt_tt2 and rt_dt
-            idx_to_calc = df_weather_filtered.index[valid_idx]
-            if not idx_to_calc.empty:
-                # Assuming rt_tt2 and rt_dt are already in Celsius or will be used direct as is
-                # This formula seems to be a variation of the Tetens equation, adapted for specific units
-                # Original formula was: exp(17.2693 * (T_dew - 273.15) / (T_dew - 35.86)) / exp(17.2693 * (T_air - 273.15) / (T_air - 35.86)) * 100
-                # Let's adjust this to be more robust. The '35.86' looks like a typo for something like 237.7 or 243.0 for Celsius.
-                # If rt_tt2 and rt_dt are indeed in Kelvin, the formula is highly unusual.
-                # For a standard RH calculation, we need T_air (air temp) and T_dew (dew point temp) in Celsius.
-                
-                # Let's assume rt_tt2 and rt_dt are in Celsius for now, or the provided constants are based on this.
-                # If the values are actual Kelvin, they need to be converted to Celsius first for standard formulas.
-                # Given no explicit conversion, I will use the provided structure and assume the original values.
-                
-                # If these are Kelvin, convert to Celsius first:
-                T_air_C = df_weather_filtered.loc[valid_idx, "rt_tt2"] - 273.15
-                T_dew_C = df_weather_filtered.loc[valid_idx, "rt_dt"] - 273.15
-
-                # Standard Magnus-Tetens formula for saturation vapor pressure (in hPa)
-                # Ps(T) = 6.1078 * exp((17.27 * T) / (237.3 + T))
-                # For RH = (Ps(T_dew) / Ps(T_air)) * 100
-                e_s_Td = 6.1078 * np.exp((17.2693 * T_dew_C) / (237.29 + T_dew_C))
-                e_s_T = 6.1078 * np.exp((17.2693 * T_air_C) / (237.29 + T_air_C))
-                
-                rh_values = (e_s_Td / e_s_T) * 100
-                rh_values = np.clip(rh_values, 0, 100) # Clip between 0 and 100
-                df_weather_filtered.loc[valid_idx, "cal_rh"] = rh_values
+            if "cal_rh" in weather_features_cfg:
+                if "cal_rh" not in df_weather_filtered.columns:
+                    df_weather_filtered["cal_rh"] = np.nan
+                if {"rt_tt2", "rt_dt"}.issubset(df_weather_filtered.columns):
+                    valid_idx = (
+                        df_weather_filtered["cal_rh"].isna()
+                        & df_weather_filtered["rt_tt2"].notna()
+                        & df_weather_filtered["rt_dt"].notna()
+                    )
+                    if valid_idx.any():
+                        t_air_c = df_weather_filtered.loc[valid_idx, "rt_tt2"] - 273.15
+                        t_dew_c = df_weather_filtered.loc[valid_idx, "rt_dt"] - 273.15
+                        e_s_td = 6.1078 * np.exp((17.2693 * t_dew_c) / (237.29 + t_dew_c))
+                        e_s_t = 6.1078 * np.exp((17.2693 * t_air_c) / (237.29 + t_air_c))
+                        df_weather_filtered.loc[valid_idx, "cal_rh"] = np.clip(
+                            (e_s_td / e_s_t) * 100,
+                            0,
+                            100,
+                        )
 
             # 特征筛选
             weather_features = weather_features_cfg
@@ -269,7 +246,7 @@ class ExogenousFeatureEngineer:
                     .fillna(0.0)
                 )
             # 删除无用特征
-            if col_ts in df_copy.columns:
+            if col_ts != "time" and col_ts in df_copy.columns:
                 del df_copy[col_ts]
         else:
             weather_features = []
@@ -358,18 +335,29 @@ class ExogenousFeatureEngineer:
             )
             # Filter df_weather for relevant columns and dropna
             # （同时保留 pred_* 源列与白名单目标列——月度统计类数据源直接用白名单名）
-            _relevant_cols = [col_ts] + list(pred_weather_features_map.keys()) + list(pred_weather_features_map.values())
+            _relevant_cols = (
+                [col_ts]
+                + list(pred_weather_features_map.keys())
+                + list(pred_weather_features_map.values())
+                + list(weather_features_cfg)
+            )
+            _relevant_cols = list(dict.fromkeys(_relevant_cols))
             df_weather_filtered = df_weather[[col for col in _relevant_cols if col in df_weather.columns]].copy()
-            df_weather_filtered.dropna(inplace=True, ignore_index=True)
+            df_weather_filtered.dropna(subset=[col_ts], inplace=True, ignore_index=True)
             if df_weather_filtered.empty:
                 logger.warning(f"{self.log_prefix} df_weather_future became empty after dropping NaNs.")
-                return df_copy, []
+                return df_copy
 
             # 数据类型转换
             for pred_col in pred_weather_features_map.keys():
                 if pred_col in df_weather_filtered.columns:
                     # df_weather_filtered[pred_col] = df_weather_filtered[pred_col].apply(lambda x: float(x))
                     df_weather_filtered[pred_col] = pd.to_numeric(df_weather_filtered[pred_col], errors='coerce')
+            for weather_col in weather_features_cfg:
+                if weather_col in df_weather_filtered.columns:
+                    df_weather_filtered[weather_col] = pd.to_numeric(
+                        df_weather_filtered[weather_col], errors="coerce"
+                    )
 
             # 将预测气象数据整理到预测df中
             for pred_col, target_col in pred_weather_features_map.items():
@@ -386,6 +374,11 @@ class ExogenousFeatureEngineer:
                     # 数据源已用白名单名（如月度统计文件的 rt_tt2/cal_rh 等），
                     # 无 pred_→rt_ 映射需求，直接按时间戳对齐
                     df_copy[target_col] = df_copy["time"].map(df_weather_filtered.set_index(col_ts)[target_col])
+            # 预计算派生天气列不在 pred_* 映射表内，按 canonical 同名列直通。
+            weather_indexed = df_weather_filtered.set_index(col_ts)
+            for target_col in weather_features_cfg:
+                if target_col not in df_copy.columns and target_col in weather_indexed.columns:
+                    df_copy[target_col] = df_copy["time"].map(weather_indexed[target_col])
             
             # features to return
             weather_features = weather_features_cfg
@@ -1047,7 +1040,7 @@ class FeatureEngineer:
             for source in custom_sources:
                 prepared = dict(source)
                 availability = str(prepared.get("availability", "contemporaneous") or "contemporaneous").lower()
-                if availability not in {"contemporaneous", "end_of_period"}:
+                if availability not in {"contemporaneous", "forecast_origin", "end_of_period"}:
                     raise ValueError(
                         f"Custom source '{prepared.get('name', 'custom')}' has unsupported "
                         f"availability='{availability}'."
@@ -1071,25 +1064,42 @@ class FeatureEngineer:
                 # logger.info(f"{self.log_prefix} after extend_datetime_feature df_featured.columns: \n{df_featured.columns}")
                 logger.info(f"{self.log_prefix} after extend_datetime_feature df_featured shape: {df_featured.shape}")
         
-        # 插值填充预测缺失值
-        df_featured = df_featured.interpolate(method="linear", limit_direction="both")
-        if self.verbose:
-            logger.info(f"{self.log_prefix} after interpolate df_featured: \n{df_featured.head()}")
-            logger.info(f"{self.log_prefix} after interpolate df_featured shape: {df_featured.shape}")
-        
         # 获取所有生成的特征: 外生变量特征、类别
         exogenous_features, categorical_features = self.exogenous_feature_engineer.get_generated_features()
-        # 类别特征去重
         categorical_features = sorted(set(categorical_features), key=categorical_features.index)
-        # 避免外生数据时间不对齐导致样本被全部丢弃，保留样本并对外生特征做兜底填充
+
+        # 只允许填充外生列，禁止整帧 interpolate 修改目标 y/内生变量。
+        # strict来源已在DataLoader按目标时间轴校验，缺失必须保留为失败信号，
+        # 不能用首尾值或0静默伪造。
+        custom_cfg = list(getattr(self.args, "custom_features", None) or [])
+        strict_information_set = (
+            bool(getattr(self.args, "strict_weather_information_set", False))
+            or bool(getattr(self.args, "strict_date_information_set", False))
+            or any(bool(source.get("strict_information_set", False)) for source in custom_cfg)
+        )
         existing_exogenous = [col for col in exogenous_features if col in df_featured.columns]
-        if existing_exogenous:
-            df_featured.loc[:, existing_exogenous] = (
-                df_featured[existing_exogenous]
-                .ffill()
-                .bfill()
-                .fillna(0.0)
-            )
+        if existing_exogenous and not strict_information_set:
+            numeric_exogenous = [
+                col for col in existing_exogenous
+                if col not in categorical_features
+            ]
+            if numeric_exogenous:
+                df_featured.loc[:, numeric_exogenous] = (
+                    df_featured[numeric_exogenous]
+                    .interpolate(method="linear", limit_direction="both")
+                    .ffill()
+                    .bfill()
+                    .fillna(0.0)
+                )
+            categorical_existing = [
+                col for col in existing_exogenous if col in categorical_features
+            ]
+            if categorical_existing:
+                df_featured.loc[:, categorical_existing] = (
+                    df_featured[categorical_existing].ffill().bfill()
+                )
+        if self.verbose:
+            logger.info(f"{self.log_prefix} after exogenous-only fill df_featured shape: {df_featured.shape}")
 
         return df_featured, exogenous_features, categorical_features
 
@@ -1113,6 +1123,7 @@ class FeatureEngineer:
 
         df_copy = df.copy()
         expanded_features = []
+        expanded_data = {}
         frozen_set = set(origin_frozen_features or [])
         for h in range(1, horizon + 1):
             shift_steps = -h
@@ -1127,8 +1138,14 @@ class FeatureEngineer:
                 # int/float/bool，故显式转成 0/1/NaN float。其它 dtype 保持。
                 if pd.api.types.is_bool_dtype(df_copy[col].dtype):
                     shifted = shifted.astype(float)
-                df_copy[col_h] = shifted
+                expanded_data[col_h] = shifted
                 expanded_features.append(col_h)
+
+        if expanded_data:
+            df_copy = pd.concat(
+                [df_copy, pd.DataFrame(expanded_data, index=df_copy.index)],
+                axis=1,
+            )
 
         if self.verbose:
             logger.info(f"{self.log_prefix} horizon-aware exogenous features generated: {len(expanded_features)}")
@@ -1440,6 +1457,14 @@ class FeatureEngineer:
             df_custom_future=df_custom_future,
         )
         origin_frozen_features = self.exogenous_feature_engineer.get_origin_frozen_features()
+        model_horizon = horizon
+        if self.args.pred_method in [
+            "univariate-single-multistep-direct-recursive",
+            "multivariate-single-multistep-direct-recursive",
+        ]:
+            configured_block = int(getattr(self.args, "block_size", 0) or 0)
+            if configured_block > 0:
+                model_horizon = min(configured_block, horizon)
         align_direct_to_target = bool(
             getattr(self.args, "align_direct_features_to_target", False)
         ) and self.args.pred_method in [
@@ -1470,7 +1495,7 @@ class FeatureEngineer:
             (df_series_featured, exogenous_features) = self._expand_horizon_exogenous_for_direct(
                 df=df_series_featured,
                 exogenous_features=exogenous_features,
-                horizon=horizon,
+                horizon=model_horizon,
                 origin_frozen_features=origin_frozen_features,
             )
         # Global 模式：保留序列 ID 作为静态外生类别特征
@@ -1489,7 +1514,7 @@ class FeatureEngineer:
             df_series=df_series_featured, 
             endogenous_features_with_target=endogenous_features_with_target_copy,
             target_feature=target_feature_copy, 
-            horizon=horizon,
+            horizon=model_horizon,
         )
 
         # 历史数据特征工程: 内生变量高级特征工程

@@ -802,6 +802,7 @@ class Forecaster:
                 df_date_future = df_date_future_step,
                 df_weather_history = None,
                 df_weather_future = df_weather_future_step,
+                df_custom_future = self.df_custom_future,
                 endogenous_features_with_target = self.endogenous_features,
                 target_feature = self.target_feature,
                 horizon = self.horizon,

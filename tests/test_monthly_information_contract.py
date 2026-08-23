@@ -178,7 +178,11 @@ class WeatherInformationContractTests(unittest.TestCase):
 
     def test_window_weather_uses_backtest_frame_not_history_actuals(self):
         history = pd.DataFrame({"ts": pd.to_datetime(["2026-07-31"]), "rt_tt2": [999.0]})
-        backtest = pd.DataFrame({"ts": pd.to_datetime(["2026-07-31"]), "rt_tt2": [300.0]})
+        backtest = pd.DataFrame({
+            "ts": pd.to_datetime(["2026-07-31"]),
+            "available_at": pd.to_datetime(["2026-06-30"]),
+            "rt_tt2": [300.0],
+        })
         test = pd.DataFrame({"time": pd.to_datetime(["2026-07-31"]), "y": [1.0]})
         args = SimpleNamespace(
             strict_weather_information_set=True,
@@ -190,6 +194,7 @@ class WeatherInformationContractTests(unittest.TestCase):
             df_history_test=test,
             df_weather_history=history,
             df_weather_backtest=backtest,
+            fold_origin=pd.Timestamp("2026-06-30"),
             log_prefix="[test]",
         )
         self.assertEqual(resolved.loc[0, "rt_tt2"], 300.0)

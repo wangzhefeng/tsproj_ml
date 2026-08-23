@@ -127,6 +127,83 @@ class DirectMultiOutputRegressor:
         return np.column_stack(preds)
 
 
+class HorizonAlignedDirectRegressor(DirectMultiOutputRegressor):
+    """每个输出仅消费其对应目标horizon外生列的Direct训练器。
+
+    输入宽表仍使用 ``feature_h1..feature_hH`` 表达目标时刻外生轨迹，
+    但第h个估计器只接收 ``feature_h{h}``，并在交给基模型前重命名回
+    canonical ``feature``。原点lag/advanced以及未展开的origin-frozen列共享。
+    """
+
+    _HORIZON_PATTERN = re.compile(r"^(.+)_h(\d+)$")
+
+    def __init__(self, estimator_factory, n_jobs: int = 1, log_prefix: str = "[HorizonAlignedDirectRegressor]"):
+        super().__init__(estimator_factory, n_jobs=n_jobs, log_prefix=log_prefix)
+        self.shared_features_: List[str] = []
+        self.horizon_bases_: List[str] = []
+
+    def _resolve_feature_layout(self, columns: List[str], n_outputs: int) -> None:
+        expanded = {}
+        expanded_columns = set()
+        for column in columns:
+            match = self._HORIZON_PATTERN.match(str(column))
+            if match is None:
+                continue
+            base = match.group(1)
+            horizon = int(match.group(2))
+            expanded.setdefault(base, {})[horizon] = column
+            expanded_columns.add(column)
+        if not expanded:
+            raise ValueError(f"{self.log_prefix} no horizon-aware exogenous columns found.")
+        for base, by_horizon in expanded.items():
+            missing = [h for h in range(1, n_outputs + 1) if h not in by_horizon]
+            if missing:
+                raise ValueError(
+                    f"{self.log_prefix} feature '{base}' missing horizon {missing[0]} "
+                    f"for {n_outputs} outputs."
+                )
+        expanded_bases = set(expanded)
+        self.shared_features_ = [
+            column for column in columns
+            if column not in expanded_columns and column not in expanded_bases
+        ]
+        self.horizon_bases_ = list(expanded)
+
+    def _frame_for_output(self, X: pd.DataFrame, output_idx: int) -> pd.DataFrame:
+        horizon = output_idx + 1
+        result = X.reindex(columns=self.shared_features_).copy()
+        for base in self.horizon_bases_:
+            source = f"{base}_h{horizon}"
+            if source not in X.columns:
+                raise ValueError(f"{self.log_prefix} feature '{base}' missing horizon {horizon}.")
+            result[base] = X[source].to_numpy()
+        return result
+
+    def _fit_single_output(self, output_idx: int, X_train, y_train, fit_kwargs: Optional[Dict[str, Any]] = None):
+        X_output = self._frame_for_output(X_train, output_idx)
+        kwargs = dict(fit_kwargs or {})
+        if kwargs.get("eval_set"):
+            kwargs["eval_set"] = [
+                (self._frame_for_output(X_eval, output_idx), y_eval)
+                for X_eval, y_eval in kwargs["eval_set"]
+            ]
+        return super()._fit_single_output(output_idx, X_output, y_train, kwargs)
+
+    def fit(self, X_train, Y_train, fit_kwargs_list: Optional[List[Dict[str, Any]]] = None):
+        y_frame = Y_train if isinstance(Y_train, pd.DataFrame) else pd.DataFrame(Y_train)
+        self._resolve_feature_layout(list(X_train.columns), y_frame.shape[1])
+        return super().fit(X_train, y_frame, fit_kwargs_list=fit_kwargs_list)
+
+    def predict(self, X) -> np.ndarray:
+        if not self.estimators_:
+            raise ValueError(f"{self.log_prefix} multi-output estimators are not fitted yet.")
+        preds = [
+            self._to_1d(estimator.predict(self._frame_for_output(X, output_idx)))
+            for output_idx, estimator in enumerate(self.estimators_)
+        ]
+        return np.column_stack(preds)
+
+
 class Trainer:
 
     def __init__(self, args: Dict, log_prefix: str):
@@ -158,6 +235,16 @@ class Trainer:
             return max(1, cpu_count)
 
         return value
+
+    def _should_use_horizon_aligned_direct(self) -> bool:
+        return bool(getattr(self.args, "use_horizon_exogenous_for_direct", False)) and str(
+            getattr(self.args, "pred_method", "")
+        ).lower() in {
+            "univariate-single-multistep-direct",
+            "multivariate-single-multistep-direct",
+            "univariate-single-multistep-direct-recursive",
+            "multivariate-single-multistep-direct-recursive",
+        }
 
     @staticmethod
     def _thread_limited_params(model_type: str, params: Dict[str, Any], threads: int) -> Dict[str, Any]:
@@ -259,7 +346,7 @@ class Trainer:
         # train() 主路径完成宽表→长表 melt；baseline 路径会跳过 melt，导致训练侧
         # 特征数（不含 h/h_sin/h_cos）与推理侧（含 h 三列）不一致，LightGBM 报
         # feature count mismatch。故强制走主路径。
-        if self._should_use_horizon_feature():
+        if self._should_use_horizon_feature() or self._should_use_horizon_aligned_direct():
             return False
 
         enhancement_flags = [
@@ -393,7 +480,27 @@ class Trainer:
                     f"{self.log_prefix} time-decay sample_weight not supported for "
                     f"multi-output quantile (sklearn wrapper); skipped."
                 )
-            if str(model_type).lower() in {"quantileregressor", "qr"}:
+            if self._should_use_horizon_aligned_direct():
+                model_q = HorizonAlignedDirectRegressor(
+                    estimator_factory=lambda: self._create_model_instance(
+                        model_type=model_type,
+                        model_params=params_q,
+                        log_params=False,
+                    ),
+                    n_jobs=self._resolve_worker_count("multi_output_n_jobs", default=1),
+                    log_prefix=self.log_prefix,
+                )
+                fit_kwargs_list = [
+                    {"categorical_feature": list(lgbm_categorical or [])}
+                    if lgbm_categorical else {}
+                    for _ in range(Y_train_df_processed.shape[1])
+                ]
+                model_q.fit(
+                    X_train_df_processed,
+                    Y_train_df_processed,
+                    fit_kwargs_list=fit_kwargs_list,
+                )
+            elif str(model_type).lower() in {"quantileregressor", "qr"}:
                 # QuantileRegressor 不接受 lag/rolling 热身区间产生的 NaN；裸估计器经
                 # sklearn MultiOutputRegressor 会绕过 _LinearModelBase 的行过滤。
                 # 保留项目 wrapper，让每个输出使用统一的线性模型 NaN 处理契约。
@@ -1077,7 +1184,12 @@ class Trainer:
                             actual_categorical,
                             native_data_bundle,
                         )
-                        model = DirectMultiOutputRegressor(
+                        regressor_cls = (
+                            HorizonAlignedDirectRegressor
+                            if self._should_use_horizon_aligned_direct()
+                            else DirectMultiOutputRegressor
+                        )
+                        model = regressor_cls(
                             estimator_factory=lambda: self._create_model_instance(
                                 model_type=model_type,
                                 model_params=self.model_params,

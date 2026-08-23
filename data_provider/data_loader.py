@@ -23,6 +23,11 @@ import xgboost as xgb
 import catboost as cab
 
 from utils.log_util import logger
+from utils.exogenous_contract import (
+    select_asof_rows,
+    split_role_frames,
+    validate_daily_coverage,
+)
 from utils.weather_contract import (
     validate_weather_availability,
     validate_weather_coverage,
@@ -60,7 +65,25 @@ def materialize_custom_future_sources(
         strategy = str(strategy_source.get("future_strategy", "explicit") or "explicit").lower()
         if strategy == "explicit":
             if future_source is not None:
-                resolved.append(future_source)
+                if bool(future_source.get("strict_information_set", False)):
+                    ts_col = future_source.get("ts_col")
+                    available_at_col = str(
+                        future_source.get("available_at_col", "available_at") or "available_at"
+                    )
+                    selected = select_asof_rows(
+                        future_source.get("df"),
+                        expected_times=future_index,
+                        forecast_origin=cutoff_ts,
+                        ts_col=ts_col,
+                        available_at_col=available_at_col,
+                        label=f"Custom[{name}] future",
+                    )
+                    columns = list(future_source.get("columns") or [])
+                    if selected[columns].isna().to_numpy().any():
+                        raise ValueError(f"Custom[{name}] future contains missing feature value(s).")
+                    resolved.append({**future_source, "df": selected})
+                else:
+                    resolved.append(future_source)
             continue
         if strategy != "freeze_last_observation":
             raise ValueError(
@@ -143,11 +166,28 @@ class DataLoader:
         future_df: Optional[pd.DataFrame],
         ts_col: Optional[str],
         label: str,
+        strict_roles: bool = False,
     ) -> tuple[Optional[pd.DataFrame], Optional[pd.DataFrame], Optional[pd.DataFrame]]:
         if history_df is None and future_df is None:
             return None, None, None
         if ts_col is None:
             raise ValueError(f"{self.log_prefix} {label} timestamp column is required for exogenous slicing.")
+
+        if strict_roles:
+            if history_df is None or future_df is None:
+                raise ValueError(
+                    f"{self.log_prefix} {label} strict role split requires both history and future data."
+                )
+            history_slice, future_slice = split_role_frames(
+                history_df,
+                future_df,
+                ts_col=ts_col,
+                forecast_start=self.forecast_start_time,
+                label=label,
+            )
+            logger.info(f"{self.log_prefix} {label} strict history shape: {history_slice.shape}")
+            logger.info(f"{self.log_prefix} {label} strict future shape: {future_slice.shape}")
+            return None, history_slice, future_slice
 
         frames = [df.copy() for df in [history_df, future_df] if df is not None]
         canonical_df = pd.concat(frames, axis=0, ignore_index=True)
@@ -211,6 +251,7 @@ class DataLoader:
             future_df=df_date_future_raw,
             ts_col=self.args.date_ts_feat,
             label="Date",
+            strict_roles=bool(getattr(self.args, "strict_date_information_set", False)),
         )
         input_data["date_history"] = df_date_history
         input_data["date_future"] = df_date_future
@@ -226,11 +267,13 @@ class DataLoader:
         df_weather_future_raw = self._load_optional_frame(self.args.weather_future_path, "Weather future")
         if bool(getattr(self.args, "strict_weather_information_set", False)):
             if df_weather_backtest_raw is not None:
+                # Backtest天气的发布时间必须相对每个CV fold原点校验；这里仅验证
+                # provenance列可解析。日级与月频共用同一as-of规则，不能在全局
+                # load阶段套用“早于目标月”这一月频特例。
                 validate_weather_availability(
                     df_weather_backtest_raw,
                     ts_col=self.args.weather_ts_feat,
                     label="Backtest weather",
-                    require_before_target_month=True,
                 )
             if df_weather_future_raw is not None:
                 validate_weather_availability(
@@ -248,6 +291,7 @@ class DataLoader:
             future_df=df_weather_future_raw,
             ts_col=self.args.weather_ts_feat,
             label="Weather",
+            strict_roles=bool(getattr(self.args, "strict_weather_information_set", False)),
         )
         input_data["weather_history"] = df_weather_history
         input_data["weather_backtest"] = df_weather_backtest_raw
@@ -272,6 +316,7 @@ class DataLoader:
                 future_df=df_future_raw,
                 ts_col=ts_col,
                 label=f"Custom[{name}]",
+                strict_roles=bool(source.get("strict_information_set", False)),
             )
             base = {
                 "name": name,
@@ -283,6 +328,8 @@ class DataLoader:
                 # - contemporaneous（默认）：时间戳当期开始即已知；
                 # - end_of_period：当期结束后才可得（如当日完整负荷状态）。
                 "availability": str(source.get("availability", "contemporaneous") or "contemporaneous"),
+                "strict_information_set": bool(source.get("strict_information_set", False)),
+                "available_at_col": str(source.get("available_at_col", "available_at") or "available_at"),
             }
             if df_history is not None and not df_history.empty:
                 input_data["custom_history"].append({**base, "df": df_history})
@@ -443,6 +490,14 @@ class DataLoader:
         if df_date_history is not None:
             logger.info(f"{self.log_prefix} __process_df_timestamp df_date_history: \n{df_date_history}")
             logger.info(f"{self.log_prefix} __process_df_timestamp df_date_history shape: {df_date_history.shape}")
+            if bool(getattr(self.args, "strict_date_information_set", False)):
+                validate_daily_coverage(
+                    df_date_history,
+                    expected_times=df_history_template["time"],
+                    ts_col=self.args.date_ts_feat,
+                    value_columns=self.args.datetype_features,
+                    label="Date history",
+                )
         else:
             logger.info(f"{self.log_prefix} __process_df_timestamp df_date_history: {df_date_history}")
         # 特征工程：天气特征
@@ -483,6 +538,14 @@ class DataLoader:
         if df_date_future is not None:
             logger.info(f"{self.log_prefix} after __process_df_timestamp df_date_future: \n{df_date_future}")
             logger.info(f"{self.log_prefix} after __process_df_timestamp df_date_future shape: {df_date_future.shape}")
+            if bool(getattr(self.args, "strict_date_information_set", False)):
+                validate_daily_coverage(
+                    df_date_future,
+                    expected_times=df_future_template["time"],
+                    ts_col=self.args.date_ts_feat,
+                    value_columns=self.args.datetype_features,
+                    label="Date future",
+                )
         else:
             logger.info(f"{self.log_prefix} after __process_df_timestamp df_date_future: {df_date_future}")
         # 特征工程：天气特征

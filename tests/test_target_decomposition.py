@@ -4,9 +4,11 @@ import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import patch
 
 import numpy as np
 import pandas as pd
+import statsmodels.tsa.seasonal
 
 from features.TargetDecomposition import TargetDecomposer
 from models.ModelForecasting import Forecaster
@@ -17,14 +19,42 @@ from models.ModelTraining import Trainer
 class TargetDecomposerTest(unittest.TestCase):
 
     @staticmethod
-    def _args(method, periods=None, degree=1):
-        return SimpleNamespace(
+    def _args(method, periods=None, degree=1, **extra):
+        base = dict(
             decomposition_method=method,
             decomposition_periods=list(periods or []),
             decomposition_trend_degree=degree,
             decomposition_trend_forecast="polynomial",
             decomposition_damping=0.98,
         )
+        base.update(extra)
+        return SimpleNamespace(**base)
+
+    def test_linear_damped_forecast_consumes_trend_lookback(self):
+        # 前段斜率 0.1，末端 lookback 段斜率 10.0：damped 外推应使用末端斜率
+        times = pd.date_range("2026-01-01", periods=40, freq="1D")
+        x = np.arange(40, dtype=float)
+        y = 100.0 + 0.1 * x + 9.9 * np.maximum(0.0, x - 29.0)
+        frame = pd.DataFrame({"time": times, "y": y})
+        future_times = pd.date_range(times[-1] + pd.Timedelta(days=1), periods=5, freq="1D")
+
+        def damped_future(lookback):
+            args = self._args(
+                "linear",
+                decomposition_trend_forecast="damped",
+                decomposition_trend_lookback=lookback,
+                decomposition_damping=0.98,
+            )
+            decomposer = TargetDecomposer(args).fit(frame)
+            return decomposer.restore(np.zeros(len(future_times)), future_times)
+
+        recent = damped_future(7)
+        long_window = damped_future(40)
+        # lookback=7 只看到末端陡峭段（局部斜率 10），lookback=40 覆盖全窗平缓段
+        self.assertGreater(recent[-1] - recent[0], 30.0)
+        # lookback=40 时阻尼后的全窗平均斜率仍给出温和外推，但起点显著低于陡峭段
+        self.assertLess(long_window[-1] - long_window[0], 10.0)
+        self.assertNotAlmostEqual(float(recent[0]), float(long_window[0]))
 
     def test_linear_decomposition_reconstructs_history_and_future(self):
         times = pd.date_range("2026-01-01", periods=40, freq="1D")
@@ -79,6 +109,35 @@ class TargetDecomposerTest(unittest.TestCase):
         transformed = TargetDecomposer(self._args("stl", [period])).fit_transform(frame)
 
         self.assertTrue(np.isfinite(transformed["y"]).all())
+
+    def test_mstl_passes_robust_to_statsmodels(self):
+        periods = [6, 12]
+        times = pd.date_range("2026-01-01", periods=48, freq="1h")
+        x = np.arange(len(times), dtype=float)
+        frame = pd.DataFrame(
+            {
+                "time": times,
+                "y": 50.0
+                + 5.0 * np.sin(2.0 * np.pi * x / periods[0])
+                + 3.0 * np.sin(2.0 * np.pi * x / periods[1]),
+            }
+        )
+
+        for robust in (True, False):
+            with self.subTest(robust=robust):
+                captured = {}
+
+                real_mstl = statsmodels.tsa.seasonal.MSTL
+
+                def spy_mstl(y, periods=None, **kwargs):
+                    captured["stl_kwargs"] = kwargs.get("stl_kwargs")
+                    return real_mstl(y, periods=periods, **kwargs)
+
+                args = self._args("mstl", periods, decomposition_robust=robust)
+                with patch.object(statsmodels.tsa.seasonal, "MSTL", spy_mstl):
+                    TargetDecomposer(args).fit(frame)
+
+                self.assertEqual(captured["stl_kwargs"], {"robust": robust})
 
     def test_forecaster_restores_point_and_quantile_outputs_with_same_component(self):
         times = pd.date_range("2026-01-01", periods=10, freq="1D")

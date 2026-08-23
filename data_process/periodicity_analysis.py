@@ -125,7 +125,7 @@ def _acf_periods(y: np.ndarray, max_lags: int, top_n: int, min_acf: float = DEFA
 
 def _stl_seasonal_component(y: np.ndarray, period: int) -> Optional[np.ndarray]:
     """STL 分解季节性成分；周期无效或分解失败时返回 None。"""
-    if period is None or period < 2 or period >= len(y) // 2:
+    if period is None or period < 2 or 2 * period > len(y):
         return None
     try:
         from statsmodels.tsa.seasonal import STL
@@ -195,8 +195,23 @@ def detect_periodicity(
         residual_std = float(np.std(y - seasonal))
         report["stl_seasonal_std"] = seasonal_std
         report["stl_residual_std"] = residual_std
+        # legacy 指标（分母含趋势，非标准季节强度），保留供历史结果对照
         report["stl_seasonal_ratio"] = float(
             seasonal_std / (residual_std + 1e-12)
+        )
+        # 标准强度指标（FPP: Fs = max(0, 1 - Var(R)/Var(S+R)); Ft = max(0, 1 - Var(R)/Var(T+R))）
+        from statsmodels.tsa.seasonal import STL as _STL
+
+        decomposed = _STL(y, period=period, robust=True).fit()
+        remainder = np.asarray(decomposed.resid, dtype=float)
+        trend_component = np.asarray(decomposed.trend, dtype=float)
+        seasonal_component = np.asarray(decomposed.seasonal, dtype=float)
+        var = lambda v: float(np.var(np.asarray(v, dtype=float)))
+        report["stl_seasonal_strength"] = max(
+            0.0, 1.0 - var(remainder) / (var(seasonal_component + remainder) + 1e-12)
+        )
+        report["stl_trend_strength"] = max(
+            0.0, 1.0 - var(remainder) / (var(trend_component + remainder) + 1e-12)
         )
 
     return report

@@ -27,7 +27,7 @@ The general coding guidelines (Karpathy: think before coding, simplicity, surgic
 ### 预测增强策略（v1 新增，默认全关）
 - **`direct_strategy: horizon_feature`**（仅 USMD/MSMD）：把 horizon 索引作为特征，训练 N×H 行长表（成本 H×→1×），推理展开 H 行，外生列按步取值解决 MIMO 滞后陈旧。DirRec（USMDR/MSMDR）暂不支持（遗留）
 - **`endogenous_backfill_strategy: auxiliary`**（仅 MSMR/MSMDR）：为每个非目标内生变量训练独立递归模型（reduced-form：只用自身滞后+datetime 外生），替代持久性常量回填。辅助模型在 `models/AuxiliaryForecaster.py`，与主模型打包为 `{"bundle_type": "auxiliary_endogenous", ...}` dict。注意：辅助模型每滑窗×每内生列各训练一次（成本 = 窗口数 × 内生列数），窗口并行时各窗口独立训练不共享
-- **`pred_method: USBR/MSBR`**（Direct+Recursive Blend）：同时构造 Direct（shift_1..H）和 Recursive（shift_0）目标列，训练两个子模型后加权融合。`blend_weight_strategy: ridge_stacking` 在最近 N 个滑窗（`blend_weight_windows`）测试集上用 `Ridge(positive=True, fit_intercept=False)` 学凸组合权重，写入 `blend_weights.csv`。**blend×quantile 已支持**：每个分位数训练 Direct（多输出 quantile）+ Recursive（单输出 quantile）子模型对，推理时逐分位数做 Direct+Recursive 加权融合，所有分位数共用同一组 ridge_stacking 权重（权重学自 median 分位数的 Direct/Recursive 分量）。v1 硬性不支持（main.py 校验 raise）：blend×ensemble、blend×scale_target、blend×detrend_target
+- **`pred_method: USBR/MSBR`**（Direct+Recursive Blend）：同时构造 Direct（shift_1..H）和 Recursive（shift_0）目标列，训练两个子模型后加权融合。`blend_weight_strategy: ridge_stacking` 在最近 N 个滑窗（`blend_weight_windows`）测试集上用 `Ridge(positive=True, fit_intercept=False)` 学凸组合权重，写入 `blend_weights.csv`。**blend×quantile 已支持**：每个分位数训练 Direct（多输出 quantile）+ Recursive（单输出 quantile）子模型对，推理时逐分位数做 Direct+Recursive 加权融合，所有分位数共用同一组 ridge_stacking 权重（权重学自 median 分位数的 Direct/Recursive 分量）。当前硬性不支持（main.py 校验 raise）：blend×ensemble、blend×scale_target、blend×目标分解（`decomposition_method != none`）
 - **`enable_conformal_calibration: true`**（CQR 后处理）：滑窗测试阶段记录 `conformal_score` 到 `cv_plot_df.csv`，forecast 阶段取最近 `conformal_calibration_windows`（默认 5）个窗口的 score 作校准集，对 `predict_q*` 首尾边界列对称膨胀，保证边际覆盖率 ≥ 1−α。纯后处理不重训模型，依赖 `is_testing=true` 产出的校准集；校准集 score 点数 < `conformal_min_scores`（默认 30）则跳过并 WARNING。当前硬性不支持 conformal×目标分解（`decomposition_method != none`，main.py 校验 raise）
 
 ### 模型工厂（ModelFactory）
@@ -63,7 +63,7 @@ The general coding guidelines (Karpathy: think before coding, simplicity, surgic
 - 测试汇总指标：使用 median（中位数），不是 mean——单窗口 MAPE 爆炸会拖垮均值（在 `main.py` 汇总时追加「中位数」行）
 - `MAPE Accuracy` 业务口径：按 `eval_mask` 掩码过滤后计算（默认 `mode: percentile` 即窗口正样本 `P5`；`absolute`/`combined` 模式启用 `min_value` 绝对下限，`max_value` 上限与 mode 正交、三模式均生效）；阈值落 `test_scores_df.csv` 的 `MAPE Threshold`/`MAPE Upper Threshold` 列，无有效点写 `NaN`；每窗口附带季节 naive（昨日同时刻）对照列 `Naive MAPE`/`Naive MAPE Accuracy`，与模型共用同一 eval_mask
 - `prediction.png` 历史上下文绘制**原始 `y`**（保证线条连续，不再断线）；eval_mask 掩码结果保留在 `prediction_plot_concat.csv` 的 `plot_value`/`plot_valid` 列；未来预测原值在 `prediction.csv` 的 `predict_value`。（注：`test_prediction.png` 滑窗测试图仍按 eval_mask 断线显示无效点）
-- `detrend_target` 与 `scale_target` 互斥：两者同开会双重加趋势且逆变换顺序错乱，`main.py` 校验 RAISE
+- 目标分解（`decomposition_method != none`）与 `scale_target` 互斥；`main.py` 校验 RAISE
 - `n_windows <= 0`（滑窗数为 0）不 RAISE，仅 WARNING 并跳过测试
 - **消融矩阵的 no-op control**：矩阵中不消费目标特征的模型保留为对照组——SeasonalTemplate（`st`）不消费 custom/load-state/weather 特征、USBR 不接入天气特征；此类配置删除特征注入块，注释与 `setting_suffix` 显式标注 `-control-no-<feature>`（如 `-decomp-linear-control-no-state`、`-conformal-control-no-weather`），保证与实验组同目录可对照
 - `EvalMaskConfig`（评估/绘图掩码，不改数据）≠ `TrainOutlierConfig`（滑窗训练窗口清洗，插值改数据）

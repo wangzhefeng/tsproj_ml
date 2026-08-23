@@ -85,6 +85,10 @@ class TargetDecomposer:
         self.step_ns = step_ns
         self.n_obs = len(times)
 
+    def _resolve_trend_lookback(self, n_obs: int) -> int:
+        lookback = int(getattr(self.args, "decomposition_trend_lookback", 28) or 28)
+        return min(n_obs, max(3, lookback))
+
     def _fit_trend_forecast(self, trend: np.ndarray, times: pd.DatetimeIndex) -> None:
         degree = int(getattr(self.args, "decomposition_trend_degree", 1) or 1)
         if degree not in {1, 2}:
@@ -92,7 +96,8 @@ class TargetDecomposer:
         x = self._t_idx(times)
         self.trend_coefficients = np.polyfit(x, trend, degree)
         self.last_trend = float(trend[-1])
-        lookback = min(len(trend), max(3, int(getattr(self.args, "decomposition_trend_lookback", 28) or 28)))
+        # 近期斜率在平滑后的趋势分量上按 lookback 估计
+        lookback = self._resolve_trend_lookback(len(trend))
         recent_x = x[-lookback:]
         recent_trend = trend[-lookback:]
         self.last_trend_slope_per_day = float(np.polyfit(recent_x, recent_trend, 1)[0])
@@ -140,8 +145,13 @@ class TargetDecomposer:
             trend = np.polyval(self.trend_coefficients, x)
             seasonal = np.zeros((len(y), 0), dtype=float)
             periods: list[int] = []
-            self.last_trend = float(trend[-1])
-            self.last_trend_slope_per_day = float(np.polyfit(x, trend, 1)[0])
+            # 与 STL/MSTL 分支共用趋势外推拟合；damped 近期斜率直接从观测 y 的
+            # lookback 段估计——linear 的趋势分量本身是全局多项式，对它重拟合
+            # 任何窗口斜率都相同，lookback 不会生效。
+            self._fit_trend_forecast(trend, times)
+            lookback = self._resolve_trend_lookback(len(y))
+            recent_x = x[-lookback:]
+            self.last_trend_slope_per_day = float(np.polyfit(recent_x, y[-lookback:], 1)[0])
         else:
             periods = self._resolve_periods()
             if any(2 * period > len(y) for period in periods):
@@ -159,7 +169,11 @@ class TargetDecomposer:
             else:
                 from statsmodels.tsa.seasonal import MSTL
 
-                result = MSTL(y, periods=tuple(periods)).fit()
+                result = MSTL(
+                    y,
+                    periods=tuple(periods),
+                    stl_kwargs={"robust": bool(getattr(self.args, "decomposition_robust", True))},
+                ).fit()
                 trend = np.asarray(result.trend, dtype=float)
                 seasonal = np.asarray(result.seasonal, dtype=float)
                 if seasonal.ndim == 1:

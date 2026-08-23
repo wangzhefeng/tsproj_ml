@@ -1,6 +1,6 @@
-# ESS 站用电策略特征
+# ESS 储能站用电预测
 
-本目录维护储能站用电预测的策略驱动特征工程、生成配置和消融实验配置。
+本目录维护储能站用电预测的模型配置、严格外生信息集、策略特征工程和消融实验。
 
 ## 入口与目录
 
@@ -9,9 +9,50 @@
 | `build_strategy_features.py` | 薄 CLI 入口，只负责参数解析和调用流水线 |
 | `strategy_features.yaml` | v2 数据边界、运行阈值、相似日参数和 A/B 路数据源 |
 | `strategy_features/` | v2 可测试实现：时间窗口、状态编码、周期画像、相似日与主流水线 |
+| `derive_weather.py` | 构建 5min actual history、historical forecast backtest、final forecast 三段派生天气 |
+| `route_{A,B}/baseline/` | quantile 基线：USBR/USMD/USMDP/USMDR/USMR |
+| `route_{A,B}/add_decomposition/` | USMD/USMDP/USMDR/USMR × linear/STL(288) 分解消融 |
+| `route_{A,B}/add_exogenous_weather_date/` | 严格天气 + date_type + datetime 的 quantile 测试 |
+| `route_{A,B}/add_exogenous_plan_strategy/` | 显式未来 PCS 计划 quantile 测试 |
+| `route_{A,B}/add_exogenous_weather_date_plan_strategy/` | 严格天气 + 日期 + PCS 计划联合测试 |
 | `route_{A,B}/add_strategy_features/` | v2 C0–C3 与 P6 C5 联合聚类消融配置 |
 
 生成数据落在 `dataset/aidc_ess_selfuse_load/forecasting_data/strategy_features/`，由仓库级 `dataset/` 忽略规则排除，不提交 Git。
+
+## 模型测试矩阵
+
+当前只维护 quantile 配置，不运行 point 测试。A/B 两路结构相同：
+
+| 组 | 每路配置数 | 方法/变量 |
+|---|---:|---|
+| baseline | 5 | USBR、USMD、USMDP、USMDR、USMR |
+| add_decomposition | 8 | 四种非 blend 方法 × linear/STL(288) |
+| add_exogenous_weather_date | 4 | USMD、USMDP、USMDR、USMR |
+| add_exogenous_plan_strategy | 4 | USMD、USMDP、USMDR、USMR |
+| add_exogenous_weather_date_plan_strategy | 4 | USMD、USMDP、USMDR、USMR |
+
+USBR 不进入外生组：其 Direct/Recursive 子模型共享一套 X，不能同时表达 Direct 的 horizon-aware 外生轨迹与 Recursive 的逐步外生量。USMD/USMDR 外生配置启用 `use_horizon_exogenous_for_direct`，每个输出模型只消费对应目标 horizon 的外生列；USMDR 使用 `block_size: 96`，288步预测真实执行3个block。USMR 逐步传入 future weather/custom；USMDP 直接按未来时间戳取外生，并显式关闭不生效的框架 lag。
+
+## 严格天气信息集
+
+执行：
+
+```bash
+env -u PYTHONPATH UV_CACHE_DIR=.uv_cache uv run python \
+  config/aidc_ess_selfuse_load/derive_weather.py
+```
+
+生成：
+
+| 文件 | 角色 |
+|---|---|
+| `weather_derived_in_20250101_20260728.csv` | 仅含截至 07-28 的 `rt_*` actual history |
+| `weather_derived_backtest_forecast_20260628_20260728.csv` | 历史raw中的 `pred_*`，覆盖31个CV预测日，带 `source_ts/available_at` |
+| `weather_derived_future_20260729_20260814.csv` | 仅由 `pred_*` 派生的 forecast future，带 `available_at` |
+
+天气配置使用原生 strict weather 通路：history=`actual`、backtest=`forecast`、future=`forecast`。每个CV fold按 `available_at <= fold_origin` 选择目标日历史预报；测试/预测时间戳缺失时直接失败。7 个派生列由 `weather_features` 显式声明；预计算 `cal_rh` 保持原值，不重复覆盖。
+
+PCS 计划继续使用通用 `custom_features` 注册表，而不是增加 PCS 专用 loader：计划历史/未来列同名、无 weather 的 `pred_*→rt_*` 映射需求。当前业务契约把目标日完整计划的 `available_at` 设为前一日23:55；`future_strategy: explicit`、`availability: forecast_origin` 和 strict coverage 保证每个fold只读取预测原点前已发布的完整288点计划。
 
 ## 构建与验证
 

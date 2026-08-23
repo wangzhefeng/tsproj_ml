@@ -22,19 +22,32 @@ overrides:
     target_ts_feat: time
     target: value
   exogenous_features:
-    weather_backtest_path: null
-    strict_weather_information_set: false
-    weather_history_source: ''
-    weather_backtest_source: ''
-    weather_future_source: ''
+    weather_backtest_path: exogenous_weather_raw/weather_derived_backtest_forecast_20260628_20260728.csv
+    strict_weather_information_set: true
+    weather_history_source: actual
+    weather_backtest_source: forecast
+    weather_future_source: forecast
     enable_date_features: true
-    date_history_path: exogenous_date_raw/date_in_20251001_20260731.csv
-    date_future_path: exogenous_date_raw/date_future_in_20260801_20260814.csv
+    date_history_path: exogenous_date_raw/date_in_20251001_20260728.csv
+    date_future_path: exogenous_date_raw/date_future_in_20260729_20260814.csv
     date_ts_feat: date
+    strict_date_information_set: true
     datetype_features:
     - date_type
-    datetype_categorical_features: []
-    enable_weather_features: false  # 派生气象通过 custom_features 接入，避免与原生 weather 通路重复
+    datetype_categorical_features:
+    - date_type
+    enable_weather_features: true
+    weather_history_path: exogenous_weather_raw/weather_derived_in_20250101_20260728.csv
+    weather_future_path: exogenous_weather_raw/weather_derived_future_20260729_20260814.csv
+    weather_ts_feat: time
+    weather_features:
+    - rt_ssr
+    - rt_tt2
+    - cal_rh
+    - rt_ws10
+    - tt2_mean_3h
+    - tt2_diff_1h
+    - ssr_mean_3h
     datetime_features:
     - hour
     - minute
@@ -46,21 +59,8 @@ overrides:
     - quarter
     - day_of_year
     - year
-    datetime_categorical_features: []  # 空列表=关闭类别特征(不传 categorical_feature 给 LightGBM)
+    datetime_categorical_features: []
     custom_features:
-    - name: weather_derived
-      history_path: exogenous_weather_raw/weather_derived_in_20250101_20260731.csv
-      future_path: exogenous_weather_raw/weather_derived_future_20260801_20260814.csv
-      ts_col: time
-      columns:
-      - rt_ssr
-      - rt_tt2
-      - cal_rh
-      - rt_ws10
-      - tt2_mean_3h
-      - tt2_diff_1h
-      - ssr_mean_3h
-      categorical_columns: []
     - name: pcs_plan
       history_path: exogenous_strategy_plan/B_PCS_plan_5min_20251001_20260728.csv
       future_path: exogenous_strategy_plan/B_PCS_plan_future_5min_20260729_20260731.csv
@@ -68,6 +68,10 @@ overrides:
       columns:
       - pcs_plan
       categorical_columns: []
+      future_strategy: explicit
+      availability: forecast_origin
+      strict_information_set: true
+      available_at_col: available_at
   time_lag_features:
     lags:
     - 288
@@ -99,6 +103,8 @@ overrides:
     - 2016
     - 8064
   model_strategy:
+    use_horizon_exogenous_for_direct: true
+    quantile_monotone: true
     align_direct_features_to_target: false
     model_type: lightgbm
     pred_method: univariate-single-multistep-direct

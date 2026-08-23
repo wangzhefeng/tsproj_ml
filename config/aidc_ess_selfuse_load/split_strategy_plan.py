@@ -24,6 +24,9 @@ def split_route(gate: str) -> None:
     df = pd.read_csv(src)
     df.columns = df.columns.str.strip("﻿")
     df["time"] = pd.to_datetime(df["time"])
+    # 当前业务契约：目标日完整计划在前一日23:55前已经发布。若上游后续提供
+    # 真实发布时间/版本，应直接透传真实 available_at，不再用该规则派生。
+    df["available_at"] = df["time"].dt.normalize() - pd.Timedelta(minutes=5)
 
     hist = df[df["time"] <= HISTORY_END]
     fut = df[(df["time"] >= FUTURE_START) & (df["time"] <= FUTURE_END)]

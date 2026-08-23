@@ -1,8 +1,9 @@
-# A — lightgbm — direct (5min 单变量)
+# A — lightgbm — USMD (5min 单变量 · quantile) · 目标分解 stl288
 base_config: config.univariate_config
 overrides:
   output:
-    scenario_subpath: aidc_ess_selfuse_load/route_A/baseline
+    scenario_subpath: aidc_ess_selfuse_load/route_A/add_decomposition
+    setting_suffix: -decomp-stl288
     plot_overlay_path: forecasting_data/A_ESS_PCS_merged_5min_20251001_20260728.csv
     plot_overlay_col: pcs_power
   runtime:
@@ -72,10 +73,15 @@ overrides:
     - 2016
     - 8064
   model_strategy:
+    quantile_monotone: true
     align_direct_features_to_target: false
     model_type: lightgbm
-    pred_method: univariate-single-multistep-blend-direct-recursive
-    blend_weight_strategy: ridge_stacking
+    pred_method: univariate-single-multistep-direct
+    predict_type: quantile  # 概率预测:输出各分位数(predict_qXX)
+    quantiles:
+    - 0.1
+    - 0.5
+    - 0.9
   training_enhancement:
     enable_time_decay_sample_weight: true
     decay_halflife_days: 60  # 半衰期天数,按数据漂移速度调整
@@ -86,7 +92,14 @@ overrides:
     percentile: 5.0
   preprocessing:
     target_calendar_normalization: none
-    decomposition_method: none  # blend 硬约束：不支持目标分解
+    scale_target: false
+    decomposition_method: stl
+    decomposition_periods:
+    - 288
+    decomposition_robust: true
+    decomposition_trend_degree: 1
+    decomposition_trend_forecast: polynomial
+    decomposition_seasonal_cycles: 4
   performance:
     window_parallel_workers: 8
     multi_output_n_jobs: 8

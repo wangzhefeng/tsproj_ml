@@ -42,15 +42,10 @@ overrides:
     - year
     datetime_categorical_features: []  # 空列表=关闭类别特征(不传 categorical_feature 给 LightGBM)
   time_lag_features:
-    lags:
-    - 288
-    - 576
-    - 864
-    - 1152
-    - 1440
-    - 1728
-    - 2016
+    enable_lags_features: false
+    lags: []
   model_strategy:
+    quantile_monotone: true
     align_direct_features_to_target: false
     model_type: lightgbm
     pred_method: univariate-single-multistep-direct-pointwise

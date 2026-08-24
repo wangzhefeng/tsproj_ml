@@ -13,7 +13,7 @@
 2. **把回测从“窗口总分”扩展为“预测步 × 场景 × 基线”的 skill 分析**：当前 `test_scores_df.csv` 只给整窗 R2/MSE/RMSE/MAE/MAPE 和昨日同时刻 naive，容易掩盖远 horizon 退化、节假日/突变日失效和区间失准。
 3. **新增少数有明确信息增量的特征族**：严格 trailing 的 EWM、天气 forecast vintage/`hours_ahead`、天气相对近期基准的 anomaly、冷/热度时与交互项；每项都必须遵循现有 A/B 两路、相同 31 窗、median MAPE 的消融规则。Enefit 获奖方案反复使用天气预报生成时刻、`hours_ahead`、历史目标变换和天气相对近期均值，而不是简单把“实测天气”并入未来。[18][19][26]
 
-专项代码复核发现的四项多步问题已在当前实现中修复：MSMD/MSMDR 目标从 `shift_1` 开始；Direct point/quantile 输出长度必须精确等于 horizon；USMDP 可通过 `align_direct_features_to_target=true` 启用 `min(lags) >= horizon` 的多步 safe-lag；global panel 的目标 shift、lag 和顺序型高级特征按 `series_id` 分组。现有 MSMD/MSMDR 旧结果仍是修复前口径，必须重跑；多步 safe-lag 与 global panel 也只是工程能力就位，尚未完成 A/B 消融。时间序列分解主链已具备因果滑窗和残差还原；linear+damped 的 lookback、MSTL robust 和离线周期指标三处语义缺陷已于 2026-08-23 修复并单独验收（199 tests OK、863 个模型 YAML 加载 0 错误），分解侧剩余缺口只有统一部署加载 bundle。多步预测详见 §6，分解详见 §7，能力矩阵见 §11。
+专项代码复核发现的四项多步问题已在当前实现中修复：MSMD/MSMDR 目标从 `shift_1` 开始；Direct point/quantile 输出长度必须精确等于 horizon；USMDP 可通过 `align_direct_features_to_target=true` 启用 `min(lags) >= horizon` 的多步 safe-lag；global panel 的目标 shift、lag 和顺序型高级特征按 `series_id` 分组。现有 MSMD/MSMDR 旧结果仍是修复前口径，必须重跑；多步 safe-lag 与 global panel 也只是工程能力就位，尚未完成 A/B 消融。时间序列分解重构已全部收口（2026-08-24）：linear+damped lookback、MSTL robust、离线周期指标三处语义缺陷修复并验收；架构迁移到 `decomposition/` 包（spec/pipeline/registry）；部署持久化升级为 v2 内嵌式 bundle（model+scaler+pipeline 单文件）；残差频谱诊断工具就位。多步预测详见 §6，分解详见 §7，能力矩阵见 §11。
 
 深度模型、层级协调和真正的跨序列全局模型有研究价值，但应排在评估闭环之后。Enefit 第一名的 XGBoost+GRU 比单模型更好，但 1D-CNN、Transformer 和更长多日 GRU 输入没有奏效；M5 的 DeepAR 主要价值是补充分布形状和层级不确定性，并非证明深度模型普遍优于 GBDT。[16][18]
 
@@ -407,7 +407,7 @@ $$
 
 #### 7.5.3 持久化与组合约束
 
-`models/ModelTraining.py:1293-1310` 保存 `target_decomposer.pkl`。分解与 `scale_target`、USBR/MSBR blend、CQR conformal 当前硬性互斥，避免 residual/level 空间混用。该限制保守但正确，扩展组合前必须先设计统一输出空间。
+`models/ModelTraining.py` 保存 v2 内嵌式 `decomposition_bundle.pkl`（model + target_scaler + pipeline 单文件，schema_version=2；2026-08-24 起不再写独立 `target_decomposer.pkl`）。加载侧 `ModelDeployPkl.load_model()` 自动识别 bundle 与普通模型。分解与 `scale_target`、USBR/MSBR blend、CQR conformal 当前硬性互斥，避免 residual/level 空间混用。该限制保守但正确，扩展组合前必须先设计统一输出空间。
 
 ### 7.6 当前实现的优势
 
@@ -420,7 +420,7 @@ $$
 
 ### 7.7 缺陷处置状态与集成缺口
 
-> 处置状态：7.7.1–7.7.3 已于 2026-08-23 修复并通过单独验收（全量 199 tests OK、863 个模型 YAML 加载 0 错误；逐项证据见 `docs/time_series_decomposition_redesign.md` §15.2）。以下原文保留为审计记录；7.7.4 仍未实现。
+> 处置状态：7.7.1–7.7.4 全部关闭。7.7.1–7.7.3 于 2026-08-23 修复；7.7.4 于 2026-08-24 以 v2 内嵌式 bundle 完成。验收证据见 `docs/time_series_decomposition_redesign.md` §15（273 tests OK）。以下原文保留为审计记录。
 
 #### 7.7.1 【已修复 2026-08-23】linear+damped 忽略 `decomposition_trend_lookback`
 
@@ -454,7 +454,9 @@ $$
 
 因此当前 ratio 只能视为自定义描述量，不能据此决定是否启用 STL/MSTL。
 
-#### 7.7.4 P2：保存了 decomposer，但缺少统一预训练加载编排
+#### 7.7.4 【已完成 2026-08-24】保存了 decomposer，但缺少统一预训练加载编排
+
+完成说明：已实现 v2 内嵌式 `DecompositionBundle`——model + target_scaler + pipeline pickle 进单个 `decomposition_bundle.pkl`（schema_version=2），加载侧 `ModelDeployPkl.load_model()` 通过 `isinstance` 自动识别 bundle 与普通模型，一次切换不再写独立 `target_decomposer.pkl`。注意：selected features schema 仍未纳入 bundle（当前部署链路不消费，留待真实预训练部署需求出现时扩展）。
 
 代码能够保存和手动加载 `target_decomposer.pkl`，但全仓没有发现与 `model.pkl`、scaler、selected feature schema 一起自动恢复 decomposer 的统一预测入口。当前 `main.py` 每次 final forecast 都现场训练，因此不受影响；若未来走独立加载预训练模型部署，必须把这些对象作为一个 bundle 同构恢复。
 
@@ -488,7 +490,7 @@ $$
 1. ✅ 已完成（2026-08-23）：linear+damped 近期斜率改为从观测 y 的 lookback 段估计（对全局多项式拟合线取 lookback 无效，属实施偏差，见设计文档 §15.7）；补齐不同 lookback 产生不同未来分量的测试。
 2. ✅ 已完成（2026-08-23）：MSTL 增加 `stl_kwargs={'robust': decomposition_robust}`，robust true/false 接线测试就位；创建 MSTL 配置的前置条件已满足。
 3. ✅ 已完成（2026-08-23）：允许恰好两个周期（`2*period <= n`），输出标准 `stl_seasonal_strength/stl_trend_strength`，旧 ratio 保留并标注 legacy。
-4. 新增统一 model bundle 加载契约，至少包含 model、feature scaler、target scaler、target decomposer、selected features 和必要 schema。
+4. ✅ 已完成（2026-08-24）：v2 内嵌式 model bundle——model + target_scaler + decomposition pipeline 单文件持久化（`decomposition_bundle.pkl`，schema_version=2），`ModelDeployPkl.load_model()` 自动识别；feature scaler/selected features schema 未纳入（当前部署链路不消费，见 §7.7.4 完成说明）。
 5. 多步预测 P0 已修复；判定分解精度前须重跑受影响的 MSMD/MSMDR 结果，避免沿用错位旧口径。
 6. 高频场景按单配置比较 `none / linear / STL(日周期) / MSTL(日+周)`；MSTL 只在修复 robust 后进入。
 7. 日频按 `none / linear-polynomial / linear-damped / quadratic / STL7` 比较；周季节性弱时不因“可分解”而默认启用。
@@ -635,7 +637,7 @@ def interval_coverage(
 | linear+damped lookback | ✅ 已于 2026-08-23 修复（近期斜率取观测 y 的 lookback 段） | 近期趋势阻尼外推 | 已关闭 | damped 消融尚未运行，无既有结果作废 |
 | MSTL robust | ✅ 已于 2026-08-23 修复并有接线测试；当前仍无 MSTL YAML | robust multi-seasonal decomposition | 已关闭 | 可启用 MSTL 配置进入消融 |
 | 周期诊断 | ✅ 已于 2026-08-23 修复边界并输出标准强度（旧 ratio 标注 legacy） | STL/MSTL 周期候选与强度分析 | 已关闭 | 已完成 |
-| decomposer 部署加载 | 已保存独立 pkl，缺统一恢复编排 | 可复现 hybrid pipeline | P2 | 建立模型 bundle 加载契约 |
+| decomposer 部署加载 | ✅ 已完成（2026-08-24）：v2 内嵌式 bundle，ModelDeployPkl 自动识别 | 可复现 hybrid pipeline | 已关闭 | 单文件部署产物就绪 |
 | 概率预测训练 | quantile + monotone + CQR | 分布模型/层级 quantile | P2 | 新管线、高训练成本 |
 | 概率评估 | **缺 pinball/coverage/width/Winkler** | M5 完整概率评分 | **P0** | 中等，主要是指标与输出测试 |
 | horizon 诊断 | 仅整窗指标和 per-window 图 | 按步/场景分解 | **P0** | 中等，新增结果表和报告 |
@@ -660,13 +662,13 @@ def interval_coverage(
 6. ⏳ 标记并重跑所有 MSMD/MSMDR 既有结果，旧指标不可继续用于比较；
 7. ⏳ safe-lag/global panel 分别做单配置冒烟和 A/B 同窗消融，未验证前不全矩阵推广。
 
-### 阶段 0.5：修正分解配置与诊断语义（1–3 已于 2026-08-23 完成）
+### 阶段 0.5：修正分解配置与诊断语义（全部完成）
 
 1. ✅ 修复 linear+damped 的 `decomposition_trend_lookback`（斜率取自观测 y，见 §7.7.1 修复说明）；
 2. ✅ 修复 MSTL 的 `decomposition_robust` 透传；
 3. ✅ 修正周期工具的两周期边界与标准季节/趋势强度；
-4. 建立 decomposer 与 model/scaler/schema 的统一加载契约（本阶段唯一未完成项）；
-5. 1–3 的前置条件已解除，damped/MSTL 消融可以启动；damped 修复后未运行过任何旧口径实验，不存在需要作废的结果。
+4. ✅ 建立 decomposer 与 model/scaler 的统一加载契约（2026-08-24，v2 内嵌式 bundle；feature scaler/selected features schema 未纳入，当前部署链路不消费）；
+5. ✅ 分解架构已迁移到 `decomposition/` 包并补齐残差频谱诊断（`residual_diagnostics.csv`）；damped/MSTL 消融前置条件全部解除。
 
 ### 阶段 A：只增强评估，不改变预测值
 
@@ -744,7 +746,7 @@ def interval_coverage(
 
 1. 结果重建：重跑修复前受影响的 MSMD/MSMDR 配置，确保旧目标口径的模型、CSV 和图不再参与比较；
 2. 能力消融：USMDP safe-lag 先做单配置冒烟，再按 A/B 各 31 窗判定；global panel 等真实 panel 数据契约就位后单独评估；
-3. 分解集成：linear+damped lookback、MSTL robust、周期强度/边界已于 2026-08-23 完成并验收；剩余统一加载 bundle 待做；
+3. 分解集成：linear+damped lookback、MSTL robust、周期强度/边界、统一加载 bundle（v2 内嵌式）、`decomposition/` 包架构迁移已于 2026-08-23~24 全部完成并验收；残差频谱诊断工具就位，VMD/Wavelet 是否启动取决于实跑 `residual_diagnostics.csv` 的 stable_band 结果；
 4. 评估闭环：实现 `probabilistic_metrics`、`probabilistic_scores_df.csv`、`horizon_scores_df.csv`、baseline suite 和 skill score。
 
 EWM、weather vintage 和 gap/embargo 作为下一批独立消融；hierarchical reconciliation、GRU/DeepAR 作为后续结构性研究。global panel 不再有已知跨序列特征串值阻塞，但在真实 panel 消融前仍不作为现役默认。这样既吸收 Kaggle 的高价值经验，也不破坏项目当前已经建立的严格信息集、A/B 多窗判定和最小改动原则。

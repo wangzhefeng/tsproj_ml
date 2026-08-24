@@ -54,7 +54,7 @@
 - 滑窗测试中先切原始电平，再只在训练段拟合；
 - 最终预测在全部已知历史上重新拟合；
 - point 和 quantile 都加回同一确定分量；
-- 分解器与模型一起保存为 `target_decomposer.pkl`。
+- 分解器与模型一起保存（v1 为独立 `target_decomposer.pkl`；2026-08-24 起升级为 v2 内嵌式 `decomposition_bundle.pkl`，见 §7.4）。
 
 ### 2.2 当前问题
 
@@ -506,6 +506,8 @@ def resolve_decomposition_spec(cfg) -> DecompositionSpec:
 - 保存 pipeline 或 pipeline 内部必要状态；
 - 保留现有 `target_decomposer.pkl` 语义，但对象类型可切换为 pipeline；
 - 如果后续要支持独立加载，再升级成 bundle。
+
+> **实施更新（2026-08-24）**：已升级为 v2 内嵌式 `DecompositionBundle`——model + target_scaler + pipeline pickle 进单个 `decomposition_bundle.pkl`（schema_version=2），不再写独立 `target_decomposer.pkl`；加载入口挂载到 `ModelDeployPkl.load_model()`，通过 `isinstance` 自动识别 bundle 与普通模型。selected features schema 未纳入（当前部署链路不消费）。详见 §15.9 待办 #2。
 
 ---
 
@@ -1010,6 +1012,7 @@ def resolve_decomposition_spec(cfg) -> DecompositionSpec:
 - [x] 3.1 持久化统一 bundle（completed 2026-08-25）
   - 新增 `decomposition/bundle.py`：`DecompositionBundle`（pipeline + spec 摘要 + schema_version），save/load 带 schema 校验和类型校验；
   - `ModelTraining.model_save()` 在保存 `target_decomposer.pkl` 的同时写入 `decomposition_bundle.pkl`（向后兼容：旧 pkl 保留，bundle 为新增）。
+  - **后续更新（2026-08-24，待办 #2）**：升级为 v2 内嵌式 bundle（model + target_scaler + pipeline 单文件，schema_version=2），一次切换后不再写独立 `target_decomposer.pkl`；加载挂载到 `ModelDeployPkl.load_model()`。
 - [x] 3.2 registry 与 check_model_configs 对齐（completed 2026-08-25）
   - `scripts/check_model_configs.py` 改为通过 `resolve_decomposition_spec(cfg)` 校验，异常写入 problems 而非崩溃；checker dry-run 全配置通过。
 - [x] 3.3 decomposition 诊断报告输出（completed 2026-08-25）

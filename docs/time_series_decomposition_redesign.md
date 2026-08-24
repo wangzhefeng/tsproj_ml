@@ -507,7 +507,7 @@ def resolve_decomposition_spec(cfg) -> DecompositionSpec:
 - 保留现有 `target_decomposer.pkl` 语义，但对象类型可切换为 pipeline；
 - 如果后续要支持独立加载，再升级成 bundle。
 
-> **实施更新（2026-08-24）**：已升级为 v2 内嵌式 `DecompositionBundle`——model + target_scaler + pipeline pickle 进单个 `decomposition_bundle.pkl`（schema_version=2），不再写独立 `target_decomposer.pkl`；加载入口挂载到 `ModelDeployPkl.load_model()`，通过 `isinstance` 自动识别 bundle 与普通模型。selected features schema 未纳入（当前部署链路不消费）。详见 §15.9 待办 #2。
+> **实施更新（2026-08-24）**：本阶段先升级为 v2 内嵌式 `DecompositionBundle`。后续概率预测重构已将其收敛进唯一 schema v1 `ForecastModelBundle`：当前只写 `model.pkl`，同时持有 model、feature scaler、`TargetTransformPipeline`、selected features 与 input schema；`probabilistic_schema.json` 仅存 metadata，不再写新的 `decomposition_bundle.pkl`/`target_scaler.pkl`。最新事实见 `time_series_probabilistic_forecasting_redesign.md` §15。
 
 ---
 
@@ -1012,7 +1012,7 @@ def resolve_decomposition_spec(cfg) -> DecompositionSpec:
 - [x] 3.1 持久化统一 bundle（completed 2026-08-25）
   - 新增 `decomposition/bundle.py`：`DecompositionBundle`（pipeline + spec 摘要 + schema_version），save/load 带 schema 校验和类型校验；
   - `ModelTraining.model_save()` 在保存 `target_decomposer.pkl` 的同时写入 `decomposition_bundle.pkl`（向后兼容：旧 pkl 保留，bundle 为新增）。
-  - **后续更新（2026-08-24，待办 #2）**：升级为 v2 内嵌式 bundle（model + target_scaler + pipeline 单文件，schema_version=2），一次切换后不再写独立 `target_decomposer.pkl`；加载挂载到 `ModelDeployPkl.load_model()`。
+  - **后续更新（2026-08-24）**：v2 局部 bundle 随后被唯一 `ForecastModelBundle` 吸收；当前 `model.pkl` 同构保存 model、feature scaler、目标变换栈、selected features 和 input schema，局部 decomposition bundle 仅保留为历史兼容类型。
 - [x] 3.2 registry 与 check_model_configs 对齐（completed 2026-08-25）
   - `scripts/check_model_configs.py` 改为通过 `resolve_decomposition_spec(cfg)` 校验，异常写入 problems 而非崩溃；checker dry-run 全配置通过。
 - [x] 3.3 decomposition 诊断报告输出（completed 2026-08-25）
@@ -1082,7 +1082,7 @@ VMD/Wavelet 的启动与否取决于实跑 `residual_diagnostics.csv` 的 stable
 | # | 优先级 | 待办 | 状态 | 证据 |
 |---|---|---|---|---|
 | 1 | **P0** | main.py:243-259 校验段改读 `spec.preset.periods`，删除 legacy 直读；否则新写法 stl/mstl 配置被误拒 | **completed**（2026-08-24） | main.py 改读 `spec.preset.periods`；新写法 stl/mstl spec 探针通过；252 tests OK |
-| 2 | P1 | bundle 扩展为 model + scaler + pipeline 统一持久化，定义加载入口（消费 `decomposition_bundle.pkl`）；需先评审加载路径设计 | **completed**（2026-08-24） | v2 内嵌式 bundle：model + target_scaler + pipeline 单文件；schema_version=2；`ModelDeployPkl.load_model` 自动识别 bundle；一次切换不再写独立 target_decomposer.pkl；`test_model_save_persists_fitted_target_decomposer` 更新为读 bundle |
+| 2 | P1 | bundle 扩展为 model + scaler + pipeline 统一持久化，定义加载入口 | **completed，并被后续统一 bundle 吸收**（2026-08-24） | 当前由 schema v1 `ForecastModelBundle` 统一持有 model、feature scaler、`TargetTransformPipeline`、selected features/input schema；`ModelDeployPkl.load_model` 兼容历史对象并拒绝未知 schema |
 | 3 | P1 | 补 mstl 新旧等价测试：从 `git show e4502fd:features/TargetDecomposition.py` 恢复旧实现做一次性 transform/restore 数值对比，结果固化进测试 | **completed**（2026-08-24） | 旧实现冻结为 `tests/fixtures/legacy_target_decomposition.py`；`test_decomposition_equivalence.py` 改用真实旧实现（非自比），新增 mstl robust T/F 两例，9 用例全过 |
 | 4 | P2 | 诊断报告避免覆盖：按窗口/run 加后缀，或全窗口聚合后写一次 | **completed**（2026-08-24，方案 A） | `write_diagnostics_report` 加 `suffix` 参数；`_window_test` 传 `f"_win{window}"`；新测试 `test_diagnostics_suffix_avoids_overwrite` |
 | 5 | P2 | 低成本收尾：清理 `spec.py` none 冗余分支（偏差 #4）、`pipeline.py` 死代码、`trend_coefficients_context_ns` 动态属性入 `__init__`；文档 §3.1/§4.3 与实现对齐 | **completed**（2026-08-24） | spec 冗余分支已删；`attach_trend` 死代码已删；`trend_coefficients_context_ns` 入 `__init__` 并去掉 type: ignore；`__y__` 提为 `TARGET_KEY` 常量（types.py，三处引用统一）；`ComponentFrame.residual_name` 文档同步为 TARGET_KEY 语义；§3.1 目录结构更新为平铺单文件结构 |

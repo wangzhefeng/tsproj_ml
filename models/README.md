@@ -59,6 +59,11 @@
 ```text
 <test_results_dir>/test_scores_df.csv
 <test_results_dir>/cv_plot_df.csv
+<test_results_dir>/probabilistic_predictions_df.csv
+<test_results_dir>/probabilistic_scores_df.csv
+<test_results_dir>/horizon_scores_df.csv
+<test_results_dir>/probabilistic_intervals_df.csv
+<test_results_dir>/calibration_report.csv
 <test_results_dir>/train_outlier_report.csv
 <test_results_dir>/test_prediction.png
 ```
@@ -71,11 +76,11 @@
 
 全部窗口的汇总指标由 `main.py` 用 **median（中位数）** 追加为「中位数」行——单窗口 MAPE 爆炸不会拖垮汇总。
 
-启用 `enable_conformal_calibration` 时，每个分位数窗口额外记录 `conformal_score`（CQR nonconformity score）到 `cv_plot_df.csv`，供 forecast 阶段校准分位数边界；blend 方法（USBR/MSBR）额外记录 `blend_direct_pred`/`blend_recursive_pred` 分预测列，供 `ridge_stacking` 学权重。
+quantile 模式按 `ProbabilisticSpec` 指定 interval 在 processed target-space boundaries 上记录 `conformal_score`。历史窗口按 `label_available_at <= current_origin` 做 prequential CQR，final forecast 复用同一 as-of selector；模型 quantile 与 calibrated prediction interval 分开保存。Blend 方法额外记录 `blend_direct_pred`/`blend_recursive_pred`，供 `ridge_stacking` 学共享权重。
 
 ## 预测
 
-`Forecaster._predict_by_method()` 根据 `args.pred_method` 分发：
+`Forecaster._predict_by_method()` 根据 `args.pred_method` 分发；point 返回一维数组，quantile 返回统一的 `ForecastDistribution`。迁移期 `quantile_outputs` 仅保留只读兼容视图：
 
 | 方法 | 说明 |
 |---|---|
@@ -99,7 +104,7 @@
 ```
 
 `prediction.csv` 基础列为 `time,predict_value`。启用分位数预测时追加
-`predict_q10,predict_q50,predict_q90,...`。
+`predict_q10,predict_q50,predict_q90,...`，并强制 `predict_value == predict_q50`；启用 CQR 时另加 `predict_pi<coverage>_lower/upper`，不覆盖模型 quantile。
 
 `prediction_plot_concat.csv` 用于未来预测图排障，当前除 `time,value,series_type` 外还会保存：
 

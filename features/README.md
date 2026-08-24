@@ -87,6 +87,16 @@ categorical_features
 - `inverse_target` 控制评估和预测保存时是否恢复到目标原始量纲。
 - 分位数和多输出预测会通过 `get_prediction_target_columns()` 对齐目标列。
 
+## TargetTransformation
+
+`TargetTransformPipeline` 是 point/quantile 共用的目标空间契约。训练期按实际启用顺序登记：
+
+```text
+calendar normalization → decomposition → target scaling
+```
+
+推理期自动严格逆序 restore，point 向量与 `(n_steps, n_quantiles)` matrix 使用同一实例；长度/时间不一致直接 RAISE。crossing、概率指标和 CQR 只消费 restore 后的 target-space 值，不再由 `main.py`/`ModelTesting.py` 分散排列逆变换。
+
 兼容字段：
 
 - `scale_features` 优先；旧字段 `scale` 仍作为 fallback。

@@ -63,6 +63,7 @@ tsproj_ml/
 ├── features/
 │   ├── FeatureEngineering.py    # 日期时间、日期类型、天气、自定义外生、滞后、高级特征
 │   ├── FeatureScalering.py      # 特征/目标缩放与逆变换
+│   ├── TargetTransformation.py  # calendar/decomposition/scaler 有序目标变换栈
 │   ├── FeatureSelection.py      # 训练集特征选择
 │   ├── DataAugment.py           # 训练集数据增强
 │   └── feature_engineering/     # 实验性特征子包（fft/wavelet/statistical 等），未接入主流程
@@ -75,14 +76,16 @@ tsproj_ml/
 │   ├── AuxiliaryForecaster.py   # 非目标内生变量辅助递归预测器（auxiliary 回填）
 │   ├── ModelSaveLoad.py         # pickle 保存/加载
 │   └── losses.py, learning_rate.py
+├── probabilistic/               # 概率预测 spec、类型、训练、后处理、校准与评估
 ├── scripts/                     # 项目级维护工具
 │   └── check_model_configs.py   # 模型配置 dry-run 校验（复算 main.py 合法性校验，不训练不预测）
 ├── tests/                       # 已纳入版本控制的 unittest 回归测试
 └── utils/
     ├── frequency.py             # pandas 频率解析
     ├── eval_mask.py             # 评估/绘图有效点掩码
-    ├── conformal.py             # CQR 分位数 conformal 校准
-    ├── quantile.py              # 分位数列单调化
+    ├── conformal.py             # CQR 兼容入口（主实现位于 probabilistic/）
+    ├── quantile.py              # 分位数后处理兼容入口
+    ├── parallel_budget.py       # 窗口并行下的统一内部并行预算
     ├── runtime_env.py           # 运行期环境变量辅助
     └── log_util.py              # 日志器
 ```
@@ -98,8 +101,9 @@ tsproj_ml/
 3. 单变量策略只保留 `time + y`；多变量策略保留配置中的其他内生变量。
 4. `FeatureEngineer.create_features()` 生成外生、滞后和可选高级特征，并构造多步目标列。
 5. 若 `is_testing=True`，`Tester._window_test()` 做滑窗验证，可按窗口并行。
-6. 若 `is_forecasting=True`，`Trainer.train()` 用全历史训练，`Forecaster._predict_by_method()` 推理未来区间。
-7. 测试、模型、预测结果分别保存到配置指定目录。
+6. 若 `is_forecasting=True`，`Trainer.train()` 用全历史训练；quantile 路径返回 `ProbabilisticModelBundle`，`Forecaster._predict_by_method()` 统一返回 `ForecastDistribution`。
+7. point/quantile 经同一个 `TargetTransformPipeline` 严格逆序恢复；crossing repair、prequential/final CQR 和概率指标均在 target space 执行。
+8. 测试、唯一 `ForecastModelBundle`、预测结果分别保存到配置指定目录。
 
 未来预测阶段只构造未来时间模板和未来外生特征，不读取未来真实目标值；递归类策略需要的目标值由预测结果逐步回填。
 
@@ -302,11 +306,16 @@ uv run python config/generate_configs.py \
 ```text
 results/
   pretrained_models/<scenario>/<setting>/
-    model.pkl
-    target_scaler.pkl              # 仅目标缩放器已 fit 时保存
+    model.pkl                     # 唯一 ForecastModelBundle
+    probabilistic_schema.json     # 可读 schema/metadata，不含模型对象
   results_test/<scenario>/<setting>/
     test_scores_df.csv
     cv_plot_df.csv
+    probabilistic_predictions_df.csv
+    probabilistic_scores_df.csv
+    horizon_scores_df.csv
+    probabilistic_intervals_df.csv # 启用 CQR 且历史充分时
+    calibration_report.csv         # prequential + final as-of 审计
     train_outlier_report.csv
     test_prediction.png            # 有有效预测列时保存
   results_forecast/<scenario>/<setting>/
@@ -316,7 +325,7 @@ results/
     prediction_plot_concat.csv
 ```
 
-`prediction.csv` 基础列为 `time,predict_value`；分位数预测会额外输出 `predict_q10`、`predict_q50`、`predict_q90` 这类列，实际列由 `quantiles` 决定。
+`prediction.csv` 基础列为 `time,predict_value`；分位数预测额外输出由数值 grid 编码的 `predict_q*`，且 `predict_value == configured point quantile`（本项目为 q50）。CQR 不覆盖模型分位数，而是追加独立的 `predict_pi<coverage>_lower/upper`。
 
 滑窗测试与未来预测图的可视化契约：
 
@@ -352,9 +361,12 @@ df_power_anomalies.png
 - `models/ModelForecasting.py`
 - `features/FeatureEngineering.py`
 - `features/FeatureScalering.py`
+- `features/TargetTransformation.py`
+- `probabilistic/`
 - `models/losses.py`
 - `models/learning_rate.py`
 - `data_provider/outlier_handling.py`
+- `utils/parallel_budget.py`
 
 禁止直接回迁或反向污染本仓库的内容包括：
 

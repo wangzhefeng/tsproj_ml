@@ -28,7 +28,7 @@ config/
 - `TrainingEnhancementConfig`：早停、时间衰减样本权重、超参调优、数据增强、特征选择、学习率策略
 - `TrainOutlierConfig`：滑窗测试训练窗口异常清洗
 - `EvalMaskConfig`：评估/绘图掩码（`percentile`/`absolute`/`combined`）
-- `ConformalConfig`：分位数预测的 CQR conformal 校准（校准窗口、α、最少 score 数）
+- `ConformalConfig`：legacy CQR 兼容字段；运行期统一归一化到 `ProbabilisticSpec`
 - `PerformanceConfig`：窗口/多输出/分位数/融合并行度、日志
 - `OutputConfig`：结果输出目录与场景子路径、setting 后缀、测试图叠加参考序列
 
@@ -68,6 +68,39 @@ overrides:
     model_type: lightgbm
     pred_method: multivariate-single-multistep-recursive
 ```
+
+`overrides.probabilistic` 是一个有意保留嵌套结构的原始 mapping，由 `resolve_probabilistic_spec()` 自行严格校验，不走普通分组字段展平。legacy `model_strategy.predict_type/quantiles/quantile_monotone` 与 `conformal.*` 继续可用；两套入口同时存在时必须归一化后完全一致，否则 RAISE。
+
+规范概率写法示例：
+
+```yaml
+overrides:
+  probabilistic:
+    mode: quantile
+    schema_version: 1
+    quantiles: [0.1, 0.5, 0.9]
+    point_quantile: 0.5
+    recursive_propagation: median_path
+    crossing:
+      method: median_preserving_isotonic
+      report_raw: true
+    intervals:
+      - name: central80
+        lower_quantile: 0.1
+        upper_quantile: 0.9
+    calibration:
+      method: cqr
+      interval: central80
+      target_coverage: 0.8
+      calibration_windows: 5
+      min_windows: 3
+      min_scores: 30
+      label_availability_delay_steps: 0
+      allow_interval_shrink: false
+      grouping: pooled
+```
+
+quantile level 以数值 grid 为权威；point quantile 必须是 0.5 且显式存在。基础 interval 与 CQR target coverage 是两个独立概念，CQR 输出使用 `predict_pi*`，不会覆盖 `predict_q*`。
 
 ## scenario_subpath（结果输出路径）
 
@@ -146,7 +179,7 @@ USMDP 当前不生成目标 lag，配置必须显式 `enable_lags_features: fals
 | `enable_feature_selection` | bool | `false` | 是否启用特征选择 |
 | `enable_auto_learning_rate` | bool | `false` | 是否自动估算学习率 |
 
-> 时间衰减权重兼容性：默认配置下（`multi_output_strategy: multioutput` + `predict_type: point` + `enable_ensemble: false`）所有 9 种预测方法均支持（多输出走项目自定义 `DirectMultiOutputRegressor`，逐输出转发 `sample_weight`）；`regressor_chain` 多输出、`ensemble`、多输出分位数路径不支持，开启时会 warning 跳过（不阻塞运行）。
+> 时间衰减权重兼容性：默认 `multi_output_strategy: multioutput` 下 point/quantile 都支持；多输出统一走项目自定义 `DirectMultiOutputRegressor`，逐输出转发同一 `sample_weight`。`regressor_chain` 与 `ensemble` 路径不支持，开启时 warning 跳过（不阻塞运行）。
 
 启用示例：
 

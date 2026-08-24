@@ -10,8 +10,9 @@
 | `runtime_env.py` | 设置运行期环境变量，目前用于 Matplotlib 缓存目录 |
 | `log_util.py` | 项目日志器，输出到控制台和 `logs/<LOG_NAME>/service*` |
 | `eval_mask.py` | 评估/绘图阶段的有效点掩码（MAPE、MAPE Accuracy、预测图历史上下文共用） |
-| `conformal.py` | CQR（Conformalized Quantile Regression）后处理校准：nonconformity score 计算与分位数边界对称膨胀 |
-| `quantile.py` | 分位数列单调化（`monotonize_quantile_columns`，消除 quantile crossing） |
+| `conformal.py` | CQR 兼容入口；权威实现与 as-of selector 位于 `probabilistic/calibration.py` / `evaluation.py` |
+| `quantile.py` | 分位数后处理兼容入口；权威 crossing repair 位于 `probabilistic/postprocessing.py` |
+| `parallel_budget.py` | 窗口并行启用时统一压低 quantile/output/model/ensemble 内部并行 |
 | `metrics.py` | 回归指标函数库（独立工具，当前主流程未 import，指标计算内联在 `models/` 中） |
 | `cv_plot.py` | 滑窗结果绘图辅助（独立工具，当前主流程未 import，绘图内联在 `models/` 中） |
 
@@ -65,10 +66,10 @@ MAPE / MAPE Accuracy 计算与预测图历史上下文掩码共用同一实现�
 
 ## conformal.py
 
-`compute_nonconformity_scores(y_true, q_low, q_high)`：CQR 逐点 nonconformity score（欠估/过估取大）。
+`compute_nonconformity_scores(y_true, q_low, q_high)`：CQR 逐点 nonconformity score（欠估/过估取大）；三个输入必须精确等长，负 score 合法。
 
-`calibrate_quantile_band(scores, q_low, q_high, alpha, min_scores)`：对校准集 score 取 `ceil((n+1)(1-α))/n` 分位得到膨胀量 `E_α`，输出 `q_low − E_α` / `q_high + E_α`，保证边际覆盖率 ≥ 1−α；score 数不足 `min_scores` 时返回 `None`（调用方跳过并 WARNING）。纯后处理，不重训模型；校准集来自滑窗测试 `cv_plot_df.csv` 的 `conformal_score` 列（forecast 阶段取最近 `conformal_calibration_windows` 个窗口）。
+`calibrate_quantile_band(...)` 保留旧调用兼容。主链通过 `CalibrationRecord` 按 forecast origin、标签可得时间、最少窗口和最少 score 双门槛选择最近完整历史窗口；CQR 输出独立 prediction interval，不把边界回写成 quantile。时间序列报告只声明经验 coverage。
 
 ## quantile.py
 
-`monotonize_quantile_columns(df)`：对 `predict_q*` 列逐行排序，消除分位数交叉（quantile crossing）。由 `model_strategy.quantile_monotone: true` 启用（默认关）。
+`monotonize_quantile_columns(df)`：迁移期兼容入口。当前三分位路径采用 q50 锚定 repair，修正上下分位数并同步 `predict_value`，q50 changed ratio 必须为 0。

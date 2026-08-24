@@ -12,11 +12,14 @@
 - `models/ModelForecasting.py`
 - `features/FeatureEngineering.py`
 - `features/FeatureScalering.py`
+- `features/TargetTransformation.py`
+- `probabilistic/`（spec/types/training/postprocessing/calibration/evaluation；生产侧只写 I/O adapter，不复制算法）
 - `models/losses.py`
 - `models/learning_rate.py`
 - `data_provider/outlier_handling.py`
 - `utils/eval_mask.py`（MAPE 评估掩码与绘图掩码，被 `ModelTesting`/`ModelForecasting` 依赖）
 - `utils/frequency.py`（采样频率解析，被 `FeatureEngineering` 依赖）
+- `utils/parallel_budget.py`（窗口并行下的内部并行预算）
 
 ## 禁止直接回迁内容
 
@@ -67,3 +70,10 @@
 - 是否需要迁移项目 2：需要时同步 `features/FeatureEngineering.py` 的 lag 过滤逻辑与 `pred_method` 判断修复。
 - 项目 2 适配点：保持生产输入输出、算力预处理、部署父类不变；仅同步特征工程的 lag 处理。
 - 验证结果：以本仓库真实配置（含启用 lags 的 usmd 配置）滑窗测试为准。
+
+### 2026-08-24 probabilistic-forecasting-contract
+
+- 变更摘要：概率预测收敛为 `ProbabilisticSpec + ProbabilisticModelBundle + ForecastDistribution`；point/quantile 共用 `TargetTransformPipeline`；CQR 使用 label-available prequential/as-of selector，并将模型 quantile 与 prediction interval 分列；`model.pkl` 改为唯一 `ForecastModelBundle`，JSON 只存 schema metadata。
+- 是否需要迁移项目 2：生产侧开始消费概率输出或预训练 bundle 时需要；当前未要求立即同步。
+- 项目 2 适配点：只实现生产输入/输出 adapter；PI 读取 `predict_pi*`，不得继续把校准边界当 `predict_q*`；加载时拒绝未知 schema version。
+- 验证结果：本仓库 327 项 unittest、863 个模型 YAML dry-run、fixed horizon 与 calendar-month/decomposition/scaling/CQR 真实配置验收通过；新算法事实以 `docs/time_series_probabilistic_forecasting_redesign.md` §15 为准。

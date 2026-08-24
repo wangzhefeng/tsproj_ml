@@ -1,9 +1,8 @@
 # -*- coding: utf-8 -*-
-"""分解模块的持久化 bundle。
+"""历史分解 bundle 的加载兼容类型。
 
-统一封装 model + scaler + decomposition pipeline 的保存与加载，
-替代旧的散装 pkl（model.pkl / target_scaler.pkl / target_decomposer.pkl
-各自独立保存、无 schema 关联）。
+该类型保留 schema v1/v2 历史产物 roundtrip；新训练主链只写
+``ForecastModelBundle`` 到 ``model.pkl``，不再新建 decomposition sidecar。
 """
 from __future__ import annotations
 
@@ -15,7 +14,7 @@ from typing import Any, Optional
 
 @dataclass
 class DecompositionBundle:
-    """一次分解预测所需的全部可恢复状态（内嵌式单文件部署产物）。
+    """历史分解预测所需的可恢复状态。
 
     schema_version=2：内嵌 model / target_scaler / pipeline；
     schema_version=1（历史）：仅 pipeline + spec 摘要。

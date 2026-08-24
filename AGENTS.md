@@ -21,14 +21,14 @@ The general coding guidelines (Karpathy: think before coding, simplicity, surgic
 ### 预测方法限制
 - **USMDP + advanced_features 不兼容**：`add_rolling_statistics` 和 `add_diff_features` 依赖目标列 `y`，训练时存在但预测时（未来数据）不存在 → LightGBM Fatal: feature count mismatch
 - 可通过将操作列改为外生特征列来启用，但默认配置下必须禁用
-- **时间衰减样本权重**（`enable_time_decay_sample_weight`）：默认路径（`multi_output_strategy: multioutput` + `predict_type: point` + 非融合）下所有 9 种预测方法均生效——多输出方法走项目自定义 `DirectMultiOutputRegressor`，其 `fit` 会把 `sample_weight` 逐输出转发给基估计器（`ModelTraining._prepare_multi_output_fit_data`）。仅在 `regressor_chain`、多输出分位数、ensemble 路径不支持（sklearn `MultiOutputRegressor`/`RegressorChain` 的 `fit` 不透传 `sample_weight`），运行时 WARNING 安全跳过、不阻塞
+- **时间衰减样本权重**（`enable_time_decay_sample_weight`）：默认 `multi_output_strategy: multioutput` 下 point/quantile 均生效——多输出统一走项目自定义 `DirectMultiOutputRegressor`，把同一 `sample_weight` 逐输出转发给基估计器；单输出 quantile 直接透传。仅 `regressor_chain` 与 ensemble 路径不支持，运行时 WARNING 安全跳过、不阻塞
 - **datetime_features 有两对同义项**：`feature_map`（`features/FeatureEngineering.py`）中 `weekday` ≡ `day_of_week`（同 `.dt.weekday`）、`week` ≡ `week_of_year`（同 `.dt.isocalendar().week`），配置中只应保留后者（pandas 规范名）
 
 ### 预测增强策略（v1 新增，默认全关）
 - **`direct_strategy: horizon_feature`**（仅 USMD/MSMD）：把 horizon 索引作为特征，训练 N×H 行长表（成本 H×→1×），推理展开 H 行，外生列按步取值解决 MIMO 滞后陈旧。DirRec（USMDR/MSMDR）暂不支持（遗留）
 - **`endogenous_backfill_strategy: auxiliary`**（仅 MSMR/MSMDR）：为每个非目标内生变量训练独立递归模型（reduced-form：只用自身滞后+datetime 外生），替代持久性常量回填。辅助模型在 `models/AuxiliaryForecaster.py`，与主模型打包为 `{"bundle_type": "auxiliary_endogenous", ...}` dict。注意：辅助模型每滑窗×每内生列各训练一次（成本 = 窗口数 × 内生列数），窗口并行时各窗口独立训练不共享
 - **`pred_method: USBR/MSBR`**（Direct+Recursive Blend）：同时构造 Direct（shift_1..H）和 Recursive（shift_0）目标列，训练两个子模型后加权融合。`blend_weight_strategy: ridge_stacking` 在最近 N 个滑窗（`blend_weight_windows`）测试集上用 `Ridge(positive=True, fit_intercept=False)` 学凸组合权重，写入 `blend_weights.csv`。**blend×quantile 已支持**：每个分位数训练 Direct（多输出 quantile）+ Recursive（单输出 quantile）子模型对，推理时逐分位数做 Direct+Recursive 加权融合，所有分位数共用同一组 ridge_stacking 权重（权重学自 median 分位数的 Direct/Recursive 分量）。当前硬性不支持（main.py 校验 raise）：blend×ensemble、blend×scale_target、blend×目标分解（`decomposition_method != none`）
-- **`enable_conformal_calibration: true`**（CQR 后处理）：滑窗测试阶段记录 `conformal_score` 到 `cv_plot_df.csv`，forecast 阶段取最近 `conformal_calibration_windows`（默认 5）个窗口的 score 作校准集，对 `predict_q*` 首尾边界列对称膨胀，保证边际覆盖率 ≥ 1−α。纯后处理不重训模型，依赖 `is_testing=true` 产出的校准集；校准集 score 点数 < `conformal_min_scores`（默认 30）则跳过并 WARNING。当前硬性不支持 conformal×目标分解（`decomposition_method != none`，main.py 校验 raise）
+- **概率预测统一契约**：运行期以 `ProbabilisticSpec` 为唯一语义来源（`overrides.probabilistic` canonical mapping 与 legacy 字段归一化，冲突 RAISE）。滑窗在 q50 锚定 crossing repair 后对 spec 指定的 quantile pair 记录 `conformal_score`；历史窗口 prequential 评价与 final forecast 共用按 `forecast_origin + label_available_at` 的 as-of 完整窗口 selector（不再按 window ID 取数）。模型分位数始终保留在 `predict_q*`；CQR 只新增 `predict_pi<coverage>_lower/upper`，不得覆盖 q10/q90。默认负 correction 截为 0（只扩不缩），canonical spec 可显式允许 shrink；score 少于 `conformal_min_scores`、完整窗口少于 `conformal_min_windows` 时 WARNING 跳过。时间序列只报告经验 coverage，不宣称无条件有限样本保证。CQR 可与目标分解/target scaling 组合（统一目标空间栈）。
 
 ### 模型工厂（ModelFactory）
 - **支持的模型类型**：LightGBM（`lgb`/`lightgbm`）、XGBoost（`xgb`/`xgboost`）、CatBoost（`cat`/`catboost`）、RandomForest（`rf`/`randomforest`）、HistGradientBoosting（`histgb`/`histgradientboosting`）、Ridge（`ridge`）、ElasticNet（`enet`/`elasticnet`）、Lasso（`lasso`）、QuantileRegressor（`qr`/`quantileregressor`）、SeasonalTemplate（`st`/`seasonaltemplate`，工作日/周末分组建模板 + NNLS 学权重）
@@ -53,7 +53,7 @@ The general coding guidelines (Karpathy: think before coding, simplicity, surgic
 - **datetime 派生剔除子日粒度**：低频下 `datetime_features` 去掉 `minute`/`hour`，`datetime_categorical_features` 同步去对应 `dt_*` 项
 
 ### 性能并行约定（PerformanceConfig）
-- **窗口并行与内部并行不叠加**：`window_parallel_workers > 1` 时，滑窗测试会把每个窗口 payload 的 `multi_output_n_jobs`、`model_thread_count`、`ensemble_parallel_workers` 强制改写为 1（见 `main.py` 的 `Model.test`）；故测试阶段总并行度≈`window_parallel_workers`。内部参数只在最终 forecast 的单模型上生效（forecast 用原始 `args`）——所以 `is_testing=true` 的场景可同时设高窗口并行与内部并行而不超额订阅。HistGB 走 OpenMP 无 `n_jobs` 构造参数，窗口并行时额外设 `OMP_NUM_THREADS=1` 兜底（`main.py` 给窗口 payload 注入 `force_single_thread_env` flag，`ModelTesting.Tester._window_test` 据此设环境变量）。
+- **窗口并行与内部并行不叠加**：`window_parallel_workers > 1` 时，`utils/parallel_budget.py` 会把每个窗口 payload 的 `multi_output_n_jobs`、`quantile_parallel_workers`、`model_thread_count`、`ensemble_parallel_workers` 全部改写为 1；故测试阶段总并行度≈`window_parallel_workers`。内部参数只在最终 forecast 的单模型上生效（forecast 用原始 `args`）——所以 `is_testing=true` 的场景可同时设高窗口并行与内部并行而不超额订阅。HistGB 走 OpenMP 无 `n_jobs` 构造参数，窗口并行时额外设 `OMP_NUM_THREADS=1` 兜底（`main.py` 给窗口 payload 注入 `force_single_thread_env` flag，`ModelTesting.Tester._window_test` 据此设环境变量）。
 - **方法→有效杠杆**：多输出方法（USMD/USMDR/MSMD/MSMDR，走 `MultiOutputRegressor`/`DirectMultiOutputRegressor`）调 `multi_output_n_jobs`；单输出方法（USMDP/USMR/MSMR）只 `model_thread_count` 有效。融合方法调 `ensemble_parallel_workers`。
 - **模型线程参数差异**：LightGBM/XGBoost/CatBoost/RandomForest 有 `n_jobs`/`thread_count`；HistGB 无（OpenMP 底层）；线性模型（Ridge/ElasticNet/Lasso）单线程/BLAS。`Trainer._thread_limited_params` 按类型注线程参数，无参数可注的原样返回。
 - 容量上限：`multi_output_n_jobs × model_thread_count ≤ 物理核数`，优先「多并行单线程」。本机 M2 共 8 核（4 性能 + 4 能效）。
@@ -63,7 +63,7 @@ The general coding guidelines (Karpathy: think before coding, simplicity, surgic
 - 测试汇总指标：使用 median（中位数），不是 mean——单窗口 MAPE 爆炸会拖垮均值（在 `main.py` 汇总时追加「中位数」行）
 - `MAPE Accuracy` 业务口径：按 `eval_mask` 掩码过滤后计算（默认 `mode: percentile` 即窗口正样本 `P5`；`absolute`/`combined` 模式启用 `min_value` 绝对下限，`max_value` 上限与 mode 正交、三模式均生效）；阈值落 `test_scores_df.csv` 的 `MAPE Threshold`/`MAPE Upper Threshold` 列，无有效点写 `NaN`；每窗口附带季节 naive（昨日同时刻）对照列 `Naive MAPE`/`Naive MAPE Accuracy`，与模型共用同一 eval_mask
 - `prediction.png` 历史上下文绘制**原始 `y`**（保证线条连续，不再断线）；eval_mask 掩码结果保留在 `prediction_plot_concat.csv` 的 `plot_value`/`plot_valid` 列；未来预测原值在 `prediction.csv` 的 `predict_value`。（注：`test_prediction.png` 滑窗测试图仍按 eval_mask 断线显示无效点）
-- 目标分解（`decomposition_method != none`）与 `scale_target` 互斥；`main.py` 校验 RAISE
+- 目标训练变换统一登记到 `TargetTransformPipeline`：训练顺序 `calendar normalization → decomposition → target scaling`，point/quantile 恢复严格逆序；decomposition 可与 scale_target、quantile、CQR 组合。Blend 与目标分解仍因分量空间未统一而 fail-fast
 - `n_windows <= 0`（滑窗数为 0）不 RAISE，仅 WARNING 并跳过测试
 - **消融矩阵的 no-op control**：矩阵中不消费目标特征的模型保留为对照组——SeasonalTemplate（`st`）不消费 custom/load-state/weather 特征、USBR 不接入天气特征；此类配置删除特征注入块，注释与 `setting_suffix` 显式标注 `-control-no-<feature>`（如 `-decomp-linear-control-no-state`、`-conformal-control-no-weather`），保证与实验组同目录可对照
 - `EvalMaskConfig`（评估/绘图掩码，不改数据）≠ `TrainOutlierConfig`（滑窗训练窗口清洗，插值改数据）

@@ -1842,80 +1842,173 @@ Prequential 只解决未来信息泄漏，不消除时间序列相关性和分�
 
 | Phase | 内容 | 状态 | 完成时间 | 证据摘要 |
 |---|---|---|---|---|
-| 0 | quantile/interval 语义 + 概率指标 | pending | — | — |
-| 1 | 因果 prequential CQR | pending | — | — |
-| 2 | spec/types + TargetTransformPipeline | pending | — | — |
-| 3 | 按方法族迁移训练与推理 | pending | — | — |
-| 4 | 单一 bundle、文档与全链验收 | pending | — | — |
-| 5 | conformal/path 扩展讨论 | pending | — | 依赖 Phase 0–4 |
+| 0 | quantile/interval 语义 + 概率指标 | **completed** | 2026-08-24 | 279 tests OK；863 YAML dry-run；QR calendar-month CQR 实跑 |
+| 1 | 因果 prequential CQR | **completed** | 2026-08-24 | 286 tests OK；863 YAML dry-run；4 窗口 calendar-month CQR 全链实跑 |
+| 2 | spec/types + TargetTransformPipeline | **completed** | 2026-08-24 | canonical/legacy spec、强类型结果、objective mapping、共享逆变换栈；863 模型 YAML 通过 |
+| 3 | 按方法族迁移训练与推理 | **completed** | 2026-08-24 | 9 方法 shape；现役 8 种 quantile 真实 probe；multioutput 权重与并行预算完成 |
+| 4 | 单一 bundle、文档与全链验收 | **completed** | 2026-08-24 | 唯一 ForecastModelBundle；fixed + calendar-month + decomposition/scaling/CQR 全链通过 |
+| 5 | conformal/path 扩展讨论 | **completed（本版不扩展）** | 2026-08-24 | 当前证据不足以启动 horizon/asymmetric/path 新算法；保留独立后续支线 |
 
-### 15.2 Phase 0：语义契约与概率指标（pending）
+### 15.2 Phase 0：语义契约与概率指标（completed 2026-08-24）
 
-- [ ] 0-a quantile/CQR 参数 fail-fast
-- [ ] 0-b score 精确长度契约
-- [ ] 0-c quantile 与 CQR PI 分列输出
-- [ ] 0-d q50 锚定 crossing repair + point=q50
-- [ ] 0-e pinball/coverage/width/Winkler/crossing/coverage gap
-- [ ] 0-f horizon_step、样本数与 coverage CI
-- [ ] 0-g 修正文档与实现注释漂移
+- [x] 0-a quantile/CQR 参数 fail-fast
+  - `probabilistic/spec.py` 校验非空、唯一、严格递增、`0<q<1`、必须含 q50、interval 引用、alpha/min_scores/windows；main、Trainer、config checker 共用。
+- [x] 0-b score 精确长度契约
+  - `probabilistic/calibration.py` 对 score/calibration 输入长度不等直接 RAISE；`utils/conformal.py` 只保留兼容入口；负 correction 默认截为 0。
+- [x] 0-c quantile 与 CQR PI 分列输出
+  - `predict_q*` 保留 processed model quantile；CQR 独立输出 `predict_pi<coverage>_lower/upper`，不再覆盖 q10/q90。
+- [x] 0-d q50 锚定 crossing repair + point=q50
+  - 三分位路径对 lower/upper 做 q50 锚定修复，q50 不变；测试与 forecast 硬同步点预测。
+- [x] 0-e pinball/coverage/width/Winkler/crossing/coverage gap
+  - `probabilistic/metrics.py` 实现 mean pinball、coverage、width/normalized width、Winkler、signed/absolute coverage gap、Wilson CI 和 crossing/repair 指标。
+- [x] 0-f horizon_step、样本数与 coverage CI
+  - `probabilistic/evaluation.py` 写出 `probabilistic_predictions_df.csv`、`probabilistic_scores_df.csv`、`horizon_scores_df.csv`；固定/自然月窗口共用 1-based horizon。
+- [x] 0-g 修正文档与实现注释漂移
+  - 同步 `AGENTS.md`、`config_sections.py`、Kaggle 调研、compat utils；明确时间序列只报告经验 coverage，prequential/as-of 仍属 Phase 1。
 
-验收证据：待实施后回填。
+#### Phase 0 验收证据（2026-08-24）
 
-### 15.3 Phase 1：因果 prequential CQR（pending）
+| 验收项 | 命令/方法 | 结果 |
+|---|---|---|
+| 概率专项 TDD | `python -m unittest tests.test_probabilistic_contracts tests.test_conformal tests.test_probabilistic_postprocessing tests.test_probabilistic_metrics tests.test_probabilistic_evaluation tests.test_probabilistic_pipeline -v` | **24 tests — OK**；每项先观察 RED 再最小实现 GREEN |
+| 全量回归 | `python -m unittest discover -s tests -p "test_*.py"` | **Ran 279 tests — OK** |
+| 全量模型配置 | `python scripts/check_model_configs.py 'config/**/*.yaml'` | **exit 0**；863 模型 YAML 通过；仅 2 个既有 USMDP rolling 提示 |
+| compileall | `python -m compileall -q probabilistic models main.py config scripts tests` | exit 0 |
+| 真实配置冒烟 | `qr_usmd_prob_mean_conformal.yaml`，calendar_month，2 个窗口，输出到 `/tmp/tsproj_prob_phase0_smoke2/` | **exit 0，4.003s**；61 个 CV 点、31 个 forecast 点 |
+| 输出契约回读 | Python 逐项断言 CSV schema/数值 | point=q50；score 可由保存边界复算；q/PI 分列；183 条 quantile records；279 条 horizon scores |
 
-- [ ] 1-a `CalibrationRecord.label_available_at`
-- [ ] 1-b as-of 校准样本选择与 target-time 去重
-- [ ] 1-c min_windows + min_scores
-- [ ] 1-d 历史窗口 prequential evaluation
-- [ ] 1-e independent interval artifact + calibration report
-- [ ] 1-f final forecast 共用同一 calibrator
+结果影响：旧 CQR forecast 的首尾 q 列语义失效；新结果必须重跑，且消费方需从 `predict_pi*` 读取 calibrated interval。Phase 0 没有改写仓库内存量 results，真实冒烟产物隔离在 `/tmp`。
 
-验收证据：待实施后回填。
+### 15.3 Phase 1：因果 prequential CQR（completed 2026-08-24）
 
-### 15.4 Phase 2：配置、类型与目标变换栈（pending）
+- [x] 1-a `CalibrationRecord.label_available_at`
+  - 每条记录携带 origin、target、label availability、horizon、window、processed boundaries、y 与 score；额外延迟按 `conformal_label_availability_delay_steps × freq` 计算。
+- [x] 1-b as-of 校准样本选择与 target-time 去重
+  - 只接收 `window_origin < current_origin` 且窗口内最大 `label_available_at <= current_origin` 的完整历史窗口；按 origin 而非 window ID 取最近 N 窗；重叠 target time 保留较新 origin。
+- [x] 1-c min_windows + min_scores
+  - 新增 `conformal_min_windows`（默认 3）和既有 `conformal_min_scores` 双门槛；区分 `insufficient_windows`/`insufficient_scores`，并由启动校验与 863 YAML checker fail-fast。
+- [x] 1-d 历史窗口 prequential evaluation
+  - 按 origin 从早到晚逐窗校准；当前/未来窗口 score 永不进入当前校准集；只对成功校准窗口评价 CQR coverage/width/Winkler。
+- [x] 1-e independent interval artifact + calibration report
+  - 写出 `probabilistic_intervals_df.csv`；CQR window/horizon metrics 追加到既有概率评分表；`calibration_report.csv` 同时记录 prequential 与 final 审计行。
+- [x] 1-f final forecast 共用同一 calibrator
+  - `main.py` 移除按 window ID 排序的 legacy 选择，改用与历史评价相同的 `calibrate_with_records`；q 与 PI 继续物理分列。
 
-- [ ] 2-a `ProbabilisticSpec` + legacy/new resolver
-- [ ] 2-b `QuantileGrid` / `ForecastDistribution` / `PredictionIntervalForecast`
-- [ ] 2-c objective capability mapping
-- [ ] 2-d `TargetTransformPipeline` 顺序记录与逆序 restore
-- [ ] 2-e point/quantile 共用 restorer
-- [ ] 2-f 863 YAML 全量解析
+#### Phase 1 验收证据（2026-08-24）
 
-验收证据：待实施后回填。
+| 验收项 | 命令/方法 | 结果 |
+|---|---|---|
+| 概率专项 | Phase 0 套件 + `tests.test_probabilistic_prequential` | **31 tests — OK**；Phase 1 的 7 个新行为均附 RED→GREEN 证据 |
+| 全量回归 | `python -m unittest discover -s tests -p "test_*.py"` | **Ran 286 tests in 18.900s — OK** |
+| 全量模型配置 | `python scripts/check_model_configs.py 'config/**/*.yaml'` | **863 模型 YAML，exit 0**；仅 2 个既有 USMDP rolling 提示 |
+| compileall/diff | `python -m compileall -q probabilistic models main.py config scripts tests` + `git diff --check` | exit 0 |
+| 真实配置全链 | QR USMD quantile+CQR，calendar_month，4 个窗口，隔离到 `/tmp/tsproj_prob_phase1_smoke3/` | **exit 0，5.383s**；122 个 CV 点 + 31 个 final forecast 点 |
+| prequential 回读 | Python 读取 interval/report/score/horizon artifacts 并逐项断言 | 4 个 origin 的 selected windows = 0/1/2/3；仅 July 窗满足双门槛，生成 31 个 CQR interval 点；6 个 window metric rows + 186 个 horizon metric rows |
+| final as-of 回读 | 读取 final audit + `prediction.csv` | origin=2026-08-01；最近完整 origin=2026-07-01；label_available_max=2026-07-31；4 窗/122 scores；point=q50；PI 包含 base q10/q90 |
 
-### 15.5 Phase 3：按方法族迁移训练与推理（pending）
+结果影响：旧 final CQR 按 window ID 选择的校准样本语义失效；新结果必须重跑。Phase 1 未改仓库内存量 results，验收产物仍隔离在 `/tmp`。
 
-- [ ] 3-a 单输出：USMDP/USMR/MSMR
-- [ ] 3-b Direct：USMD/MSMD/horizon feature
-- [ ] 3-c DirRec：USMDR/MSMDR
-- [ ] 3-d Blend：USBR/MSBR
-- [ ] 3-e multioutput quantile sample weight
-- [ ] 3-f 窗口并行下内部并行预算
+### 15.4 Phase 2：配置、类型与目标变换栈（completed 2026-08-24）
 
-每个切片必须附 RED→GREEN 契约测试、方法级小窗口 probe 和输出 shape 证据。
+- [x] 2-a `ProbabilisticSpec` + legacy/new resolver
+  - legacy 字段和 `overrides.probabilistic` 分别归一化；unknown key、非法组合和双入口冲突直接 RAISE；运行期只消费 spec。
+- [x] 2-b `QuantileGrid` / `ForecastDistribution` / `PredictionIntervalForecast`
+  - quantile level 数值为权威；column codec 检查碰撞；shape/time/space/stage/point=q50 均为强约束。
+- [x] 2-c objective capability mapping
+  - LightGBM/XGBoost/CatBoost/HistGB/QuantileRegressor 由 `probabilistic/objectives.py` 注入原生 quantile objective；不支持模型构造期失败。
+- [x] 2-d `TargetTransformPipeline` 顺序记录与逆序 restore
+  - 训练登记 calendar→decomposition→scaler；恢复自动 scaler→decomposition→calendar，长度与时间不一致 RAISE。
+- [x] 2-e point/quantile 共用 restorer
+  - Forecaster 内一次性恢复 point 和 quantile matrix；main/testing 不再分别手写恢复顺序。
+- [x] 2-f 863 模型 YAML 全量解析
+  - checker 按 `base_config/overrides` 顶层 schema 识别模型 YAML，避免把 periodicity/peak-valley 等独立工具配置误计为模型。
 
-### 15.6 Phase 4–5（pending）
+#### Phase 2 验收证据（2026-08-24）
 
-- [ ] 4-a `model.pkl` 单一 ForecastModelBundle（内含 ProbabilisticModelBundle）
-- [ ] 4-b `probabilistic_schema.json`
-- [ ] 4-c legacy dict loader + roundtrip
-- [ ] 4-d README/config/models/utils/production_sync 同步
-- [ ] 4-e fixed/calendar_month/decomposition+CQR 代表配置验收
-- [ ] 4-f 结果失效与重跑清单
-- [ ] 5-a horizon/asymmetric/block/weighted/adaptive conformal 决策
-- [ ] 5-b path-level 独立支线决策
+| 验收项 | 命令/方法 | 结果 |
+|---|---|---|
+| spec/types/objective/transform 专项 | `tests.test_probabilistic_contracts/types/objectives` + `tests.test_target_transform_pipeline` | legacy/new、codec、shape、能力映射、逆序 restore 全部 GREEN |
+| 模型 YAML 实扫 | checker 的 `is_model_yaml` + `resolve_probabilistic_spec + validate_quantile_model_support` | **863 模型 YAML**；465 point；398 quantile；154 CQR；0 error |
+| quantile 现状 | 同上 | 398/398 为 q10/q50/q90；378 LightGBM + 20 QuantileRegressor |
+| canonical 五分位实跑 | `/tmp/tsproj_prob_phase4_canonical5/` | q05/q10/q50/q90/q95；指定 `central80=q10/q90`；score/metric/report 均未误用 grid extremes |
+
+结果影响：legacy YAML 无需批量修改；新 mapping 可直接使用。过去依赖近似 q50、字符串列排序或分散目标逆变换的结果不作为新契约基线。
+
+### 15.5 Phase 3：按方法族迁移训练与推理（completed 2026-08-24）
+
+- [x] 3-a 单输出：USMDP/USMR/MSMR
+- [x] 3-b Direct：USMD/MSMD/horizon feature
+- [x] 3-c DirRec：USMDR/MSMDR
+- [x] 3-d Blend：USBR/MSBR
+- [x] 3-e multioutput quantile sample weight
+  - 普通 multioutput quantile 与 Blend Direct 均复用 `DirectMultiOutputRegressor`，同一窗口权重逐输出透传；`regressor_chain` 仍 warning skip。
+- [x] 3-f 窗口并行下内部并行预算
+  - `utils/parallel_budget.py` 在 `window_parallel_workers>1` 时把 quantile/output/model/ensemble 四层内部并行压到 1。
+
+#### Phase 3 验收证据（2026-08-24）
+
+| 方法族 | 真实配置 probe | 结果 |
+|---|---|---|
+| 单输出 | USMDP、USMR；月频 H=1，1 窗 | exit 0，typed bundle/distribution 输出 |
+| Direct | USMD 月频 H=1；MSMD 5min 配置缩短 H=4；horizon-feature 日频 1 窗 | exit 0，shape 精确匹配 |
+| DirRec/递归 | USMDR 月频 H=1；MSMR/MSMDR 5min 配置缩短 H=4 | exit 0，中位路径回填语义不变 |
+| Blend | USBR calendar-month H=31；MSBR typed shape 单测 | exit 0；共享权重、point=q50、matrix `(H,Q)` |
+| probe 目录 | `/tmp/tsproj_prob_phase3_probes2/`、`/tmp/tsproj_prob_phase3_multi_probes/`、`/tmp/tsproj_prob_phase3_horizon_probe/` | 均与仓库 `results/` 隔离 |
+
+迁移结果：Trainer 返回 `ProbabilisticModelBundle`；Blend 子模型使用 `BlendQuantileModel`；quantile 推理统一返回 `ForecastDistribution`。`Forecaster.quantile_outputs` 只保留只读兼容 property，内部状态不再由外部编排消费。
+
+### 15.6 Phase 4–5（completed 2026-08-24）
+
+- [x] 4-a `model.pkl` 单一 ForecastModelBundle（内含 ProbabilisticModelBundle）
+- [x] 4-b `probabilistic_schema.json`
+  - JSON 只含 schema/model type/pred method/selected features/input schema/spec metadata，不复制模型对象。
+- [x] 4-c legacy dict loader + roundtrip
+  - 旧 quantile nested dict 迁移为 runtime bundle；未知 schema version 失败；point/quantile bundle pickle roundtrip 通过。
+- [x] 4-d README/config/models/utils/production_sync 同步
+- [x] 4-e fixed/calendar_month/decomposition+CQR 代表配置验收
+- [x] 4-f 结果失效与重跑清单
+- [x] 5-a horizon/asymmetric/block/weighted/adaptive conformal 决策
+  - **本版本不启动**：当前只证明 pooled symmetric CQR 全链正确，尚无正式 31 窗 horizon coverage 下降或上下尾不对称证据。
+- [x] 5-b path-level 独立支线决策
+  - 继续作为独立研究支线；当前边际 quantile/PI 不升级为轨迹联合分布，不预建采样模型空壳。
+
+#### Phase 4 验收证据（2026-08-24）
+
+| 验收项 | 配置/方法 | 结果 |
+|---|---|---|
+| bundle 专项 | `tests.test_forecast_model_bundle` | 单一 model.pkl、schema JSON、legacy migration、roundtrip 全部通过；不写新的 target_scaler/decomposition sidecar |
+| fixed horizon | `lgbm_usmd_prob_mean.yaml`，freq=1ME，1 CV 窗 + final | `/tmp/tsproj_prob_phase4_fixed/`，exit 0；1 行 forecast；point=q50；typed bundle |
+| 最强组合 | QR USMD calendar-month + linear decomposition + target scaling + CQR，4 窗 + final | `/tmp/tsproj_prob_phase4_combo/`，exit 0；122 CV 点、31 forecast 点；final 4 窗/122 scores，status=applied |
+| 最强组合回读 | Python 严格断言 | `ForecastModelBundle → ProbabilisticModelBundle`；transform steps=`decomposition,target_scaling`；score 复算最大误差 `5.82e-11`；q/PI 分列 |
+| canonical 五分位 | 新 mapping，q05/q10/q50/q90/q95，`central80`，allow shrink | `/tmp/tsproj_prob_phase4_canonical5/`，61 CV 点、31 forecast 点；prequential/final report 均为 central80；输出 `predict_pi80_*` |
+
+#### 结果失效与重跑清单
+
+1. 旧 CQR final forecast：window-ID 选择、q 列被校准边界覆盖或缺独立 PI 的结果全部失效；
+2. 旧 `conformal_score`：不是由保存后 processed interval 复算的结果全部失效；
+3. crossing repair 改变过 q50、导致 `Y_preds != predict_q50` 的 quantile 结果全部失效；
+4. 新启用 multioutput time decay 的 quantile 配置：旧结果未真实消费权重，必须重跑；
+5. target scaling/decomposition/CQR 组合：只接受共享 `TargetTransformPipeline` 生成的新结果；
+6. 现有 results 不自动改写；重跑必须使用新 suffix/目录隔离，不能把旧新概率指标混表。
 
 ### 15.7 发现的实施偏差（实施中追加，勿删）
 
 | # | 日期 | 偏差 | 处理 |
 |---|---|---|---|
-| — | — | 暂无；本文仅完成设计 | — |
+| 1 | 2026-08-24 | 原设计允许 raw/processed 两阶段都计算 interval metrics；真实 QR 冒烟发现 raw quantile crossing 时 lower>upper，raw 不是合法 interval | raw 只保留 pinball/crossing 诊断；coverage/width/Winkler 仅对合法 processed boundaries 计算；补 RED→GREEN 回归测试 |
+| 2 | 2026-08-24 | Phase 0 首次真实冒烟在结果保存阶段因上述 raw crossing 失败 | 根因修复后用新隔离目录重跑，同一配置 2 窗口 + final forecast 全链通过 |
+| 3 | 2026-08-24 | Phase 1 首次接线只写历史 prequential audit，没有把 final selector 证据追加到 `calibration_report.csv` | 新增 final 审计行；无论 applied/skipped 都记录 status/reason、requested/selected windows 与 label availability 上界 |
+| 4 | 2026-08-24 | final 审计追加后 CSV 混用 `YYYY-MM-DD` 与空格时间格式，严格 `parse_dates` 保持 object | 补 RED→GREEN 格式测试；四个审计时间列统一写 ISO `YYYY-MM-DDTHH:MM:SS` |
+| 5 | 2026-08-24 | 实施中两次 ad-hoc 计数得到 890/876，与设计基线 863 冲突；根因分别是把独立工具 YAML 当模型、以及用 loader 默认 `data_path` 作启发式导致 13 个假阳性 | 新增 schema 识别测试；checker 只接收顶层含 `base_config/overrides` 且不属独立工具前缀的文件；最终仍为 863（465 point + 398 quantile），设计基线无漂移 |
+| 6 | 2026-08-24 | decomposition+scaling+CQR 首次真实组合运行在结果保存阶段触发既有非法 f-string format specifier；此前 residual rows 为空时未执行该分支 | 新增 `ResidualDiagnosticsSaveRegressionTest` 复现 RED；预先构造 `fft_cv_text` 后 GREEN；原组合重跑 exit 0 |
+| 7 | 2026-08-24 | canonical 五分位 probe 前复核发现 evaluator/final 仍隐式使用 grid 首尾，若 calibration interval=q10/q90 会误取 q05/q95 | 新增显式 interval RED→GREEN；score、base/horizon metrics、prequential/final CQR 和 report 全部由 `IntervalSpec` 数值 level 驱动 |
+| 8 | 2026-08-24 | 月频方法 probe 首次启用天气时，配置的 future 文件从月末开始而严格契约要求预测月初开始 | probe 关闭与策略迁移无关的天气通路后重跑；正式组合验收使用无天气配置，未修改 YAML/数据 |
 
 ### 15.8 设计阶段核实证据
 
 | 核实项 | 命令/方法 | 结果 |
 |---|---|---|
-| 工作树 | `git status --short` | 当前有分解、多步相关未提交改动；本轮仅修改本设计文档 |
+| 工作树 | `git status --short` | 概率 Phase 0–1 代码、测试和直接相关文档改动；无 YAML/results 改动 |
 | 模型 YAML 审计 | Python 遍历 `config/**/*.yaml` + `yaml.safe_load` | 863 模型 YAML；398 quantile；154 CQR |
 | quantile 网格 | 同上 | 398/398 均为 `[0.1,0.5,0.9]` |
 | 模型能力使用 | 同上 | 378 LightGBM + 20 QR；无不支持模型配置 |
@@ -1925,12 +2018,35 @@ Prequential 只解决未来信息泄漏，不消除时间序列相关性和分�
 | 目标变换顺序 | 读取 `main.py:834-848`、`models/ModelTesting.py:173-243`、`models/ModelForecasting.py:1270-1283` | 训练 calendar→decomposition→scaler；逆序应为 scaler→decomposition→calendar |
 | 方案评审修订 | 逐项核对 quantile/CQR 统计语义、持久化与实施依赖 | CQR PI 与 q 列分离；加入 label availability；metrics/prequential 前移；取消双份模型 pickle |
 | 文档结构 | 章节/围栏/相对链接脚本检查 | 15 个一级编号章节连续；90 个代码围栏成对；相对链接 0 缺失；H3 编号连续 |
-| 全量回归 | `env -u PYTHONPATH UV_CACHE_DIR=.uv_cache uv run --no-sync python -m unittest discover -s tests -p "test_*.py"` | **Ran 249 tests — OK** |
+| 全量回归 | `env -u PYTHONPATH UV_CACHE_DIR=.uv_cache uv run --no-sync python -m unittest discover -s tests -p "test_*.py"` | **Ran 286 tests — OK** |
+
+#### 实施收口验证（2026-08-24）
+
+| 验收项 | 命令/方法 | 最终结果 |
+|---|---|---|
+| 全量 unittest | `python -m unittest discover -s tests -p "test_*.py"` | **Ran 327 tests in 19.215s — OK** |
+| 全模型 YAML dry-run | `python scripts/check_model_configs.py 'config/**/*.yaml'` | **863 configs，exit 0**；仅 2 个既有 USMDP rolling 提示，无硬失败 |
+| compileall | `python -m compileall -q probabilistic features decomposition models main.py config scripts tests` | exit 0 |
+| diff whitespace | `git diff --check` | exit 0 |
+| docstring 行为等价 | `ast_equivalence_check.py ... decomposition/bundle.py` | `IDENTICAL decomposition/bundle.py` |
+| 设计文档结构 | Python 检查 H2/代码围栏/相对链接 | 1–15 连续；90 个围栏成对；0 缺失相对链接 |
+| 真实全链 | fixed、8 种现役 quantile 方法、horizon-feature、decomposition+scaling+CQR、canonical 五分位 | 全部 exit 0；产物均隔离在 `/tmp` |
+
+#### horizon 聚合补齐 point/naive/crossing 指标（2026-08-24，对照 §10.5）
+
+| 验收项 | 命令/方法 | 结果 |
+|---|---|---|
+| RED→GREEN | `tests.test_probabilistic_evaluation`（新增 2 用例） | 先确认 `point` 记录缺失（RED），实现后 9 tests OK |
+| 全量回归 | `python -m unittest discover -s tests -p "test_*.py"` | **Ran 329 tests — OK** |
+| 真实全链 | `qr_usmd_prob_mean_conformal.yaml`，calendar_month，4 窗 + final，隔离到 `/tmp/tsproj_prob_horizon_naive/` | exit 0；`horizon_scores_df.csv` 新增 `mae/mape/naive_mae/naive_skill`（point 记录）与 crossing 三指标（processed 聚合）；31 个 horizon 全覆盖 |
+| 手算复核 | Python 重算 h1 MAE/naive MAE/skill | `h1_skill=-3.717275` 与 `1-mae/naive_mae` 完全一致；`cv_plot_df.csv` 新增 `Y_naive` 列 |
+
+说明：naive 对照复用 `ModelTesting` 既有"昨日同时刻"序列（`n_per_day` 步前），注入 `cv_plot_df.Y_naive`；无 naive 对齐的窗口不输出 naive 指标。§10.5 的 naive skill 已就位；多基线套件（上周/同槽位中位数/SeasonalTemplate）仍属 Kaggle 调研 P0 欠账。
 
 ### 15.9 环境备忘
 
 - 项目根：`/Users/wangzf/projects/tsproj_ml`；
 - 当前分支：`dev`；
 - Python 验证统一前缀：`env -u PYTHONPATH UV_CACHE_DIR=.uv_cache uv run --no-sync python ...`；
-- 当前工作树已有用户/其他任务改动，概率重构实施时不得覆盖或顺手整理；
-- 本设计文档只定义方案，不修改 `config/`、预测代码或存量 results。
+- Phase 0–4 已实施并完成本版本全链验收；Phase 5 已裁决为等待指标证据，不在本版扩展 conformal/path 算法。
+- 存量 results 未自动改写；旧 CQR/q50-crossing/未消费 multioutput 权重的结果按 §12.3 与 §15.6 清单重跑。

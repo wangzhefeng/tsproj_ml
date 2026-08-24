@@ -1,15 +1,15 @@
 # Kaggle 时间序列预测调研：面向 tsproj_ml 的能力提升建议
 
 > 文档性质：外部技术调研与项目能力差距分析  
-> 调研日期：2026-08-22；更新：2026-08-24——多步预测四项语义修复（MSMD/MSMDR 目标对齐、Direct 输出长度契约、USMDP 多步 safe-lag、global panel 实体边界）已落地；时间序列分解三处语义缺陷也已修复并单独验收（证据见 `docs/time_series_decomposition_redesign.md` §15）。§1/§6/§7/§11/§12/§15 相关结论已同步更新。
+> 调研日期：2026-08-22；更新：2026-08-24——多步预测四项语义修复、时间序列分解重构均已落地；概率预测重构 Phase 0–4 已全部完成：quantile/PI 分离、概率指标闭环、prequential/as-of CQR、`ProbabilisticSpec`/typed bundle/`TargetTransformPipeline`、9 方法族迁移与唯一 `ForecastModelBundle` 持久化（证据见 `docs/time_series_probabilistic_forecasting_redesign.md` §15）。
 > 调研范围：Kaggle 竞赛、获奖方案、Notebook、数据集和讨论；重点关注电力负荷、能源时序、多步预测、时间序列分解、概率预测、天气外生变量
-> 本文不构成实施授权；多步预测与分解配置语义修复完成后，下一步是重跑受影响结果、补评估闭环，再按单配置消融规则逐项实施。
+> 本文不构成实施授权；概率重构代码侧已收口，当前欠账按优先级为：baseline suite/skill score（本文 P0）、受 MSMD/MSMDR 修复影响的存量结果重跑、safe-lag/global panel 正式 A/B 消融，再按单配置消融规则逐项实施。
 
 ## 1. 结论先行
 
 **没有一个 Kaggle 方案适合直接移植到 `tsproj_ml`。** 项目现有主链已经覆盖多步 Direct/Recursive/DirRec/Blend、分位数预测、CQR、严格天气信息集、滑窗回测和多种树模型；Kaggle 的主要增量不是“再接一个模型”，而是以下三项：
 
-1. **补齐概率预测评估闭环**：pinball loss、区间覆盖率、平均区间宽度、Winkler score、quantile crossing，以及按 horizon/场景分组的校准诊断。M5 Uncertainty 直接以加权缩放 pinball loss 评估概率分布；其高排名方案也按多个相邻时间折验证方向一致性，而不是只看中位数点预测误差。[4][16][23]
+1. **概率预测评估与因果校准闭环已于 Phase 0–1 落地**：现已输出 pinball loss、区间覆盖率、平均/归一化区间宽度、Winkler、quantile crossing、coverage gap 和 horizon-wise 指标；CQR 按 `label_available_at` 只选完整历史窗口，并以 prequential 方式评价当前窗口。M5 Uncertainty 直接以加权缩放 pinball loss 评估概率分布；其高排名方案也按多个相邻时间折验证方向一致性，而不是只看中位数点预测误差。[4][16][23]
 2. **把回测从“窗口总分”扩展为“预测步 × 场景 × 基线”的 skill 分析**：当前 `test_scores_df.csv` 只给整窗 R2/MSE/RMSE/MAE/MAPE 和昨日同时刻 naive，容易掩盖远 horizon 退化、节假日/突变日失效和区间失准。
 3. **新增少数有明确信息增量的特征族**：严格 trailing 的 EWM、天气 forecast vintage/`hours_ahead`、天气相对近期基准的 anomaly、冷/热度时与交互项；每项都必须遵循现有 A/B 两路、相同 31 窗、median MAPE 的消融规则。Enefit 获奖方案反复使用天气预报生成时刻、`hours_ahead`、历史目标变换和天气相对近期均值，而不是简单把“实测天气”并入未来。[18][19][26]
 
@@ -407,7 +407,7 @@ $$
 
 #### 7.5.3 持久化与组合约束
 
-`models/ModelTraining.py` 保存 v2 内嵌式 `decomposition_bundle.pkl`（model + target_scaler + pipeline 单文件，schema_version=2；2026-08-24 起不再写独立 `target_decomposer.pkl`）。加载侧 `ModelDeployPkl.load_model()` 自动识别 bundle 与普通模型。分解与 `scale_target`、USBR/MSBR blend、CQR conformal 当前硬性互斥，避免 residual/level 空间混用。该限制保守但正确，扩展组合前必须先设计统一输出空间。
+`models/ModelTraining.py` 现只写一个 `model.pkl`，其内容为 schema v1 `ForecastModelBundle`：模型（point 或 `ProbabilisticModelBundle`）、feature scaler、`TargetTransformPipeline`、selected features 与输入 schema 同构持久化；`probabilistic_schema.json` 仅保存可读 metadata。分解、target scaling、quantile 与 CQR 已通过共享变换栈统一到 target space；USBR/MSBR blend 与分解仍因两条分量路径空间未统一而 fail-fast。
 
 ### 7.6 当前实现的优势
 
@@ -420,7 +420,7 @@ $$
 
 ### 7.7 缺陷处置状态与集成缺口
 
-> 处置状态：7.7.1–7.7.4 全部关闭。7.7.1–7.7.3 于 2026-08-23 修复；7.7.4 于 2026-08-24 以 v2 内嵌式 bundle 完成。验收证据见 `docs/time_series_decomposition_redesign.md` §15（273 tests OK）。以下原文保留为审计记录。
+> 处置状态：7.7.1–7.7.4 全部关闭。7.7.1–7.7.3 于 2026-08-23 修复；7.7.4 的局部 `DecompositionBundle` 于 2026-08-24 完成，随后已由概率重构中的唯一 `ForecastModelBundle` 取代。最新验收事实见 `docs/time_series_probabilistic_forecasting_redesign.md` §15；以下原文保留为审计记录。
 
 #### 7.7.1 【已修复 2026-08-23】linear+damped 忽略 `decomposition_trend_lookback`
 
@@ -456,7 +456,7 @@ $$
 
 #### 7.7.4 【已完成 2026-08-24】保存了 decomposer，但缺少统一预训练加载编排
 
-完成说明：已实现 v2 内嵌式 `DecompositionBundle`——model + target_scaler + pipeline pickle 进单个 `decomposition_bundle.pkl`（schema_version=2），加载侧 `ModelDeployPkl.load_model()` 通过 `isinstance` 自动识别 bundle 与普通模型，一次切换不再写独立 `target_decomposer.pkl`。注意：selected features schema 仍未纳入 bundle（当前部署链路不消费，留待真实预训练部署需求出现时扩展）。
+完成说明（后续状态更新）：局部 `DecompositionBundle` 曾关闭该缺口；当前实现进一步收敛为唯一 `ForecastModelBundle`，selected features、input schema、feature scaler、目标变换栈和 point/quantile model 已全部进入 `model.pkl`。loader 兼容旧 quantile dict，并对未知 schema version fail-fast。
 
 代码能够保存和手动加载 `target_decomposer.pkl`，但全仓没有发现与 `model.pkl`、scaler、selected feature schema 一起自动恢复 decomposer 的统一预测入口。当前 `main.py` 每次 final forecast 都现场训练，因此不受影响；若未来走独立加载预训练模型部署，必须把这些对象作为一个 bundle 同构恢复。
 
@@ -472,7 +472,7 @@ $$
 | 只支持加性 `TargetDecomposer` | 不能直接表达乘性季节或 log 后加性 STL/MSTL | 先由 A/B 消融判断业务必要性 |
 | 不做 VMD/CEEMDAN/Wavelet 分量级预测 | 对非平稳模态的表达能力不足 | 分量数、端点效应与成本不划算 |
 | 不把 OOF 分解预测作为特征 | 与 MSTL+CatBoost 二阶段路线相比表达面较窄 | 需要独立 stacking/OOF 管线 |
-| 与 blend/CQR/scale 互斥 | 组合实验受限 | 是输出空间未统一前的安全约束 |
+| 与 blend 互斥 | Blend 的 Direct/Recursive 分量空间尚未统一 | 保留 fail-fast；CQR/scale 已解除互斥 |
 
 ### 7.9 与 Kaggle 方法的差距
 
@@ -490,7 +490,7 @@ $$
 1. ✅ 已完成（2026-08-23）：linear+damped 近期斜率改为从观测 y 的 lookback 段估计（对全局多项式拟合线取 lookback 无效，属实施偏差，见设计文档 §15.7）；补齐不同 lookback 产生不同未来分量的测试。
 2. ✅ 已完成（2026-08-23）：MSTL 增加 `stl_kwargs={'robust': decomposition_robust}`，robust true/false 接线测试就位；创建 MSTL 配置的前置条件已满足。
 3. ✅ 已完成（2026-08-23）：允许恰好两个周期（`2*period <= n`），输出标准 `stl_seasonal_strength/stl_trend_strength`，旧 ratio 保留并标注 legacy。
-4. ✅ 已完成（2026-08-24）：v2 内嵌式 model bundle——model + target_scaler + decomposition pipeline 单文件持久化（`decomposition_bundle.pkl`，schema_version=2），`ModelDeployPkl.load_model()` 自动识别；feature scaler/selected features schema 未纳入（当前部署链路不消费，见 §7.7.4 完成说明）。
+4. ✅ 已完成并升级（2026-08-24）：`model.pkl` 保存唯一 schema v1 `ForecastModelBundle`，包含 model、feature scaler、`TargetTransformPipeline`、selected features、input schema 与 `ProbabilisticSpec`；另写不含模型对象的 `probabilistic_schema.json`，兼容旧 quantile dict loader。
 5. 多步预测 P0 已修复；判定分解精度前须重跑受影响的 MSMD/MSMDR 结果，避免沿用错位旧口径。
 6. 高频场景按单配置比较 `none / linear / STL(日周期) / MSTL(日+周)`；MSTL 只在修复 robust 后进入。
 7. 日频按 `none / linear-polynomial / linear-damped / quadratic / STL7` 比较；周季节性弱时不因“可分解”而默认启用。
@@ -545,26 +545,25 @@ Kaggle Notebook 常按竞赛指标优化：Store Item 用 SMAPE，M5 用加权�
 - 如上下偏差业务成本不同，再增加 asymmetric cost；
 - 指标必须按窗口、horizon、route 和场景共同输出。
 
-## 9. 概率预测：当前最大能力缺口
+## 9. 概率预测：基础闭环已完成，高级校准待实证
 
 ### 9.1 当前项目事实
 
-- `models/ModelTesting.py:619-671` 只计算 R2/MSE/RMSE/MAE/MAPE 和 naive MAPE；
-- `models/ModelTesting.py:384-389` 在启用 conformal 时记录 nonconformity score；
-- `main.py:680-727` 在 final forecast 阶段校准首尾 quantile，并做 quantile 单调化；
-- 全仓源码没有 pinball、PICP、Winkler、CRPS 或 coverage-rate 实现。
+- 点指标继续保留 R2/MSE/RMSE/MAE/MAPE 和 naive MAPE；
+- `probabilistic/metrics.py` 已实现 pinball、coverage、width、normalized width、Winkler、coverage gap、Wilson CI 和 crossing 指标；
+- `ModelTesting` 写出 `probabilistic_predictions_df.csv`、`probabilistic_scores_df.csv`、`horizon_scores_df.csv`；
+- forecast 中 `predict_q*` 保留模型分位数，CQR 改用独立 `predict_pi<coverage>_lower/upper`；
+- CQR score 在 q50 锚定 repair 后计算，可由保存的 processed boundaries 复算；
+- `CalibrationRecord` 携带 `forecast_origin/target_time/label_available_at/horizon_step/window`，prequential 与 final 共用 as-of selector/calibrator；`calibration_report.csv` 审计实际选择范围、完整窗口数、score 数、correction 和状态。
 
-因此项目“能产出概率预测”，但还不能系统回答：
+因此项目现在可以系统回答 raw/processed quantile 与因果 CQR 的基础概率质量；剩余问题是：
 
-- 每个 quantile 是否准确；
-- 80% 区间实际覆盖是否接近 80%；
-- 覆盖率提升是否只是区间过宽；
-- 哪些 horizon/场景失准；
-- CQR 是否优于原始 quantile，而不是只看 q50 MAPE。
+- CQR 在各 route/scenario 的严格历史未知窗口上是否稳定优于原始 quantile；
+- 是否需要 horizon-binned、asymmetric、block 或 adaptive conformal。
 
-### 9.2 P0 指标集合
+### 9.2 Phase 0 已实现指标集合
 
-建议新增 `utils/probabilistic_metrics.py`：
+当前实现位于 `probabilistic/metrics.py`：
 
 | 指标 | 回答的问题 | 输出粒度 |
 |---|---|---|
@@ -637,10 +636,10 @@ def interval_coverage(
 | linear+damped lookback | ✅ 已于 2026-08-23 修复（近期斜率取观测 y 的 lookback 段） | 近期趋势阻尼外推 | 已关闭 | damped 消融尚未运行，无既有结果作废 |
 | MSTL robust | ✅ 已于 2026-08-23 修复并有接线测试；当前仍无 MSTL YAML | robust multi-seasonal decomposition | 已关闭 | 可启用 MSTL 配置进入消融 |
 | 周期诊断 | ✅ 已于 2026-08-23 修复边界并输出标准强度（旧 ratio 标注 legacy） | STL/MSTL 周期候选与强度分析 | 已关闭 | 已完成 |
-| decomposer 部署加载 | ✅ 已完成（2026-08-24）：v2 内嵌式 bundle，ModelDeployPkl 自动识别 | 可复现 hybrid pipeline | 已关闭 | 单文件部署产物就绪 |
+| decomposer 部署加载 | ✅ 已完成（2026-08-24）：唯一 `ForecastModelBundle`（model+feature scaler+目标变换栈+selected features+input schema），ModelDeployPkl 自动识别并拒绝未知 schema | 可复现 hybrid pipeline | 已关闭 | 单文件部署产物就绪 |
 | 概率预测训练 | quantile + monotone + CQR | 分布模型/层级 quantile | P2 | 新管线、高训练成本 |
-| 概率评估 | **缺 pinball/coverage/width/Winkler** | M5 完整概率评分 | **P0** | 中等，主要是指标与输出测试 |
-| horizon 诊断 | 仅整窗指标和 per-window 图 | 按步/场景分解 | **P0** | 中等，新增结果表和报告 |
+| 概率评估 | ✅ Phase 0 已实现 pinball/coverage/width/Winkler/crossing/coverage gap | M5 完整概率评分 | 已关闭 | 三张概率 artifact 已接入 |
+| horizon 诊断 | ✅ Phase 0 已按 `horizon_step` 输出概率指标、n_points/n_windows | 按步/场景分解 | 已关闭 | fixed/calendar_month 共用 |
 | baseline suite | 仅昨日同时刻 naive | 日/周/模板/业务基线 skill | **P0** | 低到中等 |
 | 天气信息集 | strict contract 已较强 | forecast vintage、lead、anomaly | P1 | 中等，需保持 train/CV/final 对称 |
 | EWM | 主链未接入 | lag 后 EWM | P1 | 低到中等，需消融防冗余 |
@@ -672,12 +671,12 @@ def interval_coverage(
 
 ### 阶段 A：只增强评估，不改变预测值
 
-1. 新增概率指标函数及单测；
-2. `ModelTesting` 输出 `probabilistic_scores_df.csv`；
-3. 新增 `horizon_scores_df.csv`；
-4. 新增 baseline suite 与 skill score；
-5. 在一个已有 quantile 配置上实跑，确认预测 CSV 数值不变、只新增评估产物；
-6. 跑完整 unittest。
+1. ✅ 概率指标函数及单测（2026-08-24，`probabilistic/metrics.py`）；
+2. ✅ `ModelTesting` 输出 `probabilistic_scores_df.csv`（2026-08-24）；
+3. ✅ 新增 `horizon_scores_df.csv`（2026-08-24）；
+4. ⏳ 新增 baseline suite 与 skill score（**本文 P0 欠账**；昨日同时刻 naive 的 `naive_skill` 已随 horizon 聚合落地 2026-08-24，多基线套件仍待做）；
+5. ✅ 在已有 quantile 配置上实跑，确认预测 CSV 数值不变、只新增评估产物（/tmp 隔离验收）；
+6. ✅ 跑完整 unittest（327 tests OK）。
 
 验收：
 
@@ -740,14 +739,14 @@ def interval_coverage(
 
 ## 15. 最终建议
 
-**多步目标对齐、Direct 长度契约、USMDP safe-lag、global panel 实体边界和分解配置语义已经完成代码修复；当前正确方向是先重跑受影响结果，再把 `tsproj_ml` 从“能输出 quantile”升级为“能验证概率预测”，最后做特征和模型消融。**
+**多步目标对齐、Direct 长度契约、USMDP safe-lag、global panel 实体边界、分解配置语义和概率重构 Phase 0–4 已完成代码修复与验收；当前正确方向是补齐 baseline suite/skill score（本文唯一 P0），重跑受影响结果，再做特征和模型消融。**
 
 推荐立即进入的工程目标为：
 
 1. 结果重建：重跑修复前受影响的 MSMD/MSMDR 配置，确保旧目标口径的模型、CSV 和图不再参与比较；
 2. 能力消融：USMDP safe-lag 先做单配置冒烟，再按 A/B 各 31 窗判定；global panel 等真实 panel 数据契约就位后单独评估；
 3. 分解集成：linear+damped lookback、MSTL robust、周期强度/边界、统一加载 bundle（v2 内嵌式）、`decomposition/` 包架构迁移已于 2026-08-23~24 全部完成并验收；残差频谱诊断工具就位，VMD/Wavelet 是否启动取决于实跑 `residual_diagnostics.csv` 的 stable_band 结果；
-4. 评估闭环：实现 `probabilistic_metrics`、`probabilistic_scores_df.csv`、`horizon_scores_df.csv`、baseline suite 和 skill score。
+4. 评估闭环：`probabilistic_metrics`、`probabilistic_scores_df.csv`、`horizon_scores_df.csv` 已于概率重构 Phase 0–4 落地（2026-08-24，327 tests）；**仍未完成**：baseline suite 与 skill score（本文唯一 P0 欠账）。
 
 EWM、weather vintage 和 gap/embargo 作为下一批独立消融；hierarchical reconciliation、GRU/DeepAR 作为后续结构性研究。global panel 不再有已知跨序列特征串值阻塞，但在真实 panel 消融前仍不作为现役默认。这样既吸收 Kaggle 的高价值经验，也不破坏项目当前已经建立的严格信息集、A/B 多窗判定和最小改动原则。
 

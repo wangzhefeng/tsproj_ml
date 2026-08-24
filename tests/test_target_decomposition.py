@@ -177,12 +177,18 @@ class TargetDecomposerTest(unittest.TestCase):
 
             trainer.model_save({"model": "fake"}, target_decomposer=decomposer)
 
-            saved_path = Path(tmpdir) / "target_decomposer.pkl"
-            self.assertTrue(saved_path.exists())
-            restored = ModelDeployPkl(saved_path).load_model()
-            self.assertTrue(restored.is_fitted)
+            # v2 内嵌式 bundle：不再写独立 target_decomposer.pkl，统一读 bundle
+            bundle_path = Path(tmpdir) / "decomposition_bundle.pkl"
+            self.assertTrue(bundle_path.exists())
+            from decomposition.bundle import DecompositionBundle
+
+            bundle = ModelDeployPkl(bundle_path).load_model()
+            self.assertIsInstance(bundle, DecompositionBundle)
+            self.assertEqual(bundle.schema_version, 2)
             np.testing.assert_allclose(
-                restored.restore(np.zeros(2), pd.date_range("2026-01-11", periods=2, freq="1D")),
+                bundle.pipeline.restore(
+                    np.zeros(2), pd.date_range("2026-01-11", periods=2, freq="1D")
+                ),
                 [110.0, 111.0],
                 atol=1e-10,
             )

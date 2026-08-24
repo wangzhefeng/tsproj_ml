@@ -161,6 +161,7 @@ class Tester:
                 "test_scores_df": None,
                 "cv_plot_df": None,
                 "train_outlier_report": train_outlier_report,
+                "residual_diag_row": None,
             }
         df_history_train, df_history_test = split_result
         df_history_train, train_outlier_report = handle_train_outliers(
@@ -177,6 +178,7 @@ class Tester:
             target_col=payload["target_feature"],
         )
         # 每个滑窗只在训练段拟合目标分解器，禁止测试段及更晚数据参与预处理。
+        residual_diag_row = None
         target_decomposer = DecompositionPipeline.from_args(args)
         if target_decomposer.enabled:
             df_history_train = target_decomposer.fit_transform(
@@ -197,6 +199,11 @@ class Tester:
                     output_dir=diag_dir,
                     suffix=f"_win{window}",
                 )
+                # B1 残差频谱诊断：fit_transform 后的 y 即 residual，随结果返回供主进程汇总
+                from decomposition.residual_diagnostics import diagnose_window_residual
+
+                residual = df_history_train[payload["target_feature"]].to_numpy(dtype=float)
+                residual_diag_row = diagnose_window_residual(residual, window_idx=window)
         build_result = Tester._build_window_train_xy(
             args=args,
             log_prefix=log_prefix,
@@ -214,6 +221,7 @@ class Tester:
                 "test_scores_df": None,
                 "cv_plot_df": None,
                 "train_outlier_report": train_outlier_report,
+                "residual_diag_row": None,
             }
         X_train, Y_train, target_output_features, categorical_features = build_result
         # 窗口目标特征处理
@@ -419,6 +427,7 @@ class Tester:
             "test_scores_df": eval_scores_window,
             "cv_plot_df": cv_plot_df_window,
             "train_outlier_report": train_outlier_report,
+            "residual_diag_row": residual_diag_row,
         }
 
     # ------------------------------
@@ -770,7 +779,7 @@ class Tester:
     # Model results save
     # ------------------------------
     @staticmethod
-    def test_results_save(args, log_prefix: str, test_scores_df, cv_plot_df, train_outlier_report=None):
+    def test_results_save(args, log_prefix: str, test_scores_df, cv_plot_df, train_outlier_report=None, window_results=None):
         # 分位数单调化(可选):逐行排序 predict_q* 列(csv 与绘图同步生效)
         cv_plot_df = monotonize_quantile_columns(cv_plot_df, bool(getattr(args, "quantile_monotone", False)))
         test_scores_df.to_csv(args.test_results_dir.joinpath("test_scores_df.csv"), index=False, encoding="utf-8")
@@ -783,6 +792,29 @@ class Tester:
             encoding="utf-8",
         )
         required_cols = {"Y_preds", "Y_trues"}
+        # B1 残差频谱诊断：汇总全部窗口的 residual FFT/ACF，输出跨窗口稳定性
+        residual_rows = [
+            result["residual_diag_row"]
+            for result in (window_results or [])
+            if result.get("residual_diag_row") is not None
+        ]
+        if residual_rows:
+            from decomposition.residual_diagnostics import (
+                summarize_window_residuals,
+                write_residual_diagnostics,
+            )
+
+            summary = summarize_window_residuals(residual_rows)
+            write_residual_diagnostics(
+                summary,
+                args.test_results_dir.joinpath("residual_diagnostics.csv"),
+            )
+            logger.info(
+                f"{log_prefix} residual_diagnostics: "
+                f"fft_period_median={summary.fft_period_median}, "
+                f"cv={summary.fft_period_cv:.3f if summary.fft_period_cv else 'N/A'}, "
+                f"stable_band={summary.stable_band_detected}"
+            )
         if cv_plot_df.empty or not required_cols.issubset(set(cv_plot_df.columns)):
             logger.warning(f"{log_prefix} No valid prediction columns found for visualization.")
             return

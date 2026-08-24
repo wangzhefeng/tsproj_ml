@@ -46,7 +46,7 @@
 3. 建立可持久化的目标变换栈，严格按训练顺序的逆序恢复到原始目标空间；
 4. 修复已确认的时序与结果一致性问题；
 5. 新增 pinball、coverage、width、Winkler、crossing、calibration error 和 horizon-wise 诊断；
-6. 建立严格的 prequential CQR 回测，使 CQR 能在历史窗口上被真实评价；
+6. 建立因果的 prequential CQR 回测，使 CQR 能在历史窗口上被真实评价；
 7. 把模型 quantile 与 CQR prediction interval 作为两类独立产物，禁止用校准边界覆盖 q10/q90；
 8. 保持现有 863 个模型 YAML 可加载，现有 9 种多步预测策略的业务语义不变；
 9. 为未来接入路径采样模型保留统一评估入口，但本轮不实现 DeepAR/GRU/Transformer。
@@ -411,7 +411,7 @@ window × horizon_step × quantile / interval × metric × stage
 | **P0** | 文档中的目标逆变换顺序与训练顺序不互逆 | calendar/decomposition 组合会还原错位 | 持久化变换栈并严格逆序恢复 |
 | P1 | quantile 目标逆变换分散 | `scale_target` 回测分位数列潜伏错位 | point/quantile 共用 TargetTransformPipeline |
 | P1 | 多输出 quantile 不透传 sample_weight | Direct/DirRec 丢失时间衰减 | 复用 `DirectMultiOutputRegressor` |
-| P1 | 模型分位数能力靠 if/elif + warning | 不支持模型可伪装 quantile | capability registry |
+| P1 | 模型分位数能力靠 if/elif + warning | 不支持模型可伪装 quantile | objective capability mapping |
 | P1 | 分位数列名不是可逆 codec | 高精度 q 可能列名冲突，q100 字符串排序错误 | 数值网格为权威、列名只做序列化 |
 | P1 | quantile bundle 是裸 dict | 无 schema/version/类型约束 | dataclass bundle |
 | P1 | Recursive 概率路径语义隐式 | 容易误报为完整概率轨迹 | 显式 `median_path` 策略与元数据 |
@@ -463,7 +463,7 @@ recent_windows = sorted(cv_df["window"].unique())[-n_cal_windows:]
 
 这些存量文件跨多个实验版本，不能当正式精度汇总；但足以证明输出契约不一致是现实问题。
 
-推荐使用**以 q50 为固定锚点的单调投影**：修正上下分位数，不改变 q50。若暂时保留 legacy rearrangement，则必须同步 `predict_value=最终 q50`，并明确旧结果失效。
+推荐使用**以 q50 为固定锚点的单调投影**：修正上下分位数，不改变 q50。若暂时保留 legacy rearrangement，则必须同步 `predict_value=processed q50`，并明确旧结果失效。
 
 ### 4.4 conformal score 与保存区间不一致
 
@@ -568,7 +568,7 @@ inverse target scaling
 record.label_available_at <= current_forecast_origin
 ```
 
-如业务没有额外发布延迟，默认 `label_available_at = target_time + one_freq_step`；存在明确数据延迟时由配置或数据契约提供。
+如业务没有额外发布延迟，默认 `label_available_at = target_time`；配置 `label_availability_delay_steps=N` 时再增加 `N × freq`。存在独立 `available_at` 数据契约时，以数据源声明为准。
 
 ### 4.12 P0 指标与实施阶段冲突
 
@@ -626,7 +626,7 @@ probabilistic/
 | `models/ModelFactory.py` | 创建具体回归器 | capability adapter 注入 quantile 目标 |
 | `models/ModelTraining.py` | 训练主流程和数据预处理 | 委托 `QuantileTrainer` |
 | `models/ModelForecasting.py` | 9 种方法的时序递归/Direct 编排 | 返回统一 `ForecastDistribution` |
-| 共享 `TargetTransformPipeline` | 记录 calendar/decomposition/scaler 的训练顺序 | 对 point/quantile 执行同一逆序 restore |
+| `features/TargetTransformation.py` | 实现共享 `TargetTransformPipeline`，记录 calendar/decomposition/scaler 的训练顺序 | 对 point/quantile 执行同一逆序 restore |
 | `decomposition/` | 确定性分量还原 | 作为 TargetTransformPipeline 的一个有序步骤 |
 | `utils/eval_mask.py` | 点预测业务掩码 | 不默认改变 conformal 覆盖总体 |
 | `main.py` | 流程入口与结果目录 | 只调用概率 pipeline，不手写 CQR 分支 |
@@ -640,7 +640,7 @@ probabilistic/
 新架构分 8 层：
 
 1. **Spec**：配置归一化与合法性矩阵；
-2. **Capability Registry**：模型是否支持 quantile、如何注入目标；
+2. **Capability Mapping**：模型是否支持 quantile、如何注入目标；
 3. **Quantile Trainer**：按 q 和输出形态训练，构造强类型 bundle；
 4. **Strategy Adapter**：把 9 种多步方法输出转换为统一二维 quantile matrix；
 5. **Target Transform Consumer**：消费共享变换栈，按训练顺序的逆序恢复 point/quantile；
@@ -954,6 +954,21 @@ class BlendQuantileModel:
     direct: Any
     recursive: Any
 ```
+
+部署层再用一个唯一外层 bundle 关联模型和预处理状态：
+
+```python
+@dataclass
+class ForecastModelBundle:
+    schema_version: int
+    model: Any  # point model 或 ProbabilisticModelBundle
+    feature_scaler: Any
+    target_transform: Any  # TargetTransformPipeline
+    selected_features: tuple[str, ...]
+    input_schema: dict[str, Any]
+```
+
+`ForecastModelBundle` 是 `model.pkl` 的唯一内容；不再让多个 pickle 分别持有同一批 per-q models。
 
 ### 8.4 `CalibrationRecord`
 
@@ -1281,10 +1296,12 @@ lower,upper,method,y_true
 核心列：
 
 ```text
-window,forecast_origin,scope,stage,metric,quantile,
+window,forecast_origin,scope,record_kind,stage,metric,quantile,
 interval_name,lower_quantile,upper_quantile,target_coverage,
 value,n_points,n_windows,ci_lower,ci_upper
 ```
+
+其中 `record_kind=quantile` 时 stage 为 `raw/processed`；`record_kind=interval` 时 stage 为 `base/cqr`。禁止把 CQR interval row 标成某个 quantile stage。
 
 #### `horizon_scores_df.csv`
 
@@ -1361,7 +1378,7 @@ def select_calibration_records(
 ): ...
 ```
 
-先过滤 `label_available_at <= forecast_origin`，再按校准记录所属 forecast origin 降序选最新 N 个完成窗口；对重复 target time 去重，不消费 window ID 顺序。
+先把 `max(label_available_at) <= forecast_origin` 的窗口判为完整可用窗口，再按其 forecast origin 降序选最新 N 个；最后对重复 target time 去重，不消费 window ID 顺序。默认不混入只到达部分标签的窗口，避免不同 horizon 获得不对称校准样本。
 
 ### 10.10 CQR 边界语义
 
@@ -1411,7 +1428,7 @@ horizon-binned/asymmetric 只在 §3.3 的证据条件满足后进入下一版�
 - 每窗口得到 target-space raw distribution；
 - 调概率 pipeline 产生 processed 结果和 metrics；
 - 汇总后执行 prequential calibration evaluator；
-- 旧点指标继续从最终 q50 计算。
+- 旧点指标继续从 processed q50 计算。
 
 ### 11.5 forecast 侧
 
@@ -1423,15 +1440,15 @@ horizon-binned/asymmetric 只在 §3.3 的证据条件满足后进入下一版�
 
 ### 11.6 持久化
 
-`ProbabilisticModelBundle` 作为 `<checkpoints_dir>/model.pkl` 的唯一权威模型对象，不再额外保存一份含相同模型的 `probabilistic_bundle.pkl`。至少包含：
+`<checkpoints_dir>/model.pkl` 保存唯一权威的 `ForecastModelBundle`，不再额外保存一份含相同模型的 `probabilistic_bundle.pkl`。其中概率模型字段为 `ProbabilisticModelBundle`，整体至少包含：
 
 - schema version；
-- `ProbabilisticSpec`；
-- quantile grid；
-- model type / pred method；
-- per-q models；
-- recursive propagation；
-- target-space schema 摘要。
+- point model 或 `ProbabilisticModelBundle`；
+- feature scaler；
+- `TargetTransformPipeline`（含 target scaler/decomposition/calendar 状态）；
+- selected features 与输入 schema；
+- `ProbabilisticSpec`、quantile grid、model type / pred method；
+- per-q models 与 recursive propagation。
 
 额外保存不含模型对象、便于人工检查的：
 
@@ -1441,7 +1458,7 @@ horizon-binned/asymmetric 只在 §3.3 的证据条件满足后进入下一版�
 
 兼容策略：
 
-1. 新模型保存 dataclass bundle；
+1. 新模型保存统一 `ForecastModelBundle`；
 2. loader 能识别旧 quantile dict 并迁移为 runtime bundle；
 3. 未知 schema version 直接失败；
 4. 不依赖从文件名猜 quantile grid；
@@ -1649,7 +1666,7 @@ Phase 0–1 的实现直接写入最终 `probabilistic/` 包，通过薄适配�
 
 目标：
 
-1. `model.pkl` 保存 `ProbabilisticModelBundle`，不再生成重复模型 pickle；
+1. `model.pkl` 保存唯一 `ForecastModelBundle`，其中 quantile 模型字段为 `ProbabilisticModelBundle`；
 2. 保存 `probabilistic_schema.json`；
 3. 旧 dict bundle loader 兼容；
 4. README/config/models/utils/production_sync 文档同步；
@@ -1694,17 +1711,21 @@ Phase 0–1 的实现直接写入最终 `probabilistic/` 包，通过薄适配�
 7. raw crossing rate 与 repair 指标；
 8. q50 锚定单调投影；
 9. point=q50；
-10. CQR score 精确长度；
-11. plus-one quantile；
-12. 最近窗口按时间选择；
-13. prequential 无未来信息；
-14. min scores skip；
-15. target coverage 与 raw nominal coverage 分离；
-16. negative correction 在 no-shrink 模式截为 0；
-17. model/target space 类型守卫；
-18. bundle pickle roundtrip；
-19. legacy dict load；
-20. 旧/新 spec 等价与冲突。
+10. CQR interval 不覆盖 q10/q90；
+11. CQR score 精确长度；
+12. plus-one quantile；
+13. 最近窗口按时间选择；
+14. `label_available_at` 阻断未到达标签；
+15. min windows / min scores skip；
+16. target coverage 与 raw nominal coverage 分离；
+17. negative correction 在 no-shrink 模式截为 0；
+18. signed/absolute coverage gap；
+19. normalized width 和 coverage CI；
+20. calendar→decomposition→scaler 的逆序 restore；
+21. model/target space 类型守卫；
+22. `model.pkl` bundle roundtrip；
+23. legacy dict load；
+24. 旧/新 spec 等价与冲突。
 
 ### 14.2 集成测试
 
@@ -1714,11 +1735,12 @@ Phase 0–1 的实现直接写入最终 `probabilistic/` 包，通过薄适配�
 |---|---|
 | 方法 | 9 种 point/quantile shape；现役 8 种 quantile 全路径 |
 | 训练形态 | 单输出、多输出、horizon_feature、blend |
-| 后处理 | none/rearrangement/median-preserving |
-| 目标空间 | none/scale/calendar/decomposition |
-| 校准 | off/pooled CQR/样本不足 |
+| 后处理 | none/rearrangement/q50-anchored clipping/PAVA |
+| 目标空间 | none/scale/calendar/decomposition；组合时验证逆序 restore |
+| 校准 | off/pooled CQR/标签未到达/窗口不足/score 不足 |
 | horizon | fixed/calendar_month |
 | 并行 | window 串行/并行，quantile 串行/内部并行 |
+| 输出 | processed quantile 与 independent PI 同时存在、互不覆盖 |
 
 ### 14.3 验证命令
 
@@ -1730,7 +1752,7 @@ env -u PYTHONPATH UV_CACHE_DIR=.uv_cache uv run --no-sync \
   python scripts/check_model_configs.py 'config/**/*.yaml'
 
 env -u PYTHONPATH UV_CACHE_DIR=.uv_cache uv run --no-sync \
-  python -m compileall -q probabilistic models main.py config tests
+  python -m compileall -q probabilistic features decomposition models main.py config tests
 ```
 
 真实配置验收必须保留命令、配置路径、窗口数、输出文件和指标摘要。
@@ -1745,7 +1767,7 @@ env -u PYTHONPATH UV_CACHE_DIR=.uv_cache uv run --no-sync \
 
 q50、score stage、CQR 窗口方向都属于数值语义修复，不是纯重构。
 
-控制：Phase 0 先修正并建立 corrected baseline；Phase 1–3 再做等价迁移。结果差异必须归因到明确修复项。
+控制：Phase 0 先修正 quantile/interval 语义并建立 corrected baseline；Phase 1 只增加因果 CQR 评价；Phase 2–3 再做类型、变换栈和训练推理迁移。结果差异必须归因到明确修复项。
 
 ### 14.6 风险：coverage 被区间宽度掩盖
 
@@ -1765,33 +1787,45 @@ q50、score stage、CQR 窗口方向都属于数值语义修复，不是纯重�
 
 控制：总体概率指标与 MAPE 业务掩码分开；任何 masked coverage 必须用独立 scope 命名。
 
-### 14.10 已定设计决策
+### 14.10 风险：把因果回测误报为理论保证
+
+Prequential 只解决未来信息泄漏，不消除时间序列相关性和分布漂移。控制：报告同时写 target coverage、empirical coverage、样本数和置信区间；标准 split conformal 的理论保证必须附 exchangeability 前提，必要时以 block/weighted/adaptive conformal 作为后续候选。
+
+### 14.11 风险：模型持久化双写
+
+`model.pkl` 与额外概率 bundle 若都包含 per-q models，会产生权威来源冲突。控制：新实现只让 `model.pkl` 持有模型对象；`probabilistic_schema.json` 仅保存可读 metadata，不保存第二份模型。
+
+### 14.12 已定设计决策
 
 | ID | 决策 | 结论 | 代价 |
 |---|---|---|---|
 | D-001 | 模块位置 | 顶层 `probabilistic/` | 主链四处入口迁移 |
 | D-002 | 点预测语义 | quantile 模式必须含 q50，point=q50 | 非 q50 网格将被拒绝 |
-| D-003 | 单调化 | 推荐 q50 锚定的 isotonic 投影 | crossing 结果需重跑 |
+| D-003 | 单调化 | 三分位用 q50 锚定裁剪；多分位再用 anchored PAVA | crossing 结果需重跑 |
 | D-004 | CQR 窗口 | 按 forecast origin 选最新完成窗口 | 旧 CQR forecast 失效 |
-| D-005 | CQR 回测 | prequential，当前窗口不参与自身校准 | 最早若干窗口无 calibrated score |
+| D-005 | CQR 回测 | prequential + `label_available_at` as-of 筛选 | 最早若干窗口无 calibrated interval |
 | D-006 | interval 语义 | raw quantile pair 与 target coverage 分开配置 | 配置字段增加 |
-| D-007 | 结果格式 | 旧宽表保留，新增概率长表和报告 | 结果文件增多 |
+| D-007 | 结果格式 | q 列保留模型分位数；CQR 用独立 PI 列和 interval 长表 | CQR 消费方需迁移字段 |
 | D-008 | 路径概率 | 本轮不实现 | 暂不能评价联合轨迹风险 |
-| D-009 | 旧 bundle | loader 兼容，运行时转换为新对象 | 需维护 schema adapter |
+| D-009 | 持久化 | `model.pkl` 保存唯一 `ForecastModelBundle`（含模型、scaler、TargetTransform、schema）；JSON 只存 metadata | 需维护旧散装 pkl/dict adapter |
 | D-010 | 结果有效性 | 已确认错误修复后旧结果不视为兼容基线 | 需重跑受影响配置 |
+| D-011 | 目标还原 | 共享 TargetTransformPipeline 记录训练顺序并逆序 restore | point/quantile 接线均需迁移 |
+| D-012 | 覆盖表述 | 时间序列只声明经验 coverage；理论保证附 exchangeability 前提 | 文案更保守但真实 |
+| D-013 | 实施顺序 | metrics/prequential 前移，训练推理按方法族纵向迁移 | Phase 数量减少、每阶段可独立验收 |
+| D-014 | 模块粒度 | 第一版不预建 calibration 子包/通用 registry | 第二种实现出现时再拆分 |
 
-### 14.11 结论
+### 14.13 结论
 
 本项目概率预测的主问题不是“没有 quantile 模型”，而是缺少一个把训练、目标空间、后处理、校准和评价统一起来的概率契约。
 
 正确重构方向是：
 
-1. 先关闭 q50、score stage 和校准窗口方向三类 P0 语义问题；
-2. 建立 `ProbabilisticSpec + ForecastDistribution + ProbabilisticModelBundle`；
-3. 把所有概率后处理移动到原始目标空间的统一 pipeline；
-4. 建立 pinball/coverage/width/Winkler/crossing/horizon 评估；
-5. 用 prequential 回测真实评价 CQR；
-6. 最后再依据证据讨论 horizon/asymmetric conformal 和路径模型。
+1. 先关闭 quantile/interval 混淆、q50、score stage、标签可得性和窗口方向等 P0 语义问题；
+2. 先建立 pinball/coverage/width/Winkler/crossing/horizon 评估与因果 prequential CQR；
+3. 建立 `ProbabilisticSpec + ForecastDistribution + ProbabilisticModelBundle`；
+4. 由共享 TargetTransformPipeline 按训练栈逆序恢复 point/quantile；
+5. 按单输出、Direct、DirRec、Blend 四个方法族迁移训练与推理；
+6. 最后再依据证据讨论 horizon/asymmetric/block/weighted conformal 和路径模型。
 
 ---
 
@@ -1808,70 +1842,68 @@ q50、score stage、CQR 窗口方向都属于数值语义修复，不是纯重�
 
 | Phase | 内容 | 状态 | 完成时间 | 证据摘要 |
 |---|---|---|---|---|
-| 0 | 概率语义契约修复 | pending | — | — |
-| 1 | spec/types/registry 基础 | pending | — | — |
-| 2 | 训练与 9 种推理迁移 | pending | — | — |
-| 3 | target-space/postprocessing pipeline | pending | — | — |
-| 4 | 指标闭环与 prequential CQR | pending | — | — |
-| 5 | bundle、文档、真实配置验收 | pending | — | — |
-| 6 | horizon/asymmetric/path 扩展讨论 | pending | — | 依赖 Phase 0–5 |
+| 0 | quantile/interval 语义 + 概率指标 | pending | — | — |
+| 1 | 因果 prequential CQR | pending | — | — |
+| 2 | spec/types + TargetTransformPipeline | pending | — | — |
+| 3 | 按方法族迁移训练与推理 | pending | — | — |
+| 4 | 单一 bundle、文档与全链验收 | pending | — | — |
+| 5 | conformal/path 扩展讨论 | pending | — | 依赖 Phase 0–4 |
 
-### 15.2 Phase 0：概率语义契约修复（pending）
+### 15.2 Phase 0：语义契约与概率指标（pending）
 
 - [ ] 0-a quantile/CQR 参数 fail-fast
 - [ ] 0-b score 精确长度契约
-- [ ] 0-c 校准窗口按 forecast origin 选择
-- [ ] 0-d point=q50
-- [ ] 0-e score stage 与保存区间一致
-- [ ] 0-f 修正文档与实现注释漂移
+- [ ] 0-c quantile 与 CQR PI 分列输出
+- [ ] 0-d q50 锚定 crossing repair + point=q50
+- [ ] 0-e pinball/coverage/width/Winkler/crossing/coverage gap
+- [ ] 0-f horizon_step、样本数与 coverage CI
+- [ ] 0-g 修正文档与实现注释漂移
 
 验收证据：待实施后回填。
 
-### 15.3 Phase 1：spec/types/registry（pending）
+### 15.3 Phase 1：因果 prequential CQR（pending）
 
-- [ ] 1-a `ProbabilisticSpec`
-- [ ] 1-b legacy/new resolver
-- [ ] 1-c `QuantileGrid`
-- [ ] 1-d `ForecastDistribution`
-- [ ] 1-e capability registry
-- [ ] 1-f 863 YAML 全量解析
-
-验收证据：待实施后回填。
-
-### 15.4 Phase 2：训练与推理迁移（pending）
-
-- [ ] 2-a `QuantileTrainer`
-- [ ] 2-b `ProbabilisticModelBundle`
-- [ ] 2-c 9 种 strategy adapter
-- [ ] 2-d multioutput quantile sample weight
-- [ ] 2-e 并行预算
-- [ ] 2-f bundle pickle roundtrip
+- [ ] 1-a `CalibrationRecord.label_available_at`
+- [ ] 1-b as-of 校准样本选择与 target-time 去重
+- [ ] 1-c min_windows + min_scores
+- [ ] 1-d 历史窗口 prequential evaluation
+- [ ] 1-e independent interval artifact + calibration report
+- [ ] 1-f final forecast 共用同一 calibrator
 
 验收证据：待实施后回填。
 
-### 15.5 Phase 3：target-space/postprocessing（pending）
+### 15.4 Phase 2：配置、类型与目标变换栈（pending）
 
-- [ ] 3-a target scaler restore
-- [ ] 3-b calendar normalization restore
-- [ ] 3-c decomposition restore
-- [ ] 3-d raw/processed/calibrated stage
-- [ ] 3-e median-preserving monotone
-- [ ] 3-f main/ModelTesting 接线替换
+- [ ] 2-a `ProbabilisticSpec` + legacy/new resolver
+- [ ] 2-b `QuantileGrid` / `ForecastDistribution` / `PredictionIntervalForecast`
+- [ ] 2-c objective capability mapping
+- [ ] 2-d `TargetTransformPipeline` 顺序记录与逆序 restore
+- [ ] 2-e point/quantile 共用 restorer
+- [ ] 2-f 863 YAML 全量解析
 
 验收证据：待实施后回填。
 
-### 15.6 Phase 4–6（pending）
+### 15.5 Phase 3：按方法族迁移训练与推理（pending）
 
-- [ ] 4-a probability metrics
-- [ ] 4-b horizon-wise diagnostics
-- [ ] 4-c prequential CQR
-- [ ] 4-d artifacts writer
-- [ ] 5-a bundle loader
-- [ ] 5-b README/docs sync
-- [ ] 5-c 真实配置实跑
-- [ ] 5-d 结果失效与重跑清单
-- [ ] 6-a horizon/asymmetric CQR 决策
-- [ ] 6-b path-level 独立支线决策
+- [ ] 3-a 单输出：USMDP/USMR/MSMR
+- [ ] 3-b Direct：USMD/MSMD/horizon feature
+- [ ] 3-c DirRec：USMDR/MSMDR
+- [ ] 3-d Blend：USBR/MSBR
+- [ ] 3-e multioutput quantile sample weight
+- [ ] 3-f 窗口并行下内部并行预算
+
+每个切片必须附 RED→GREEN 契约测试、方法级小窗口 probe 和输出 shape 证据。
+
+### 15.6 Phase 4–5（pending）
+
+- [ ] 4-a `model.pkl` 单一 ForecastModelBundle（内含 ProbabilisticModelBundle）
+- [ ] 4-b `probabilistic_schema.json`
+- [ ] 4-c legacy dict loader + roundtrip
+- [ ] 4-d README/config/models/utils/production_sync 同步
+- [ ] 4-e fixed/calendar_month/decomposition+CQR 代表配置验收
+- [ ] 4-f 结果失效与重跑清单
+- [ ] 5-a horizon/asymmetric/block/weighted/adaptive conformal 决策
+- [ ] 5-b path-level 独立支线决策
 
 ### 15.7 发现的实施偏差（实施中追加，勿删）
 
@@ -1883,14 +1915,16 @@ q50、score stage、CQR 窗口方向都属于数值语义修复，不是纯重�
 
 | 核实项 | 命令/方法 | 结果 |
 |---|---|---|
-| 工作树 | `git status --short` | 当前有分解、多步相关未提交改动；本文只新增本文件 |
+| 工作树 | `git status --short` | 当前有分解、多步相关未提交改动；本轮仅修改本设计文档 |
 | 模型 YAML 审计 | Python 遍历 `config/**/*.yaml` + `yaml.safe_load` | 863 模型 YAML；398 quantile；154 CQR |
 | quantile 网格 | 同上 | 398/398 均为 `[0.1,0.5,0.9]` |
 | 模型能力使用 | 同上 | 378 LightGBM + 20 QR；无不支持模型配置 |
 | CQR 参数 | 同上 | 154/154 为 alpha=0.1，字段均写在 model_strategy 组 |
 | 存量结果审计 | Python 遍历 `results/results_test/**/cv_plot_df.csv` | 463 CSV；236 含 quantile；169 point/q50 不一致；82 score/保存边界不一致；coverage 中位数约 32.7% |
 | 窗口方向 | 读取 15min daily A 路代表性 `cv_plot_df.csv` | window 1=2026-07-31，window 31=2026-07-01 |
-| 文档结构 | 章节/围栏/相对链接脚本检查 | 15 个一级编号章节连续；72 个代码围栏成对；相对链接 0 缺失 |
+| 目标变换顺序 | 读取 `main.py:834-848`、`models/ModelTesting.py:173-243`、`models/ModelForecasting.py:1270-1283` | 训练 calendar→decomposition→scaler；逆序应为 scaler→decomposition→calendar |
+| 方案评审修订 | 逐项核对 quantile/CQR 统计语义、持久化与实施依赖 | CQR PI 与 q 列分离；加入 label availability；metrics/prequential 前移；取消双份模型 pickle |
+| 文档结构 | 章节/围栏/相对链接脚本检查 | 15 个一级编号章节连续；90 个代码围栏成对；相对链接 0 缺失；H3 编号连续 |
 | 全量回归 | `env -u PYTHONPATH UV_CACHE_DIR=.uv_cache uv run --no-sync python -m unittest discover -s tests -p "test_*.py"` | **Ran 249 tests — OK** |
 
 ### 15.9 环境备忘

@@ -92,7 +92,13 @@ class ModelDeployPkl(ModelDeploy):
             raise Exception("参数 save_file_path 指向的文件路径不存在，请检查.")
         
         model = joblib.load(self.save_file_path)
-        
+
+        # 挂载 decomposition bundle：若内容是 DecompositionBundle 则按 bundle 返回，
+        # 普通模型/其他对象按原样返回（向后兼容）。
+        from decomposition.bundle import DecompositionBundle
+
+        if isinstance(model, DecompositionBundle):
+            return model
         return model
 
 

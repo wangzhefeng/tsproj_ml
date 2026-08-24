@@ -1037,9 +1037,18 @@ def resolve_decomposition_spec(cfg) -> DecompositionSpec:
 3. 未实现方法不在主链被误调用 → ✅ spec/registry 双层 fail-fast
 4. 诊断输出只新增不覆盖 → ✅ `decomposition_diagnostics.csv` 新文件，旧结果目录无修改
 
-### 15.6 Phase 4：扩展方法讨论（pending）
+### 15.6 Phase 4：扩展方法讨论（B1 残差频谱诊断 completed 2026-08-24）
 
-依赖已解除（Phase 1-3 全部 completed）。既有结论：VMD/Wavelet 需先有残差频谱证据；EMD 系列最后；Prophet/TBATS 不进主链。待用户决策是否启动。
+依赖已解除（Phase 1-3 全部 completed）。既有结论：VMD/Wavelet 需先有残差频谱证据；EMD 系列最后；Prophet/TBATS 不进主链。
+
+B1 残差频谱诊断已完成：
+- 新增 `decomposition/residual_diagnostics.py`：`diagnose_window_residual`（单窗 FFT/ACF）、`summarize_window_residuals`（跨窗 CV 评估）、`write_residual_diagnostics`（CSV 输出）；
+- `ModelTesting._window_test` 每窗口收集 residual 诊断行随结果返回；
+- `test_results_save` 汇总全部窗口并写 `residual_diagnostics.csv`；
+- 判定逻辑：FFT 主导周期 CV < 0.5 且最强 ACF 峰 > 0.3 → `stable_band_detected=True`（提示存在未被分解吸收的频带结构，可评估 VMD/Wavelet）；
+- 测试：`tests/test_residual_diagnostics.py` 7 用例（周期检测、白噪声拒绝、漂移拒绝、CSV 结构）。
+
+VMD/Wavelet 的启动与否取决于实跑 `residual_diagnostics.csv` 的 stable_band 结果；乘性/log 分解（B2）和 OOF 分量特征（B3）待用户决策。
 
 ### 15.7 发现的实施偏差（实施中追加，勿删）
 
@@ -1053,7 +1062,7 @@ def resolve_decomposition_spec(cfg) -> DecompositionSpec:
 | 6 | 2026-08-25 | Phase 2 发现 linear+damped lookback 失效：`expand_preset()` 初版只给 trend_forecaster 传 mode/lookback，未传给 extractor（extractor 需在 fit 阶段决定近期斜率来源） | 修复：extractor params 也带 mode/lookback；等价性测试 lookback=7/40 分化恢复 |
 | 7 | 2026-08-25 | 诊断输出写入 `_window_test` 后，测试 SimpleNamespace 缺 `test_results_dir` 导致 1 个测试报 AttributeError | 修复：`getattr(args, "test_results_dir", None)` 防御，无目录跳过诊断 |
 | 8 | 2026-08-25 | main.py:243-259 周期校验段仍直读旧字段 `cfg.decomposition_periods`：新写法 `overrides.decomposition` 的 STL/MSTL 配置会因 legacy 属性为默认 `[]` 被误拒 | **已修复**（待办 #1）：main.py 改读 `spec.preset.periods` |
-| 9 | 2026-08-25 | §11.4 目标 1 部分完成：`DecompositionBundle` 只包 pipeline + spec 摘要，model/scaler 仍是独立 pkl，加载侧无代码消费 bundle | 待修（见 §15.9 待办 #2，唯一剩余项） |
+| 9 | 2026-08-25 | §11.4 目标 1 部分完成：`DecompositionBundle` 只包 pipeline + spec 摘要，model/scaler 仍是独立 pkl，加载侧无代码消费 bundle | **已修复**（待办 #2）：v2 内嵌式 bundle，ModelDeployPkl 自动识别，一次切换完成 |
 | 10 | 2026-08-25 | §12.1 第 3 条 mstl 等价测试缺失；且旧文件删除后等价测试变成新 pipeline 自比，对新旧逐位一致性不再约束 | **已修复**（待办 #3）：旧实现冻结为 tests/fixtures/，等价测试恢复真实新旧对比并补 mstl 用例 |
 | 11 | 2026-08-25 | `ModelTesting._window_test` 每窗口写同一路径 `decomposition_diagnostics.csv`，逐窗口覆盖且重跑覆盖上次结果，偏离"只新增不覆盖"口径 | **已修复**（待办 #4，方案 A）：按窗口序号命名 `_win{N}` |
 | 12 | 2026-08-25 | 实现与文档接口漂移：`ComponentFrame.residual_name` 未实现；`base.py` 用未文档化的 `"__y__"` 键；`pipeline.py` 有死代码 `hasattr(..., "attach_trend"): pass`；`trend_coefficients_context_ns` 为动态贴附属性未在 `__init__` 声明；§3.1 目录结构（子包）与实际（平铺单文件）不符 | **已修复**（待办 #5）：全部清理完毕；文档 §3.1/§4.3 已同步 |
@@ -1070,10 +1079,10 @@ def resolve_decomposition_spec(cfg) -> DecompositionSpec:
 | # | 优先级 | 待办 | 状态 | 证据 |
 |---|---|---|---|---|
 | 1 | **P0** | main.py:243-259 校验段改读 `spec.preset.periods`，删除 legacy 直读；否则新写法 stl/mstl 配置被误拒 | **completed**（2026-08-24） | main.py 改读 `spec.preset.periods`；新写法 stl/mstl spec 探针通过；252 tests OK |
-| 2 | P1 | bundle 扩展为 model + scaler + pipeline 统一持久化，定义加载入口（消费 `decomposition_bundle.pkl`）；需先评审加载路径设计 | pending | — |
+| 2 | P1 | bundle 扩展为 model + scaler + pipeline 统一持久化，定义加载入口（消费 `decomposition_bundle.pkl`）；需先评审加载路径设计 | **completed**（2026-08-24） | v2 内嵌式 bundle：model + target_scaler + pipeline 单文件；schema_version=2；`ModelDeployPkl.load_model` 自动识别 bundle；一次切换不再写独立 target_decomposer.pkl；`test_model_save_persists_fitted_target_decomposer` 更新为读 bundle |
 | 3 | P1 | 补 mstl 新旧等价测试：从 `git show e4502fd:features/TargetDecomposition.py` 恢复旧实现做一次性 transform/restore 数值对比，结果固化进测试 | **completed**（2026-08-24） | 旧实现冻结为 `tests/fixtures/legacy_target_decomposition.py`；`test_decomposition_equivalence.py` 改用真实旧实现（非自比），新增 mstl robust T/F 两例，9 用例全过 |
 | 4 | P2 | 诊断报告避免覆盖：按窗口/run 加后缀，或全窗口聚合后写一次 | **completed**（2026-08-24，方案 A） | `write_diagnostics_report` 加 `suffix` 参数；`_window_test` 传 `f"_win{window}"`；新测试 `test_diagnostics_suffix_avoids_overwrite` |
 | 5 | P2 | 低成本收尾：清理 `spec.py` none 冗余分支（偏差 #4）、`pipeline.py` 死代码、`trend_coefficients_context_ns` 动态属性入 `__init__`；文档 §3.1/§4.3 与实现对齐 | **completed**（2026-08-24） | spec 冗余分支已删；`attach_trend` 死代码已删；`trend_coefficients_context_ns` 入 `__init__` 并去掉 type: ignore；`__y__` 提为 `TARGET_KEY` 常量（types.py，三处引用统一）；`ComponentFrame.residual_name` 文档同步为 TARGET_KEY 语义；§3.1 目录结构更新为平铺单文件结构 |
-| 6 | — | Phase 4 扩展方法接入讨论（乘性/OOF/分量级/深度） | pending | 依赖已解除，待用户决策 |
+| 6 | — | Phase 4 扩展方法接入讨论（乘性/OOF/分量级/深度） | B1 残差诊断 completed；B2/B3 pending | 实跑 stable_band 结果裁决 VMD/Wavelet；B2/B3 待用户决策 |
 
 建议处理顺序：#1 → #4 → #5 → #3 → #2 → #6。

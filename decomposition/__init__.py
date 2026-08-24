@@ -8,6 +8,11 @@ from decomposition.pipeline import DecompositionPipeline
 from decomposition.registry import build_pipeline, build_pipeline_from_args
 from decomposition.bundle import DecompositionBundle
 from decomposition.diagnostics import write_diagnostics_report
+from decomposition.residual_diagnostics import (
+    diagnose_window_residual,
+    summarize_window_residuals,
+    write_residual_diagnostics,
+)
 from decomposition.spec import (
     RESERVED_METHODS,
     ComponentSpec,
@@ -30,4 +35,7 @@ __all__ = [
     "build_pipeline_from_args",
     "resolve_decomposition_spec",
     "write_diagnostics_report",
+    "diagnose_window_residual",
+    "summarize_window_residuals",
+    "write_residual_diagnostics",
 ]

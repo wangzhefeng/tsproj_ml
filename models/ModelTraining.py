@@ -40,6 +40,7 @@ from models.ModelSaveLoad import ModelDeployPkl
 from models.ModelEnsemble import TimeSeriesEnsembleRegressor, EnsembleConfig
 from models.learning_rate import resolve_learning_rate
 from models.losses import get_loss_name_from_model_params, get_scorer_by_loss_name
+from probabilistic.spec import validate_quantile_grid
 from utils.log_util import logger
 from utils.frequency import compute_time_decay_weights
 
@@ -1204,9 +1205,12 @@ class Trainer:
             # ------------------------------
             # 单模型 - 分位数预测
             # ------------------------------
-            quantiles = [float(q) for q in getattr(self.args, "quantiles", [0.1, 0.5, 0.9])]
-            if not quantiles:
-                raise ValueError(f"{self.log_prefix} predict_type=quantile but quantiles is empty.")
+            quantiles = list(
+                validate_quantile_grid(
+                    getattr(self.args, "quantiles", [0.1, 0.5, 0.9]),
+                    point_quantile=0.5,
+                )
+            )
             quantile_models = {}
             logger.info(f"{self.log_prefix} Training quantile models for quantiles={quantiles}")
             logger.info(f"{self.log_prefix} {'-' * 71}")
@@ -1280,7 +1284,7 @@ class Trainer:
                             lgbm_categorical,
                         )
                     quantile_models[q_key] = model_q
-            median_q = min(quantiles, key=lambda x: abs(x - 0.5))
+            median_q = 0.5
             quantile_bundle = {
                 "predict_type": "quantile",
                 "quantiles": quantiles,
@@ -1303,16 +1307,16 @@ class Trainer:
                 save_file_path=self.args.checkpoints_dir.joinpath("target_scaler.pkl")
             )
             target_scaler_deploy.save_model(target_scaler)
-        if target_decomposer is not None and getattr(target_decomposer, "is_fitted", False):
-            target_decomposer_deploy = ModelDeployPkl(
-                save_file_path=self.args.checkpoints_dir.joinpath("target_decomposer.pkl")
-            )
-            target_decomposer_deploy.save_model(target_decomposer)
-            # 统一 bundle：pipeline + spec 摘要 + schema 版本
-            from decomposition.bundle import DecompositionBundle
+        # 统一 bundle：model + target_scaler + pipeline 内嵌单文件（一次切换，
+        # 不再写独立 target_decomposer.pkl；schema_version=2）。
+        from decomposition.bundle import DecompositionBundle
 
-            bundle = DecompositionBundle.from_pipeline(target_decomposer)
-            bundle.save(self.args.checkpoints_dir.joinpath("decomposition_bundle.pkl"))
+        bundle = DecompositionBundle.from_components(
+            pipeline=target_decomposer,
+            model=model,
+            target_scaler=target_scaler,
+        )
+        bundle.save(self.args.checkpoints_dir.joinpath("decomposition_bundle.pkl"))
         logger.info(f"{self.log_prefix} Model saved to {self.args.checkpoints_dir.joinpath('model.pkl')}")
 
 

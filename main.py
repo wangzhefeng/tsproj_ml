@@ -54,10 +54,11 @@ from features.TargetNormalization import CalendarDayTargetNormalizer
 from models.ModelTraining import Trainer
 from models.ModelTesting import Tester
 from models.ModelForecasting import Forecaster
+from probabilistic.pipeline import finalize_quantile_forecast
+from probabilistic.spec import validate_probabilistic_args
 from data_provider.outlier_handling import empty_train_outlier_report
 from utils.frequency import resolve_freq_step_minutes, resolve_samples_per_day, is_monthly_freq
 from utils.multistep_contract import validate_direct_feature_alignment
-from utils.quantile import monotonize_quantile_columns
 from utils.weather_contract import validate_weather_information_contract
 
 warnings.filterwarnings("ignore")
@@ -224,6 +225,7 @@ class Model:
             )
         validate_direct_feature_alignment(self.args, self.horizon)
         validate_weather_information_contract(self.args)
+        validate_probabilistic_args(self.args)
         if self.n_windows <= 0:
             logger.warning(
                 f"{self.log_prefix} n_windows={self.n_windows} (<= 0). Testing will be skipped."
@@ -569,7 +571,7 @@ class Model:
         logger.info(f"{self.log_prefix} {'=' * 48}")
         logger.info(f"{self.log_prefix} Model Testing result saving...")
         logger.info(f"{self.log_prefix} {'=' * 48}")
-        Tester.test_results_save(self.args, self.log_prefix, test_scores_df, cv_plot_df, train_outlier_report)
+        Tester.test_results_save(self.args, self.log_prefix, test_scores_df, cv_plot_df, train_outlier_report, window_results)
         logger.info(f"{self.log_prefix} Model Testing result saved in: {self.args.test_results_dir}")
 
         logger.info(f"{self.log_prefix} Model Testing runtime: {time.perf_counter() - test_start:.3f}s")
@@ -677,11 +679,11 @@ class Model:
                     df_future_prediction.loc[df_future_prediction.index[:min_len], q_col] = q_arr[:min_len]
                 else:
                     df_future_prediction[q_col] = q_arr
-        # Conformal CQR 校准（可选）：用滑窗 nonconformity scores 对 q_low/q_high 对称膨胀
+        # 概率后处理：先以 q50 为锚点修复 crossing，再把 CQR 写入独立 PI 列。
+        conformal_scores = None
         if bool(getattr(self.args, "enable_conformal_calibration", False)):
             quantile_cols_cal = [c for c in df_future_prediction.columns if str(c).startswith("predict_q")]
             if len(quantile_cols_cal) >= 2:
-                from utils.conformal import calibrate_quantile_band
                 cv_path = self.args.test_results_dir.joinpath("cv_plot_df.csv")
                 if cv_path.exists():
                     cv_df = pd.read_csv(cv_path)
@@ -689,28 +691,11 @@ class Model:
                         n_cal_windows = int(getattr(self.args, "conformal_calibration_windows", 5))
                         if "window" in cv_df.columns:
                             recent_windows = sorted(cv_df["window"].unique())[-n_cal_windows:]
-                            cal_scores = cv_df[cv_df["window"].isin(recent_windows)]["conformal_score"].dropna().values
+                            conformal_scores = cv_df[
+                                cv_df["window"].isin(recent_windows)
+                            ]["conformal_score"].dropna().values
                         else:
-                            cal_scores = cv_df["conformal_score"].dropna().values
-                        alpha = float(getattr(self.args, "conformal_alpha", 0.1))
-                        min_scores = int(getattr(self.args, "conformal_min_scores", 30))
-                        cal_low, cal_high, E_alpha = calibrate_quantile_band(
-                            df_future_prediction[quantile_cols_cal[0]].values,
-                            df_future_prediction[quantile_cols_cal[-1]].values,
-                            cal_scores, alpha, min_scores,
-                        )
-                        if cal_low is not None:
-                            df_future_prediction[quantile_cols_cal[0]] = cal_low
-                            df_future_prediction[quantile_cols_cal[-1]] = cal_high
-                            logger.info(
-                                f"{self.log_prefix} Conformal CQR calibrated: E_alpha={E_alpha:.4f}, "
-                                f"target coverage={1 - alpha:.2f}, n_scores={len(cal_scores)}"
-                            )
-                        else:
-                            logger.warning(
-                                f"{self.log_prefix} Conformal CQR skipped: only {len(cal_scores)} scores "
-                                f"(< {min_scores}); need more test windows"
-                            )
+                            conformal_scores = cv_df["conformal_score"].dropna().values
                     else:
                         logger.warning(
                             f"{self.log_prefix} Conformal CQR skipped: no conformal_score column in cv_plot_df.csv "
@@ -721,13 +706,35 @@ class Model:
                         f"{self.log_prefix} Conformal CQR skipped: cv_plot_df.csv not found "
                         f"(need is_testing=True to produce calibration scores)"
                     )
-        # 分位数单调化(可选):逐行排序保证 q10<=q50<=q90
-        df_future_prediction = monotonize_quantile_columns(
-            df_future_prediction, bool(getattr(self.args, "quantile_monotone", False))
+        alpha = float(getattr(self.args, "conformal_alpha", 0.1))
+        min_scores = int(getattr(self.args, "conformal_min_scores", 30))
+        df_future_prediction, correction = finalize_quantile_forecast(
+            df_future_prediction,
+            monotone_enabled=bool(getattr(self.args, "quantile_monotone", False)),
+            conformal_scores=conformal_scores,
+            alpha=alpha,
+            min_scores=min_scores,
         )
-        quantile_cols = [c for c in df_future_prediction.columns if c.startswith("predict_q")]
-        if quantile_cols:
-            df_future_prediction = df_future_prediction[["time", "predict_value"] + quantile_cols]
+        if conformal_scores is not None:
+            if correction is None:
+                logger.warning(
+                    f"{self.log_prefix} Conformal CQR skipped: only {len(conformal_scores)} scores "
+                    f"(< {min_scores}); need more test windows"
+                )
+            else:
+                logger.info(
+                    f"{self.log_prefix} Conformal CQR calibrated: correction={correction:.4f}, "
+                    f"target coverage={1 - alpha:.2f}, n_scores={len(conformal_scores)}"
+                )
+        probability_cols = [
+            c
+            for c in df_future_prediction.columns
+            if c.startswith("predict_q") or c.startswith("predict_pi")
+        ]
+        if probability_cols:
+            df_future_prediction = df_future_prediction[
+                ["time", "predict_value"] + probability_cols
+            ]
         else:
             df_future_prediction = df_future_prediction[["time", "predict_value"]]
         logger.info(f"{self.log_prefix} after forecast df_future_prediction: \n{df_future_prediction.head()}")

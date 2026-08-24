@@ -1,6 +1,6 @@
 # 多步预测模块重构设计方案
 
-> 文档状态：Draft / 未评审
+> 文档状态：Draft / 已评审修订（v1.1，2026-08-24 评审发现 3 处问题已订正，见 §15.6）
 > 创建日期：2026-08-24
 > 关联文档：调研依据见 `docs/kaggle_time_series_forecasting_research.md`（§6 多步预测、§9 概率预测）；分解重构先例见 `docs/time_series_decomposition_redesign.md`。
 > 本方案不构成实施授权；待决策项保留默认行为。
@@ -84,7 +84,7 @@
 
 3. **quantile 输出契约不统一（P1）**：
    - `self.quantile_outputs` 的填充方式随方法变化；评估层（若接入）必须按方法分支；
-   - 单调化只覆盖 forecast 阶段，测试段 `predict_q*` 未经单调化（crossing 不可测量）。
+   - 测试段 CSV 在写盘前已被 `monotonize_quantile_columns` 单调化（`ModelTesting.py:773-775`），**原始 crossing 信息被抹掉**——在 `cv_plot_df.csv` 上测 crossing rate 恒为 0，模型真实的分位数交叉缺陷不可测量。
 
 4. **CQR 口径错位（P0）**：
    - 测试段评估覆盖率时用的是未校准区间，结论系统性偏差。
@@ -184,6 +184,16 @@ def quantile_crossing_rate(quantile_pred_map) -> float:
 
 点预测配置（`predict_type: point`）不生成概率列——指标函数按 `quantile_outputs is None` 短路。
 
+`probabilistic_scores_df.csv` 行 schema（与现有 `test_scores_df.csv` 同风格，**宽表**，每 window 一行）：
+
+```text
+window | Pinball_q10 | Pinball_q50 | Pinball_q90 | Pinball_q10_vs_naive | ...
+       | Coverage_q10_q90 | Nominal_q10_q90 | Width_q10_q90 | Winkler_q10_q90 |
+       | Coverage_q10_q90_cal | Width_q10_q90_cal | ...   # 批次 B 后追加 cal 对照列
+```
+
+列名规则：`Pinball_q{int}`（q 值 ×100 取整）、区间指标 `Metric_q{lo}_q{hi}`；cal 对照列后缀 `_cal`。
+
 #### 5.1.3 baseline suite
 
 扩展现有 `_build_seasonal_naive` 为 baseline 注册表：
@@ -216,7 +226,8 @@ skill(metric) = 1 - loss_model(metric) / loss_baseline(metric)
 
 现状：校准只在 forecast。方案（两个层次，第一层必做）：
 
-1. **测试段双区间列（必做）**：`ModelTesting` 在写 `cv_plot_df.csv` 时，若 `enable_conformal_calibration=true`，按与 `main.py` forecast 相同的"最近 N 窗 conformal_score"逻辑，额外写 `predict_q{lo}_cal` / `predict_q{hi}_cal` 两列（原始列保留）。校准逻辑抽为 `utils/conformal.py` 的共享函数，测试与 forecast 调用同一实现，避免口径漂移。
+1. **测试段双区间列（必做）**：若 `enable_conformal_calibration=true`，按与 `main.py` forecast 相同的"最近 N 窗 conformal_score"逻辑，额外写 `predict_q{lo}_cal` / `predict_q{hi}_cal` 两列（原始列保留）。校准逻辑抽为 `utils/conformal.py` 的共享函数，测试与 forecast 调用同一实现，避免口径漂移。
+   - **实现位置（关键约束）**：`_window_test` 在 ProcessPoolExecutor worker 进程中逐窗口独立执行，看不到其他窗口的结果——窗口 w 的校准需要窗口 < w 的 score，**在 worker 内拿不到**。双区间列必须在**主进程聚合全部窗口之后、`test_results_save` 写盘之前**计算，绝不能在 `_window_test` 内做（也避免把全部窗口 score 传入 worker 造成泄漏面扩大）；
    - 泄漏检查：窗口 w 的校准集只用窗口 < w 的 score（与 ridge blend 权重学习同模式）；
 2. **评估层消费（随批次 A）**：coverage/width 指标对 raw 与 cal 两套区间各算一遍，`probabilistic_scores_df.csv` 输出 `Coverage(raw)` / `Coverage(calibrated)` 对照列。
 
@@ -224,10 +235,15 @@ skill(metric) = 1 - loss_model(metric) / loss_baseline(metric)
 
 ```python
 # models/forecast_strategies.py
+from __future__ import annotations
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:  # 避免 forecast_strategies <-> ModelForecasting 的 import 环
+    from models.ModelForecasting import Forecaster
+
 @dataclass(frozen=True)
 class ForecastStrategy:
     name: str                                  # pred_method 全名
-    fn: Callable[[Forecaster], np.ndarray]     # 执行入口
+    fn: Callable[["Forecaster"], np.ndarray]   # 执行入口（字符串注解，运行时不 import）
     is_multi_output: bool                      # 训练容器选择
     supports_quantile: bool
     supports_horizon_feature: bool             # 方法能力声明（收敛 Trainer 布尔判断）
@@ -271,6 +287,8 @@ class QuantileTrajectory:
 ### 5.5 训练侧入口收敛（批次 D）
 
 `Trainer` 的方法布尔判断（`_should_use_fourmethods_baseline_training` / `_should_use_horizon_feature` / `_is_blend_method` / `_should_use_horizon_aligned_direct`）改为读取 `ForecastStrategy` 的能力声明字段，判断逻辑本身不变，只是声明从"散布的方法名字符串比较"收敛为注册表单点维护。
+
+**声明与开关的两层区分（实施纪律）**：注册表字段只承载**方法能力**（USMD/MSMD 支持 horizon_feature、USMDR/MSMDR 不支持——这是方法属性，不随配置变化）；现有判断中的**配置开关**部分（如 `direct_strategy == "horizon_feature"`）仍从 `args` 读取，不硬编码进注册表。替换后的判断形如 `strategy.supports_horizon_feature and args.direct_strategy == "horizon_feature"`，与现行为逐点等价。
 
 ---
 
@@ -355,10 +373,10 @@ _window_test (现有)
 问题：校准只在 forecast，测试段评估用的是未校准区间。
 修复：共享校准函数 + 测试段双区间列（§5.2）。泄漏控制：窗口 w 只用 < w 的 score。
 
-### 9.2 测试段 quantile 未单调化（随批次 A）
+### 9.2 测试段原始 quantile 列被单调化覆盖（随批次 A）
 
-问题：`quantile_monotone` 只在 forecast 生效，测试段 crossing 不可测量。
-修复：`ModelTesting` 写 `cv_plot_df` 前对 `predict_q*` 调用同一 `monotonize_quantile_columns`（保留原始列 + 追加 `_mono` 列，两套都可评估），配置开关沿用 `quantile_monotone`。
+问题（评审订正 2026-08-24）：测试段 CSV **已经**单调化——`ModelTesting.py:773-775` 的 `test_results_save` 在写 `cv_plot_df.csv` 前调用 `monotonize_quantile_columns`。真实缺口与初稿陈述相反：单调化把原始预测覆盖掉了，`cv_plot_df.csv` 上测 crossing rate 恒为 0，模型真实的分位数交叉缺陷不可测量。
+修复：写盘前保留**未单调化的原始列**（`predict_q*_raw`），单调化列维持现有名字不变（下游绘图/既有脚本零影响）；crossing rate 等指标消费 `predict_q*_raw`，配置开关沿用 `quantile_monotone`。
 
 ---
 
@@ -382,13 +400,13 @@ _window_test (现有)
 2. `ModelTesting._evaluate_probabilistic`：消费 `cv_plot_df` 的 `predict_q*`，输出 `probabilistic_scores_df.csv`；
 3. `ModelTesting._evaluate_horizon`：输出 `horizon_scores_df.csv`（fixed + calendar_month）；
 4. baseline suite：`naive_last_day`（复用现有）/ `naive_last_week` / `naive_same_slot_median` + skill 列；
-5. 测试段 quantile 单调化双列（§9.2）；
+5. 测试段原始 quantile 列保留（`predict_q*_raw`，§9.2：单调化已存在，补的是未单调化原始列）；
 6. 在一个现役 quantile 配置上实跑冒烟：确认预测 CSV 数值不变、只新增评估产物。
 
 ### Phase B：CQR 口径修正（P0）
 
 1. `utils/conformal.py` 抽共享校准函数（forecast 逻辑原样迁移）；
-2. `ModelTesting` 双区间列（泄漏控制：窗口 w 用 < w 的 score）；
+2. 主进程聚合后、`test_results_save` 写盘前计算双区间列（泄漏控制：窗口 w 用 < w 的 score；实现位置约束见 §5.2）；
 3. 评估层输出 `Coverage(raw)` / `Coverage(calibrated)` 对照。
 
 ### Phase C：推理 strategy 收敛（P1）
@@ -420,11 +438,11 @@ Phase D ──依赖 C 的 ForecastStrategy──> 最后
 
 ### 12.1 单元测试（新增）
 
-1. pinball 手算复核：`y=10, pred=12, q=0.9 → loss=1.8`；`y=10, pred=8, q=0.9 → 0`；
+1. pinball 手算复核：`y=10, pred=12, q=0.9 → loss=0.2`（高估轻罚）；`y=10, pred=8, q=0.9 → 1.8`（低估重罚 0.9×2）；
 2. coverage 合成样本：已知覆盖 8/10 点 → 0.8；
 3. Winkler：区间内 = 宽度；区间外 = 宽度 + 2/α × 距离（手算两组）；
 4. crossing rate：构造 `[q10 > q50]` 的退化输入 → rate = 1.0；
-5. 单调化前后 crossing rate 变化断言；
+5. raw 列与单调化列并存断言：`predict_q*_raw` 存在且 crossing 可测、单调化列与现行为逐值一致（§9.2 订正后的验收口径）；
 6. baseline：历史不足一天 → NaN；上周同槽位正确对齐；
 7. horizon_scores：fixed 3 步 + calendar_month 短月缺步聚合；
 8. CQR 双区间：窗口 w 的 cal 列不消费窗口 ≥ w 的 score（spy 断言）；
@@ -511,7 +529,7 @@ horizon_scores（H 行）+ probabilistic_scores（window×q 行）在 288 点高
 - [ ] A-2 `ModelTesting._evaluate_probabilistic` → `probabilistic_scores_df.csv`
 - [ ] A-3 `ModelTesting._evaluate_horizon` → `horizon_scores_df.csv`
 - [ ] A-4 baseline suite + skill 列
-- [ ] A-5 测试段 quantile 单调化双列
+- [ ] A-5 测试段原始 quantile 列保留（`predict_q*_raw`，§9.2）
 - [ ] A-6 现役 quantile 配置冒烟（预测数值不变 + 新增产物）
 
 ### 15.3 Phase B：CQR 口径修正
@@ -536,4 +554,6 @@ horizon_scores（H 行）+ probabilistic_scores（window×q 行）在 288 点高
 
 | # | 日期 | 偏差描述 | 影响与处置 |
 |---|---|---|---|
-| — | — | — | — |
+| 1 | 2026-08-24 | 评审发现初稿 §2.2-3/§9.2 的事实陈述与代码相反：测试段 CSV 写盘前已被单调化（`ModelTesting.py:773-775`），缺的不是"补单调化"而是"保留原始列"。§9.2 已订正为"原始 quantile 列被单调化覆盖"，修复方向改为补 `predict_q*_raw` 列 | 设计方向不变，修复语义对调；A-5 验收标准同步改为"raw 列 crossing 可测、mono 列与现行为一致" |
+| 2 | 2026-08-24 | 评审发现初稿 §5.2 双区间列未写明实现位置：`_window_test` 在 worker 进程内拿不到其他窗口的 conformal_score，按字面实施会卡住或泄漏。§5.2 已补"实现位置（关键约束）"：必须在主进程聚合后、`test_results_save` 写盘前计算 | B-2 实施位置明确；不改变泄漏控制原则（窗口 w 只用 <w 的 score） |
+| 3 | 2026-08-24 | 评审发现初稿 §12.1-1 pinball 手算示例两值对调（q=0.9 高估应为 0.2、低估应为 1.8），且 §5.1.2 未定义 `probabilistic_scores_df.csv` 行 schema。示例已订正，schema 已补（宽表、每 window 一行、列名规则） | 验收断言基准修正；实施时列名歧义消除 |

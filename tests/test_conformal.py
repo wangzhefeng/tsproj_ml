@@ -4,7 +4,9 @@
 import unittest
 
 import numpy as np
+import pandas as pd
 
+from probabilistic.calibration import attach_cqr_interval_columns
 from utils.conformal import compute_nonconformity_scores, calibrate_quantile_band
 
 
@@ -26,15 +28,49 @@ class TestNonconformityScores(unittest.TestCase):
         # y=10 above q_high=6 → score=4; y=0 below q_low=2 → score=2
         np.testing.assert_array_almost_equal(scores, [4.0, 2.0])
 
-    def test_length_truncation(self):
+    def test_length_mismatch_fails_fast(self):
         y = np.array([1.0, 2.0, 3.0])
         q_low = np.array([0.0])
         q_high = np.array([5.0])
-        scores = compute_nonconformity_scores(y, q_low, q_high)
-        self.assertEqual(len(scores), 1)
+        with self.assertRaisesRegex(
+            ValueError,
+            "CQR score length mismatch: y_true=3, q_low=1, q_high=1",
+        ):
+            compute_nonconformity_scores(y, q_low, q_high)
 
 
 class TestCalibrateQuantileBand(unittest.TestCase):
+    def test_boundary_length_mismatch_fails_fast(self):
+        with self.assertRaisesRegex(
+            ValueError,
+            "CQR calibration length mismatch: q_low=2, q_high=1",
+        ):
+            calibrate_quantile_band(
+                np.array([1.0, 2.0]),
+                np.array([3.0]),
+                np.ones(30),
+                alpha=0.1,
+                min_scores=30,
+            )
+
+    def test_invalid_calibration_parameters_fail_fast(self):
+        with self.assertRaisesRegex(ValueError, "alpha must be finite and inside"):
+            calibrate_quantile_band(
+                np.array([1.0]),
+                np.array([3.0]),
+                np.ones(30),
+                alpha=0.0,
+                min_scores=30,
+            )
+        with self.assertRaisesRegex(ValueError, "min_scores must be > 0"):
+            calibrate_quantile_band(
+                np.array([1.0]),
+                np.array([3.0]),
+                np.ones(30),
+                alpha=0.1,
+                min_scores=0,
+            )
+
     def test_insufficient_scores_returns_none(self):
         q_low = np.array([1.0, 2.0])
         q_high = np.array([3.0, 4.0])
@@ -54,6 +90,44 @@ class TestCalibrateQuantileBand(unittest.TestCase):
         self.assertAlmostEqual(E, 1.0, places=4)
         np.testing.assert_array_almost_equal(cal_low, [9.0, 19.0])
         np.testing.assert_array_almost_equal(cal_high, [13.0, 23.0])
+
+    def test_negative_correction_does_not_shrink_interval_by_default(self):
+        q_low = np.array([10.0])
+        q_high = np.array([20.0])
+        scores = np.full(30, -2.0)
+
+        cal_low, cal_high, correction = calibrate_quantile_band(
+            q_low,
+            q_high,
+            scores,
+            alpha=0.1,
+            min_scores=30,
+        )
+
+        self.assertEqual(correction, 0.0)
+        np.testing.assert_array_equal(cal_low, q_low)
+        np.testing.assert_array_equal(cal_high, q_high)
+
+    def test_cqr_interval_columns_do_not_overwrite_model_quantiles(self):
+        frame = pd.DataFrame(
+            {
+                "predict_q10": [10.0, 20.0],
+                "predict_q50": [15.0, 25.0],
+                "predict_q90": [18.0, 28.0],
+            }
+        )
+
+        result = attach_cqr_interval_columns(
+            frame,
+            lower=np.array([8.0, 18.0]),
+            upper=np.array([20.0, 30.0]),
+            target_coverage=0.9,
+        )
+
+        np.testing.assert_array_equal(result["predict_q10"], [10.0, 20.0])
+        np.testing.assert_array_equal(result["predict_q90"], [18.0, 28.0])
+        np.testing.assert_array_equal(result["predict_pi90_lower"], [8.0, 18.0])
+        np.testing.assert_array_equal(result["predict_pi90_upper"], [20.0, 30.0])
 
     def test_E_alpha_uses_plus_one_quantile(self):
         # scores = [0..99]，alpha=0.1，n=100

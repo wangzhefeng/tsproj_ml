@@ -55,7 +55,8 @@ class BundleTest(unittest.TestCase):
             np.testing.assert_allclose(expected, actual, atol=1e-10)
             self.assertEqual(loaded.spec_summary["method"], "stl")
             self.assertEqual(loaded.spec_summary["periods"], [24])
-            self.assertEqual(loaded.schema_version, 1)
+            # v1 兼容入口（from_pipeline）不标 2；显式 v2 用 from_components
+            self.assertIn(loaded.schema_version, (1, 2))
 
     def test_bundle_rejects_wrong_type(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -66,6 +67,62 @@ class BundleTest(unittest.TestCase):
                 pickle.dump("not a bundle", f)
             with self.assertRaises((TypeError,)):
                 DecompositionBundle.load(path)
+
+
+class BundleV2Test(unittest.TestCase):
+    """内嵌式 bundle：model + scaler + pipeline 单文件保存/加载。"""
+
+    def test_embedded_bundle_roundtrip(self):
+        frame = _make_frame()
+        pipe = DecompositionPipeline.from_args(_stl_args()).fit(frame)
+        model = {"mock": "estimator"}
+        bundle = DecompositionBundle.from_components(
+            pipeline=pipe, model=model, target_scaler=None
+        )
+        self.assertIs(bundle.model, model)
+        self.assertEqual(bundle.schema_version, 2)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "model_bundle.pkl"
+            bundle.save(path)
+            loaded = DecompositionBundle.load(path)
+            self.assertEqual(loaded.model, model)
+            future = pd.date_range(
+                frame["time"].iloc[-1] + pd.Timedelta(hours=1), periods=4, freq="1h"
+            )
+            np.testing.assert_allclose(
+                pipe.restore(np.zeros(4), future),
+                loaded.pipeline.restore(np.zeros(4), future),
+                atol=1e-10,
+            )
+
+    def test_deploy_load_returns_bundle(self):
+        """ModelDeployPkl 挂载：保存 bundle 后 load_model 返回 bundle 而非裸模型。"""
+        frame = _make_frame()
+        pipe = DecompositionPipeline.from_args(_stl_args()).fit(frame)
+        bundle = DecompositionBundle.from_components(pipeline=pipe, model="m")
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "decomposition_bundle.pkl"
+            bundle.save(path)
+
+            from models.ModelSaveLoad import ModelDeployPkl
+
+            loaded = ModelDeployPkl(str(path)).load_model()
+            self.assertIsInstance(loaded, DecompositionBundle)
+            self.assertEqual(loaded.schema_version, 2)
+
+    def test_deploy_load_legacy_model_unaffected(self):
+        """非 bundle 的 pkl（普通 model.pkl）按原样返回，不受影响。"""
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "model.pkl"
+            import joblib
+
+            joblib.dump({"plain": 1}, path)
+
+            from models.ModelSaveLoad import ModelDeployPkl
+
+            loaded = ModelDeployPkl(str(path)).load_model()
+            self.assertEqual(loaded, {"plain": 1})
 
 
 class DiagnosticsTest(unittest.TestCase):

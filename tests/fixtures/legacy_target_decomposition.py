@@ -1,4 +1,16 @@
-# -*- coding: utf-8 -*-
+# tests/fixtures/legacy_target_decomposition.py
+# ---------------------------------------------------------------
+# 旧 features/TargetDecomposition.py 的冻结快照（来源：git show
+# e4502fd:features/TargetDecomposition.py，即 Phase 0 修复完成后、
+# Phase 2 迁移删除前的最后一个版本）。
+#
+# 用途：等价性测试的数值基准。任何未来对 decomposition/ 包的重构
+# 都必须保持与该实现的行为等价（除 Phase 0 已修复的两处缺陷语义：
+# linear+damped 斜率取自观测 y 的 lookback 段——本快照已是该语义；
+# MSTL robust 透传——本快照已含）。
+#
+# 请勿修改本文件；修改等于重新设定基准。
+# ---------------------------------------------------------------
 
 from __future__ import annotations
 
@@ -12,7 +24,6 @@ _SUPPORTED_METHODS = {"none", "linear", "stl", "mstl"}
 
 
 def resolve_decomposition_method(args) -> str:
-    """解析目标分解方法。"""
     method = str(getattr(args, "decomposition_method", "none") or "none").lower()
     if method not in _SUPPORTED_METHODS:
         raise ValueError(
@@ -23,8 +34,6 @@ def resolve_decomposition_method(args) -> str:
 
 
 class TargetDecomposer:
-    """在可见训练窗口内分解目标，并将分量预测还原到原始电平。"""
-
     def __init__(self, args=None, log_prefix: str = "[TargetDecomposer]", verbose: bool = False):
         self.args = args
         self.log_prefix = log_prefix
@@ -96,7 +105,6 @@ class TargetDecomposer:
         x = self._t_idx(times)
         self.trend_coefficients = np.polyfit(x, trend, degree)
         self.last_trend = float(trend[-1])
-        # 近期斜率在平滑后的趋势分量上按 lookback 估计
         lookback = self._resolve_trend_lookback(len(trend))
         recent_x = x[-lookback:]
         recent_trend = trend[-lookback:]
@@ -145,9 +153,6 @@ class TargetDecomposer:
             trend = np.polyval(self.trend_coefficients, x)
             seasonal = np.zeros((len(y), 0), dtype=float)
             periods: list[int] = []
-            # 与 STL/MSTL 分支共用趋势外推拟合；damped 近期斜率直接从观测 y 的
-            # lookback 段估计——linear 的趋势分量本身是全局多项式，对它重拟合
-            # 任何窗口斜率都相同，lookback 不会生效。
             self._fit_trend_forecast(trend, times)
             lookback = self._resolve_trend_lookback(len(y))
             recent_x = x[-lookback:]

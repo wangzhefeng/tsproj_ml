@@ -249,6 +249,10 @@ class PreprocessingConfig:
     decomposition_damping: float = 0.98
     decomposition_trend_lookback: int = 28
     decomposition_seasonal_cycles: int = 4
+    # 新版分解配置组：overrides.decomposition 整体保留为原始 mapping（不展平成
+    # 全局字段），由 decomposition/spec.resolve_decomposition_spec() 归一化为
+    # DecompositionSpec。空 dict = 未使用新写法，回退旧 decomposition_* 字段。
+    decomposition: Dict[str, Any] = field(default_factory=dict)
     use_grouped_scaling: bool = False  # 是否对特征使用分组归一化/标准化
     encode_categorical_features: bool = False  # 是否对类别特征进行编码
 

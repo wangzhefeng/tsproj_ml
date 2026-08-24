@@ -48,13 +48,15 @@ from features.FeatureScalering import (
     resolve_target_scaler_type,
 )
 from features.FeatureEngineering import FeatureEngineer
-from features.TargetDecomposition import TargetDecomposer, resolve_decomposition_method
+from decomposition import DecompositionPipeline
+from decomposition.spec import resolve_decomposition_spec
 from features.TargetNormalization import CalendarDayTargetNormalizer
 from models.ModelTraining import Trainer
 from models.ModelTesting import Tester
 from models.ModelForecasting import Forecaster
 from data_provider.outlier_handling import empty_train_outlier_report
 from utils.frequency import resolve_freq_step_minutes, resolve_samples_per_day, is_monthly_freq
+from utils.multistep_contract import validate_direct_feature_alignment
 from utils.quantile import monotonize_quantile_columns
 from utils.weather_contract import validate_weather_information_contract
 
@@ -220,10 +222,7 @@ class Model:
             raise ValueError(
                 f"{self.log_prefix} target_calendar_normalization=per_calendar_day is only valid for monthly freq."
             )
-        if bool(getattr(self.args, "align_direct_features_to_target", False)) and self.horizon != 1:
-            raise ValueError(
-                f"{self.log_prefix} align_direct_features_to_target currently requires predict_steps=1."
-            )
+        validate_direct_feature_alignment(self.args, self.horizon)
         validate_weather_information_contract(self.args)
         if self.n_windows <= 0:
             logger.warning(
@@ -233,15 +232,15 @@ class Model:
         if block_size < 0:
             raise ValueError(f"{self.log_prefix} block_size ({block_size}) must be >= 0.")
         # 目标分解与 target scaling 互斥。
-        decomposition_method = resolve_decomposition_method(self.args)
+        spec = resolve_decomposition_spec(self.args)
+        decomposition_method = spec.method
         if decomposition_method != "none" and resolve_scale_target_enabled(self.args):
             raise ValueError(
                 f"{self.log_prefix} target decomposition and scale_target are mutually exclusive. "
                 f"Keep scale_target=false when decomposition_method={decomposition_method}."
             )
-        decomposition_periods = [
-            int(period) for period in (getattr(self.args, "decomposition_periods", []) or [])
-        ]
+        # 周期从 spec 读取（新写法 overrides.decomposition 的 periods 不落在 legacy 属性上）
+        decomposition_periods = list(spec.preset.periods) if spec.preset else []
         if decomposition_method == "stl" and len(decomposition_periods) != 1:
             raise ValueError(f"{self.log_prefix} decomposition_method=stl requires exactly one period.")
         if decomposition_method == "mstl" and len(decomposition_periods) < 2:
@@ -838,10 +837,8 @@ class Model:
             time_col="time",
             target_col="y",
         )
-        self.target_decomposer = TargetDecomposer(
+        self.target_decomposer = DecompositionPipeline.from_args(
             self.args,
-            log_prefix=self.log_prefix,
-            verbose=bool(getattr(self.args, "enable_step_logging", False)),
         )
         if self.target_decomposer.enabled:
             df_history = self.target_decomposer.fit_transform(

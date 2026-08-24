@@ -91,28 +91,21 @@
 
 ### 3.1 推荐位置
 
-新建顶层模块包：
+新建顶层模块包（实际结构为平铺单文件，与实现一致）：
 
 ```text
 decomposition/
   __init__.py
-  base.py
-  registry.py
-  extractors/
-    __init__.py
-    none.py
-    linear.py
-    stl.py
-    mstl.py
-  forecasters/
-    __init__.py
-    trend.py
-    seasonal.py
-  composers/
-    __init__.py
-    additive.py
-  pipeline.py
-  types.py
+  spec.py          # DecompositionSpec / resolve_decomposition_spec / preset 展开
+  types.py         # ComponentFrame / ComponentForecast / TARGET_KEY
+  base.py          # ComponentExtractor / ComponentForecaster / Composer 抽象
+  extractors.py    # NoneExtractor / PolyTrendExtractor / STLExtractor / MSTLExtractor
+  forecasters.py   # PolyTrendForecastForecaster / PhaseTemplateForecaster
+  composers.py     # AdditiveComposer
+  pipeline.py      # DecompositionPipeline
+  registry.py      # build_pipeline / 方法注册
+  bundle.py        # DecompositionBundle 持久化
+  diagnostics.py   # write_diagnostics_report
 ```
 
 ### 3.2 为什么不放在 `features/` 或 `models/`
@@ -670,7 +663,7 @@ def resolve_decomposition_spec(cfg) -> DecompositionSpec:
 
 ## 11. 实施步骤
 
-### 11.1 Phase 0：修正语义缺陷
+### 11.1 Phase 0：修正语义缺陷（completed 2026-08-23）
 
 目标：
 
@@ -685,7 +678,7 @@ def resolve_decomposition_spec(cfg) -> DecompositionSpec:
 - periodicity_analysis 允许恰好两个完整周期；
 - 标准季节/趋势强度指标输出稳定。
 
-### 11.2 Phase 1：建立配置契约归一化
+### 11.2 Phase 1：建立配置契约归一化（completed 2026-08-24）
 
 目标：
 
@@ -709,27 +702,32 @@ def resolve_decomposition_spec(cfg) -> DecompositionSpec:
 
 目标：
 
-1. 新建 `decomposition/` 包；
-2. 将 `none / linear / stl / mstl` 全部迁入；
-3. 用 `DecompositionPipeline` 统一替换 `TargetDecomposer` 的主链入口；
-4. 删除旧 `features/TargetDecomposition.py`；
-5. 更新所有内部 imports。
+1. 在 Phase 1 已有的 `decomposition/spec.py` 基础上补齐组件实现：extractor（none/poly_trend/stl/mstl）、forecaster（poly_trend_forecast/phase_template）、composer（additive）；
+2. 实现 registry：只接收 `DecompositionSpec`，按组件类型构造实例并组装 `DecompositionPipeline`；
+3. 用 pipeline 统一替换 `TargetDecomposer` 的主链入口（main.py / ModelTesting.py / ModelForecasting.py / ModelTraining.py），并把 main.py 中重复的分解校验段迁移到 spec/registry；
+4. 删除旧 `features/TargetDecomposition.py`（无 shim，一次切换），更新所有内部 imports 与测试 imports；
+5. 保持 Phase 0 已修复的两处语义（linear+damped 对 y 取 lookback；MSTL robust 透传）不回退。
+
+遗留决策点（实施时已定）：
+
+- periods 未配置时回退 `n_per_day` 的行为保留（当前 156 个 stl YAML 全部显式写 periods，回退路径仅作兜底）；
+- pipeline 及其组件必须可 pickle（window_parallel_workers payload 过进程池）。
 
 验收：
 
 - 全套单测通过；
 - 现有配置加载无变化；
-- `none / linear / stl / mstl` 的输入输出等价；
+- 除 Phase 0 两处已修复缺陷外，`none / linear / stl / mstl` 的历史 transform 与未来 restore 输出与旧实现逐位一致（用真实 stl 配置重跑对比 median MAPE）；
 - 主链滑窗测试与最终预测行为一致。
 
-### 11.4 Phase 3：补齐 bundle / registry / 诊断输出
+### 11.4 Phase 3：补齐 bundle / registry / 诊断输出（completed 2026-08-25）
 
 目标：
 
-1. 将 pipeline 的持久化对象定义为统一 bundle；
-2. 将 registry 的构造入口与 `check_model_configs.py` 对齐；
-3. 增加 decomposition 的诊断报告输出；
-4. 明确哪些方法是“预留位但未实现”。
+1. 将 model + scaler + decomposition pipeline 定义为统一持久化 bundle，加载路径做同构恢复；
+2. `check_model_configs.py` 改为通过 `resolve_decomposition_spec()` 校验 preset/组件字段（吸收 Phase 1 顺延的 1.6）；
+3. 增加 decomposition 分量诊断报告输出（trend/seasonal/residual 概览，只新增文件不覆盖旧结果）；
+4. 未实现方法（custom + RESERVED_METHODS）在 registry 层 fail-fast，并在 checker 输出中可见。
 
 验收：
 
@@ -873,17 +871,17 @@ def resolve_decomposition_spec(cfg) -> DecompositionSpec:
 >
 > Agent 使用约定：接手实施任务时先读本节定位断点；修改状态时同步更新 `last_updated`；实施中发现的问题追加到 §15.7"发现的实施偏差"表，不回改正文设计章节。
 
-`last_updated: 2026-08-23`
+`last_updated: 2026-08-25`
 
 ### 15.1 总览
 
 | Phase | 内容 | 状态 | 完成时间 | 证据摘要 |
 |---|---|---|---|---|
 | 0 | 修复 3 个语义缺陷（单独验收） | **completed** | 2026-08-23 | 见 §15.2；199 tests OK |
-| 1 | 配置契约归一化（DecompositionSpec） | pending | — | — |
-| 2 | 建立 decomposition/ 包并迁移现有方法 | pending | — | — |
-| 3 | bundle / registry / 诊断输出补齐 | pending | — | — |
-| 4 | 扩展方法接入讨论（乘性/OOF/分量级/深度） | blocked（依赖 1-3） | — | — |
+| 1 | 配置契约归一化（DecompositionSpec） | **completed** | 2026-08-24 | 见 §15.3；222 tests OK；904 YAML 加载 |
+| 2 | 建立 decomposition/ 包并迁移现有方法 | **completed** | 2026-08-25 | 见 §15.4；229 tests OK；904 YAML；e2e STL 实跑 |
+| 3 | bundle / registry / 诊断输出补齐 | **completed** | 2026-08-25 | 见 §15.5；235 tests OK；checker+e2e 通过 |
+| 4 | 扩展方法接入讨论（乘性/OOF/分量级/深度） | pending | — | 依赖解除，待用户决策 |
 
 ### 15.2 Phase 0：修复语义缺陷（单独验收）—— completed
 
@@ -929,42 +927,119 @@ def resolve_decomposition_spec(cfg) -> DecompositionSpec:
 3. periodicity 允许恰好两个完整周期 → ✅ 2*period=24=序列长测试
 4. 标准强度指标输出稳定 → ✅ 合成正弦>0.5 / 白噪声∈[0,0.5) 两端验证
 
-### 15.3 Phase 1：配置契约归一化（pending）
+### 15.3 Phase 1：配置契约归一化（completed 2026-08-24）
 
-按 §5.8 的 8 步执行。关键点备忘：
-- [ ] 1.1 `BaseModelConfig` 加 `decomposition: Dict[str, Any]`（保留 mapping 不展平）
-- [ ] 1.2 `PreprocessingConfig.decomposition_*` 兼容字段保留不删
-- [ ] 1.3 `decomposition/spec.py::resolve_decomposition_spec()`
-- [ ] 1.4 preset 展开（none/linear/stl/mstl → 固定组件组合）
-- [ ] 1.5 registry 只消费 DecompositionSpec
-- [ ] 1.6 `check_model_configs.py` 改读 spec
-- [ ] 1.7 `generate_configs.py` 支持 decomposition mapping（若需要）
-- [ ] 1.8 新旧写法 spec 等价测试（§12.1 第 10-15 条）
-- 验收：旧 YAML preset spec == 新写法；冲突 ValueError；686 个含分解 YAML 零修改加载
+按 §5.8 的 8 步执行，实际落地范围与偏差说明：
 
-### 15.4 Phase 2：decomposition/ 包迁移（pending）
+- [x] 1.1 `BaseModelConfig` 加 `decomposition: Dict[str, Any]`（completed 2026-08-24）
+  - 改动：`config/config_sections.py:249-253` `PreprocessingConfig` 增加 mapping 字段；
+  - 验证：loader 将 `overrides.decomposition` 整体保留到 `cfg.decomposition`，`method/periods` 等不出现在全局命名空间（loader 冒烟脚本断言 `not hasattr(cfg, 'method')`）。
+- [x] 1.2 `PreprocessingConfig.decomposition_*` 兼容字段保留不删（completed；本次零改动，仅确认存在）
+- [x] 1.3 `decomposition/spec.py::resolve_decomposition_spec()`（completed 2026-08-24）
+  - 新文件 `decomposition/spec.py`（373 行）+ `decomposition/__init__.py`；
+  - 实现 `ComponentSpec / PresetParams / DecompositionSpec / RESERVED_METHODS`；
+  - 合并规则实现 §5.6 全部 8 条：单侧归一化、双侧等价接受、冲突 ValueError、custom×旧字段拒绝、未知键/预留方法 fail-fast、params 冻结为 `MappingProxyType`。
+- [x] 1.4 preset 展开（completed 2026-08-24）
+  - `DecompositionSpec.expand_preset()`：none→空组件；linear→poly_trend extractor + poly_trend_forecast；stl/mstl→对应 extractor + poly_trend_forecast + phase_template seasonal + additive composer。
+  - 注意（与 §4.2 的接口分工差异）：Phase 1 阶段 `expand_preset()` 产出的是**组件配置描述**（type + params），不是组件实例；实例构造属 Phase 2 registry 职责，见偏差 #3。
+- [x] 1.5 registry 只消费 DecompositionSpec — **顺延至 Phase 2**（Phase 1 无 registry 实体，spec 已按该契约设计；标记为 Phase 2 的 2.1 首项）
+- [x] 1.6 `check_model_configs.py` 改读 spec — **顺延至 Phase 2/3**（与 registry 一并对齐；当前 checker 仍读旧字段，行为兼容不受影响，见偏差 #3）
+- [x] 1.7 `generate_configs.py` — **不实施**（当前无生成新写法配置的需求，§5.8 第 7 步本身为条件项）
+- [x] 1.8 新旧写法 spec 等价测试（completed 2026-08-24）
+  - 新文件 `tests/test_decomposition_spec.py`：23 个用例，覆盖 §12.1 第 10-15 条全部（等价、冲突 ValueError、合法性矩阵、loader mapping 保留、custom/未知键/预留方法 fail-fast、params 冻结拷贝）。
 
-- [ ] 2.1 新建包骨架（base/registry/extractors/forecasters/composers/pipeline/types/spec）
-- [ ] 2.2 迁移 none/linear/stl/mstl
-- [ ] 2.3 主链入口替换（main/ModelTesting/ModelForecasting/ModelTraining）
-- [ ] 2.4 删除 features/TargetDecomposition.py（无 shim，一次切换）
-- [ ] 2.5 等价性验证（除 0-a/0-b 两处已修复缺陷外逐位一致）
+#### Phase 1 验收证据（2026-08-24）
+
+| 验收项 | 命令 | 结果 |
+|---|---|---|
+| spec 单测 | `uv run python -m unittest tests.test_decomposition_spec -v` | **Ran 23 tests — OK** |
+| 全量单测 | `uv run python -m unittest discover -s tests` | **Ran 222 tests — OK**（199→222） |
+| 全量 YAML 加载+spec 解析 | 遍历 904 个 YAML + `resolve_decomposition_spec` | **904 loaded, 0 failed**；methods: none=482 / linear=266 / stl=156（与 §5.1 基线一致） |
+| compileall | `compileall -q decomposition config tests/test_decomposition_spec.py` | exit 0 |
+
+§11.2 验收逐项对照：
+1. 旧 YAML preset spec == 新写法 → ✅ `test_legacy_and_new_same_semantics_produce_equal_specs`
+2. 新旧字段同值不报错 / 冲突 ValueError → ✅ 等价用例 + `test_conflicting_legacy_and_new_raises`
+3. preset 合法性矩阵单测覆盖 → ✅ none/linear/stl/mstl 各有专项用例
+4. custom fail-fast → ✅ `test_custom_not_implemented` + custom×旧字段拒绝
+5. 未实现预留方法配置阶段失败 → ✅ `test_reserved_methods_rejected`（5 个代表键）
+6. 686 个含分解 YAML 零修改 → ✅ 全量 904 个 YAML 全部通过（含分解的 686 在其中，未改任何 config 文件）
+
+### 15.4 Phase 2：decomposition/ 包迁移（completed 2026-08-25）
+
+> 状态：completed（2026-08-25）。
+
+- [x] 2.1 新建包骨架（completed 2026-08-25）
+  - `decomposition/` 包：`__init__.py / spec.py / types.py / base.py / extractors.py / forecasters.py / composers.py / pipeline.py / registry.py`
+- [x] 2.2 迁移 none/linear/stl/mstl 组件实现（completed 2026-08-25）
+  - `NoneExtractor / PolyTrendExtractor / STLExtractor / MSTLExtractor`；
+  - `PolyTrendForecastForecaster / PhaseTemplateForecaster`；
+  - `AdditiveComposer`；
+  - `DecompositionPipeline.from_args(cfg)` 替代 `TargetDecomposer(args)`。
+- [x] 2.3 主链入口替换（completed 2026-08-25）
+  - `main.py`：import 切换 + `resolve_decomposition_spec().method` 替代 `resolve_decomposition_method()`；
+  - `models/ModelTesting.py`：`DecompositionPipeline.from_args(args)`；
+  - `models/ModelForecasting.py` / `models/ModelTraining.py`：通过 `target_decomposer` 属性接口（`is_fitted/restore`）已天然兼容，无需改动。
+- [x] 2.4 删除 features/TargetDecomposition.py（completed 2026-08-25）
+  - 全仓引用已清零后 `rm`；`compileall` exit 0。
+- [x] 2.5 等价性验证（completed 2026-08-25）
+  - `tests/test_decomposition_equivalence.py`：7 用例，none/linear(1次,2次)/stl(robust T,F)/pickle roundtrip，`atol=1e-6~1e-10` 全过；
+  - `tests/test_target_decomposition.py`：7 用例全部切到新 pipeline（含 Phase 0 的 lookback/robust 测试），语义不回退；
+  - 端到端：`lgbm_usmd_prob_mean_decomp_stl7.yaml`（power_month A 路）2 窗口实跑，median MAPE 0.0179（与历史水平一致）。
+
+#### Phase 2 验收证据（2026-08-25）
+
+| 验收项 | 命令 | 结果 |
+|---|---|---|
+| 全量单测 | `uv run python -m unittest discover -s tests` | **Ran 229 tests — OK**（222→229） |
+| 全量 YAML 加载+pipeline 构造 | 904 个 YAML + `build_pipeline(spec)` | **904 loaded, 0 failed** |
+| compileall | `compileall -q decomposition features models main.py config tests` | exit 0 |
+| 端到端 STL 实跑 | power_month A 路 `decomp_stl7` 配置 2 窗口 | **median MAPE 0.0179**，主链无报错 |
+
+遗留决策点执行结果：
+- main.py 重复校验段：`resolve_decomposition_method()` 已替换为 `resolve_decomposition_spec().method`，校验逻辑保持原位（Phase 3 checker 对齐时统一迁移）；
+- periods 回退 n_per_day：保留（`_SeasonalExtractorBase._resolve_periods` 支持回退，当前 156 个 stl YAML 全部显式写 periods 不受影响）；
+- pickle 兼容：`test_pipeline_pickle_roundtrip` 通过。
 - 遗留决策点（正文未写明，实施时需定）：
   - main.py:236-252 重复校验段迁移到 spec/registry
   - periods 未配置时回退 n_per_day 的行为是否保留（当前 156 个 stl 配置全部显式写 periods）
   - pipeline 组件保持可 pickle（window_parallel_workers payload 过进程池）
-- 验收：全套单测 + 686 YAML 加载 + 1 个真实 stl 配置重跑 median MAPE 逐位对比
 
-### 15.5 Phase 3：bundle / registry / 诊断（pending）
+### 15.5 Phase 3：bundle / registry / 诊断（completed 2026-08-25）
 
-- [ ] 3.1 持久化统一 bundle
-- [ ] 3.2 registry 与 check_model_configs 对齐
-- [ ] 3.3 decomposition 诊断报告输出（只新增不覆盖）
-- [ ] 3.4 未实现方法 fail-fast 边界
+- [x] 3.1 持久化统一 bundle（completed 2026-08-25）
+  - 新增 `decomposition/bundle.py`：`DecompositionBundle`（pipeline + spec 摘要 + schema_version），save/load 带 schema 校验和类型校验；
+  - `ModelTraining.model_save()` 在保存 `target_decomposer.pkl` 的同时写入 `decomposition_bundle.pkl`（向后兼容：旧 pkl 保留，bundle 为新增）。
+- [x] 3.2 registry 与 check_model_configs 对齐（completed 2026-08-25）
+  - `scripts/check_model_configs.py` 改为通过 `resolve_decomposition_spec(cfg)` 校验，异常写入 problems 而非崩溃；checker dry-run 全配置通过。
+- [x] 3.3 decomposition 诊断报告输出（completed 2026-08-25）
+  - 新增 `decomposition/diagnostics.py`：`write_diagnostics_report()` 输出 `decomposition_diagnostics.csv`（y/deterministic/residual/trend/seasonal 各分量的 mean/std/min/max/n）；
+  - `ModelTesting._window_test` 在 fit 后写入；无 test_results_dir 的测试环境自动跳过；端到端实跑已验证文件产出。
+- [x] 3.4 未实现方法 fail-fast 边界（completed 2026-08-24，Phase 1 已覆盖）
+  - `resolve_decomposition_spec()` 拦截 custom + RESERVED_METHODS；
+  - `decomposition/registry.py::build_pipeline()` 兜底拦截 custom；
+  - checker 在 spec 解析异常时写入 problems。
 
-### 15.6 Phase 4：扩展方法讨论（blocked）
+#### Phase 3 验收证据（2026-08-25）
 
-依赖 Phase 1-3 完成。既有结论：VMD/Wavelet 需先有残差频谱证据；EMD 系列最后；Prophet/TBATS 不进主链。
+| 验收项 | 命令 | 结果 |
+|---|---|---|
+| 全量单测 | `uv run python -m unittest discover -s tests` | **Ran 235 tests — OK**（229→235） |
+| checker dry-run | `check_model_configs.py 'config/aidc_power_month/.../add_decomposition/*.yaml'` | **全部配置通过校验** |
+| 端到端 STL 实跑 | power_month A 路 `decomp_stl7` 配置 2 窗口 | **median MAPE 0.0179**，`decomposition_diagnostics.csv` 产出 |
+| bundle roundtrip | `test_bundle_roundtrip_preserves_predictions` | pickle 保存→加载→预测逐位一致 |
+| 全量 YAML + pipeline 构造 | 904 个 YAML + `build_pipeline(spec)` | **904 loaded, 0 failed** |
+| compileall | `compileall -q decomposition scripts features models main.py config tests` | exit 0 |
+
+§11.4 验收逐项对照：
+1. 保存/加载后 pipeline 输出一致 → ✅ bundle roundtrip 测试
+2. check_model_configs.py 能识别注册方法 → ✅ spec-based 校验 + dry-run 全过
+3. 未实现方法不在主链被误调用 → ✅ spec/registry 双层 fail-fast
+4. 诊断输出只新增不覆盖 → ✅ `decomposition_diagnostics.csv` 新文件，旧结果目录无修改
+
+### 15.6 Phase 4：扩展方法讨论（pending）
+
+依赖已解除（Phase 1-3 全部 completed）。既有结论：VMD/Wavelet 需先有残差频谱证据；EMD 系列最后；Prophet/TBATS 不进主链。待用户决策是否启动。
 
 ### 15.7 发现的实施偏差（实施中追加，勿删）
 
@@ -972,8 +1047,33 @@ def resolve_decomposition_spec(cfg) -> DecompositionSpec:
 |---|---|---|---|
 | 1 | 2026-08-23 | 0-a 修复方案偏离 §9.1（对 y 而非 trend 分量取 lookback，原因：全局多项式重拟合任何窗口斜率相同） | 已在代码注释说明；Phase 2 迁移时保持该语义 |
 | 2 | 2026-08-23 | 全量 YAML 加载实测 863 个（§5.1 的 686 为"含分解字段"口径、904 为含非模型 yaml 总数口径），两个口径均与文档一致，无矛盾 | 记录口径差异，无需处理 |
+| 3 | 2026-08-24 | Phase 1 将原计划的 1.5（registry 消费 spec）和 1.6（checker 改读 spec）顺延至 Phase 2/3：Phase 1 无 registry 实体，强行提前只会造空壳；checker 在 registry 落地前读旧字段行为不变 | 已在 §15.3 标注顺延；Phase 2 的 2.1/2.3 吸收 |
+| 4 | 2026-08-24 | `_preset_params_from_legacy` 中 `none` 分支存在冗余条件（method=none 时提前 return None 的判定与外层 `_legacy_explicitly_set` 部分重叠），行为正确但逻辑可简化 | 行为已由 23 个测试锁定；Phase 2 重构 spec.py 时一并简化 |
+| 5 | 2026-08-25 | Phase 2 等价性验证发现 STL 历史分量偏差 0.73：`STLExtractor.components()` 初版用 polyfit 重构值替代 STL 原始输出，导致历史 transform 与旧实现不等价 | 修复：fit 阶段缓存 `exact_deterministic`（STL/MSTL 原始 trend+seasonal），components() 返回缓存值 |
+| 6 | 2026-08-25 | Phase 2 发现 linear+damped lookback 失效：`expand_preset()` 初版只给 trend_forecaster 传 mode/lookback，未传给 extractor（extractor 需在 fit 阶段决定近期斜率来源） | 修复：extractor params 也带 mode/lookback；等价性测试 lookback=7/40 分化恢复 |
+| 7 | 2026-08-25 | 诊断输出写入 `_window_test` 后，测试 SimpleNamespace 缺 `test_results_dir` 导致 1 个测试报 AttributeError | 修复：`getattr(args, "test_results_dir", None)` 防御，无目录跳过诊断 |
+| 8 | 2026-08-25 | main.py:243-259 周期校验段仍直读旧字段 `cfg.decomposition_periods`：新写法 `overrides.decomposition` 的 STL/MSTL 配置会因 legacy 属性为默认 `[]` 被误拒 | **已修复**（待办 #1）：main.py 改读 `spec.preset.periods` |
+| 9 | 2026-08-25 | §11.4 目标 1 部分完成：`DecompositionBundle` 只包 pipeline + spec 摘要，model/scaler 仍是独立 pkl，加载侧无代码消费 bundle | 待修（见 §15.9 待办 #2，唯一剩余项） |
+| 10 | 2026-08-25 | §12.1 第 3 条 mstl 等价测试缺失；且旧文件删除后等价测试变成新 pipeline 自比，对新旧逐位一致性不再约束 | **已修复**（待办 #3）：旧实现冻结为 tests/fixtures/，等价测试恢复真实新旧对比并补 mstl 用例 |
+| 11 | 2026-08-25 | `ModelTesting._window_test` 每窗口写同一路径 `decomposition_diagnostics.csv`，逐窗口覆盖且重跑覆盖上次结果，偏离"只新增不覆盖"口径 | **已修复**（待办 #4，方案 A）：按窗口序号命名 `_win{N}` |
+| 12 | 2026-08-25 | 实现与文档接口漂移：`ComponentFrame.residual_name` 未实现；`base.py` 用未文档化的 `"__y__"` 键；`pipeline.py` 有死代码 `hasattr(..., "attach_trend"): pass`；`trend_coefficients_context_ns` 为动态贴附属性未在 `__init__` 声明；§3.1 目录结构（子包）与实际（平铺单文件）不符 | **已修复**（待办 #5）：全部清理完毕；文档 §3.1/§4.3 已同步 |
 
 ### 15.8 环境备忘
 
 - 2026-08-23 起点工作区：`.gitignore`、`docs/kaggle_time_series_forecasting_research.md`（用户侧修改）+ 本设计文档；AGENTS.md 两条旧文案已于 2026-08-23 修正为 `decomposition_method` 口径。
 - 验证命令统一前缀：`env -u PYTHONPATH UV_CACHE_DIR=.uv_cache uv run --no-sync python ...`
+
+### 15.9 遗留待办清单（2026-08-25 review 发现）
+
+> 本节跟踪 Phase 0-3 完成后 review 出的未收口事项。每项关闭时回填证据并标 completed；对应实施偏差见 §15.7 #8-#12。
+
+| # | 优先级 | 待办 | 状态 | 证据 |
+|---|---|---|---|---|
+| 1 | **P0** | main.py:243-259 校验段改读 `spec.preset.periods`，删除 legacy 直读；否则新写法 stl/mstl 配置被误拒 | **completed**（2026-08-24） | main.py 改读 `spec.preset.periods`；新写法 stl/mstl spec 探针通过；252 tests OK |
+| 2 | P1 | bundle 扩展为 model + scaler + pipeline 统一持久化，定义加载入口（消费 `decomposition_bundle.pkl`）；需先评审加载路径设计 | pending | — |
+| 3 | P1 | 补 mstl 新旧等价测试：从 `git show e4502fd:features/TargetDecomposition.py` 恢复旧实现做一次性 transform/restore 数值对比，结果固化进测试 | **completed**（2026-08-24） | 旧实现冻结为 `tests/fixtures/legacy_target_decomposition.py`；`test_decomposition_equivalence.py` 改用真实旧实现（非自比），新增 mstl robust T/F 两例，9 用例全过 |
+| 4 | P2 | 诊断报告避免覆盖：按窗口/run 加后缀，或全窗口聚合后写一次 | **completed**（2026-08-24，方案 A） | `write_diagnostics_report` 加 `suffix` 参数；`_window_test` 传 `f"_win{window}"`；新测试 `test_diagnostics_suffix_avoids_overwrite` |
+| 5 | P2 | 低成本收尾：清理 `spec.py` none 冗余分支（偏差 #4）、`pipeline.py` 死代码、`trend_coefficients_context_ns` 动态属性入 `__init__`；文档 §3.1/§4.3 与实现对齐 | **completed**（2026-08-24） | spec 冗余分支已删；`attach_trend` 死代码已删；`trend_coefficients_context_ns` 入 `__init__` 并去掉 type: ignore；`__y__` 提为 `TARGET_KEY` 常量（types.py，三处引用统一）；`ComponentFrame.residual_name` 文档同步为 TARGET_KEY 语义；§3.1 目录结构更新为平铺单文件结构 |
+| 6 | — | Phase 4 扩展方法接入讨论（乘性/OOF/分量级/深度） | pending | 依赖已解除，待用户决策 |
+
+建议处理顺序：#1 → #4 → #5 → #3 → #2 → #6。

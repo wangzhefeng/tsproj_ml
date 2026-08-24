@@ -1308,6 +1308,11 @@ class Trainer:
                 save_file_path=self.args.checkpoints_dir.joinpath("target_decomposer.pkl")
             )
             target_decomposer_deploy.save_model(target_decomposer)
+            # 统一 bundle：pipeline + spec 摘要 + schema 版本
+            from decomposition.bundle import DecompositionBundle
+
+            bundle = DecompositionBundle.from_pipeline(target_decomposer)
+            bundle.save(self.args.checkpoints_dir.joinpath("decomposition_bundle.pkl"))
         logger.info(f"{self.log_prefix} Model saved to {self.args.checkpoints_dir.joinpath('model.pkl')}")
 
 

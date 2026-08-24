@@ -44,7 +44,7 @@
 
 # python libraries
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, cast
 
 import numpy as np
 import pandas as pd
@@ -54,6 +54,38 @@ from utils.log_util import logger
 
 # global variable
 LOGGING_LABEL = Path(__file__).name[:-3]
+
+
+def _resolve_series_group_col(args: Any, df: pd.DataFrame) -> Optional[str]:
+    """Global panel 模式返回序列分组列，并校验每行都有实体标识。"""
+    if not bool(getattr(args, "enable_global_training", False)):
+        return None
+    group_col = str(getattr(args, "series_id_feature", "series_id"))
+    if group_col not in df.columns:
+        raise ValueError(
+            f"enable_global_training=true requires series_id column '{group_col}'."
+        )
+    if bool(df[group_col].isna().any()):
+        raise ValueError(
+            f"Global panel series_id column '{group_col}' contains missing values."
+        )
+    return group_col
+
+
+def _series_shift(
+    df: pd.DataFrame,
+    column: str,
+    periods: int,
+    args: Any,
+) -> pd.Series:
+    """按实体边界 shift；非 global 模式保持原整表语义。"""
+    group_col = _resolve_series_group_col(args, df)
+    if group_col is None:
+        return cast(pd.Series, df[column].shift(periods))
+    return cast(
+        pd.Series,
+        df.groupby(group_col, sort=False, observed=True)[column].shift(periods),
+    )
 
 
 def _filter_supported_lags(lags: List[int], n_samples: int, log_prefix: str) -> List[int]:
@@ -445,7 +477,12 @@ class EndogenousFeatureEngineer:
             shift_target_features = []
             for h in range(start_step, start_step + horizon):
                 shifted_col_name = f"{target}_shift_{h}"
-                df_copy[shifted_col_name] = df_copy[target].shift(-h)
+                df_copy[shifted_col_name] = _series_shift(
+                    df_copy,
+                    target,
+                    -h,
+                    self.args,
+                ).to_numpy()
                 shift_target_features.append(shifted_col_name)
             # 特征收集
             if shift_target_features:
@@ -485,7 +522,12 @@ class EndogenousFeatureEngineer:
                 raise ValueError(
                     f"Lag {lag} with shift_offset {shift_offset} resolves to a future target value."
                 )
-            df_lags[col_name] = df_lags[target].shift(shift_steps)
+            df_lags[col_name] = _series_shift(
+                df_lags,
+                target,
+                shift_steps,
+                self.args,
+            ).to_numpy()
             lag_features.append(col_name)
         # 特征收集
         if lag_features:
@@ -517,7 +559,10 @@ class EndogenousFeatureEngineer:
                 continue
             
             # 创建滞后特征
-            lags_X = [df_copy[col].shift(i) for i in lags]
+            lags_X = [
+                _series_shift(df_copy, col, int(lag), self.args)
+                for lag in lags
+            ]
             lag_col_names_X = [f'{col}_lag_{i}' for i in lags]
             for i, name in enumerate(lag_col_names_X):
                 df_copy[name] = lags_X[i].values
@@ -565,7 +610,48 @@ class EndogenousAdvancedFeatureEngineer:
         # 生成的高级特征工程（内生变量特征）
         self.endogenous_advanced_features = []
     
-    def add_rolling_statistics(self, df: pd.DataFrame, columns: List[str], windows: List[int], stats: List[str] = ["mean", "std", "min", "max", "median", "skew", "kurt"]) -> pd.DataFrame:
+    @staticmethod
+    def _transform_by_group(
+        df: pd.DataFrame,
+        column: str,
+        group_col: Optional[str],
+        transform,
+    ) -> pd.Series:
+        """对单列执行时序变换；global panel 时在每个实体内独立计算。"""
+        if group_col is None:
+            return cast(pd.Series, transform(df[column]))
+        return cast(
+            pd.Series,
+            df.groupby(group_col, sort=False, observed=True)[column].transform(transform),
+        )
+
+    @staticmethod
+    def _time_since_event(series: pd.Series, event: str) -> pd.Series:
+        """在一条序列内计算距上一个峰/谷的步数，保持既有首行与事件行语义。"""
+        if event == "peak":
+            event_mask = (series.shift(1) < series) & (series > series.shift(-1))
+        elif event == "trough":
+            event_mask = (series.shift(1) > series) & (series < series.shift(-1))
+        else:
+            raise ValueError(f"Unsupported time-since event: {event}")
+        event_indices = np.where(event_mask.to_numpy())[0]
+        values = []
+        for position in range(len(series)):
+            if position == 0:
+                values.append(0)
+                continue
+            prior = event_indices[event_indices < position]
+            values.append(position - prior[-1] if len(prior) > 0 else position)
+        return pd.Series(values, index=series.index, dtype=float)
+
+    def add_rolling_statistics(
+        self,
+        df: pd.DataFrame,
+        columns: List[str],
+        windows: List[int],
+        stats: List[str] = ["mean", "std", "min", "max", "median", "skew", "kurt"],
+        group_col: Optional[str] = None,
+    ) -> pd.DataFrame:
         """
         添加滑动窗口统计特征
         
@@ -592,67 +678,32 @@ class EndogenousAdvancedFeatureEngineer:
                 continue
             
             for window in windows:
-                # 滑动均值
-                if 'mean' in stats:
-                    feature_name = f'{col}_rolling_mean_{window}'
-                    df_enhanced[feature_name] = df[col].rolling(
-                        window=window, min_periods=1, center=False
-                    ).mean()
-                    self.endogenous_advanced_features.append(feature_name)
-                
-                # 滑动标准差
-                if 'std' in stats:
-                    feature_name = f'{col}_rolling_std_{window}'
-                    df_enhanced[feature_name] = df[col].rolling(
-                        window=window, min_periods=1, center=False
-                    ).std()
-                    self.endogenous_advanced_features.append(feature_name)
-                
-                # 滑动最小值
-                if 'min' in stats:
-                    feature_name = f'{col}_rolling_min_{window}'
-                    df_enhanced[feature_name] = df[col].rolling(
-                        window=window, min_periods=1, center=False
-                    ).min()
-                    self.endogenous_advanced_features.append(feature_name)
-                
-                # 滑动最大值
-                if 'max' in stats:
-                    feature_name = f'{col}_rolling_max_{window}'
-                    df_enhanced[feature_name] = df[col].rolling(
-                        window=window, min_periods=1, center=False
-                    ).max()
-                    self.endogenous_advanced_features.append(feature_name)
-                
-                # 滑动中位数
-                if 'median' in stats:
-                    feature_name = f'{col}_rolling_median_{window}'
-                    df_enhanced[feature_name] = df[col].rolling(
-                        window=window, min_periods=1, center=False
-                    ).median()
-                    self.endogenous_advanced_features.append(feature_name)
-                
-                # 滑动偏度
-                if 'skew' in stats:
-                    feature_name = f'{col}_rolling_skew_{window}'
-                    df_enhanced[feature_name] = df[col].rolling(
-                        window=window, min_periods=1, center=False
-                    ).skew()
-                    self.endogenous_advanced_features.append(feature_name)
-                
-                # 滑动峰度
-                if 'kurt' in stats:
-                    feature_name = f'{col}_rolling_kurt_{window}'
-                    df_enhanced[feature_name] = df[col].rolling(
-                        window=window, min_periods=1, center=False
-                    ).kurt()
+                for stat in ("mean", "std", "min", "max", "median", "skew", "kurt"):
+                    if stat not in stats:
+                        continue
+                    feature_name = f"{col}_rolling_{stat}_{window}"
+                    df_enhanced[feature_name] = self._transform_by_group(
+                        df,
+                        col,
+                        group_col,
+                        lambda series, window=window, stat=stat: getattr(
+                            series.rolling(window=window, min_periods=1, center=False),
+                            stat,
+                        )(),
+                    ).to_numpy()
                     self.endogenous_advanced_features.append(feature_name)
         
         if self.verbose:
             logger.info(f"{self.log_prefix} 生成 {len(self.endogenous_advanced_features)} 个滑动窗口统计特征。")
         return df_enhanced
 
-    def add_expanding_statistics(self, df: pd.DataFrame, columns: List[str], stats: List[str] = ["mean", "std", "min", "max", "median", "skew", "kurt"]) -> pd.DataFrame:
+    def add_expanding_statistics(
+        self,
+        df: pd.DataFrame,
+        columns: List[str],
+        stats: List[str] = ["mean", "std", "min", "max", "median", "skew", "kurt"],
+        group_col: Optional[str] = None,
+    ) -> pd.DataFrame:
         """
         添加扩展窗口统计特征
         
@@ -674,46 +725,32 @@ class EndogenousAdvancedFeatureEngineer:
                 logger.warning(f"{self.log_prefix} 列 {col} 不存在，跳过。")
                 continue
             
-            if 'mean' in stats:
-                feature_name = f'{col}_expanding_mean'
-                df_enhanced[feature_name] = df[col].expanding(min_periods=1).mean()
-                self.endogenous_advanced_features.append(feature_name)
-            
-            if 'std' in stats:
-                feature_name = f'{col}_expanding_std'
-                df_enhanced[feature_name] = df[col].expanding(min_periods=1).std()
-                self.endogenous_advanced_features.append(feature_name)
-            
-            if 'min' in stats:
-                feature_name = f'{col}_expanding_min'
-                df_enhanced[feature_name] = df[col].expanding(min_periods=1).min()
-                self.endogenous_advanced_features.append(feature_name)
-            
-            if 'max' in stats:
-                feature_name = f'{col}_expanding_max'
-                df_enhanced[feature_name] = df[col].expanding(min_periods=1).max()
-                self.endogenous_advanced_features.append(feature_name)
-
-            if 'median' in stats:
-                feature_name = f'{col}_expanding_median'
-                df_enhanced[feature_name] = df[col].expanding(min_periods=1).median()
-                self.endogenous_advanced_features.append(feature_name)
-            
-            if 'skew' in stats:
-                feature_name = f'{col}_expanding_skew'
-                df_enhanced[feature_name] = df[col].expanding(min_periods=1).skew()
-                self.endogenous_advanced_features.append(feature_name)       
-            
-            if 'kurt' in stats:
-                feature_name = f'{col}_expanding_kurt'
-                df_enhanced[feature_name] = df[col].expanding(min_periods=1).kurt()
+            for stat in ("mean", "std", "min", "max", "median", "skew", "kurt"):
+                if stat not in stats:
+                    continue
+                feature_name = f"{col}_expanding_{stat}"
+                df_enhanced[feature_name] = self._transform_by_group(
+                    df,
+                    col,
+                    group_col,
+                    lambda series, stat=stat: getattr(
+                        series.expanding(min_periods=1),
+                        stat,
+                    )(),
+                ).to_numpy()
                 self.endogenous_advanced_features.append(feature_name)
             
         if self.verbose:
             logger.info(f"{self.log_prefix} 生成 {len(self.endogenous_advanced_features)} 个扩展窗口统计特征。")
         return df_enhanced
   
-    def add_diff_features(self, df: pd.DataFrame, columns: List[str], periods: List[int] = [1, 7, 24]) -> pd.DataFrame:
+    def add_diff_features(
+        self,
+        df: pd.DataFrame,
+        columns: List[str],
+        periods: List[int] = [1, 7, 24],
+        group_col: Optional[str] = None,
+    ) -> pd.DataFrame:
         """
         添加差分特征
         
@@ -740,14 +777,25 @@ class EndogenousAdvancedFeatureEngineer:
             
             for period in periods:
                 feature_name = f'{col}_diff_{period}'
-                df_enhanced[feature_name] = df[col].diff(period)
+                df_enhanced[feature_name] = self._transform_by_group(
+                    df,
+                    col,
+                    group_col,
+                    lambda series, period=period: series.diff(period),
+                ).to_numpy()
                 self.endogenous_advanced_features.append(feature_name)
         
         if self.verbose:
             logger.info(f"{self.log_prefix} 生成 {len(self.endogenous_advanced_features)} 个差分特征。")
         return df_enhanced
     
-    def add_pct_change_features(self, df: pd.DataFrame, columns: List[str], periods: List[int] = [1, 7]) -> pd.DataFrame:
+    def add_pct_change_features(
+        self,
+        df: pd.DataFrame,
+        columns: List[str],
+        periods: List[int] = [1, 7],
+        group_col: Optional[str] = None,
+    ) -> pd.DataFrame:
         """
         添加百分比变化特征
         
@@ -771,14 +819,28 @@ class EndogenousAdvancedFeatureEngineer:
             
             for period in periods:
                 feature_name = f'{col}_pct_change_{period}'
-                df_enhanced[feature_name] = df[col].pct_change(period)
+                df_enhanced[feature_name] = self._transform_by_group(
+                    df,
+                    col,
+                    group_col,
+                    lambda series, period=period: series.pct_change(
+                        periods=period,
+                        fill_method=None,
+                    ),
+                ).to_numpy()
                 self.endogenous_advanced_features.append(feature_name)
         
         if self.verbose:
             logger.info(f"{self.log_prefix} 生成 {len(self.endogenous_advanced_features)} 个百分比变化特征。")
         return df_enhanced
     
-    def add_time_since_features(self, df: pd.DataFrame, column: str, events: List[str] = ['peak', 'trough']) -> pd.DataFrame:
+    def add_time_since_features(
+        self,
+        df: pd.DataFrame,
+        column: str,
+        events: List[str] = ['peak', 'trough'],
+        group_col: Optional[str] = None,
+    ) -> pd.DataFrame:
         """
         添加距离关键事件的时间特征
         
@@ -799,46 +861,16 @@ class EndogenousAdvancedFeatureEngineer:
             logger.warning(f"{self.log_prefix} 列 {column} 不存在。")
             return df_enhanced
         
-        # 距离最近峰值的时间
-        if 'peak' in events:
-            # 找到最近的峰值位置
-            peaks = (df[column].shift(1) < df[column]) & (df[column] > df[column].shift(-1))
-            peak_indices = np.where(peaks.to_numpy())[0]
-            
-            # 计算距离最近峰值的时间
-            feature_name = f'{column}_time_since_peak'
-            feature_values = []
-            for i in range(len(df)):
-                if i == 0:
-                    feature_values.append(0)
-                else:
-                    recent_peaks = peak_indices[peak_indices < i]
-                    if len(recent_peaks) > 0:
-                        feature_values.append(i - recent_peaks[-1])
-                    else:
-                        feature_values.append(i)
-            df_enhanced[feature_name] = feature_values
-            self.endogenous_advanced_features.append(feature_name)
-        
-        # 距离最近谷值的时间
-        if 'trough' in events:
-            # 找到最近的谷值位置
-            troughs = (df[column].shift(1) > df[column]) & (df[column] < df[column].shift(-1))
-            trough_indices = np.where(troughs.to_numpy())[0]
-            
-            # 计算距离最近谷值的时间
-            feature_name = f'{column}_time_since_trough'
-            feature_values = []
-            for i in range(len(df)):
-                if i == 0:
-                    feature_values.append(0)
-                else:
-                    recent_troughs = trough_indices[trough_indices < i]
-                    if len(recent_troughs) > 0:
-                        feature_values.append(i - recent_troughs[-1])
-                    else:
-                        feature_values.append(i)
-            df_enhanced[feature_name] = feature_values
+        for event in ("peak", "trough"):
+            if event not in events:
+                continue
+            feature_name = f"{column}_time_since_{event}"
+            df_enhanced[feature_name] = self._transform_by_group(
+                df,
+                column,
+                group_col,
+                lambda series, event=event: self._time_since_event(series, event),
+            ).to_numpy()
             self.endogenous_advanced_features.append(feature_name)
         
         if self.verbose:
@@ -1133,7 +1165,7 @@ class FeatureEngineer:
                 if col in frozen_set:
                     continue
                 col_h = f"{col}_h{h}"
-                shifted = df_copy[col].shift(shift_steps)
+                shifted = _series_shift(df_copy, col, shift_steps, self.args)
                 # bool 列 shift 后因 NaN 会退化为 object；LightGBM 只接受
                 # int/float/bool，故显式转成 0/1/NaN float。其它 dtype 保持。
                 if pd.api.types.is_bool_dtype(df_copy[col].dtype):
@@ -1168,7 +1200,17 @@ class FeatureEngineer:
             "univariate-single-multistep-direct-recursive",
         ]
         configured_lags = self.args.lags if getattr(self.args, "enable_lags_features", True) else []
-        lags = _filter_supported_lags(configured_lags, n_samples=len(df_series), log_prefix=self.log_prefix)
+        group_col = _resolve_series_group_col(self.args, df_series_featured)
+        lag_support_samples = len(df_series_featured)
+        if group_col is not None:
+            lag_support_samples = int(
+                df_series_featured.groupby(group_col, sort=False, observed=True).size().min()
+            )
+        lags = _filter_supported_lags(
+            configured_lags,
+            n_samples=lag_support_samples,
+            log_prefix=self.log_prefix,
+        )
 
         if self.args.pred_method == "univariate-single-multistep-direct-pointwise":
             if bool(getattr(self.args, "align_direct_features_to_target", False)):
@@ -1254,6 +1296,7 @@ class FeatureEngineer:
                 df = df_series_featured,
                 target = target_feature,
                 horizon = horizon,
+                start_step = 1,
             )
             if self.verbose:
                 logger.info(f"{self.log_prefix} after extend_direct_multi_step_targets df_series_featured: \n{df_series_featured.head()}")
@@ -1288,6 +1331,7 @@ class FeatureEngineer:
                 df = df_series_featured,
                 target = target_feature,
                 horizon = horizon,
+                start_step = 1,
             )
             if self.verbose:
                 logger.info(f"{self.log_prefix} after extend_direct_multi_step_targets df_series_featured: \n{df_series_featured.head()}")
@@ -1326,6 +1370,7 @@ class FeatureEngineer:
         if self.args.enable_advanced_features:
             # 复制数据
             df_series_featured = df_series.copy()
+            group_col = _resolve_series_group_col(self.args, df_series_featured)
             self.advanced_feature_engineer.reset()
             # 添加滞后统计特征
             if getattr(self.args, "enable_rolling_features", True):
@@ -1334,6 +1379,7 @@ class FeatureEngineer:
                     columns=self.args.rolling_columns,
                     windows=self.args.rolling_windows,
                     stats=self.args.rolling_stats,
+                    group_col=group_col,
                 )
                 if self.verbose:
                     logger.info(f"{self.log_prefix} after add_rolling_statistics df_series_featured: \n{df_series_featured.head()}")
@@ -1344,6 +1390,7 @@ class FeatureEngineer:
                     df_series_featured,
                     columns=self.args.expanding_columns,
                     stats=self.args.expanding_stats,
+                    group_col=group_col,
                 )
                 if self.verbose:
                     logger.info(f"{self.log_prefix} after add_expanding_statistics df_series_featured: \n{df_series_featured.head()}")
@@ -1353,7 +1400,8 @@ class FeatureEngineer:
                 df_series_featured = self.advanced_feature_engineer.add_diff_features(
                     df_series_featured,
                     columns=self.args.diff_columns,
-                    periods=self.args.diff_periods
+                    periods=self.args.diff_periods,
+                    group_col=group_col,
                 )
                 if self.verbose:
                     logger.info(f"{self.log_prefix} after add_diff_features df_series_featured: \n{df_series_featured.head()}")
@@ -1363,7 +1411,8 @@ class FeatureEngineer:
                 df_series_featured = self.advanced_feature_engineer.add_pct_change_features(
                     df_series_featured,
                     columns=self.args.pct_change_columns,
-                    periods=self.args.pct_change_periods
+                    periods=self.args.pct_change_periods,
+                    group_col=group_col,
                 )
                 if self.verbose:
                     logger.info(f"{self.log_prefix} after add_pct_change_features df_series_featured: \n{df_series_featured.head()}")
@@ -1375,6 +1424,7 @@ class FeatureEngineer:
                         df_series_featured,
                         column=time_since_column,
                         events=self.args.time_since_events,
+                        group_col=group_col,
                     )
                 if self.verbose:
                     logger.info(f"{self.log_prefix} after add_time_since_features df_series_featured: \n{df_series_featured.head()}")
@@ -1480,7 +1530,12 @@ class FeatureEngineer:
             # 使训练与预测都使用目标月份的气象/日历，而不是预测原点月份。
             for col in exogenous_features:
                 if col in df_series_featured.columns:
-                    df_series_featured[col] = df_series_featured[col].shift(-1)
+                    df_series_featured[col] = _series_shift(
+                        df_series_featured,
+                        col,
+                        -1,
+                        self.args,
+                    ).to_numpy()
         # Direct 系列方法下，按 horizon 展开外生特征
         should_expand_horizon_exogenous = (
             getattr(self.args, "use_horizon_exogenous_for_direct", False)

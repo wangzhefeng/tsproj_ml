@@ -10,7 +10,7 @@ import numpy as np
 import pandas as pd
 import statsmodels.tsa.seasonal
 
-from features.TargetDecomposition import TargetDecomposer
+from decomposition import DecompositionPipeline
 from models.ModelForecasting import Forecaster
 from models.ModelSaveLoad import ModelDeployPkl
 from models.ModelTraining import Trainer
@@ -30,6 +30,10 @@ class TargetDecomposerTest(unittest.TestCase):
         base.update(extra)
         return SimpleNamespace(**base)
 
+    @staticmethod
+    def _make_decomposer(args):
+        return DecompositionPipeline.from_args(args)
+
     def test_linear_damped_forecast_consumes_trend_lookback(self):
         # 前段斜率 0.1，末端 lookback 段斜率 10.0：damped 外推应使用末端斜率
         times = pd.date_range("2026-01-01", periods=40, freq="1D")
@@ -45,7 +49,7 @@ class TargetDecomposerTest(unittest.TestCase):
                 decomposition_trend_lookback=lookback,
                 decomposition_damping=0.98,
             )
-            decomposer = TargetDecomposer(args).fit(frame)
+            decomposer = TargetDecomposerTest._make_decomposer(args).fit(frame)
             return decomposer.restore(np.zeros(len(future_times)), future_times)
 
         recent = damped_future(7)
@@ -61,7 +65,7 @@ class TargetDecomposerTest(unittest.TestCase):
         y = 100.0 + 2.5 * np.arange(40, dtype=float)
         frame = pd.DataFrame({"time": times, "y": y})
 
-        decomposer = TargetDecomposer(self._args("linear"))
+        decomposer = TargetDecomposerTest._make_decomposer(self._args("linear"))
         transformed = decomposer.fit_transform(frame)
 
         np.testing.assert_allclose(transformed["y"], 0.0, atol=1e-10)
@@ -85,7 +89,7 @@ class TargetDecomposerTest(unittest.TestCase):
         y = 50.0 + 0.1 * x + 8.0 * np.sin(2.0 * np.pi * x / period)
         frame = pd.DataFrame({"time": times, "y": y})
 
-        decomposer = TargetDecomposer(self._args("stl", [period]))
+        decomposer = TargetDecomposerTest._make_decomposer(self._args("stl", [period]))
         transformed = decomposer.fit_transform(frame)
 
         np.testing.assert_allclose(
@@ -106,7 +110,7 @@ class TargetDecomposerTest(unittest.TestCase):
             {"time": times, "y": 50.0 + 5.0 * np.sin(2.0 * np.pi * x / period)}
         )
 
-        transformed = TargetDecomposer(self._args("stl", [period])).fit_transform(frame)
+        transformed = TargetDecomposerTest._make_decomposer(self._args("stl", [period])).fit_transform(frame)
 
         self.assertTrue(np.isfinite(transformed["y"]).all())
 
@@ -135,14 +139,14 @@ class TargetDecomposerTest(unittest.TestCase):
 
                 args = self._args("mstl", periods, decomposition_robust=robust)
                 with patch.object(statsmodels.tsa.seasonal, "MSTL", spy_mstl):
-                    TargetDecomposer(args).fit(frame)
+                    TargetDecomposerTest._make_decomposer(args).fit(frame)
 
                 self.assertEqual(captured["stl_kwargs"], {"robust": robust})
 
     def test_forecaster_restores_point_and_quantile_outputs_with_same_component(self):
         times = pd.date_range("2026-01-01", periods=10, freq="1D")
         frame = pd.DataFrame({"time": times, "y": 100.0 + np.arange(10, dtype=float)})
-        decomposer = TargetDecomposer(self._args("linear")).fit(frame)
+        decomposer = TargetDecomposerTest._make_decomposer(self._args("linear")).fit(frame)
         future_times = pd.date_range("2026-01-11", periods=2, freq="1D")
 
         forecaster = Forecaster.__new__(Forecaster)
@@ -164,7 +168,7 @@ class TargetDecomposerTest(unittest.TestCase):
     def test_model_save_persists_fitted_target_decomposer(self):
         times = pd.date_range("2026-01-01", periods=10, freq="1D")
         frame = pd.DataFrame({"time": times, "y": 100.0 + np.arange(10, dtype=float)})
-        decomposer = TargetDecomposer(self._args("linear")).fit(frame)
+        decomposer = TargetDecomposerTest._make_decomposer(self._args("linear")).fit(frame)
 
         with tempfile.TemporaryDirectory() as tmpdir:
             trainer = Trainer.__new__(Trainer)

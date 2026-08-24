@@ -34,7 +34,7 @@ from features.FeatureScalering import (
     resolve_feature_scaler_type,
     resolve_target_scaler_type,
 )
-from features.TargetDecomposition import TargetDecomposer
+from decomposition import DecompositionPipeline
 from features.TargetNormalization import CalendarDayTargetNormalizer
 from models.ModelTraining import Trainer
 from models.ModelForecasting import Forecaster
@@ -177,13 +177,26 @@ class Tester:
             target_col=payload["target_feature"],
         )
         # 每个滑窗只在训练段拟合目标分解器，禁止测试段及更晚数据参与预处理。
-        target_decomposer = TargetDecomposer(args, log_prefix=log_prefix, verbose=False)
+        target_decomposer = DecompositionPipeline.from_args(args)
         if target_decomposer.enabled:
             df_history_train = target_decomposer.fit_transform(
                 df_history_train,
                 time_col="time",
                 target_col=payload["target_feature"],
             )
+            # 分解诊断报告（按窗口序号命名，不互相覆盖；无输出目录时跳过）
+            from decomposition.diagnostics import write_diagnostics_report
+
+            diag_dir = getattr(args, "test_results_dir", None)
+            if diag_dir is not None:
+                write_diagnostics_report(
+                    target_decomposer,
+                    df_history_train,
+                    time_col="time",
+                    target_col=payload["target_feature"],
+                    output_dir=diag_dir,
+                    suffix=f"_win{window}",
+                )
         build_result = Tester._build_window_train_xy(
             args=args,
             log_prefix=log_prefix,

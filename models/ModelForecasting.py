@@ -23,6 +23,7 @@ import pandas as pd
 from features.FeatureEngineering import FeatureEngineer
 from utils.eval_mask import build_eval_mask
 from utils.log_util import logger
+from utils.multistep_contract import validate_direct_feature_alignment
 
 # global variable
 LOGGING_LABEL = Path(__file__).name[:-3]
@@ -146,6 +147,17 @@ class Forecaster:
         if pred_arr.ndim == 0:
             return np.asarray([float(pred_arr)])
         return pred_arr.reshape(-1)
+
+    @staticmethod
+    def _require_direct_prediction_length(pred: Any, n_required: int, label: str) -> np.ndarray:
+        """Direct 输出必须与请求 horizon 精确一致，禁止截断或复制尾值补齐。"""
+        pred_1d = Forecaster._to_1d(pred)
+        if len(pred_1d) != n_required:
+            raise ValueError(
+                f"{label} direct prediction length mismatch: "
+                f"expected {n_required}, got {len(pred_1d)}."
+            )
+        return pred_1d
 
     @staticmethod
     def _to_scalar(pred: Any) -> float:
@@ -560,11 +572,12 @@ class Forecaster:
             return
         self.quantile_outputs = {}
         for q, pred in quantile_preds.items():
-            pred_1d = self._to_1d(pred[0] if np.asarray(pred).ndim > 1 else pred)
-            if len(pred_1d) >= n_required:
-                self.quantile_outputs[q] = pred_1d[:n_required]
-            else:
-                self.quantile_outputs[q] = np.pad(pred_1d, (0, n_required - len(pred_1d)), mode="edge")
+            pred_for_horizon = pred[0] if np.asarray(pred).ndim > 1 else pred
+            self.quantile_outputs[q] = self._require_direct_prediction_length(
+                pred_for_horizon,
+                n_required,
+                label=f"quantile q={q}",
+            )
 
     def _record_quantile_recursive_step(self, store: Dict[float, List[float]], quantile_preds: Optional[Dict[float, np.ndarray]]):
         if not quantile_preds:
@@ -690,10 +703,7 @@ class Forecaster:
         Y_preds = np.array([])
         # 预测阶段始终使用未来日期/天气进行特征工程，避免被 is_testing 分支误跳过
         if bool(getattr(self.args, "align_direct_features_to_target", False)):
-            if self.horizon != 1:
-                raise ValueError(
-                    "USMDP align_direct_features_to_target currently supports horizon=1 only."
-                )
+            validate_direct_feature_alignment(self.args, self.horizon)
             df_pointwise = pd.concat(
                 [self.df_history_for_lags, self.df_future.copy()],
                 ignore_index=True,
@@ -764,11 +774,12 @@ class Forecaster:
         )
         X_test_processed = self._transform_features(X_forecast_input, categorical_features)
         point_pred, quantile_preds = self._predict_point_and_quantiles(X_test_processed)
-        y_pred_multi_step = self._to_1d(point_pred[0] if np.asarray(point_pred).ndim > 1 else point_pred)
-        if len(y_pred_multi_step) >= len(self.df_future):
-            y_preds = y_pred_multi_step[:len(self.df_future)]
-        else:
-            y_preds = np.pad(y_pred_multi_step, pad_width=(0, len(self.df_future) - len(y_pred_multi_step)), mode='edge')
+        point_for_horizon = point_pred[0] if np.asarray(point_pred).ndim > 1 else point_pred
+        y_preds = self._require_direct_prediction_length(
+            point_for_horizon,
+            len(self.df_future),
+            label="point",
+        )
         self._record_quantile_direct(quantile_preds, n_required=len(self.df_future))
         return np.asarray(y_preds)
 
@@ -913,7 +924,7 @@ class Forecaster:
         多变量(内生变量)预测单变量(目标变量)多步直接预测(MSMD)
         - 方法特点：
             1. 特征：所有内生变量(target + 其他内生变量)的滞后 + 外生变量
-            2. 训练：为每个未来步 H 创建目标列 target_shift_0, target_shift_1, ..., target_shift_H-1
+            2. 训练：为每个未来步 H 创建目标列 target_shift_1, target_shift_2, ..., target_shift_H
             3. 预测：一次性输出所有 H 步的预测值
         - 与 USMD 的区别：
             - USMD: 只使用目标变量的滞后特征
@@ -927,11 +938,12 @@ class Forecaster:
         )
         X_test_processed = self.feature_scaler.transform(X_forecast_input, categorical_features)
         point_pred, quantile_preds = self._predict_point_and_quantiles(X_test_processed)
-        y_pred_multi_step = self._to_1d(point_pred[0] if np.asarray(point_pred).ndim > 1 else point_pred)
-        if len(y_pred_multi_step) >= len(self.df_future):
-            y_preds = y_pred_multi_step[:len(self.df_future)]
-        else:
-            y_preds = np.pad(y_pred_multi_step, (0, len(self.df_future) - len(y_pred_multi_step)), 'edge')
+        point_for_horizon = point_pred[0] if np.asarray(point_pred).ndim > 1 else point_pred
+        y_preds = self._require_direct_prediction_length(
+            point_for_horizon,
+            len(self.df_future),
+            label="point",
+        )
         self._record_quantile_direct(quantile_preds, n_required=len(self.df_future))
         return np.asarray(y_preds)
 

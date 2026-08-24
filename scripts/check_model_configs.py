@@ -9,11 +9,12 @@
 
 复算的校验（与 main.py.__init__ 一致）：
   - window_length < history_length
-  - window_len - horizon > max(lags)（滞后特征非全 NaN；USMDP 逐点法除外）
+  - window_len - horizon > max(lags)（滞后特征非全 NaN；USMDP 仅在未启用 safe-lag 时除外）
+  - USMDP 多步 safe-lag：align_direct_features_to_target=true 时必须启用 lag，且 min(lags) >= horizon
   - 目标分解方法/周期合法，且与 scale_target 互斥
   - n_windows > 0（滑窗数）
   - advanced_features：USMDP 不能直接依赖 y；仅操作历史/未来都存在的列才可用
-    （USMDP 不自动生成 y_lag_*，引用它们会被跳过并提示）；预测上下文取
+    （USMDP 仅在 align_direct_features_to_target=true 时生成 y_lag_*）；预测上下文取
     max(lags, 已启用 rolling_windows/diff_periods/pct_change_periods)，且不得超过
     history_length × n_per_day
 
@@ -34,6 +35,7 @@ import pandas as pd  # noqa: E402
 from config.config_loader import load_yaml_config  # noqa: E402
 from models.ModelTesting import Tester  # noqa: E402
 from utils.frequency import resolve_samples_per_day  # noqa: E402
+from utils.multistep_contract import validate_direct_feature_alignment  # noqa: E402
 
 PROJ = Path(__file__).resolve().parent.parent
 
@@ -98,20 +100,39 @@ def check_model_yaml(f: str) -> tuple[Any, list[str]]:
             f"effective_train_length({effective_train_length}) >= history_length({cfg.history_length})"
         )
 
-    if cfg.pred_method != "univariate-single-multistep-direct-pointwise":
+    try:
+        validate_direct_feature_alignment(cfg, horizon)
+    except ValueError as exc:
+        problems.append(str(exc))
+
+    constructs_lags = (
+        cfg.pred_method != "univariate-single-multistep-direct-pointwise"
+        or bool(getattr(cfg, "align_direct_features_to_target", False))
+    )
+    if constructs_lags:
         if train_rows <= max_lag:
             problems.append(
                 f"lag 校验失败: train_rows={train_rows} <= max_lag={max_lag} "
                 "(Lag features would be all-NaN)"
             )
 
-    method = str(getattr(cfg, "decomposition_method", "none") or "none").lower()
-    if method not in {"none", "linear", "stl", "mstl"}:
-        problems.append(f"未知 decomposition_method: {method}")
+    # 通过 resolve_decomposition_spec 统一校验（覆盖新写法+旧写法+custom+预留方法）
+    from decomposition.spec import resolve_decomposition_spec
+
+    try:
+        spec = resolve_decomposition_spec(cfg)
+        method = spec.method
+        if spec.preset is not None:
+            periods = list(spec.preset.periods)
+        else:
+            periods = []
+    except ValueError as exc:
+        problems.append(f"decomposition 配置错误: {exc}")
+        method = "none"
+        periods = []
     decomposition_enabled = method != "none"
     if decomposition_enabled and getattr(cfg, "scale_target", False):
         problems.append("目标分解与 scale_target 同时开启（互斥）")
-    periods = [int(period) for period in (getattr(cfg, "decomposition_periods", []) or [])]
     if method == "stl" and len(periods) != 1:
         problems.append("stl 需要且只能配置一个周期")
     if method == "mstl" and len(periods) < 2:
@@ -154,12 +175,15 @@ def check_model_yaml(f: str) -> tuple[Any, list[str]]:
                 + ", ".join(enabled_target_ops)
             )
         roll_columns = list(getattr(cfg, "rolling_columns", []) or [])
-        if is_usmdp and bool(getattr(cfg, "enable_rolling_features", False)) and any(
-            column.startswith("y_lag_") for column in roll_columns
+        if (
+            is_usmdp
+            and not bool(getattr(cfg, "align_direct_features_to_target", False))
+            and bool(getattr(cfg, "enable_rolling_features", False))
+            and any(column.startswith("y_lag_") for column in roll_columns)
         ):
             problems.append(
-                "提示：USMDP 不会自动生成 y_lag_*；rolling_columns 中的 y_lag_* "
-                "会被特征工程跳过，当前配置不会形成该消融特征。"
+                "提示：USMDP 仅在 align_direct_features_to_target=true 时生成 y_lag_*；"
+                "当前 rolling_columns 中的 y_lag_* 会被跳过。"
             )
         fixed_lookbacks = [max_lag]
         if getattr(cfg, "enable_rolling_features", False):

@@ -70,7 +70,7 @@ class UsmdpSafeLagTest(unittest.TestCase):
         forecaster.selected_features = None
         forecaster.categorical_features = []
         forecaster.feature_engineer = FeatureEngineer(args, "[test]", verbose=False)
-        forecaster.quantile_outputs = None
+        forecaster._quantile_outputs = None
         forecaster.log_prefix = "[test]"
         forecaster._slice_future_aux_by_forecast = lambda df_forecast: (None, None)
         forecaster._transform_features = lambda X, categorical_features: X

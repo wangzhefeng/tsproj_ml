@@ -57,6 +57,7 @@ class _FakeForecaster:
         log_prefix,
         df_custom_future=None,
         target_decomposer=None,
+        target_transform=None,
     ):
         self.horizon = horizon
         _FakeForecaster.captured_test_frame = df_future.copy()

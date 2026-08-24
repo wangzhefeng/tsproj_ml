@@ -25,7 +25,7 @@ import copy
 import time
 import datetime
 import warnings
-from typing import List
+from typing import List, cast
 from pathlib import Path
 ROOT = str(Path(__file__).resolve().parent)
 if ROOT not in sys.path:
@@ -48,17 +48,28 @@ from features.FeatureScalering import (
     resolve_target_scaler_type,
 )
 from features.FeatureEngineering import FeatureEngineer
-from decomposition import DecompositionPipeline
 from decomposition.spec import resolve_decomposition_spec
-from features.TargetNormalization import CalendarDayTargetNormalizer
+from features.TargetTransformation import TargetTransformPipeline
 from models.ModelTraining import Trainer
 from models.ModelTesting import Tester
 from models.ModelForecasting import Forecaster
+from probabilistic.calibration import attach_cqr_interval_columns
+from probabilistic.evaluation import (
+    append_final_calibration_report,
+    calibrate_final_from_cv,
+)
 from probabilistic.pipeline import finalize_quantile_forecast
-from probabilistic.spec import validate_probabilistic_args
+from probabilistic.objectives import validate_quantile_model_support
+from probabilistic.types import ForecastDistribution, QuantileGrid
+from probabilistic.spec import (
+    apply_probabilistic_spec_to_args,
+    calibration_runtime_kwargs,
+    resolve_probabilistic_spec,
+)
 from data_provider.outlier_handling import empty_train_outlier_report
 from utils.frequency import resolve_freq_step_minutes, resolve_samples_per_day, is_monthly_freq
 from utils.multistep_contract import validate_direct_feature_alignment
+from utils.parallel_budget import apply_window_parallel_budget
 from utils.weather_contract import validate_weather_information_contract
 
 warnings.filterwarnings("ignore")
@@ -78,6 +89,12 @@ class Model:
         初始化模型
         """
         self.args = args
+        self.probabilistic_spec = resolve_probabilistic_spec(self.args)
+        validate_quantile_model_support(
+            getattr(self.args, "model_type", ""),
+            self.probabilistic_spec,
+        )
+        apply_probabilistic_spec_to_args(self.args, self.probabilistic_spec)
         self.horizon_mode = str(
             getattr(self.args, "horizon_mode", "fixed_steps") or "fixed_steps"
         ).lower()
@@ -225,7 +242,6 @@ class Model:
             )
         validate_direct_feature_alignment(self.args, self.horizon)
         validate_weather_information_contract(self.args)
-        validate_probabilistic_args(self.args)
         if self.n_windows <= 0:
             logger.warning(
                 f"{self.log_prefix} n_windows={self.n_windows} (<= 0). Testing will be skipped."
@@ -233,14 +249,8 @@ class Model:
         block_size = int(getattr(self.args, 'block_size', 0) or 0)
         if block_size < 0:
             raise ValueError(f"{self.log_prefix} block_size ({block_size}) must be >= 0.")
-        # 目标分解与 target scaling 互斥。
         spec = resolve_decomposition_spec(self.args)
         decomposition_method = spec.method
-        if decomposition_method != "none" and resolve_scale_target_enabled(self.args):
-            raise ValueError(
-                f"{self.log_prefix} target decomposition and scale_target are mutually exclusive. "
-                f"Keep scale_target=false when decomposition_method={decomposition_method}."
-            )
         # 周期从 spec 读取（新写法 overrides.decomposition 的 periods 不落在 legacy 属性上）
         decomposition_periods = list(spec.preset.periods) if spec.preset else []
         if decomposition_method == "stl" and len(decomposition_periods) != 1:
@@ -311,11 +321,7 @@ class Model:
                     f"ridge_stacking component predictions would remain in residual space. "
                     f"Keep decomposition_method=none."
                 )
-        if bool(getattr(self.args, "enable_conformal_calibration", False)) and decomposition_method != "none":
-            raise ValueError(
-                f"{self.log_prefix} enable_conformal_calibration + target decomposition is not supported. "
-                f"Keep decomposition_method=none."
-            )
+
         # ------------------------------
         # 日志打印
         # ------------------------------
@@ -397,6 +403,9 @@ class Model:
             target_scaler = target_scaler,
             categorical_features = categorical_features,
         )
+        target_transform = getattr(self, "target_transform", None)
+        if target_transform is not None:
+            target_transform.attach_fitted_target_scaler(target_scaler)
         # 多变量递归辅助预测器包装（MSMR/MSMDR + endogenous_backfill_strategy=auxiliary）
         if df_history is not None and endogenous_features_with_target is not None:
             from models.AuxiliaryForecaster import maybe_build_auxiliary_bundle
@@ -408,8 +417,12 @@ class Model:
         if mode == "forecast":
             model_trainer.model_save(
                 model,
-                target_scaler,
-                target_decomposer=getattr(self, "target_decomposer", None),
+                feature_scaler=scaler,
+                target_transform=getattr(self, "target_transform", None),
+                selected_features=selected_features,
+                input_schema={
+                    "columns": list(getattr(scaler, "training_columns", ()) or ()),
+                },
             )
         logger.info(f"{self.log_prefix} Model Training runtime: {time.perf_counter() - train_start:.3f}s")
 
@@ -497,10 +510,7 @@ class Model:
                 f"prefer window_parallel_workers=1."
             )
         payload_args = copy.deepcopy(self.args)
-        if window_workers > 1:
-            payload_args.multi_output_n_jobs = 1
-            payload_args.model_thread_count = 1
-            payload_args.ensemble_parallel_workers = 1
+        apply_window_parallel_budget(payload_args, window_workers)
         payloads = [
             {
                 "args": payload_args,
@@ -623,109 +633,137 @@ class Model:
             categorical_features=categorical_features,
             selected_features=selected_features,
             target_decomposer=getattr(self, "target_decomposer", None),
+            target_transform=getattr(self, "target_transform", None),
             log_prefix=self.log_prefix,
         )
-        Y_pred = predictor._predict_by_method()
+        forecast_result = predictor._predict_by_method()
+        if isinstance(forecast_result, ForecastDistribution):
+            Y_pred = forecast_result.point
+            output_quantile_grid = forecast_result.quantile_grid
+            quantile_outputs = {
+                level: forecast_result.quantile_values[:, index]
+                for index, level in enumerate(forecast_result.quantile_grid.levels)
+            }
+        else:
+            Y_pred = forecast_result
+            quantile_outputs = getattr(predictor, "quantile_outputs", None)
+            output_quantile_grid = (
+                QuantileGrid(tuple(sorted(quantile_outputs)), point_level=0.5)
+                if quantile_outputs
+                else None
+            )
         # ------------------------------
         # 模型预测结果收集和保存
         # ------------------------------
         logger.info(f"{self.log_prefix} {'=' * 87}")
         logger.info(f"{self.log_prefix} Model Forecasting result save...")
         logger.info(f"{self.log_prefix} {'=' * 87}")
-        # 模型预测结果收集
-        if target_scaler_forecasting is None:
-            pred_target_columns = list(target_output_features or [target_feature])
-            Y_pred = np.asarray(Y_pred).reshape(-1)
-            if len(Y_pred) != len(df_future_prediction):
-                logger.warning(
-                    f"{self.log_prefix} Y_pred length ({len(Y_pred)}) "
-                    f"!= df_future_prediction length ({len(df_future_prediction)}); truncating."
-                )
-                Y_pred = Y_pred[:len(df_future_prediction)]
-        else:
-            pred_target_columns = target_scaler_forecasting.get_prediction_target_columns(
-                self.args.pred_method,
-                target_output_features,
-                direct_strategy=str(getattr(self.args, "direct_strategy", "multioutput")),
+        # Forecaster 已通过共享 TargetTransformPipeline 恢复到 target space。
+        Y_pred = np.asarray(Y_pred, dtype=float).reshape(-1)
+        if len(Y_pred) != len(df_future_prediction):
+            raise ValueError(
+                f"{self.log_prefix} forecast length mismatch after target restore: "
+                f"prediction={len(Y_pred)}, future={len(df_future_prediction)}"
             )
-            Y_pred = target_scaler_forecasting.restore_predictions(Y_pred, pred_target_columns)
-        target_calendar_normalizer = getattr(
-            self,
-            "target_calendar_normalizer",
-            CalendarDayTargetNormalizer(self.args),
-        )
-        Y_pred = target_calendar_normalizer.restore_predictions(
-            Y_pred,
-            df_future_prediction["time"].iloc[:len(np.asarray(Y_pred).reshape(-1))],
-        )
-        df_future_prediction["predict_value"] = np.asarray(Y_pred).reshape(-1)[:len(df_future_prediction)]
+        df_future_prediction["predict_value"] = Y_pred
         # 分位数预测结果（若启用）
-        if getattr(predictor, "quantile_outputs", None):
-            for q, q_pred in sorted(predictor.quantile_outputs.items(), key=lambda x: float(x[0])):
-                q_col = f"predict_q{int(round(float(q) * 100)):02d}"
-                if target_scaler_forecasting is None:
-                    q_arr = np.asarray(q_pred).reshape(-1)
-                else:
-                    q_arr = target_scaler_forecasting.restore_predictions(
-                        np.asarray(q_pred).reshape(-1),
-                        pred_target_columns,
-                    ).reshape(-1)
-                q_arr = target_calendar_normalizer.restore_predictions(
-                    q_arr,
-                    df_future_prediction["time"].iloc[:len(q_arr)],
-                )
+        if quantile_outputs:
+            for q, q_pred in sorted(quantile_outputs.items(), key=lambda x: float(x[0])):
+                q_col = output_quantile_grid.column_name(float(q))
+                q_arr = np.asarray(q_pred, dtype=float).reshape(-1)
                 if len(q_arr) != len(df_future_prediction):
-                    min_len = min(len(q_arr), len(df_future_prediction))
-                    df_future_prediction.loc[df_future_prediction.index[:min_len], q_col] = q_arr[:min_len]
-                else:
-                    df_future_prediction[q_col] = q_arr
-        # 概率后处理：先以 q50 为锚点修复 crossing，再把 CQR 写入独立 PI 列。
-        conformal_scores = None
-        if bool(getattr(self.args, "enable_conformal_calibration", False)):
-            quantile_cols_cal = [c for c in df_future_prediction.columns if str(c).startswith("predict_q")]
-            if len(quantile_cols_cal) >= 2:
-                cv_path = self.args.test_results_dir.joinpath("cv_plot_df.csv")
-                if cv_path.exists():
-                    cv_df = pd.read_csv(cv_path)
-                    if "conformal_score" in cv_df.columns:
-                        n_cal_windows = int(getattr(self.args, "conformal_calibration_windows", 5))
-                        if "window" in cv_df.columns:
-                            recent_windows = sorted(cv_df["window"].unique())[-n_cal_windows:]
-                            conformal_scores = cv_df[
-                                cv_df["window"].isin(recent_windows)
-                            ]["conformal_score"].dropna().values
-                        else:
-                            conformal_scores = cv_df["conformal_score"].dropna().values
-                    else:
-                        logger.warning(
-                            f"{self.log_prefix} Conformal CQR skipped: no conformal_score column in cv_plot_df.csv "
-                            f"(need enable_conformal_calibration=true during testing)"
-                        )
-                else:
-                    logger.warning(
-                        f"{self.log_prefix} Conformal CQR skipped: cv_plot_df.csv not found "
-                        f"(need is_testing=True to produce calibration scores)"
+                    raise ValueError(
+                        f"{self.log_prefix} quantile q={float(q):g} forecast length mismatch "
+                        f"after target restore: prediction={len(q_arr)}, "
+                        f"future={len(df_future_prediction)}"
                     )
-        alpha = float(getattr(self.args, "conformal_alpha", 0.1))
-        min_scores = int(getattr(self.args, "conformal_min_scores", 30))
-        df_future_prediction, correction = finalize_quantile_forecast(
+                df_future_prediction[q_col] = q_arr
+        # 先以 q50 为锚点修复 crossing；CQR 随后通过 as-of selector 生成独立 PI。
+        calibration_kwargs = calibration_runtime_kwargs(self.probabilistic_spec)
+        alpha = float(calibration_kwargs.get("alpha", 0.1))
+        min_scores = int(calibration_kwargs.get("min_scores", 30))
+        df_future_prediction, _ = finalize_quantile_forecast(
             df_future_prediction,
             monotone_enabled=bool(getattr(self.args, "quantile_monotone", False)),
-            conformal_scores=conformal_scores,
+            conformal_scores=None,
             alpha=alpha,
             min_scores=min_scores,
         )
-        if conformal_scores is not None:
-            if correction is None:
+        if bool(calibration_kwargs["enable_cqr"]):
+            interval = self.probabilistic_spec.calibration_interval
+            if interval is None or output_quantile_grid is None:
+                raise RuntimeError("CQR requires a calibration interval and quantile grid")
+            q_low_col = output_quantile_grid.column_name(interval.lower_quantile)
+            q_high_col = output_quantile_grid.column_name(interval.upper_quantile)
+            cv_path = self.args.test_results_dir.joinpath("cv_plot_df.csv")
+            if cv_path.exists():
+                cv_df = pd.read_csv(cv_path)
+                forecast_origin = cast(
+                    pd.Timestamp,
+                    pd.Timestamp(df_future_prediction["time"].iloc[0]),
+                )
+                calibration_windows = int(calibration_kwargs["calibration_windows"])
+                calibration_result = calibrate_final_from_cv(
+                    cv_df,
+                    q_low=df_future_prediction[q_low_col].to_numpy(dtype=float),
+                    q_high=df_future_prediction[q_high_col].to_numpy(dtype=float),
+                    forecast_origin=forecast_origin,
+                    freq=str(getattr(self.args, "freq", "1D")),
+                    calibration_windows=calibration_windows,
+                    min_windows=int(calibration_kwargs["min_windows"]),
+                    min_scores=min_scores,
+                    alpha=alpha,
+                    label_availability_delay_steps=int(
+                        calibration_kwargs["label_availability_delay_steps"]
+                    ),
+                    interval_name=str(calibration_kwargs["interval_name"]),
+                    lower_quantile=float(calibration_kwargs["lower_quantile"]),
+                    upper_quantile=float(calibration_kwargs["upper_quantile"]),
+                    allow_interval_shrink=bool(
+                        calibration_kwargs["allow_interval_shrink"]
+                    ),
+                )
+                append_final_calibration_report(
+                    self.args.test_results_dir.joinpath("calibration_report.csv"),
+                    result=calibration_result,
+                    forecast_origin=forecast_origin,
+                    interval_name=str(calibration_kwargs["interval_name"]),
+                    target_coverage=1.0 - alpha,
+                    calibration_windows=calibration_windows,
+                    allow_interval_shrink=bool(
+                        calibration_kwargs["allow_interval_shrink"]
+                    ),
+                )
+                if (
+                    calibration_result.status == "applied"
+                    and calibration_result.lower is not None
+                    and calibration_result.upper is not None
+                    and calibration_result.correction is not None
+                ):
+                    df_future_prediction = attach_cqr_interval_columns(
+                        df_future_prediction,
+                        calibration_result.lower,
+                        calibration_result.upper,
+                        target_coverage=1.0 - alpha,
+                    )
+                    logger.info(
+                        f"{self.log_prefix} Conformal CQR calibrated: "
+                        f"correction={calibration_result.correction:.4f}, "
+                        f"target coverage={1 - alpha:.2f}, "
+                        f"n_windows={calibration_result.selected_windows}, "
+                        f"n_scores={calibration_result.selected_scores}"
+                    )
+                else:
+                    logger.warning(
+                        f"{self.log_prefix} Conformal CQR skipped: "
+                        f"status={calibration_result.status}, reason={calibration_result.reason}"
+                    )
+            elif not cv_path.exists():
                 logger.warning(
-                    f"{self.log_prefix} Conformal CQR skipped: only {len(conformal_scores)} scores "
-                    f"(< {min_scores}); need more test windows"
+                    f"{self.log_prefix} Conformal CQR skipped: cv_plot_df.csv not found "
+                    f"(need is_testing=True to produce calibration scores)"
                 )
-            else:
-                logger.info(
-                    f"{self.log_prefix} Conformal CQR calibrated: correction={correction:.4f}, "
-                    f"target coverage={1 - alpha:.2f}, n_scores={len(conformal_scores)}"
-                )
+
         probability_cols = [
             c
             for c in df_future_prediction.columns
@@ -838,21 +876,16 @@ class Model:
         # ------------------------------
         self.df_history_levels = df_history.copy()
         assert isinstance(df_history, pd.DataFrame)
-        self.target_calendar_normalizer = CalendarDayTargetNormalizer(self.args)
-        df_history = self.target_calendar_normalizer.transform_history(
+        self.target_transform = TargetTransformPipeline.from_args(self.args)
+        df_history = self.target_transform.fit_transform_history(
             df_history,
             time_col="time",
             target_col="y",
         )
-        self.target_decomposer = DecompositionPipeline.from_args(
-            self.args,
-        )
+        # 迁移期兼容属性；新主链只通过 target_transform restore。
+        self.target_calendar_normalizer = self.target_transform.calendar_normalizer
+        self.target_decomposer = self.target_transform.decomposition
         if self.target_decomposer.enabled:
-            df_history = self.target_decomposer.fit_transform(
-                df_history,
-                time_col="time",
-                target_col="y",
-            )
             logger.info(
                 f"{self.log_prefix} 目标分解: 启用 "
                 f"(method={self.target_decomposer.method})"

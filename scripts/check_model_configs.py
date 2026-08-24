@@ -5,13 +5,13 @@
 用法（项目根，注意 env -u PYTHONPATH 防 Hermes 注入遮蔽项目 utils/ 包）：
     env -u PYTHONPATH UV_CACHE_DIR=.uv_cache uv run --no-sync python scripts/check_model_configs.py 'config/<scenario>/route_*/lgbm_*.yaml'
     env -u PYTHONPATH UV_CACHE_DIR=.uv_cache uv run --no-sync python scripts/check_model_configs.py 'config/aidc_power_15min/**/*.yaml'
-    （无参数时默认 glob config/**/*.yaml，会命中聚合/异常配置，按文件名前缀跳过即可）
+    （无参数时默认 glob config/**/*.yaml，仅检查含 base_config/overrides 的模型 schema）
 
 复算的校验（与 main.py.__init__ 一致）：
   - window_length < history_length
   - window_len - horizon > max(lags)（滞后特征非全 NaN；USMDP 仅在未启用 safe-lag 时除外）
   - USMDP 多步 safe-lag：align_direct_features_to_target=true 时必须启用 lag，且 min(lags) >= horizon
-  - 目标分解方法/周期合法，且与 scale_target 互斥
+  - 目标分解方法/周期合法；概率模型具备原生 quantile objective
   - n_windows > 0（滑窗数）
   - advanced_features：USMDP 不能直接依赖 y；仅操作历史/未来都存在的列才可用
     （USMDP 仅在 align_direct_features_to_target=true 时生成 y_lag_*）；预测上下文取
@@ -34,6 +34,8 @@ import pandas as pd  # noqa: E402
 
 from config.config_loader import load_yaml_config  # noqa: E402
 from models.ModelTesting import Tester  # noqa: E402
+from probabilistic.objectives import validate_quantile_model_support  # noqa: E402
+from probabilistic.spec import resolve_probabilistic_spec  # noqa: E402
 from utils.frequency import resolve_samples_per_day  # noqa: E402
 from utils.multistep_contract import validate_direct_feature_alignment  # noqa: E402
 
@@ -41,6 +43,14 @@ PROJ = Path(__file__).resolve().parent.parent
 
 # 聚合/异常配置：独立 schema，无 base_config，不能被 load_yaml_config 加载
 _NON_MODEL_PREFIXES = ("aggregate", "outlier_detect", "outlier")
+
+
+def is_model_yaml(path: Path) -> bool:
+    """按顶层 schema 识别模型配置，避免把独立数据工具 YAML 当默认模型。"""
+    payload = yaml.safe_load(Path(path).read_text(encoding="utf-8"))
+    return isinstance(payload, dict) and bool(
+        {"base_config", "overrides"} & set(payload)
+    )
 
 
 def _resolve_runtime_shape(cfg) -> tuple[str, int, int, int, int]:
@@ -105,6 +115,12 @@ def check_model_yaml(f: str) -> tuple[Any, list[str]]:
     except ValueError as exc:
         problems.append(str(exc))
 
+    try:
+        probabilistic_spec = resolve_probabilistic_spec(cfg)
+        validate_quantile_model_support(cfg.model_type, probabilistic_spec)
+    except ValueError as exc:
+        problems.append(f"probabilistic 配置错误: {exc}")
+
     constructs_lags = (
         cfg.pred_method != "univariate-single-multistep-direct-pointwise"
         or bool(getattr(cfg, "align_direct_features_to_target", False))
@@ -131,8 +147,6 @@ def check_model_yaml(f: str) -> tuple[Any, list[str]]:
         method = "none"
         periods = []
     decomposition_enabled = method != "none"
-    if decomposition_enabled and getattr(cfg, "scale_target", False):
-        problems.append("目标分解与 scale_target 同时开启（互斥）")
     if method == "stl" and len(periods) != 1:
         problems.append("stl 需要且只能配置一个周期")
     if method == "mstl" and len(periods) < 2:
@@ -210,7 +224,9 @@ def main() -> int:
     pattern = sys.argv[1] if len(sys.argv) > 1 else "config/**/*.yaml"
     files = sorted(
         f for f in glob.glob(pattern, recursive=True)
-        if Path(f).name not in _NON_MODEL_PREFIXES and not Path(f).name.startswith(_NON_MODEL_PREFIXES)
+        if Path(f).name not in _NON_MODEL_PREFIXES
+        and not Path(f).name.startswith(_NON_MODEL_PREFIXES)
+        and is_model_yaml(Path(f))
     )
     if not files:
         print(f"no files matched: {pattern}")

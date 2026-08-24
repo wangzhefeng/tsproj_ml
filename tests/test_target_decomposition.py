@@ -152,7 +152,7 @@ class TargetDecomposerTest(unittest.TestCase):
         forecaster = Forecaster.__new__(Forecaster)
         forecaster.df_future = pd.DataFrame({"time": future_times})
         forecaster.target_decomposer = decomposer
-        forecaster.quantile_outputs = {
+        forecaster._quantile_outputs = {
             0.1: np.array([-2.0, -2.0]),
             0.5: np.array([0.0, 0.0]),
             0.9: np.array([2.0, 2.0]),
@@ -172,21 +172,25 @@ class TargetDecomposerTest(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as tmpdir:
             trainer = Trainer.__new__(Trainer)
-            trainer.args = SimpleNamespace(checkpoints_dir=Path(tmpdir))
+            trainer.args = SimpleNamespace(
+                checkpoints_dir=Path(tmpdir),
+                model_type="lightgbm",
+                pred_method="univariate-single-multistep-recursive",
+            )
             trainer.log_prefix = "[test]"
 
             trainer.model_save({"model": "fake"}, target_decomposer=decomposer)
 
-            # v2 内嵌式 bundle：不再写独立 target_decomposer.pkl，统一读 bundle
-            bundle_path = Path(tmpdir) / "decomposition_bundle.pkl"
-            self.assertTrue(bundle_path.exists())
-            from decomposition.bundle import DecompositionBundle
+            model_path = Path(tmpdir) / "model.pkl"
+            self.assertTrue(model_path.exists())
+            self.assertFalse(Path(tmpdir, "decomposition_bundle.pkl").exists())
+            from probabilistic.types import ForecastModelBundle
 
-            bundle = ModelDeployPkl(bundle_path).load_model()
-            self.assertIsInstance(bundle, DecompositionBundle)
-            self.assertEqual(bundle.schema_version, 2)
+            bundle = ModelDeployPkl(model_path).load_model()
+            self.assertIsInstance(bundle, ForecastModelBundle)
+            self.assertEqual(bundle.schema_version, 1)
             np.testing.assert_allclose(
-                bundle.pipeline.restore(
+                bundle.target_transform.restore(
                     np.zeros(2), pd.date_range("2026-01-11", periods=2, freq="1D")
                 ),
                 [110.0, 111.0],

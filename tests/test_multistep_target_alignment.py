@@ -9,6 +9,8 @@ import pandas as pd
 
 from features.FeatureEngineering import FeatureEngineer
 from models.ModelForecasting import Forecaster
+from probabilistic.spec import ProbabilisticSpec
+from probabilistic.types import ProbabilisticModelBundle
 
 
 class MultistepTargetAlignmentTest(unittest.TestCase):
@@ -88,7 +90,7 @@ class DirectPredictionLengthContractTest(unittest.TestCase):
         forecaster.model = model
         forecaster.df_future = pd.DataFrame({"time": pd.date_range("2026-01-01", periods=3, freq="1h")})
         forecaster.endogenous_features = []
-        forecaster.quantile_outputs = None
+        forecaster._quantile_outputs = None
         forecaster.log_prefix = "[test]"
         forecaster._build_direct_forecast_input = lambda endogenous_features: (
             pd.DataFrame({"x": [1.0]}),
@@ -133,6 +135,39 @@ class DirectPredictionLengthContractTest(unittest.TestCase):
             r"quantile q=0.1 direct prediction length mismatch: expected 3, got 2",
         ):
             forecaster.univariate_single_multi_step_direct_forecast()
+
+    def test_typed_quantile_bundle_drives_direct_prediction(self):
+        spec = ProbabilisticSpec(
+            mode="quantile",
+            quantiles=(0.1, 0.5, 0.9),
+            point_quantile=0.5,
+            recursive_propagation="median_path",
+            crossing_method="none",
+            crossing_report_raw=True,
+            intervals=(),
+            calibration=None,
+        )
+        bundle = ProbabilisticModelBundle(
+            schema_version=1,
+            spec=spec,
+            model_type="lightgbm",
+            pred_method="univariate-single-multistep-direct",
+            models_by_quantile={
+                0.1: self._Model([[1.0, 2.0, 3.0]]),
+                0.5: self._Model([[2.0, 3.0, 4.0]]),
+                0.9: self._Model([[3.0, 4.0, 5.0]]),
+            },
+            recursive_propagation="median_path",
+        )
+        forecaster = self._forecaster(bundle)
+
+        prediction = forecaster.univariate_single_multi_step_direct_forecast()
+
+        np.testing.assert_array_equal(prediction, [2.0, 3.0, 4.0])
+        np.testing.assert_array_equal(
+            forecaster.quantile_outputs[0.1],
+            [1.0, 2.0, 3.0],
+        )
 
 
 if __name__ == "__main__":

@@ -5,6 +5,11 @@ import unittest
 from types import SimpleNamespace
 
 from probabilistic.spec import (
+    CalibrationSpec,
+    IntervalSpec,
+    ProbabilisticSpec,
+    calibration_runtime_kwargs,
+    resolve_probabilistic_spec,
     validate_cqr_params,
     validate_interval_quantiles,
     validate_probabilistic_args,
@@ -57,6 +62,192 @@ class QuantileGridValidationTest(unittest.TestCase):
 
         with self.assertRaisesRegex(ValueError, "requires predict_type=quantile"):
             validate_probabilistic_args(args)
+
+    def test_runtime_contract_rejects_invalid_asof_calibration_limits(self):
+        args = SimpleNamespace(
+            predict_type="quantile",
+            quantiles=[0.1, 0.5, 0.9],
+            enable_conformal_calibration=True,
+            conformal_alpha=0.1,
+            conformal_calibration_windows=5,
+            conformal_min_windows=0,
+            conformal_min_scores=30,
+            conformal_label_availability_delay_steps=-1,
+        )
+
+        with self.assertRaisesRegex(ValueError, "conformal_min_windows must be > 0"):
+            validate_probabilistic_args(args)
+        args.conformal_min_windows = 1
+        with self.assertRaisesRegex(
+            ValueError,
+            "conformal_label_availability_delay_steps must be >= 0",
+        ):
+            validate_probabilistic_args(args)
+
+
+class ProbabilisticSpecResolverTest(unittest.TestCase):
+    def test_legacy_quantile_config_normalizes_to_explicit_spec(self):
+        args = SimpleNamespace(
+            predict_type="quantile",
+            quantiles=[0.1, 0.5, 0.9],
+            quantile_monotone=True,
+            enable_conformal_calibration=True,
+            conformal_alpha=0.1,
+            conformal_calibration_windows=5,
+            conformal_min_windows=3,
+            conformal_min_scores=30,
+            conformal_label_availability_delay_steps=2,
+            probabilistic={},
+        )
+
+        spec = resolve_probabilistic_spec(args)
+
+        self.assertEqual(
+            spec,
+            ProbabilisticSpec(
+                mode="quantile",
+                quantiles=(0.1, 0.5, 0.9),
+                point_quantile=0.5,
+                recursive_propagation="median_path",
+                crossing_method="rearrangement",
+                crossing_report_raw=True,
+                intervals=(IntervalSpec("q10_q90", 0.1, 0.9),),
+                calibration=CalibrationSpec(
+                    method="cqr",
+                    interval_name="q10_q90",
+                    target_coverage=0.9,
+                    calibration_windows=5,
+                    min_windows=3,
+                    min_scores=30,
+                    label_availability_delay_steps=2,
+                    allow_interval_shrink=False,
+                    grouping="pooled",
+                ),
+                schema_version=1,
+            ),
+        )
+
+    def test_new_mapping_normalizes_nested_fields(self):
+        args = SimpleNamespace(
+            predict_type="point",
+            quantiles=[0.1, 0.5, 0.9],
+            quantile_monotone=False,
+            enable_conformal_calibration=False,
+            probabilistic={
+                "mode": "quantile",
+                "schema_version": 1,
+                "quantiles": [0.1, 0.5, 0.9],
+                "point_quantile": 0.5,
+                "recursive_propagation": "median_path",
+                "crossing": {
+                    "method": "median_preserving_isotonic",
+                    "report_raw": True,
+                },
+                "intervals": [
+                    {
+                        "name": "p10_p90",
+                        "lower_quantile": 0.1,
+                        "upper_quantile": 0.9,
+                    }
+                ],
+                "calibration": {
+                    "method": "cqr",
+                    "interval": "p10_p90",
+                    "target_coverage": 0.8,
+                    "calibration_windows": 5,
+                    "min_windows": 3,
+                    "min_scores": 30,
+                    "label_availability_delay_steps": 0,
+                    "allow_interval_shrink": False,
+                    "grouping": "pooled",
+                },
+            },
+        )
+
+        spec = resolve_probabilistic_spec(args)
+
+        self.assertEqual(spec.mode, "quantile")
+        self.assertEqual(spec.crossing_method, "median_preserving_isotonic")
+        self.assertEqual(spec.intervals[0].nominal_coverage, 0.8)
+        self.assertEqual(spec.calibration.target_coverage, 0.8)
+
+    def test_old_and_new_conflict_fails_fast(self):
+        args = SimpleNamespace(
+            predict_type="quantile",
+            quantiles=[0.1, 0.5, 0.9],
+            quantile_monotone=True,
+            enable_conformal_calibration=False,
+            probabilistic={
+                "mode": "quantile",
+                "quantiles": [0.2, 0.5, 0.8],
+                "point_quantile": 0.5,
+            },
+        )
+
+        with self.assertRaisesRegex(ValueError, "legacy and probabilistic config conflict"):
+            resolve_probabilistic_spec(args)
+
+    def test_unknown_nested_key_and_point_calibration_fail_fast(self):
+        with self.assertRaisesRegex(ValueError, "Unknown probabilistic.crossing key"):
+            resolve_probabilistic_spec(
+                SimpleNamespace(
+                    probabilistic={
+                        "mode": "quantile",
+                        "quantiles": [0.1, 0.5, 0.9],
+                        "point_quantile": 0.5,
+                        "crossing": {"method": "none", "typo": True},
+                    }
+                )
+            )
+        with self.assertRaisesRegex(ValueError, "point mode forbids"):
+            resolve_probabilistic_spec(
+                SimpleNamespace(
+                    probabilistic={
+                        "mode": "point",
+                        "calibration": {"method": "cqr"},
+                    }
+                )
+            )
+
+    def test_calibration_runtime_kwargs_are_derived_from_canonical_spec(self):
+        spec = ProbabilisticSpec(
+            mode="quantile",
+            quantiles=(0.05, 0.1, 0.5, 0.9, 0.95),
+            point_quantile=0.5,
+            recursive_propagation="median_path",
+            crossing_method="none",
+            crossing_report_raw=True,
+            intervals=(IntervalSpec("central80", 0.1, 0.9),),
+            calibration=CalibrationSpec(
+                method="cqr",
+                interval_name="central80",
+                target_coverage=0.8,
+                calibration_windows=7,
+                min_windows=4,
+                min_scores=40,
+                label_availability_delay_steps=2,
+                allow_interval_shrink=True,
+                grouping="pooled",
+            ),
+        )
+
+        kwargs = calibration_runtime_kwargs(spec)
+
+        self.assertEqual(
+            kwargs,
+            {
+                "enable_cqr": True,
+                "alpha": 0.2,
+                "calibration_windows": 7,
+                "min_windows": 4,
+                "min_scores": 40,
+                "label_availability_delay_steps": 2,
+                "interval_name": "central80",
+                "lower_quantile": 0.1,
+                "upper_quantile": 0.9,
+                "allow_interval_shrink": True,
+            },
+        )
 
 
 if __name__ == "__main__":

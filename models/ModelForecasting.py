@@ -21,6 +21,12 @@ import numpy as np
 import pandas as pd
 
 from features.FeatureEngineering import FeatureEngineer
+from probabilistic.types import (
+    BlendQuantileModel,
+    ForecastDistribution,
+    ProbabilisticModelBundle,
+    QuantileGrid,
+)
 from utils.eval_mask import build_eval_mask
 from utils.log_util import logger
 from utils.multistep_contract import validate_direct_feature_alignment
@@ -67,6 +73,7 @@ class Forecaster:
                  categorical_features: List[str],
                  selected_features: List[str] = None,
                  target_decomposer=None,
+                 target_transform=None,
                  df_custom_future=None,
                  log_prefix: str = "[Forecaster]"):
         self.args = args
@@ -100,6 +107,20 @@ class Forecaster:
         self.categorical_features = categorical_features
         self.selected_features = selected_features
         self.target_decomposer = target_decomposer
+        self.target_transform = target_transform
+        if target_scaler is not None:
+            self.prediction_target_columns = target_scaler.get_prediction_target_columns(
+                self.args.pred_method,
+                target_output_features,
+                direct_strategy=str(getattr(self.args, "direct_strategy", "multioutput")),
+            )
+        else:
+            self.prediction_target_columns = list(target_output_features or [target_feature])
+        if self.target_transform is not None and target_scaler is not None:
+            self.target_transform.attach_fitted_target_scaler(
+                target_scaler,
+                target_columns=self.prediction_target_columns,
+            )
         self.log_prefix = log_prefix
         logger.info(f"{self.log_prefix} Forecaster params init...")
         logger.info(f"{self.log_prefix} {'-' * 71}")
@@ -121,7 +142,7 @@ class Forecaster:
         # 递归预测 schema 缓存
         self._recursive_schema_cache = {}
         # 分位数输出缓存（仅 predict_type=quantile 时）
-        self.quantile_outputs = None
+        self._quantile_outputs = None
         # 未来辅助特征索引（日期/天气），用于按步裁剪，减少重复 merge 开销
         self._prepare_future_aux_index()
         # MSMR 递归缓存
@@ -134,6 +155,16 @@ class Forecaster:
                 self.df_history, self.df_future, self.horizon
             )
             logger.info(f"{self.log_prefix} Auxiliary trajectories predicted for {len(self.aux_trajectories)} endogenous cols.")
+
+    @property
+    def quantile_outputs(self) -> Optional[Dict[float, np.ndarray]]:
+        """迁移期只读兼容视图；主链应消费 ForecastDistribution。"""
+        if self._quantile_outputs is None:
+            return None
+        return {
+            float(level): np.asarray(values, dtype=float).copy()
+            for level, values in self._quantile_outputs.items()
+        }
 
     def _should_log_step(self, step: int) -> bool:
         if not bool(getattr(self.args, "enable_step_logging", False)):
@@ -535,7 +566,13 @@ class Forecaster:
         return self._msmdr_runtime_cache
 
     def _is_quantile_bundle(self) -> bool:
-        return isinstance(self.model, dict) and self.model.get("predict_type") == "quantile" and "models" in self.model
+        if isinstance(self.model, ProbabilisticModelBundle):
+            return True
+        return (
+            isinstance(self.model, dict)
+            and self.model.get("predict_type") == "quantile"
+            and "models" in self.model
+        )
 
     def _predict_point_and_quantiles(self, X_processed: pd.DataFrame) -> Tuple[np.ndarray, Optional[Dict[float, np.ndarray]]]:
         """
@@ -546,8 +583,22 @@ class Forecaster:
         if not self._is_quantile_bundle():
             return np.asarray(self.model.predict(X_processed)), None
 
-        quantile_models = self.model.get("models", {})
-        quantiles = [float(q) for q in self.model.get("quantiles", list(quantile_models.keys()))]
+        if isinstance(self.model, ProbabilisticModelBundle):
+            quantile_models = self.model.models_by_quantile
+            quantiles = list(self.model.spec.quantiles)
+            median_q = self.model.spec.point_quantile
+        else:
+            quantile_models = self.model.get("models", {})
+            quantiles = [
+                float(q)
+                for q in self.model.get("quantiles", list(quantile_models.keys()))
+            ]
+            median_q = float(
+                self.model.get(
+                    "median_quantile",
+                    min(quantiles, key=lambda value: abs(value - 0.5)),
+                )
+            )
         quantile_preds = {}
         for q in quantiles:
             q_key = q if q in quantile_models else str(q)
@@ -560,9 +611,13 @@ class Forecaster:
         if not quantile_preds:
             raise ValueError(f"{self.log_prefix} quantile model bundle has no valid sub-models.")
 
-        median_q = float(self.model.get("median_quantile", min(quantile_preds.keys(), key=lambda x: abs(x - 0.5))))
         point_pred = quantile_preds.get(median_q)
         if point_pred is None:
+            if isinstance(self.model, ProbabilisticModelBundle):
+                raise ValueError(
+                    f"{self.log_prefix} typed quantile bundle is missing "
+                    f"point_quantile={median_q:g}"
+                )
             median_q = min(quantile_preds.keys(), key=lambda x: abs(x - 0.5))
             point_pred = quantile_preds[median_q]
         return point_pred, quantile_preds
@@ -570,10 +625,10 @@ class Forecaster:
     def _record_quantile_direct(self, quantile_preds: Optional[Dict[float, np.ndarray]], n_required: int):
         if not quantile_preds:
             return
-        self.quantile_outputs = {}
+        self._quantile_outputs = {}
         for q, pred in quantile_preds.items():
             pred_for_horizon = pred[0] if np.asarray(pred).ndim > 1 else pred
-            self.quantile_outputs[q] = self._require_direct_prediction_length(
+            self._quantile_outputs[q] = self._require_direct_prediction_length(
                 pred_for_horizon,
                 n_required,
                 label=f"quantile q={q}",
@@ -588,7 +643,7 @@ class Forecaster:
     def _finalize_recursive_quantiles(self, store: Dict[float, List[float]]):
         if not store:
             return
-        self.quantile_outputs = {q: np.asarray(v, dtype=float) for q, v in store.items()}
+        self._quantile_outputs = {q: np.asarray(v, dtype=float) for q, v in store.items()}
 
     def _is_horizon_feature_mode(self) -> bool:
         """USMD/MSMD 且 direct_strategy=horizon_feature 时推理走多行展开。"""
@@ -753,7 +808,7 @@ class Forecaster:
             Y_preds = np.asarray(point_pred)
             if quantile_preds:
                 # 直接输出方法通常每行对应一步预测，按行记录分位数
-                self.quantile_outputs = {
+                self._quantile_outputs = {
                     q: np.asarray(pred).reshape(-1) for q, pred in quantile_preds.items()
                 }
         if Y_preds.size == 0:
@@ -1213,16 +1268,28 @@ class Forecaster:
             raise ValueError(f"{self.log_prefix} blend quantile requires a quantile bundle.")
         is_multi = str(self.args.pred_method).startswith("multivariate")
         original_model = self.model
-        quantile_models = self.model.get("models", {})
+        if isinstance(self.model, ProbabilisticModelBundle):
+            if not self.model.is_blend:
+                raise ValueError(
+                    f"{self.log_prefix} typed blend forecast requires BlendQuantileModel entries"
+                )
+            quantile_models = self.model.models_by_quantile
+            median_q = self.model.spec.point_quantile
+        else:
+            quantile_models = self.model.get("models", {})
+            median_q = float(self.model.get("median_quantile", 0.5))
         weights = self._resolve_blend_weights()
-        median_q = float(self.model.get("median_quantile", 0.5))
         quantile_preds = {}
         blend_direct_ref = None
         blend_recursive_ref = None
         for q_key, blend_bundle in quantile_models.items():
             q = float(q_key)
-            direct_q = blend_bundle.get("direct")
-            recursive_q = blend_bundle.get("recursive")
+            if isinstance(blend_bundle, BlendQuantileModel):
+                direct_q = blend_bundle.direct
+                recursive_q = blend_bundle.recursive
+            else:
+                direct_q = blend_bundle.get("direct")
+                recursive_q = blend_bundle.get("recursive")
             if direct_q is None or recursive_q is None:
                 raise ValueError(
                     f"{self.log_prefix} blend quantile bundle for q={q} missing direct/recursive sub-model."
@@ -1253,7 +1320,7 @@ class Forecaster:
         if blend_direct_ref is not None:
             self.blend_direct_pred = blend_direct_ref
             self.blend_recursive_pred = blend_recursive_ref
-        self.quantile_outputs = quantile_preds
+        self._quantile_outputs = quantile_preds
         # point = median 分位数融合结果
         point_pred = quantile_preds.get(median_q)
         if point_pred is None:
@@ -1276,19 +1343,59 @@ class Forecaster:
         n = min(len(result), len(self.df_future))
         future_times = self.df_future["time"].iloc[:n]
         restored = decomposer.restore(result[:n], future_times)
-        if self.quantile_outputs:
-            self.quantile_outputs = {
+        if self._quantile_outputs:
+            self._quantile_outputs = {
                 q: decomposer.restore(np.asarray(pred).reshape(-1)[:n], future_times)
-                for q, pred in self.quantile_outputs.items()
+                for q, pred in self._quantile_outputs.items()
             }
         return restored
 
-    def _predict_by_method(self) -> np.ndarray:
+    def _restore_target_transform(self, values) -> np.ndarray:
+        """通过同一变换栈恢复 point 和全部 quantile；无新栈时兼容旧分解入口。"""
+        pipeline = getattr(self, "target_transform", None)
+        if pipeline is None:
+            return self._restore_target_decomposition(values)
+
+        result = np.asarray(values, dtype=float).reshape(-1)
+        if len(result) != len(self.df_future):
+            raise ValueError(
+                f"{self.log_prefix} target restore length mismatch: "
+                f"prediction={len(result)}, future={len(self.df_future)}"
+            )
+        future_times = self.df_future["time"]
+        restored = pipeline.restore(
+            result,
+            future_times,
+            target_columns=self.prediction_target_columns,
+        )
+        if self._quantile_outputs:
+            levels = sorted(self._quantile_outputs, key=float)
+            columns = []
+            for level in levels:
+                column = np.asarray(self._quantile_outputs[level], dtype=float).reshape(-1)
+                if len(column) != len(result):
+                    raise ValueError(
+                        f"{self.log_prefix} quantile q={float(level):g} restore length mismatch: "
+                        f"prediction={len(column)}, expected={len(result)}"
+                    )
+                columns.append(column)
+            restored_matrix = pipeline.restore_quantile_matrix(
+                np.column_stack(columns),
+                future_times,
+                target_columns=self.prediction_target_columns,
+            )
+            self._quantile_outputs = {
+                level: restored_matrix[:, index]
+                for index, level in enumerate(levels)
+            }
+        return restored
+
+    def _predict_by_method(self) -> Any:
         """
         根据配置分发预测策略并返回一维预测数组
         """
         # 每次预测前重置，避免复用同一 Forecaster 实例时污染
-        self.quantile_outputs = None
+        self._quantile_outputs = None
         perf_start = time.perf_counter()
         if self.args.pred_method == "univariate-single-multistep-direct-pointwise":
             logger.info(f"{self.log_prefix} Forecast method: univariate_single_multi_step_direct_pointwise_forecast(USMDP)")
@@ -1354,13 +1461,46 @@ class Forecaster:
         else:
             result = pred_arr[:, 0]
 
-        # 目标分解还原：给点预测和全部分位数加回相同的确定性分量。
-        result = self._restore_target_decomposition(result)
+        # 目标空间还原：严格按 scaler→decomposition→calendar 逆序执行，
+        # point 与全部 quantile 共用同一 TargetTransformPipeline。
+        result = self._restore_target_transform(result)
 
         logger.info(
             f"{self.log_prefix} Forecast method runtime: "
             f"{self.args.pred_method} took {time.perf_counter() - perf_start:.3f}s"
         )
+        if self._quantile_outputs:
+            if isinstance(self.model, ProbabilisticModelBundle):
+                grid = self.model.quantile_grid
+                recursive_propagation = self.model.recursive_propagation
+            else:
+                levels = tuple(sorted((float(q) for q in self._quantile_outputs), key=float))
+                grid = QuantileGrid(levels, point_level=0.5)
+                recursive_propagation = "median_path"
+            quantile_matrix = np.column_stack(
+                [
+                    np.asarray(self._quantile_outputs[level], dtype=float).reshape(-1)
+                    for level in grid.levels
+                ]
+            )
+            target_transform = getattr(self, "target_transform", None)
+            target_decomposer = getattr(self, "target_decomposer", None)
+            space = (
+                "target"
+                if target_transform is not None
+                or bool(getattr(target_decomposer, "is_fitted", False))
+                else "model"
+            )
+            return ForecastDistribution(
+                point=np.asarray(result, dtype=float).reshape(-1),
+                quantile_grid=grid,
+                quantile_values=quantile_matrix,
+                intervals={},
+                space=space,
+                quantile_stage="raw",
+                forecast_times=pd.DatetimeIndex(self.df_future["time"]),
+                metadata={"recursive_propagation": recursive_propagation},
+            )
         return result
 
     def forecast_results_save(self, df_history, df_future, n_per_day):

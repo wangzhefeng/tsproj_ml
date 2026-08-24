@@ -34,8 +34,7 @@ from features.FeatureScalering import (
     resolve_feature_scaler_type,
     resolve_target_scaler_type,
 )
-from decomposition import DecompositionPipeline
-from features.TargetNormalization import CalendarDayTargetNormalizer
+from features.TargetTransformation import TargetTransformPipeline
 from models.ModelTraining import Trainer
 from models.ModelForecasting import Forecaster
 from data_provider.data_loader import materialize_custom_future_sources
@@ -46,6 +45,10 @@ from data_provider.outlier_handling import (
 from utils.eval_mask import build_eval_mask
 from utils.quantile import monotonize_quantile_columns
 from utils.conformal import compute_nonconformity_scores
+from probabilistic.evaluation import write_probabilistic_artifacts
+from probabilistic.spec import calibration_runtime_kwargs
+from probabilistic.postprocessing import repair_quantile_crossing
+from probabilistic.types import ForecastDistribution, QuantileGrid
 from utils.weather_contract import validate_weather_coverage
 from utils.log_util import logger
 from utils.exogenous_contract import select_asof_rows
@@ -171,21 +174,16 @@ class Tester:
             window=window,
             log_prefix=log_prefix,
         )
-        target_calendar_normalizer = CalendarDayTargetNormalizer(args)
-        df_history_train = target_calendar_normalizer.transform_history(
+        target_transform = TargetTransformPipeline.from_args(args)
+        df_history_train = target_transform.fit_transform_history(
             df_history_train,
             time_col="time",
             target_col=payload["target_feature"],
         )
         # 每个滑窗只在训练段拟合目标分解器，禁止测试段及更晚数据参与预处理。
         residual_diag_row = None
-        target_decomposer = DecompositionPipeline.from_args(args)
+        target_decomposer = target_transform.decomposition
         if target_decomposer.enabled:
-            df_history_train = target_decomposer.fit_transform(
-                df_history_train,
-                time_col="time",
-                target_col=payload["target_feature"],
-            )
             # 分解诊断报告（按窗口序号命名，不互相覆盖；无输出目录时跳过）
             from decomposition.diagnostics import write_diagnostics_report
 
@@ -251,6 +249,22 @@ class Tester:
             target_scaler=target_scaler,
             categorical_features=categorical_features,
         )
+        try:
+            pred_target_columns = target_scaler_testing.get_prediction_target_columns(
+                args.pred_method,
+                target_output_features,
+                direct_strategy=str(getattr(args, "direct_strategy", "multioutput")),
+            )
+        except TypeError:
+            # 测试/旧 adapter 的兼容签名；生产 TargetScaler 支持 direct_strategy。
+            pred_target_columns = target_scaler_testing.get_prediction_target_columns(
+                args.pred_method,
+                target_output_features,
+            )
+        target_transform.attach_fitted_target_scaler(
+            target_scaler_testing,
+            target_columns=pred_target_columns,
+        )
         # 多变量递归辅助预测器包装（滑窗测试段同样需要 aux 轨迹回填）
         from models.AuxiliaryForecaster import maybe_build_auxiliary_bundle
         model = maybe_build_auxiliary_bundle(
@@ -295,9 +309,25 @@ class Tester:
             categorical_features=categorical_features,
             selected_features=selected_features,
             target_decomposer=target_decomposer,
+            target_transform=target_transform,
             log_prefix=log_prefix,
         )
-        y_pred = predictor._predict_by_method()
+        forecast_result = predictor._predict_by_method()
+        if isinstance(forecast_result, ForecastDistribution):
+            y_pred = forecast_result.point
+            output_quantile_grid = forecast_result.quantile_grid
+            quantile_outputs = {
+                level: forecast_result.quantile_values[:, index]
+                for index, level in enumerate(forecast_result.quantile_grid.levels)
+            }
+        else:
+            y_pred = forecast_result
+            quantile_outputs = getattr(predictor, "quantile_outputs", None)
+            output_quantile_grid = (
+                QuantileGrid(tuple(sorted(quantile_outputs)), point_level=0.5)
+                if quantile_outputs
+                else None
+            )
         # ------------------------------
         # 模型滑窗预测结果收集
         # ------------------------------
@@ -308,34 +338,10 @@ class Tester:
                 "cv_plot_df": None,
                 "train_outlier_report": train_outlier_report,
             }
-        # 预测结果恢复到目标空间，用于评估
-        if target_scaler_testing is not None:
-            pred_target_columns = target_scaler_testing.get_prediction_target_columns(
-                args.pred_method,
-                target_output_features,
-            )
-            y_pred = target_scaler_testing.restore_predictions(
-                y_pred,
-                pred_target_columns,
-            )
-            # 始终评估主目标的一步预测
-            y_test_for_eval = target_scaler_testing.prepare_eval_target(
-                y_test_raw,
-                [target_output_features[0]],
-            )
-        else:
-            y_test_for_eval = np.asarray(y_test_raw).reshape(-1)
-        prediction_times = df_history_test["time"].iloc[:len(np.asarray(y_pred).reshape(-1))]
-        y_pred = target_calendar_normalizer.restore_predictions(y_pred, prediction_times)
-        quantile_outputs = getattr(predictor, "quantile_outputs", None)
-        if quantile_outputs:
-            predictor.quantile_outputs = {
-                q: target_calendar_normalizer.restore_predictions(
-                    q_pred,
-                    df_history_test["time"].iloc[:len(np.asarray(q_pred).reshape(-1))],
-                )
-                for q, q_pred in quantile_outputs.items()
-            }
+        # Forecaster 已通过共享 TargetTransformPipeline 恢复到原始 target space；
+        # 测试标签始终保留同一原始电平。
+        y_pred = np.asarray(y_pred, dtype=float).reshape(-1)
+        y_test_for_eval = np.asarray(y_test_raw, dtype=float).reshape(-1)
         # 对齐预测结果与评估标签长度
         if len(y_pred) != len(y_test_for_eval):
             min_len = min(len(y_pred), len(y_test_for_eval))
@@ -384,39 +390,72 @@ class Tester:
             max_value=args.max_value,
         )
         # 分位数预测(若启用):补入 cv_plot,使回测也体现分位数区间
-        if getattr(predictor, "quantile_outputs", None):
+        if quantile_outputs:
+            if output_quantile_grid is None:
+                raise RuntimeError("quantile outputs require a QuantileGrid")
             n = len(cv_plot_df_window)
-            for q, q_pred in sorted(predictor.quantile_outputs.items(), key=lambda x: float(x[0])):
-                q_col = f"predict_q{int(round(float(q) * 100)):02d}"
-                cv_plot_df_window[q_col] = np.asarray(q_pred).reshape(-1)[:n]
-            # conformal score 记录（若启用）：逐点 nonconformity score，供 forecast 阶段 CQR 校准
-            if bool(getattr(args, "enable_conformal_calibration", False)):
-                q_keys_sorted = sorted(predictor.quantile_outputs.keys(), key=float)
-                if len(q_keys_sorted) >= 2:
-                    q_low_pred = np.asarray(predictor.quantile_outputs[q_keys_sorted[0]]).reshape(-1)
-                    q_high_pred = np.asarray(predictor.quantile_outputs[q_keys_sorted[-1]]).reshape(-1)
-                    # restore quantile 到与 y_test_for_eval 一致的量纲，与 forecast 阶段
-                    # restore_predictions 使用相同的列语义（pred_target_columns），保证 score 空间一致。
-                    # 守卫：n != len(columns) 时逐列 restore 会 IndexError/错位，直接跳过 restore。
-                    if target_scaler is not None and getattr(target_scaler, "is_fitted", False):
-                        if len(q_low_pred) != len(pred_target_columns):
-                            logger.warning(
-                                f"{log_prefix} Conformal restore skipped: q length ({len(q_low_pred)}) "
-                                f"!= target columns ({len(pred_target_columns)}); using raw quantiles for window {window}."
-                            )
-                        else:
-                            q_low_pred = target_scaler.restore_predictions(q_low_pred, pred_target_columns).reshape(-1)
-                            q_high_pred = target_scaler.restore_predictions(q_high_pred, pred_target_columns).reshape(-1)
-                    # score 总是计算（scale_target=false 时 restore 为 no-op，score 在原始空间；
-                    #   scale_target=true 时 restore 后 score 在原始空间——两种情况一致）
-                    cv_plot_df_window["conformal_score"] = compute_nonconformity_scores(
-                        y_test_for_eval, q_low_pred[:n], q_high_pred[:n]
+            for q, q_pred in sorted(quantile_outputs.items(), key=lambda x: float(x[0])):
+                q_col = output_quantile_grid.column_name(float(q))
+                q_values = np.asarray(q_pred).reshape(-1)
+                if len(q_values) != n:
+                    raise ValueError(
+                        f"{log_prefix} quantile q={float(q):g} test prediction length mismatch: "
+                        f"expected {n}, got {len(q_values)}"
                     )
+                cv_plot_df_window[f"{q_col}_raw"] = q_values
+                cv_plot_df_window[q_col] = q_values
+            cv_plot_df_window = repair_quantile_crossing(
+                cv_plot_df_window,
+                enabled=bool(getattr(args, "quantile_monotone", False)),
+                point_column="Y_preds",
+            )
+            # conformal score 记录（若启用）：逐点 nonconformity score，供 forecast 阶段 CQR 校准
+            probabilistic_spec = getattr(args, "probabilistic_spec", None)
+            if probabilistic_spec is not None:
+                calibration_kwargs = calibration_runtime_kwargs(probabilistic_spec)
+            else:
+                calibration_kwargs = {
+                    "enable_cqr": bool(
+                        getattr(args, "enable_conformal_calibration", False)
+                    )
+                }
+            if bool(calibration_kwargs["enable_cqr"]):
+                if probabilistic_spec is not None:
+                    interval = probabilistic_spec.calibration_interval
+                    if interval is None:
+                        raise ValueError("CQR is enabled without a calibration interval")
+                    q_low_col = output_quantile_grid.column_name(
+                        interval.lower_quantile
+                    )
+                    q_high_col = output_quantile_grid.column_name(
+                        interval.upper_quantile
+                    )
+                else:
+                    q_cols_sorted = [
+                        output_quantile_grid.column_name(float(q))
+                        for q in sorted(quantile_outputs.keys(), key=float)
+                    ]
+                    q_low_col, q_high_col = q_cols_sorted[0], q_cols_sorted[-1]
+                q_low_pred = cv_plot_df_window[q_low_col].to_numpy(dtype=float)
+                q_high_pred = cv_plot_df_window[q_high_col].to_numpy(dtype=float)
+                # point/quantile 已经由同一变换栈恢复；score 直接在保存的
+                # processed target-space boundaries 上计算，可逐点复算。
+                cv_plot_df_window["conformal_score"] = compute_nonconformity_scores(
+                    y_test_for_eval,
+                    q_low_pred,
+                    q_high_pred,
+                )
         # blend 分预测记录（供 ridge_stacking 在 forecast 阶段学权重）
         if getattr(predictor, "blend_direct_pred", None) is not None:
             n_blend = len(cv_plot_df_window)
             cv_plot_df_window["blend_direct_pred"] = np.asarray(predictor.blend_direct_pred).reshape(-1)[:n_blend]
             cv_plot_df_window["blend_recursive_pred"] = np.asarray(predictor.blend_recursive_pred).reshape(-1)[:n_blend]
+
+        # 注入 naive 对照（若可对齐），供概率 horizon 聚合输出 point/naive 指标
+        if y_naive is not None:
+            n_rows = len(cv_plot_df_window)
+            if len(y_naive) >= n_rows:
+                cv_plot_df_window["Y_naive"] = np.asarray(y_naive[:n_rows], dtype=float)
 
         # 注入窗口编号，供后续 per-window 绘图使用
         if not cv_plot_df_window.empty:
@@ -780,8 +819,34 @@ class Tester:
     # ------------------------------
     @staticmethod
     def test_results_save(args, log_prefix: str, test_scores_df, cv_plot_df, train_outlier_report=None, window_results=None):
-        # 分位数单调化(可选):逐行排序 predict_q* 列(csv 与绘图同步生效)
+        # 分位数单调化(可选):q50 锚定修复，csv/绘图/概率指标使用同一 processed stage。
         cv_plot_df = monotonize_quantile_columns(cv_plot_df, bool(getattr(args, "quantile_monotone", False)))
+        if any(str(column).startswith("predict_q") for column in cv_plot_df.columns):
+            probabilistic_spec = getattr(args, "probabilistic_spec", None)
+            if probabilistic_spec is not None:
+                calibration_kwargs = calibration_runtime_kwargs(probabilistic_spec)
+                calibration_kwargs["interval_specs"] = probabilistic_spec.intervals
+            else:
+                calibration_kwargs = {
+                    "enable_cqr": bool(
+                        getattr(args, "enable_conformal_calibration", False)
+                    ),
+                    "calibration_windows": int(
+                        getattr(args, "conformal_calibration_windows", 5)
+                    ),
+                    "min_windows": int(getattr(args, "conformal_min_windows", 3)),
+                    "min_scores": int(getattr(args, "conformal_min_scores", 30)),
+                    "alpha": float(getattr(args, "conformal_alpha", 0.1)),
+                    "label_availability_delay_steps": int(
+                        getattr(args, "conformal_label_availability_delay_steps", 0)
+                    ),
+                }
+            cv_plot_df = write_probabilistic_artifacts(
+                cv_plot_df,
+                args.test_results_dir,
+                freq=str(getattr(args, "freq", "1D")),
+                **calibration_kwargs,
+            )
         test_scores_df.to_csv(args.test_results_dir.joinpath("test_scores_df.csv"), index=False, encoding="utf-8")
         cv_plot_df.to_csv(args.test_results_dir.joinpath("cv_plot_df.csv"), index=False, encoding="utf-8")
         if train_outlier_report is None:
@@ -809,10 +874,16 @@ class Tester:
                 summary,
                 args.test_results_dir.joinpath("residual_diagnostics.csv"),
             )
+            fft_cv_text = (
+                f"{summary.fft_period_cv:.3f}"
+                if summary.fft_period_cv is not None
+                and np.isfinite(summary.fft_period_cv)
+                else "N/A"
+            )
             logger.info(
                 f"{log_prefix} residual_diagnostics: "
                 f"fft_period_median={summary.fft_period_median}, "
-                f"cv={summary.fft_period_cv:.3f if summary.fft_period_cv else 'N/A'}, "
+                f"cv={fft_cv_text}, "
                 f"stable_band={summary.stable_band_detected}"
             )
         if cv_plot_df.empty or not required_cols.issubset(set(cv_plot_df.columns)):
@@ -835,14 +906,14 @@ class Tester:
         plot_x = plot_df["time"] if "time" in plot_df.columns else np.arange(len(plot_df))
         ax_main.plot(plot_x, plot_df[plot_true_col].values, label="Trues", lw=1.7)
         ax_main.plot(plot_x, plot_df[plot_pred_col].values, label="Preds", lw=1.7, ls="-.")
-        # 分位数预测区间带(若回测含分位数列):填充 q_low~q_high
+        # 模型分位数带(非 CQR PI):填充 q_low~q_high
         qcols = sorted(c for c in plot_df.columns if str(c).startswith("predict_q"))
         if len(qcols) >= 2:
             ax_main.fill_between(
                 plot_x,
                 plot_df[qcols[0]].astype(float).values,
                 plot_df[qcols[-1]].astype(float).values,
-                color="tab:blue", alpha=0.15, label=f"PI [{qcols[0]},{qcols[-1]}]",
+                color="tab:blue", alpha=0.15, label=f"Quantiles [{qcols[0]},{qcols[-1]}]",
             )
         ax_main.legend(loc="upper left")
         ax_main.set_xlabel("Time")
@@ -892,14 +963,14 @@ class Tester:
                 x_w = group_sorted["time"] if "time" in group_sorted.columns else np.arange(len(group_sorted))
                 ax_w.plot(x_w, group_sorted["Y_trues"].values, label="Trues", lw=1.5)
                 ax_w.plot(x_w, group_sorted["Y_preds"].values, label="Preds", lw=1.5, ls="-.")
-                # 分位数区间带
+                # 模型分位数带（非 CQR PI）
                 qcols_w = sorted(c for c in group_sorted.columns if str(c).startswith("predict_q"))
                 if len(qcols_w) >= 2:
                     ax_w.fill_between(
                         x_w,
                         group_sorted[qcols_w[0]].astype(float).values,
                         group_sorted[qcols_w[-1]].astype(float).values,
-                        color="tab:blue", alpha=0.15, label=f"PI [{qcols_w[0]},{qcols_w[-1]}]",
+                        color="tab:blue", alpha=0.15, label=f"Quantiles [{qcols_w[0]},{qcols_w[-1]}]",
                     )
                 meta = window_meta.get(win, {})
                 tr = meta.get("time_range", "")

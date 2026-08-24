@@ -284,7 +284,10 @@ class ModelStrategyConfig:
     multi_output_strategy: str = "multioutput"  # 多输出策略: multioutput / regressor_chain
     predict_type: str = "point"  # 预测类型: point / quantile
     quantiles: List[float] = field(default_factory=lambda: [0.1, 0.5, 0.9])  # 分位数预测配置，predict_type=quantile 时生效
-    quantile_monotone: bool = False  # 分位数单调化开关:逐行排序 predict_q* 消除 quantile crossing(默认关)
+    quantile_monotone: bool = False  # 分位数单调化:q50 固定锚点修复上下分位 crossing(默认关)
+    # 新版概率预测配置组：overrides.probabilistic 整体保留为原始 mapping，
+    # 由 probabilistic.spec.resolve_probabilistic_spec() 严格归一化。
+    probabilistic: Dict[str, Any] = field(default_factory=dict)
     use_horizon_exogenous_for_direct: bool = False  # Direct 方法是否使用 horizon-aware 外生特征展开
     align_direct_features_to_target: bool = False  # horizon=1 时 Direct 的 lag1=当前值，外生特征取目标时点
     block_size: int = 0  # Direct-Recursive 方法的分块大小
@@ -390,14 +393,17 @@ class ConformalConfig:
     """
     分位数预测的 Conformal 校准配置（CQR, Romano 2019）。
 
-    在滑窗测试阶段累积 nonconformity score，forecast 阶段对 q_low/q_high
-    做对称膨胀，保证边际覆盖率 P(y ∈ [q_low_cal, q_high_cal]) ≥ 1−α。
-    纯后处理，不重训模型；依赖 is_testing=True 产出的 cv_plot_df.csv。
+    在滑窗测试阶段累积 nonconformity score，forecast 阶段基于 q_low/q_high
+    生成独立 prediction interval（predict_pi*），不覆盖模型 quantile 列。
+    历史评估与 final forecast 共用 as-of selector，只使用标签已完整到达的历史窗口。
+    纯后处理，不重训模型；时间序列场景报告经验 coverage，不作无条件覆盖保证。
     """
     enable_conformal_calibration: bool = False  # 总开关
     conformal_alpha: float = 0.1  # 目标误覆盖率（1-α=0.9 即 90% 覆盖）
     conformal_calibration_windows: int = 5  # 用最近 N 个滑窗的 score 作校准集
+    conformal_min_windows: int = 3  # 至少需要 N 个标签完整到达的历史窗口
     conformal_min_scores: int = 30  # 校准集最少 score 数，不足则跳过+WARNING
+    conformal_label_availability_delay_steps: int = 0  # 标签相对 target_time 的额外可得延迟（freq 步）
 
 
 @dataclass

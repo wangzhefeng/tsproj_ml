@@ -143,7 +143,7 @@ class RecursiveCustomFutureWiringTest(unittest.TestCase):
         forecaster.feature_engineer = FeatureEngineerSpy()
         forecaster.selected_features = None
         forecaster.log_prefix = "[test]"
-        forecaster.quantile_outputs = None
+        forecaster._quantile_outputs = None
         forecaster._slice_future_aux_by_forecast = lambda frame: (None, None)
         forecaster._get_recursive_schema = lambda key: None
         forecaster._set_recursive_schema = lambda *args, **kwargs: None

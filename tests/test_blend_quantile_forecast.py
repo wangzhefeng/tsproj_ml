@@ -8,6 +8,8 @@ import numpy as np
 import pandas as pd
 
 from models.ModelForecasting import Forecaster
+from probabilistic.spec import ProbabilisticSpec
+from probabilistic.types import BlendQuantileModel, ProbabilisticModelBundle
 
 
 class BlendQuantileForecastTest(unittest.TestCase):
@@ -16,14 +18,28 @@ class BlendQuantileForecastTest(unittest.TestCase):
         direct_q10, recursive_q10 = object(), object()
         direct_q50, recursive_q50 = object(), object()
         direct_q90, recursive_q90 = object(), object()
-        original_bundle = {
-            "models": {
-                0.1: {"direct": direct_q10, "recursive": recursive_q10},
-                0.5: {"direct": direct_q50, "recursive": recursive_q50},
-                0.9: {"direct": direct_q90, "recursive": recursive_q90},
+        spec = ProbabilisticSpec(
+            mode="quantile",
+            quantiles=(0.1, 0.5, 0.9),
+            point_quantile=0.5,
+            recursive_propagation="median_path",
+            crossing_method="none",
+            crossing_report_raw=True,
+            intervals=(),
+            calibration=None,
+        )
+        original_bundle = ProbabilisticModelBundle(
+            schema_version=1,
+            spec=spec,
+            model_type="lightgbm",
+            pred_method="univariate-single-multistep-blend-direct-recursive",
+            models_by_quantile={
+                0.1: BlendQuantileModel(direct_q10, recursive_q10),
+                0.5: BlendQuantileModel(direct_q50, recursive_q50),
+                0.9: BlendQuantileModel(direct_q90, recursive_q90),
             },
-            "median_quantile": 0.5,
-        }
+            recursive_propagation="median_path",
+        )
         predictions = {
             direct_q10: np.array([1.0, 2.0]),
             recursive_q10: np.array([3.0, 4.0]),
@@ -55,6 +71,72 @@ class BlendQuantileForecastTest(unittest.TestCase):
         np.testing.assert_allclose(forecaster.blend_direct_pred, [10.0, 20.0])
         np.testing.assert_allclose(forecaster.blend_recursive_pred, [30.0, 40.0])
         self.assertIs(forecaster.model, original_bundle)
+
+    def test_msbr_typed_quantile_bundle_returns_multivariate_blend_shape(self):
+        forecaster: Any = Forecaster.__new__(Forecaster)
+        direct_models = {level: object() for level in (0.1, 0.5, 0.9)}
+        recursive_models = {level: object() for level in (0.1, 0.5, 0.9)}
+        spec = ProbabilisticSpec(
+            mode="quantile",
+            quantiles=(0.1, 0.5, 0.9),
+            point_quantile=0.5,
+            recursive_propagation="median_path",
+            crossing_method="none",
+            crossing_report_raw=True,
+            intervals=(),
+            calibration=None,
+        )
+        bundle = ProbabilisticModelBundle(
+            schema_version=1,
+            spec=spec,
+            model_type="lightgbm",
+            pred_method="multivariate-single-multistep-blend-direct-recursive",
+            models_by_quantile={
+                level: BlendQuantileModel(
+                    direct_models[level],
+                    recursive_models[level],
+                )
+                for level in spec.quantiles
+            },
+            recursive_propagation="median_path",
+        )
+        predictions = {
+            direct_models[0.1]: np.array([1.0, 2.0]),
+            recursive_models[0.1]: np.array([3.0, 4.0]),
+            direct_models[0.5]: np.array([10.0, 20.0]),
+            recursive_models[0.5]: np.array([30.0, 40.0]),
+            direct_models[0.9]: np.array([100.0, 200.0]),
+            recursive_models[0.9]: np.array([300.0, 400.0]),
+        }
+        forecaster.args = SimpleNamespace(
+            pred_method="multivariate-single-multistep-blend-direct-recursive"
+        )
+        forecaster.model = bundle
+        forecaster.df_history = pd.DataFrame({"y": [1.0, 2.0]})
+        forecaster.max_lag = 1
+        forecaster.history_context_length = 1
+        forecaster._recursive_schema_cache = {}
+        forecaster._is_quantile_bundle = lambda: True
+        forecaster._resolve_blend_weights = lambda: np.array([0.5, 0.5])
+        forecaster.multivariate_single_multi_step_direct_forecast = (
+            lambda: predictions[forecaster.model]
+        )
+        forecaster.multivariate_single_multi_step_recursive_forecast = (
+            lambda: predictions[forecaster.model]
+        )
+        forecaster.log_prefix = "[test]"
+
+        point_prediction = forecaster._blend_forecast_quantile()
+
+        self.assertEqual(point_prediction.shape, (2,))
+        self.assertEqual(
+            np.column_stack(
+                [forecaster.quantile_outputs[level] for level in spec.quantiles]
+            ).shape,
+            (2, 3),
+        )
+        np.testing.assert_allclose(point_prediction, [20.0, 30.0])
+        self.assertIs(forecaster.model, bundle)
 
 
 if __name__ == "__main__":

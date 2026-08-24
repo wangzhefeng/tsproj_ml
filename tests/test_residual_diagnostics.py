@@ -3,14 +3,17 @@
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 
 import numpy as np
+import pandas as pd
 
 from decomposition.residual_diagnostics import (
     diagnose_window_residual,
     summarize_window_residuals,
     write_residual_diagnostics,
 )
+from models.ModelTesting import Tester
 
 
 def _make_pure_noise(n=200, seed=0):
@@ -96,6 +99,30 @@ class WriteCsvTest(unittest.TestCase):
             self.assertEqual(len(df), 3)  # 2 windows + 1 summary
             self.assertIn("window_idx", df.columns)
             self.assertIn("fft_dominant_period_samples", df.columns)
+
+
+class ResidualDiagnosticsSaveRegressionTest(unittest.TestCase):
+    def test_test_results_save_handles_residual_cv_logging(self):
+        row = diagnose_window_residual(
+            _make_periodic_residual(period=12),
+            window_idx=1,
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            output_dir = Path(tmp)
+            args = SimpleNamespace(
+                test_results_dir=output_dir,
+                quantile_monotone=False,
+            )
+
+            Tester.test_results_save(
+                args,
+                "[test]",
+                pd.DataFrame(),
+                pd.DataFrame(),
+                window_results=[{"residual_diag_row": row}],
+            )
+
+            self.assertTrue((output_dir / "residual_diagnostics.csv").exists())
 
 
 if __name__ == "__main__":

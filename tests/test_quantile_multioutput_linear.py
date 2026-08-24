@@ -51,6 +51,49 @@ class QuantileMultiOutputLinearTest(unittest.TestCase):
         self.assertEqual(prediction.shape, (1, 2))
         self.assertTrue(np.isfinite(prediction).all())
 
+    def test_multioutput_quantile_forwards_same_sample_weight_to_every_output(self):
+        recorded_weights = []
+
+        class RecordingWrapper:
+            def fit(self, X, y, sample_weight=None, **kwargs):
+                recorded_weights.append(
+                    None if sample_weight is None else np.asarray(sample_weight).copy()
+                )
+                return self
+
+            def predict(self, X):
+                return np.zeros(len(X), dtype=float)
+
+        args: Any = SimpleNamespace(
+            model_type="qr",
+            model_params={},
+            model_thread_count=1,
+            multi_output_n_jobs=1,
+            multi_output_strategy="multioutput",
+        )
+        trainer = Trainer(args, log_prefix="[test]")
+        trainer.sample_weight = np.array([0.5, 1.0, 1.5])
+        trainer._create_model_instance = lambda *args, **kwargs: RecordingWrapper()
+        X_train = pd.DataFrame({"x": [1.0, 2.0, 3.0]})
+        Y_train = pd.DataFrame(
+            {
+                "y_shift_1": [2.0, 3.0, 4.0],
+                "y_shift_2": [3.0, 4.0, 5.0],
+            }
+        )
+
+        trainer._train_quantile_single_model(
+            quantile=0.5,
+            model_type="qr",
+            X_train_df_processed=X_train,
+            Y_train_df_processed=Y_train,
+            lgbm_categorical=[],
+        )
+
+        self.assertEqual(len(recorded_weights), 2)
+        for weight in recorded_weights:
+            np.testing.assert_array_equal(weight, trainer.sample_weight)
+
 
 if __name__ == "__main__":
     unittest.main()

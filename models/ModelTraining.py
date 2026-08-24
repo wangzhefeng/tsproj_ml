@@ -40,7 +40,10 @@ from models.ModelSaveLoad import ModelDeployPkl
 from models.ModelEnsemble import TimeSeriesEnsembleRegressor, EnsembleConfig
 from models.learning_rate import resolve_learning_rate
 from models.losses import get_loss_name_from_model_params, get_scorer_by_loss_name
-from probabilistic.spec import validate_quantile_grid
+from probabilistic.objectives import inject_quantile_objective
+from probabilistic.spec import resolve_probabilistic_spec
+from probabilistic.training import QuantileTrainer
+from probabilistic.types import BlendQuantileModel, ForecastModelBundle
 from utils.log_util import logger
 from utils.frequency import compute_time_decay_weights
 
@@ -476,51 +479,40 @@ class Trainer:
                 fit_kwargs_q["sample_weight"] = self.sample_weight
             model_q.fit(X_train_df_processed, np.ravel(Y_train_df_processed.values), **fit_kwargs_q)
         else:
-            if getattr(self, "sample_weight", None) is not None:
-                logger.warning(
-                    f"{self.log_prefix} time-decay sample_weight not supported for "
-                    f"multi-output quantile (sklearn wrapper); skipped."
-                )
-            if self._should_use_horizon_aligned_direct():
-                model_q = HorizonAlignedDirectRegressor(
-                    estimator_factory=lambda: self._create_model_instance(
-                        model_type=model_type,
-                        model_params=params_q,
-                        log_params=False,
-                    ),
-                    n_jobs=self._resolve_worker_count("multi_output_n_jobs", default=1),
-                    log_prefix=self.log_prefix,
-                )
-                fit_kwargs_list = [
-                    {"categorical_feature": list(lgbm_categorical or [])}
-                    if lgbm_categorical else {}
-                    for _ in range(Y_train_df_processed.shape[1])
-                ]
-                model_q.fit(
-                    X_train_df_processed,
-                    Y_train_df_processed,
-                    fit_kwargs_list=fit_kwargs_list,
-                )
-            elif str(model_type).lower() in {"quantileregressor", "qr"}:
-                # QuantileRegressor 不接受 lag/rolling 热身区间产生的 NaN；裸估计器经
-                # sklearn MultiOutputRegressor 会绕过 _LinearModelBase 的行过滤。
-                # 保留项目 wrapper，让每个输出使用统一的线性模型 NaN 处理契约。
-                model_q = DirectMultiOutputRegressor(
-                    estimator_factory=lambda: self._create_model_instance(
-                        model_type=model_type,
-                        model_params=params_q,
-                        log_params=False,
-                    ),
-                    n_jobs=self._resolve_worker_count("multi_output_n_jobs", default=1),
-                    log_prefix=self.log_prefix,
-                )
-                model_q.fit(X_train_df_processed, Y_train_df_processed)
-            else:
+            strategy = str(getattr(self.args, "multi_output_strategy", "multioutput")).lower()
+            if strategy == "regressor_chain":
+                if getattr(self, "sample_weight", None) is not None:
+                    logger.warning(
+                        f"{self.log_prefix} time-decay sample_weight not supported for "
+                        "multi-output quantile regressor_chain; skipped."
+                    )
                 model_q = self._build_multi_output_model(
                     estimator_wrapper_q.model,
                     n_outputs=Y_train_df_processed.shape[1],
                 )
                 model_q.fit(X_train_df_processed, Y_train_df_processed)
+            else:
+                X_fit, Y_fit, fit_kwargs_list = self._prepare_multi_output_fit_data(
+                    X_train_df_processed,
+                    Y_train_df_processed,
+                    list(lgbm_categorical or []),
+                    getattr(self, "native_data_bundle", {}),
+                )
+                regressor_cls = (
+                    HorizonAlignedDirectRegressor
+                    if self._should_use_horizon_aligned_direct()
+                    else DirectMultiOutputRegressor
+                )
+                model_q = regressor_cls(
+                    estimator_factory=lambda: self._create_model_instance(
+                        model_type=model_type,
+                        model_params=params_q,
+                        log_params=False,
+                    ),
+                    n_jobs=self._resolve_worker_count("multi_output_n_jobs", default=1),
+                    log_prefix=self.log_prefix,
+                )
+                model_q.fit(X_fit, Y_fit, fit_kwargs_list=fit_kwargs_list)
         return quantile, model_q
 
     def _train_blend_quantile_single_model(
@@ -535,20 +527,27 @@ class Trainer:
     ):
         """为 blend（USBR/MSBR）训练单个分位数的 Direct+Recursive 子模型对。
 
-        Direct 子模型走多输出分位数（sklearn MultiOutputRegressor 包装，不透传
-        sample_weight，与 `_train_quantile_single_model` 多输出分支一致）；Recursive
-        子模型走单输出分位数估计器（支持 sample_weight 与 early stopping）。
+        Direct 子模型走项目 DirectMultiOutputRegressor，逐输出透传同一
+        sample_weight；Recursive 子模型走单输出分位数估计器。
         """
         params_q = self._inject_quantile_params(model_type=model_type, params=self.model_params, quantile=quantile)
         # Direct 子模型（多输出 quantile）
-        estimator_wrapper_q = self._create_model_instance(model_type=model_type, model_params=params_q)
-        if getattr(self, "sample_weight", None) is not None:
-            logger.warning(
-                f"{self.log_prefix} time-decay sample_weight not supported for "
-                f"blend Direct multi-output quantile (sklearn wrapper); skipped for Direct sub-model."
-            )
-        direct_q = self._build_multi_output_model(estimator_wrapper_q.model, n_outputs=Y_direct.shape[1])
-        direct_q.fit(X_train_df_processed, Y_direct)
+        X_fit_d, Y_fit_d, fit_kwargs_list_d = self._prepare_multi_output_fit_data(
+            X_train_df_processed,
+            Y_direct,
+            list(lgbm_categorical or []),
+            getattr(self, "native_data_bundle", {}),
+        )
+        direct_q = DirectMultiOutputRegressor(
+            estimator_factory=lambda: self._create_model_instance(
+                model_type=model_type,
+                model_params=params_q,
+                log_params=False,
+            ),
+            n_jobs=self._resolve_worker_count("multi_output_n_jobs", default=1),
+            log_prefix=self.log_prefix,
+        )
+        direct_q.fit(X_fit_d, Y_fit_d, fit_kwargs_list=fit_kwargs_list_d)
         # Recursive 子模型（单输出 quantile）
         estimator_recursive_q = self._create_model_instance(model_type=model_type, model_params=params_q)
         X_fit_r, y_fit_r, fit_kwargs_r = self._prepare_single_output_fit_data(
@@ -559,33 +558,14 @@ class Trainer:
         if getattr(self, "native_data_bundle", {}).get("enabled"):
             fit_kwargs_r["native_train_data"] = self.native_data_bundle.get("train_native")
         estimator_recursive_q.fit(X_fit_r, np.ravel(y_fit_r), **fit_kwargs_r)
-        return quantile, {"direct": direct_q, "recursive": estimator_recursive_q}
+        return quantile, BlendQuantileModel(
+            direct=direct_q,
+            recursive=estimator_recursive_q,
+        )
 
     def _inject_quantile_params(self, model_type: str, params: Dict, quantile: float) -> Dict:
-        """
-        为不同回归器注入分位数预测参数
-        """
-        params_q = copy.deepcopy(params)
-        mt = str(model_type).lower()
-        if mt in ["lightgbm", "lgb"]:
-            params_q["objective"] = "quantile"
-            params_q["metric"] = "quantile"
-            params_q["alpha"] = float(quantile)
-        elif mt in ["xgboost", "xgb"]:
-            # xgboost >= 2.0 支持 quantileerror
-            params_q["objective"] = "reg:quantileerror"
-            params_q["quantile_alpha"] = float(quantile)
-            params_q["eval_metric"] = "quantile"
-        elif mt in ["catboost", "cat"]:
-            params_q["loss_function"] = f"Quantile:alpha={float(quantile)}"
-        elif mt in ["histgb", "histgradientboosting"]:
-            params_q["loss"] = "quantile"
-            params_q["quantile"] = float(quantile)
-        elif mt in ["quantileregressor", "qr"]:
-            params_q["quantile"] = float(quantile)
-        else:
-            logger.warning(f"{self.log_prefix} model_type={model_type} has no explicit quantile objective, using default params.")
-        return params_q
+        """委托概率模块注入 quantile objective；不支持模型直接失败。"""
+        return inject_quantile_objective(model_type, params, quantile)
 
     def _build_feature_selector(self, categorical_features):
         return FeatureSelector(
@@ -1205,118 +1185,101 @@ class Trainer:
             # ------------------------------
             # 单模型 - 分位数预测
             # ------------------------------
-            quantiles = list(
-                validate_quantile_grid(
-                    getattr(self.args, "quantiles", [0.1, 0.5, 0.9]),
-                    point_quantile=0.5,
-                )
+            probabilistic_spec = getattr(self.args, "probabilistic_spec", None)
+            if probabilistic_spec is None:
+                probabilistic_spec = resolve_probabilistic_spec(self.args)
+            logger.info(
+                f"{self.log_prefix} Training quantile models for "
+                f"quantiles={list(probabilistic_spec.quantiles)}"
             )
-            quantile_models = {}
-            logger.info(f"{self.log_prefix} Training quantile models for quantiles={quantiles}")
             logger.info(f"{self.log_prefix} {'-' * 71}")
-            # Blend（USBR/MSBR）在 quantile 模式下：每个分位数训练 Direct+Recursive 子模型对
-            is_blend = self._is_blend_method()
-            Y_direct = None
-            Y_recursive = None
-            if is_blend:
-                rec_cols = [c for c in Y_train_df_processed.columns if str(c).endswith("_shift_0")]
-                dir_cols = [c for c in Y_train_df_processed.columns if c not in rec_cols]
-                if len(dir_cols) <= 1 or len(rec_cols) != 1:
-                    raise ValueError(
-                        f"{self.log_prefix} Blend quantile requires >=1 direct target cols and exactly 1 "
-                        f"recursive col (shift_0); got dir={len(dir_cols)}, rec={len(rec_cols)}."
-                    )
-                Y_direct = Y_train_df_processed[dir_cols]
-                Y_recursive = Y_train_df_processed[rec_cols]
-                logger.info(
-                    f"{self.log_prefix} Blend quantile: {len(dir_cols)} direct outputs + 1 recursive output per quantile."
+
+            def train_single_backend(q, X, Y, _categorical_features):
+                _, model_q = self._train_quantile_single_model(
+                    q,
+                    model_type,
+                    X,
+                    Y,
+                    lgbm_categorical,
                 )
-            quantile_workers = self._resolve_worker_count("quantile_parallel_workers", default=1)
-            if quantile_workers > 1 and len(quantiles) > 1:
-                with ThreadPoolExecutor(max_workers=quantile_workers) as executor:
-                    if is_blend:
-                        futures = [
-                            executor.submit(
-                                self._train_blend_quantile_single_model,
-                                q,
-                                model_type,
-                                X_train_df_processed,
-                                Y_direct,
-                                Y_recursive,
-                                lgbm_categorical,
-                                actual_categorical,
-                            )
-                            for q in quantiles
-                        ]
-                    else:
-                        futures = [
-                            executor.submit(
-                                self._train_quantile_single_model,
-                                q,
-                                model_type,
-                                X_train_df_processed,
-                                Y_train_df_processed,
-                                lgbm_categorical,
-                            )
-                            for q in quantiles
-                        ]
-                    for future in as_completed(futures):
-                        q, model_q = future.result()
-                        quantile_models[q] = model_q
-            else:
-                for q in quantiles:
-                    if is_blend:
-                        q_key, model_q = self._train_blend_quantile_single_model(
-                            q,
-                            model_type,
-                            X_train_df_processed,
-                            Y_direct,
-                            Y_recursive,
-                            lgbm_categorical,
-                            actual_categorical,
-                        )
-                    else:
-                        q_key, model_q = self._train_quantile_single_model(
-                            q,
-                            model_type,
-                            X_train_df_processed,
-                            Y_train_df_processed,
-                            lgbm_categorical,
-                        )
-                    quantile_models[q_key] = model_q
-            median_q = 0.5
-            quantile_bundle = {
-                "predict_type": "quantile",
-                "quantiles": quantiles,
-                "median_quantile": median_q,
-                "models": quantile_models,
-            }
+                return model_q
+
+            def train_blend_backend(q, X, Y_direct, Y_recursive, _categorical_features):
+                _, model_q = self._train_blend_quantile_single_model(
+                    q,
+                    model_type,
+                    X,
+                    Y_direct,
+                    Y_recursive,
+                    lgbm_categorical,
+                    actual_categorical,
+                )
+                return model_q
+
+            quantile_trainer = QuantileTrainer(
+                spec=probabilistic_spec,
+                model_type=model_type,
+                pred_method=str(self.args.pred_method),
+                train_single=train_single_backend,
+                train_blend=train_blend_backend,
+                max_workers=self._resolve_worker_count(
+                    "quantile_parallel_workers",
+                    default=1,
+                ),
+            )
+            quantile_bundle = quantile_trainer.fit(
+                X_train_df_processed,
+                Y_train_df_processed,
+                categorical_features=actual_categorical,
+            )
             logger.info(f"{self.log_prefix} Quantile model training completed!")
             return quantile_bundle, feature_scaler, target_scaler, selected_features
 
-    def model_save(self, model, target_scaler=None, target_decomposer=None):
+    def model_save(
+        self,
+        model,
+        *,
+        feature_scaler=None,
+        target_transform=None,
+        selected_features=None,
+        input_schema=None,
+        target_scaler=None,
+        target_decomposer=None,
+    ):
         """
-        模型保存
+        保存唯一权威 ForecastModelBundle；legacy 参数仅用于旧调用方过渡。
         """
         logger.info(f"{self.log_prefix} Model training result saving...")
         logger.info(f"{self.log_prefix} {'-' * 66}")
-        model_deploy = ModelDeployPkl(save_file_path=self.args.checkpoints_dir.joinpath("model.pkl"))
-        model_deploy.save_model(model)
-        if target_scaler is not None and getattr(target_scaler, "is_fitted", False):
-            target_scaler_deploy = ModelDeployPkl(
-                save_file_path=self.args.checkpoints_dir.joinpath("target_scaler.pkl")
+        probabilistic_spec = getattr(self.args, "probabilistic_spec", None)
+        if probabilistic_spec is None:
+            probabilistic_spec = resolve_probabilistic_spec(self.args)
+        if target_transform is None:
+            # 旧调用方没有共享变换栈时保留已有状态，但不再双写 sidecar。
+            target_transform = target_decomposer
+            if target_transform is None and target_scaler is not None:
+                target_transform = target_scaler
+        schema = dict(input_schema or {})
+        if "columns" not in schema and feature_scaler is not None:
+            schema["columns"] = list(
+                getattr(feature_scaler, "training_columns", ()) or ()
             )
-            target_scaler_deploy.save_model(target_scaler)
-        # 统一 bundle：model + target_scaler + pipeline 内嵌单文件（一次切换，
-        # 不再写独立 target_decomposer.pkl；schema_version=2）。
-        from decomposition.bundle import DecompositionBundle
-
-        bundle = DecompositionBundle.from_components(
-            pipeline=target_decomposer,
+        bundle = ForecastModelBundle(
+            schema_version=1,
             model=model,
-            target_scaler=target_scaler,
+            feature_scaler=feature_scaler,
+            target_transform=target_transform,
+            selected_features=tuple(selected_features or ()),
+            input_schema=schema,
+            probabilistic_spec=probabilistic_spec,
+            model_type=str(getattr(self.args, "model_type", "unknown")),
+            pred_method=str(getattr(self.args, "pred_method", "unknown")),
         )
-        bundle.save(self.args.checkpoints_dir.joinpath("decomposition_bundle.pkl"))
+        model_deploy = ModelDeployPkl(save_file_path=self.args.checkpoints_dir.joinpath("model.pkl"))
+        model_deploy.save_model(bundle)
+        bundle.write_schema_json(
+            self.args.checkpoints_dir.joinpath("probabilistic_schema.json")
+        )
         logger.info(f"{self.log_prefix} Model saved to {self.args.checkpoints_dir.joinpath('model.pkl')}")
 
 

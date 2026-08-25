@@ -126,6 +126,27 @@ def derive(src: Path, dst_dir: Path, new_stem: str, spec: dict, label: str):
 
 def main():
     created = []
+    # 0. ensemble 目录：以 linear 原版为模板补 stl96 / mstl96-672 变体
+    ens_stl = {"method": "stl", "periods": [96], "robust": True, "cycles": 4,
+               "suffix": "decomp-stl96", "label": "stl96"}
+    ens_mstl = {"method": "mstl", "periods": [96, 672], "robust": True, "cycles": 4,
+                "suffix": "decomp-mstl96-672", "label": "mstl96+672"}
+    for route in sorted((ROOT / "aidc_load_15min_daily").glob("route_*")):
+        ddir = route / "ensemble"
+        if not ddir.exists():
+            continue
+        templates = sorted(ddir.glob("lgbm_usmr_mean_ens*.yaml"))
+        templates = [t for t in templates if "_decomp_" not in t.stem]
+        for tpl in templates:
+            base_stem = tpl.stem  # 如 lgbm_usmr_mean_ensm_avg
+            for spec in (ens_stl, ens_mstl):
+                short = spec["suffix"].replace("decomp-", "", 1)
+                new_stem = f"{base_stem}_decomp_{short}"
+                dst = ddir / f"{new_stem}.yaml"
+                if dst.exists():
+                    continue
+                created.append(derive(tpl, ddir, new_stem, spec, spec["label"]))
+
     # 1. 高频 MSTL：以 stl 变体为模板
     for (scene, subdir), mstl in MSTL_SPECS.items():
         for route in sorted((ROOT / scene).glob("route_*")):

@@ -13,13 +13,27 @@ WEATHER_COLS = [
     "tt2_mean_3h", "tt2_diff_1h", "ssr_mean_3h",
 ]
 METHODS = ["usmd", "usmdp", "usmdr", "usmr"]
+USMDP_SAFE_LAGS = [288, 576, 864, 1152, 1440, 1728, 2016]
 
 
 class EssQuantileConfigMatrixTest(unittest.TestCase):
+    def test_all_model_configs_use_five_test_windows(self):
+        config_paths = sorted(CONFIG_ROOT.glob("route_*/**/*.yaml"))
+        self.assertEqual(len(config_paths), 88)
+
+        for path in config_paths:
+            cfg = load_yaml_config(str(path))
+            self.assertEqual(cfg.freq, "5min", path)
+            n_per_day = 288
+            history_rows = int(cfg.history_length * n_per_day)
+            window_rows = int(cfg.window_length * n_per_day)
+            n_windows = (history_rows - window_rows) // int(cfg.predict_steps) + 1
+            self.assertEqual(n_windows, 5, path)
+
     def test_matrix_contains_only_expected_quantile_configs(self):
         expected_counts = {
             "baseline": 5,
-            "add_decomposition": 8,
+            "add_decomposition": 12,
             "add_exogenous_weather_date": 4,
             "add_exogenous_plan_strategy": 4,
             "add_exogenous_weather_date_plan_strategy": 4,
@@ -34,17 +48,33 @@ class EssQuantileConfigMatrixTest(unittest.TestCase):
                     self.assertTrue(cfg.quantile_monotone, path)
                     self.assertTrue((Path(cfg.data_dir) / cfg.data_path).exists(), path)
 
-    def test_decomposition_matrix_is_linear_and_stl288(self):
+    def test_decomposition_matrix_is_linear_stl288_and_mstl(self):
         for route in ("A", "B"):
             folder = CONFIG_ROOT / f"route_{route}" / "add_decomposition"
             for method in METHODS:
                 linear = load_yaml_config(str(folder / f"lgbm_{method}_prob_mean_decomp_linear.yaml"))
                 stl = load_yaml_config(str(folder / f"lgbm_{method}_prob_mean_decomp_stl288.yaml"))
+                mstl = load_yaml_config(str(folder / f"lgbm_{method}_prob_mean_decomp_mstl288-2016.yaml"))
                 self.assertEqual(linear.decomposition_method, "linear")
                 self.assertEqual(stl.decomposition_method, "stl")
+                self.assertEqual(mstl.decomposition_method, "mstl")
                 self.assertEqual(stl.decomposition_periods, [288])
+                self.assertEqual(mstl.decomposition_periods, [288, 2016])
                 self.assertEqual(linear.scenario_subpath, f"aidc_ess_selfuse_load/route_{route}/add_decomposition")
                 self.assertEqual(stl.scenario_subpath, f"aidc_ess_selfuse_load/route_{route}/add_decomposition")
+                self.assertEqual(mstl.scenario_subpath, f"aidc_ess_selfuse_load/route_{route}/add_decomposition")
+
+    def test_baseline_uses_only_target_derived_features(self):
+        for route in ("A", "B"):
+            folder = CONFIG_ROOT / f"route_{route}" / "baseline"
+            for path in sorted(folder.glob("*.yaml")):
+                cfg = load_yaml_config(str(path))
+                self.assertFalse(cfg.enable_datetime_features, path)
+                self.assertFalse(cfg.enable_date_features, path)
+                self.assertFalse(cfg.enable_weather_features, path)
+                self.assertEqual(cfg.custom_features, [], path)
+                self.assertFalse(cfg.enable_ensemble, path)
+                self.assertEqual(cfg.decomposition_method, "none", path)
 
     def test_weather_date_uses_strict_native_weather_and_date_type(self):
         for route in ("A", "B"):
@@ -56,6 +86,7 @@ class EssQuantileConfigMatrixTest(unittest.TestCase):
                 for method in METHODS:
                     cfg = load_yaml_config(str(folder / f"lgbm_{method}_prob_mean_{suffix}.yaml"))
                     self.assertTrue(cfg.enable_date_features)
+                    self.assertTrue(cfg.enable_datetime_features)
                     self.assertEqual(cfg.datetype_features, ["date_type"])
                     self.assertEqual(cfg.datetype_categorical_features, ["date_type"])
                     self.assertTrue(cfg.enable_weather_features)
@@ -65,6 +96,10 @@ class EssQuantileConfigMatrixTest(unittest.TestCase):
                     self.assertEqual(cfg.weather_backtest_source, "forecast")
                     self.assertEqual(cfg.weather_future_source, "forecast")
                     self.assertEqual(cfg.weather_features, WEATHER_COLS)
+                    self.assertFalse(cfg.enable_ensemble)
+                    if group == "add_exogenous_weather_date":
+                        self.assertEqual(cfg.custom_features, [])
+                        self.assertEqual(cfg.decomposition_method, "none")
                     self.assertTrue((Path(cfg.data_dir) / cfg.weather_history_path).exists())
                     self.assertTrue((Path(cfg.data_dir) / cfg.weather_backtest_path).exists())
                     self.assertTrue((Path(cfg.data_dir) / cfg.weather_future_path).exists())
@@ -92,7 +127,7 @@ class EssQuantileConfigMatrixTest(unittest.TestCase):
                     if method in {"usmd", "usmdr"}:
                         self.assertTrue(cfg.use_horizon_exogenous_for_direct)
 
-    def test_usmdp_explicitly_disables_noop_lags(self):
+    def test_usmdp_explicitly_enables_safe_lags(self):
         for route in ("A", "B"):
             for group, filename in (
                 ("baseline", "lgbm_usmdp_prob_mean.yaml"),
@@ -101,8 +136,10 @@ class EssQuantileConfigMatrixTest(unittest.TestCase):
                 ("add_exogenous_weather_date_plan_strategy", "lgbm_usmdp_prob_mean_all.yaml"),
             ):
                 cfg = load_yaml_config(str(CONFIG_ROOT / f"route_{route}" / group / filename))
-                self.assertFalse(cfg.enable_lags_features)
-                self.assertEqual(cfg.lags, [])
+                self.assertTrue(cfg.enable_lags_features)
+                self.assertTrue(cfg.align_direct_features_to_target)
+                self.assertEqual(cfg.lags, USMDP_SAFE_LAGS)
+                self.assertGreaterEqual(min(cfg.lags), cfg.predict_steps)
 
     def test_usmdr_uses_three_real_blocks(self):
         for route in ("A", "B"):

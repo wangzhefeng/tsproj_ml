@@ -16,6 +16,8 @@ from config.aidc_ess_selfuse_load.strategy_features.pipeline import (
     build_strategy_features,
 )
 
+ESS_SAFE_LAGS = [288, 576, 864, 1152, 1440, 1728, 2016]
+
 
 class EssStrategyPipelineTest(unittest.TestCase):
     def setUp(self):
@@ -356,7 +358,7 @@ class EssStrategyPipelineTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "forecast_steps"):
             self._build(validate_only=True)
 
-    def test_v2_model_configs_are_pointwise_without_framework_lags(self):
+    def test_v2_model_configs_are_pointwise_with_safe_lags(self):
         root = Path(__file__).resolve().parent.parent / "config/aidc_ess_selfuse_load"
         seen = set()
         for route in ("A", "B"):
@@ -369,8 +371,9 @@ class EssStrategyPipelineTest(unittest.TestCase):
                     "univariate-single-multistep-direct-pointwise",
                 )
                 self.assertEqual(overrides["model_strategy"]["predict_type"], "point")
-                self.assertFalse(overrides["time_lag_features"]["enable_lags_features"])
-                self.assertEqual(overrides["time_lag_features"]["lags"], [])
+                self.assertTrue(overrides["time_lag_features"]["enable_lags_features"])
+                self.assertTrue(overrides["model_strategy"]["align_direct_features_to_target"])
+                self.assertEqual(overrides["time_lag_features"]["lags"], ESS_SAFE_LAGS)
                 key = (
                     overrides["output"]["scenario_subpath"],
                     overrides["output"]["setting_suffix"],
@@ -397,8 +400,9 @@ class EssStrategyPipelineTest(unittest.TestCase):
                 "univariate-single-multistep-direct-pointwise",
             )
             self.assertEqual(overrides["model_strategy"]["predict_type"], "point")
-            self.assertFalse(overrides["time_lag_features"]["enable_lags_features"])
-            self.assertEqual(overrides["time_lag_features"]["lags"], [])
+            self.assertTrue(overrides["time_lag_features"]["enable_lags_features"])
+            self.assertTrue(overrides["model_strategy"]["align_direct_features_to_target"])
+            self.assertEqual(overrides["time_lag_features"]["lags"], ESS_SAFE_LAGS)
             columns = overrides["exogenous_features"]["custom_features"][0][
                 "columns"
             ]

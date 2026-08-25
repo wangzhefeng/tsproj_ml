@@ -288,6 +288,11 @@ class Tester:
             verbose=False,
         )
         model_trainer = Trainer(args=args, log_prefix=log_prefix)
+        # calendar_month 每个测试 fold 的天数可能不同于全局 forecast horizon。
+        # 测试替身可能不实现该可选 setter，保持旧 Trainer 接口兼容。
+        set_train_horizon = getattr(model_trainer, "set_train_horizon", None)
+        if callable(set_train_horizon):
+            set_train_horizon(horizon)
         model, scaler_testing, target_scaler_testing, selected_features = model_trainer.train(
             X_train=X_train,
             Y_train=Y_train,

@@ -3,14 +3,72 @@
 from types import SimpleNamespace
 from typing import Any
 import unittest
+from unittest.mock import patch
 
 import numpy as np
 import pandas as pd
 
+from models.ModelFactory import ModelFactory
 from models.ModelTraining import DirectMultiOutputRegressor, Trainer
 
 
 class QuantileMultiOutputLinearTest(unittest.TestCase):
+    def test_qr_default_and_tuning_grid_exclude_unregularized_solution(self):
+        self.assertEqual(ModelFactory.get_default_model_params("qr")["alpha"], 1e-3)
+        trainer = Trainer(self._calendar_month_args(), log_prefix="[test]")
+        alpha_grid = trainer._get_tuning_param_grid("qr")["alpha"]
+        self.assertNotIn(0.0, alpha_grid)
+        self.assertIn(1e-3, alpha_grid)
+
+    @staticmethod
+    def _calendar_month_args() -> Any:
+        return SimpleNamespace(
+            model_type="qr",
+            model_params={},
+            model_thread_count=1,
+            multi_output_n_jobs=1,
+            pred_method="usmd",
+            horizon=31,
+            target_feature="y",
+            lags=[1, 7, 28],
+            block_size=0,
+            direct_strategy="multioutput",
+            align_direct_features_to_target=False,
+            use_horizon_exogenous_for_direct=False,
+            endogenous_backfill_strategy="persistence",
+            blend_weight_strategy="fixed",
+            blend_weights=[0.5, 0.5],
+            enable_feature_cache=False,
+            enable_global_training=False,
+            enable_lags_features=True,
+        )
+
+    def test_calendar_month_fold_uses_fold_horizon_for_target_contract(self):
+        X_train = pd.DataFrame({"x": [1.0, 2.0]})
+        Y_train = pd.DataFrame(
+            {
+                f"y_shift_{step}": [float(step), float(step + 1)]
+                for step in range(1, 31)
+            }
+        )
+
+        # 旧行为使用全局 horizon=31，30 天月份的目标宽度会被拒绝。
+        global_horizon_trainer = Trainer(self._calendar_month_args(), log_prefix="[test]")
+        with self.assertRaisesRegex(ValueError, "training targets do not match"):
+            global_horizon_trainer.train(X_train, Y_train, None, None, [])
+
+        # calendar_month 滑窗显式传入 fold horizon=30，TargetPlan 与特征工程一致。
+        fold_horizon_trainer = Trainer(self._calendar_month_args(), log_prefix="[test]")
+        fold_horizon_trainer.set_train_horizon(30)
+        sentinel = object()
+        expected = (sentinel, None, None, None)
+        with (
+            patch.object(fold_horizon_trainer, "_should_use_fourmethods_baseline_training", return_value=True),
+            patch.object(fold_horizon_trainer, "_train_fourmethods_baseline", return_value=expected),
+        ):
+            result = fold_horizon_trainer.train(X_train, Y_train, None, None, [])
+        self.assertEqual(result, expected)
+
     def test_qr_multioutput_quantile_handles_lag_nan_through_model_wrapper(self):
         args: Any = SimpleNamespace(
                 model_type="qr",

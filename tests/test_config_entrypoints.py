@@ -94,12 +94,33 @@ overrides:
 
     def test_usmdp_rolllag_config_enables_safe_lags_without_target_leakage(self):
         checker = load_config_checker()
-        rolllag_path = (
-            ROOT
-            / "config/aidc_ess_selfuse_load/route_A/tuning/"
-            "lgbm_usmdp_prob_mean_rolllag.yaml"
-        )
-        _, rolllag_problems = checker.check_model_yaml(str(rolllag_path))
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            rolllag_path = Path(tmp_dir) / "usmdp_safe_rolllag.yaml"
+            rolllag_path.write_text(
+                """base_config: config.univariate_config
+overrides:
+  runtime:
+    history_length: 60
+    predict_steps: 288
+    window_length: 30
+  target_series:
+    freq: 5min
+  time_lag_features:
+    enable_lags_features: true
+    lags: [288, 576]
+    align_direct_features_to_target: true
+  advanced_features:
+    enable_advanced_features: true
+    enable_rolling_features: true
+    rolling_columns: [y_lag_288]
+    rolling_windows: [288]
+    rolling_stats: [mean]
+  model_strategy:
+    pred_method: univariate-single-multistep-direct-pointwise
+""",
+                encoding="utf-8",
+            )
+            _, rolllag_problems = checker.check_model_yaml(str(rolllag_path))
         self.assertFalse(any(problem.startswith("提示：") for problem in rolllag_problems))
         self.assertFalse(any("不能依赖目标列 y" in problem for problem in rolllag_problems))
 

@@ -210,6 +210,10 @@ class Trainer:
     def __init__(self, args: Dict, log_prefix: str):
         self.args = args
         self.log_prefix = log_prefix
+        # 训练目标宽度覆盖值（calendar_month 滑窗：每个 fold 的训练目标数 = 该
+        # fold 天数，可能小于全局 args.horizon=预报月天数；不覆盖会触发
+        # train() 的 TargetPlan 契约校验失败）。缺省回退 args.horizon。
+        self._train_horizon: Optional[int] = None
         self.model_factory = ModelFactory(log_prefix=log_prefix)
         self.model_type = getattr(self.args, "model_type", "lightgbm")
         self.model_param_overrides = copy.deepcopy(getattr(self.args, "model_params", {}) or {})
@@ -229,6 +233,12 @@ class Trainer:
         # 时间衰减样本权重;在 train() 中按启用开关计算,baseline 路径自行计算
         self.sample_weight = None
         self.resolved_strategy = None
+
+    def set_train_horizon(self, horizon: int) -> None:
+        """覆盖本次训练的目标宽度（calendar_month 滑窗使用）。"""
+        if int(horizon) <= 0:
+            raise ValueError("train_horizon must be > 0")
+        self._train_horizon = int(horizon)
 
     def _get_resolved_strategy(self, horizon: Optional[int] = None):
         if horizon is None:
@@ -325,7 +335,8 @@ class Trainer:
         if mt in ["lasso"]:
             return {"alpha": [0.001, 0.01, 0.1, 1.0]}
         if mt in ["quantileregressor", "qr"]:
-            return {"alpha": [0.0, 0.1, 1.0]}
+            # alpha=0 的 LP 解不唯一，强共线滑窗特征下会产生不稳定外推。
+            return {"alpha": [1e-4, 1e-3, 1e-2, 0.1]}
         if mt in ["seasonaltemplate", "st"]:
             return {"day_type_split": [True, False], "equal_weight": [False, True]}
 
@@ -924,7 +935,9 @@ class Trainer:
         # 训练集
         X_train_df = X_train.copy()
         Y_train_df = Y_train.copy()
-        resolved = self._get_resolved_strategy()
+        resolved = self._get_resolved_strategy(
+            horizon=self._train_horizon if self._train_horizon is not None else getattr(self.args, "horizon", None)
+        )
         target_feature = str(getattr(self.args, "target_feature", "y"))
         expected_source_columns = [
             f"{target_feature}_shift_{step}"

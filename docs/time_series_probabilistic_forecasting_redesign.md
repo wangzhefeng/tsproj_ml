@@ -1928,8 +1928,8 @@ Prequential 只解决未来信息泄漏，不消除时间序列相关性和分�
 | 验收项 | 命令/方法 | 结果 |
 |---|---|---|
 | spec/types/objective/transform 专项 | `tests.test_probabilistic_contracts/types/objectives` + `tests.test_target_transform_pipeline` | legacy/new、codec、shape、能力映射、逆序 restore 全部 GREEN |
-| 模型 YAML 实扫 | checker 的 `is_model_yaml` + `resolve_probabilistic_spec + validate_quantile_model_support` | **863 模型 YAML**；465 point；398 quantile；154 CQR；0 error |
-| quantile 现状 | 同上 | 398/398 为 q10/q50/q90；378 LightGBM + 20 QuantileRegressor |
+| 模型 YAML 实扫 | checker 的 `is_model_yaml` + `resolve_probabilistic_spec + validate_quantile_model_support` | **847 模型 YAML**；465 point；382 quantile；114 CQR；0 error |
+| quantile 现状 | 同上 | 382/382 为 q10/q50/q90；370 LightGBM + 12 QuantileRegressor（qr 月频 4×2 配置已删：7-10 行训练窗 × 36 维特征数学上不可用，正则化也无法修复欠定问题）|
 | canonical 五分位实跑 | `/tmp/tsproj_prob_phase4_canonical5/` | q05/q10/q50/q90/q95；指定 `central80=q10/q90`；score/metric/report 均未误用 grid extremes |
 
 结果影响：legacy YAML 无需批量修改；新 mapping 可直接使用。过去依赖近似 q50、字符串列排序或分散目标逆变换的结果不作为新契约基线。

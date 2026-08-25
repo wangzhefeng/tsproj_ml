@@ -70,6 +70,8 @@ The general coding guidelines (Karpathy: think before coding, simplicity, surgic
 - 目标训练变换统一登记到 `TargetTransformPipeline`：训练顺序 `calendar normalization → decomposition → target scaling`，point/quantile 恢复严格逆序；decomposition 可与 scale_target、quantile、CQR 组合。Blend 与目标分解仍因分量空间未统一而 fail-fast
 - `n_windows <= 0`（滑窗数为 0）不 RAISE，仅 WARNING 并跳过测试
 - **消融矩阵的 no-op control**：矩阵中不消费目标特征的模型保留为对照组——SeasonalTemplate（`st`）不消费 custom/load-state/weather 特征、USBR 不接入天气特征；此类配置删除特征注入块，注释与 `setting_suffix` 显式标注 `-control-no-<feature>`（如 `-decomp-linear-control-no-state`、`-conformal-control-no-weather`），保证与实验组同目录可对照
+- **baseline/weather-date 分组**：`aidc_load_15min_{daily,rolling,short}` 的 baseline 保留 USBR，且把“无模型融合”解释为 `enable_ensemble: false`，不把 USBR 策略视为 ModelEnsemble；baseline 显式关闭 datetime/date_type/weather/custom，只消费目标序列派生特征。`add_exogenous_weather_date` 不使用三个场景不存在的 date_type，仅在可消费外生变量的 baseline 子集上开启 datetime+weather；USBR 与 SeasonalTemplate 不进入该组，避免 no-op control 混入实验组。rolling/short 必须使用 `schedule_mode: intraday` + `setting_suffix: -intraday`，严格天气角色按预测原点切分：history 截止 `2026-07-31 13:45`，future 从 `2026-07-31 14:00` 开始；daily 仍按日界切分为 07-31 23:45 / 08-01 00:00
+- **ESS self-use baseline/weather-date**：`aidc_ess_selfuse_load` baseline 同样关闭 datetime/date/weather/custom、分解和 ensemble，只保留目标自身派生特征与 USBR；weather-date 可使用该场景真实存在的 date_type，并增加 datetime+strict native weather，但 `decomposition_method` 必须保持 `none`，避免外生消融与目标分解混杂
 - `EvalMaskConfig`（评估/绘图掩码，不改数据）≠ `TrainOutlierConfig`（滑窗训练窗口清洗，插值改数据）
 - 本地默认入口：修改 `main.py` 中的 `CONFIG_YAML`（当前指向 `config/aidc_load_month/route_B/lgbm_usmd_prob_mean.yaml`），再直接运行 `uv run python main.py`
 - `run.py` 保留为兼容入口，但当前文档和脚本不再把它作为推荐运行方式

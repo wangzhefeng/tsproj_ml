@@ -87,13 +87,13 @@
 | `config/aidc_load_month/route_B/lgbm_usmdr_prob_mean.yaml` | `aidc_load_month/route_B/lightgbm-B_Loads_1day_mean_20251001_20260731-usmdr-150-quantile` | 无 | 无 | 无 |
 | `config/aidc_power_month/route_A/freq_1day/add_decomposition/lgbm_usmdr_prob_mean_decomp_linear.yaml` | `aidc_power_month/route_A/freq_1day/add_decomposition/lightgbm-A_Loads_1day_sum_20251001_20260731-usmdr-120-quantile-decomp-linear-calendar-month` | 无 | 有（stale） | 无 |
 | `config/aidc_power_month/route_A/freq_1day/add_decomposition/lgbm_usmdr_prob_mean_decomp_stl7.yaml` | `aidc_power_month/route_A/freq_1day/add_decomposition/lightgbm-A_Loads_1day_sum_20251001_20260731-usmdr-120-quantile-decomp-stl7-calendar-month` | 无 | 有（stale） | 无 |
-| `config/aidc_power_month/route_A/freq_1day/add_exogenous_weather/lgbm_usmdr_prob_mean_conformal.yaml` | `aidc_power_month/route_A/freq_1day/add_exogenous_weather/lightgbm-A_Loads_1day_sum_20251001_20260731-usmdr-120-quantile-conformal-calendar-month` | 无 | 有（stale） | 无 |
+| `config/aidc_power_month/route_A/freq_1day/add_exogenous_weather_date/lgbm_usmdr_prob_mean_conformal.yaml` | `aidc_power_month/route_A/freq_1day/add_exogenous_weather/lightgbm-A_Loads_1day_sum_20251001_20260731-usmdr-120-quantile-conformal-calendar-month` | 无 | 有（stale） | 无 |
 | `config/aidc_power_month/route_A/freq_1day/add_load_state/lgbm_usmdr_prob_mean_decomp_linear.yaml` | `aidc_power_month/route_A/freq_1day/add_load_state/lightgbm-A_Loads_1day_sum_20251001_20260731-usmdr-120-quantile-decomp-linear-load-state-calendar-month` | 无 | 有（stale） | 无 |
 | `config/aidc_power_month/route_A/freq_1day/add_load_state/lgbm_usmdr_prob_mean_decomp_stl7.yaml` | `aidc_power_month/route_A/freq_1day/add_load_state/lightgbm-A_Loads_1day_sum_20251001_20260731-usmdr-120-quantile-decomp-stl7-load-state-calendar-month` | 无 | 有（stale） | 无 |
 | `config/aidc_power_month/route_A/freq_1day/baseline/lgbm_usmdr_prob_mean_conformal.yaml` | `aidc_power_month/route_A/freq_1day/baseline/lightgbm-A_Loads_1day_sum_20251001_20260731-usmdr-120-quantile-conformal-calendar-month` | 无 | 有（stale） | 无 |
 | `config/aidc_power_month/route_B/freq_1day/add_decomposition/lgbm_usmdr_prob_mean_decomp_linear.yaml` | `aidc_power_month/route_B/freq_1day/add_decomposition/lightgbm-B_Loads_1day_sum_20251001_20260731-usmdr-120-quantile-decomp-linear-calendar-month` | 无 | 有（stale） | 无 |
 | `config/aidc_power_month/route_B/freq_1day/add_decomposition/lgbm_usmdr_prob_mean_decomp_stl7.yaml` | `aidc_power_month/route_B/freq_1day/add_decomposition/lightgbm-B_Loads_1day_sum_20251001_20260731-usmdr-120-quantile-decomp-stl7-calendar-month` | 无 | 有（stale） | 无 |
-| `config/aidc_power_month/route_B/freq_1day/add_exogenous_weather/lgbm_usmdr_prob_mean_conformal.yaml` | `aidc_power_month/route_B/freq_1day/add_exogenous_weather/lightgbm-B_Loads_1day_sum_20251001_20260731-usmdr-120-quantile-conformal-calendar-month` | 无 | 有（stale） | 无 |
+| `config/aidc_power_month/route_B/freq_1day/add_exogenous_weather_date/lgbm_usmdr_prob_mean_conformal.yaml` | `aidc_power_month/route_B/freq_1day/add_exogenous_weather/lightgbm-B_Loads_1day_sum_20251001_20260731-usmdr-120-quantile-conformal-calendar-month` | 无 | 有（stale） | 无 |
 | `config/aidc_power_month/route_B/freq_1day/add_load_state/lgbm_usmdr_prob_mean_decomp_linear.yaml` | `aidc_power_month/route_B/freq_1day/add_load_state/lightgbm-B_Loads_1day_sum_20251001_20260731-usmdr-120-quantile-decomp-linear-load-state-calendar-month` | 无 | 有（stale） | 无 |
 | `config/aidc_power_month/route_B/freq_1day/add_load_state/lgbm_usmdr_prob_mean_decomp_stl7.yaml` | `aidc_power_month/route_B/freq_1day/add_load_state/lightgbm-B_Loads_1day_sum_20251001_20260731-usmdr-120-quantile-decomp-stl7-load-state-calendar-month` | 无 | 有（stale） | 无 |
 | `config/aidc_power_month/route_B/freq_1day/baseline/lgbm_usmdr_prob_mean_conformal.yaml` | `aidc_power_month/route_B/freq_1day/baseline/lightgbm-B_Loads_1day_sum_20251001_20260731-usmdr-120-quantile-conformal-calendar-month` | 无 | 有（stale） | 无 |
@@ -148,16 +148,32 @@
 | `config/aidc_load_15min_short/route_A/baseline/lgbm_usbr_prob_mean_conformal.yaml` | `aidc_load_15min_short/route_A/baseline/lightgbm-A_Loads_15min_mean_20251001_20260731-usbr-14-quantile-conformal` | 无 | 有（stale） | 无 |
 | `config/aidc_load_15min_short/route_B/add_exogenous_weather/lgbm_usbr_prob_mean_conformal.yaml` | `aidc_load_15min_short/route_B/add_exogenous_weather/lightgbm-B_Loads_15min_mean_20251001_20260731-usbr-14-quantile-conformal-control-no-weather` | 无 | 有（stale） | 无 |
 | `config/aidc_load_15min_short/route_B/baseline/lgbm_usbr_prob_mean_conformal.yaml` | `aidc_load_15min_short/route_B/baseline/lightgbm-B_Loads_15min_mean_20251001_20260731-usbr-14-quantile-conformal` | 无 | 有（stale） | 无 |
-| `config/aidc_power_month/route_A/freq_1day/add_exogenous_weather/lgbm_usbr_prob_mean_conformal.yaml` | `aidc_power_month/route_A/freq_1day/add_exogenous_weather/lightgbm-A_Loads_1day_sum_20251001_20260731-usbr-120-quantile-conformal-calendar-month` | 无 | 有（stale） | 无 |
+| `config/aidc_power_month/route_A/freq_1day/add_exogenous_weather_date/lgbm_usbr_prob_mean_conformal.yaml` | `aidc_power_month/route_A/freq_1day/add_exogenous_weather/lightgbm-A_Loads_1day_sum_20251001_20260731-usbr-120-quantile-conformal-calendar-month` | 无 | 有（stale） | 无 |
 | `config/aidc_power_month/route_A/freq_1day/baseline/lgbm_usbr_prob_mean_conformal.yaml` | `aidc_power_month/route_A/freq_1day/baseline/lightgbm-A_Loads_1day_sum_20251001_20260731-usbr-120-quantile-conformal-calendar-month` | 无 | 有（stale） | 无 |
-| `config/aidc_power_month/route_B/freq_1day/add_exogenous_weather/lgbm_usbr_prob_mean_conformal.yaml` | `aidc_power_month/route_B/freq_1day/add_exogenous_weather/lightgbm-B_Loads_1day_sum_20251001_20260731-usbr-120-quantile-conformal-calendar-month` | 无 | 有（stale） | 无 |
+| `config/aidc_power_month/route_B/freq_1day/add_exogenous_weather_date/lgbm_usbr_prob_mean_conformal.yaml` | `aidc_power_month/route_B/freq_1day/add_exogenous_weather/lightgbm-B_Loads_1day_sum_20251001_20260731-usbr-120-quantile-conformal-calendar-month` | 无 | 有（stale） | 无 |
 | `config/aidc_power_month/route_B/freq_1day/baseline/lgbm_usbr_prob_mean_conformal.yaml` | `aidc_power_month/route_B/freq_1day/baseline/lightgbm-B_Loads_1day_sum_20251001_20260731-usbr-120-quantile-conformal-calendar-month` | 无 | 有（stale） | 无 |
 
 ## 4. 不要求数值重跑的兼容项
 
 - 8 个 `aidc_power_month/**/freq_1month/window_length_{7,8,9,10}/lgbm_usmr_prob_mean.yaml` 删除了 Direct 专用的 `align_direct_features_to_target` 非适用字段；USMR one-step 仍由 Recursive 目标行天然读取目标月天气，定向契约测试覆盖，不改变预期数值语义。
+- 20 个 USMDP 配置（`aidc_ess_selfuse_load/route_*/tuning/lgbm_usmdp_prob_mean_{decay14,decay30,hist21w14,hist30w14}.yaml`、`aidc_load_month/route_*/{,decomposition/}lgbm_usmdp_*.yaml`）清除了 `align_direct_features_to_target: false` 下不生效的 `lags` 残留（改为 `enable_lags_features: false` + `lags: []`）；这些配置均未启用 advanced_features，运行行为零变化，既有结果不受影响。
 - `LegacyArtifactAdapter` 只读适配裸估计器、legacy quantile dict、blend dict 与 auxiliary dict；不原地改写旧 pkl。
 - Global panel 新增端到端能力但现役配置数为 0，因此无历史结果需要失效。
+
+## 4a. DirRec 块长退化修复（2026-08-25 追加）
+
+审计发现 66 个 `block_size: 0` 的 DirRec 配置按 `B = min(lags)` 推导出退化块长：36 个 B=1（等价 Recursive），30 个 B=H（等价单块 Direct），方法名不副实。处置：
+
+| 组 | 处置 | 数量 | 新块长 | 结果影响 |
+|---|---|---:|---|---|
+| `aidc_load_15min_daily`/`rolling` 全部 usmdr | 显式 `block_size: 24` | 24 | 24（4 块，lag 不消费预测值） | 语义变更，旧结果作废 |
+| `aidc_ess_selfuse_load` msmdr（pcs 系） | 显式 `block_size: 96` | 6 | 96（与同场景 usmdr 显式值一致） | 语义变更，旧结果作废 |
+| `aidc_load_15min_short` usmdr | 显式 `block_size: 4` | 12 | 4（4 块，短 lag 消费块内预测） | 本就在 A2 失效清单，重跑即新语义 |
+| `aidc_load_month` usmdr | 显式 `block_size: 7` | 4 | 7（~5 块） | 本就在 A2 失效清单 |
+| `aidc_power_month` freq_1day（calendar_month）usmdr | 显式 `block_size: 7` | 12 | 7（~5 块） | 本就在 A2 失效清单 |
+| `aidc_power_month` freq_1month usmdr（H=1） | **删除配置** | 8 | — | H=1 下四推进族数学等价，保留无对比价值；无历史结果 |
+
+修复后全部 70 个 DirRec 配置（66-8+12 个原有显式块长）经 `resolve_strategy` 复核无退化。模型 YAML 总数 863 → 855。15min daily/rolling（24 个）为语义变更新增失效，其余均已在 A2 覆盖范围内。
 
 ## 5. 已完成的安全验收
 

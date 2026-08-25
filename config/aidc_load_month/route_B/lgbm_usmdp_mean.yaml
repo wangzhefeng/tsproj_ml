@@ -44,18 +44,16 @@ overrides:
     - is_quarter_end
     datetime_categorical_features: []  # 空列表=关闭类别特征(不传 categorical_feature 给 LightGBM)
   time_lag_features:
+    enable_lags_features: true  # USMDP safe-lag：显式开启目标滞后特征
     lags:
-    - 1
-    - 2
-    - 3
-    - 4
-    - 5
-    - 6
-    - 7
-    - 14
-    - 28
+    - 34
+    - 35
+    - 42
+    - 49
+    - 56
+    - 63
   model_strategy:
-    align_direct_features_to_target: false
+    align_direct_features_to_target: true  # safe-lag：min(lags) >= horizon，只引用预测原点前真实目标
     model_type: lightgbm
     pred_method: univariate-single-multistep-direct-pointwise
   training_enhancement:

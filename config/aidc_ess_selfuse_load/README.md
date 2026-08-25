@@ -104,7 +104,7 @@ A/B 路使用相同的消融层级：
 | C3 | C2 + 相似日与条件 Gate 模板 |
 | C5 | C3 + D−1 联合聚类 one-hot/中心距离/rare/readiness |
 
-所有配置均使用 USMDP point、`predict_steps: 288`、`decomposition_method: linear`，通过不同 `setting_suffix` 隔离结果目录。C5 只做 31 窗 testing、关闭 final forecasting，确保 `fit_end=2026-06-27` 的回测 artifact 不被当成最终预测 artifact。
+所有配置均使用 USMDP point、`predict_steps: 288`、`decomposition_method: linear`，通过不同 `setting_suffix` 隔离结果目录。当前 `history_length: 34`、`window_length: 30`，因此只做 5 窗 testing；C5 关闭 final forecasting，确保 `fit_end=2026-06-27` 的回测 artifact 不被当成最终预测 artifact。
 
 ## 因果与数据契约
 

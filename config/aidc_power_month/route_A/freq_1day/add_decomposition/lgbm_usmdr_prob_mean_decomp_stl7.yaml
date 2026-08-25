@@ -67,6 +67,7 @@ overrides:
     align_direct_features_to_target: false
     model_type: lightgbm
     pred_method: univariate-single-multistep-direct-recursive
+    block_size: 7  # 显式块长：替代 block_size=0 按 min(lags) 推导的退化默认值
     predict_type: quantile  # 概率预测:输出各分位数(predict_qXX)
     quantiles:
     - 0.1

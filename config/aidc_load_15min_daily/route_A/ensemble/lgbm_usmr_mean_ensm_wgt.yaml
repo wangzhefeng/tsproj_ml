@@ -13,7 +13,7 @@ overrides:
     forecast_mode: forecast
     is_testing: true
     is_forecasting: true
-    history_length: 60
+    history_length: 34
     predict_steps: 96
     window_length: 30
     schedule_mode: daily  # 日界对齐: 预测下一完整自然日

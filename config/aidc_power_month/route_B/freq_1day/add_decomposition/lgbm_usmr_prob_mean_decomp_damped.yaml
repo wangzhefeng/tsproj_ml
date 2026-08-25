@@ -1,0 +1,94 @@
+# B — lightgbm — recursive (日频单变量 · 概率预测 quantile) # + 日度气象外生 · 线性目标分解
+base_config: config.univariate_config
+overrides:
+  output:
+    scenario_subpath: aidc_power_month/route_B/freq_1day/add_decomposition
+    setting_suffix: -decomp-damped
+  runtime:
+    horizon_mode: calendar_month  # 预测 forecast_start 所在的完整自然月
+    train_window_length: 120  # 固定训练天数，保持旧配置有效训练长度
+    forecast_mode: forecast
+    is_testing: true
+    is_forecasting: true
+    history_length: 304
+    predict_steps: 30
+    window_length: 150
+    now_time: '2026-07-31T00:00:00'
+  target_series:
+    data_dir: ./dataset/aidc_power_month/freq_1day/
+    data_path: B_Loads_1day_sum_20251001_20260731.csv
+    freq: 1D
+    target_ts_feat: time
+    target: value
+  exogenous_features:
+    weather_backtest_path: weather_daily_stats_backtest_proxy_20260101_20260731.csv
+    strict_weather_information_set: true
+    weather_history_source: actual
+    weather_backtest_source: proxy
+    weather_future_source: proxy
+    enable_date_features: false
+    enable_weather_features: true
+    weather_history_path: weather_daily_stats_20251001_20260731.csv
+    weather_future_path: weather_daily_stats_future_20260801_20260831.csv  # 纯上一年同日代理，不含2026-08实测（derive_weather_daily_future.py）
+    weather_ts_feat: ts
+    weather_features:
+    - rt_tt2   # 日均 2m 气温（Kelvin）
+    - cal_rh   # 日均相对湿度 %
+    - rt_ssr   # 日总辐射
+    - rt_ws10  # 日均 10m 风速
+    datetime_features:
+    - day
+    - day_of_week
+    - week_of_year
+    - month
+    - days_in_month
+    - quarter
+    - day_of_year
+    - year
+    - is_month_start
+    - is_month_end
+    - is_quarter_start
+    - is_quarter_end
+    datetime_categorical_features: []  # 空列表=关闭类别特征(不传 categorical_feature 给 LightGBM)
+  time_lag_features:
+    lags:
+    - 1
+    - 2
+    - 3
+    - 4
+    - 5
+    - 6
+    - 7
+    - 14
+    - 28
+  model_strategy:
+    quantile_monotone: true  # 逐行排序消除 quantile crossing
+    align_direct_features_to_target: false
+    model_type: lightgbm
+    pred_method: univariate-single-multistep-recursive
+    predict_type: quantile  # 概率预测:输出各分位数(predict_qXX)
+    quantiles:
+    - 0.1
+    - 0.5
+    - 0.9
+  training_enhancement:
+    enable_time_decay_sample_weight: true
+    decay_halflife_days: 60  # 半衰期天数,按数据漂移速度调整
+  train_outlier:
+    enable_train_outlier_handling: false  # 日频稀疏点不宜插值清洗
+  eval_mask:
+    mode: percentile
+    percentile: 5.0
+  preprocessing:
+    target_calendar_normalization: none
+    decomposition_method: linear
+    decomposition_robust: true
+    decomposition_trend_degree: 1
+    decomposition_trend_forecast: damped
+    decomposition_damping: 0.98
+    decomposition_seasonal_cycles: 4
+    scale_target: false  # 目标分解与 target scaling 互斥
+  performance:
+    window_parallel_workers: 8
+    multi_output_n_jobs: 1
+    model_thread_count: 8

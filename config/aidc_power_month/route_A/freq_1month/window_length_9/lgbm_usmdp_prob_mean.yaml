@@ -44,6 +44,7 @@ overrides:
     - year
     datetime_categorical_features: []
   time_lag_features:
+    enable_lags_features: true  # USMDP safe-lag：显式开启目标滞后特征
     lags:
     - 1
     - 2
@@ -56,7 +57,7 @@ overrides:
     model_params:
       min_child_samples: 2   # 月频每窗训练行少(≤7)，默认 20 无法分裂
     pred_method: univariate-single-multistep-direct-pointwise
-    align_direct_features_to_target: true  # one-step: lag1=最新已知月，天气=目标月
+    align_direct_features_to_target: true  # safe-lag：min(lags) >= horizon，只引用预测原点前真实目标
     predict_type: quantile
     quantiles:
     - 0.1

@@ -10,9 +10,9 @@ overrides:
     forecast_mode: forecast
     is_testing: true
     is_forecasting: true
-    history_length: 30
+    history_length: 16
     predict_steps: 16
-    window_length: 14
+    window_length: 15
     now_time: '2026-07-31T14:00:00'
     schedule_mode: intraday
   target_series:
@@ -67,6 +67,7 @@ overrides:
     align_direct_features_to_target: false
     model_type: lightgbm
     pred_method: univariate-single-multistep-direct-recursive
+    block_size: 4  # 显式块长：替代 block_size=0 按 min(lags) 推导的退化默认值
     predict_type: quantile
     quantiles:
     - 0.1
@@ -87,6 +88,7 @@ overrides:
     decomposition_trend_degree: 1
     decomposition_trend_forecast: polynomial
   performance:
+
     window_parallel_workers: 8
     multi_output_n_jobs: 8
     model_thread_count: 1

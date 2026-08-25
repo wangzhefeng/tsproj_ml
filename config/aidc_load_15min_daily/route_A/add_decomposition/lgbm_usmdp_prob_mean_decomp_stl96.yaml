@@ -10,7 +10,7 @@ overrides:
     forecast_mode: forecast
     is_testing: true
     is_forecasting: true
-    history_length: 60
+    history_length: 34
     predict_steps: 96
     window_length: 30
     now_time: '2026-07-31T23:45:00'
@@ -50,11 +50,18 @@ overrides:
     - year
     datetime_categorical_features: []
   time_lag_features:
-    enable_lags_features: false
-    lags: []
+    enable_lags_features: true  # USMDP safe-lag：显式开启目标滞后特征
+    lags:
+    - 96
+    - 192
+    - 288
+    - 384
+    - 480
+    - 576
+    - 672
   model_strategy:
     quantile_monotone: true
-    align_direct_features_to_target: false
+    align_direct_features_to_target: true  # safe-lag：min(lags) >= horizon，只引用预测原点前真实目标
     model_type: lightgbm
     pred_method: univariate-single-multistep-direct-pointwise
     predict_type: quantile

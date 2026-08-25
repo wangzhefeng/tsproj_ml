@@ -11,7 +11,7 @@ overrides:
     forecast_mode: forecast
     is_testing: true
     is_forecasting: true
-    history_length: 60
+    history_length: 34
     predict_steps: 288
     window_length: 30
     now_time: '2026-07-28T23:55:00'
@@ -58,6 +58,7 @@ overrides:
     align_direct_features_to_target: false
     model_type: lightgbm
     pred_method: multivariate-single-multistep-direct-recursive
+    block_size: 96  # 显式块长：替代 block_size=0 按 min(lags) 推导的退化默认值
   training_enhancement:
     enable_time_decay_sample_weight: true
     decay_halflife_days: 60  # 半衰期天数,按数据漂移速度调整

@@ -11,7 +11,7 @@ overrides:
     forecast_mode: forecast
     is_testing: true
     is_forecasting: true
-    history_length: 60
+    history_length: 34
     predict_steps: 288
     window_length: 30
     now_time: '2026-07-28T23:55:00'
@@ -70,7 +70,6 @@ overrides:
     percentile: 5.0
   preprocessing:
     target_calendar_normalization: none
-    decomposition_method: linear  # 窗口内线性目标分解（与 scale_target 互斥）
   performance:
     window_parallel_workers: 8
     multi_output_n_jobs: 1

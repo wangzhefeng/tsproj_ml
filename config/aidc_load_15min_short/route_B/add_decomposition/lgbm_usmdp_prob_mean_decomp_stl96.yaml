@@ -10,9 +10,9 @@ overrides:
     forecast_mode: forecast
     is_testing: true
     is_forecasting: true
-    history_length: 30
+    history_length: 16
     predict_steps: 16
-    window_length: 14
+    window_length: 15
     now_time: '2026-07-31T14:00:00'
     schedule_mode: intraday
   target_series:
@@ -81,6 +81,7 @@ overrides:
     decomposition_trend_forecast: polynomial
     decomposition_seasonal_cycles: 4
   performance:
+
     window_parallel_workers: 8
     multi_output_n_jobs: 1
     model_thread_count: 8

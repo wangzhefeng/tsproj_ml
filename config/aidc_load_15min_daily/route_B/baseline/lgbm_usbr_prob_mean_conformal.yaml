@@ -10,7 +10,7 @@ overrides:
     forecast_mode: forecast
     is_testing: true
     is_forecasting: true
-    history_length: 60
+    history_length: 34
     predict_steps: 96
     window_length: 30
     now_time: '2026-07-31T23:45:00'
@@ -29,6 +29,8 @@ overrides:
     weather_future_source: ''
     enable_date_features: false
     enable_weather_features: false
+    enable_datetime_features: false
+    custom_features: []
     datetime_features:
     - hour
     - minute
@@ -73,6 +75,7 @@ overrides:
     - 192
     - 672
   model_strategy:
+    enable_ensemble: false
     quantile_monotone: true
     align_direct_features_to_target: false
     model_type: lightgbm

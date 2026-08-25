@@ -9,9 +9,9 @@ overrides:
     forecast_mode: forecast
     is_testing: true
     is_forecasting: true
-    history_length: 30
+    history_length: 16
     predict_steps: 16
-    window_length: 14
+    window_length: 15
     now_time: '2026-07-31T14:00:00'
     schedule_mode: intraday
   target_series:
@@ -21,6 +21,7 @@ overrides:
     target_ts_feat: time
     target: value
   exogenous_features:
+    enable_datetime_features: true
     weather_backtest_path: weather_15min_backtest_proxy_20260101_20260731.csv
     strict_weather_information_set: true
     weather_history_source: actual

@@ -10,7 +10,7 @@ overrides:
     forecast_mode: forecast
     is_testing: true
     is_forecasting: true
-    history_length: 60
+    history_length: 34
     predict_steps: 96
     window_length: 30
     now_time: '2026-07-31T23:45:00'

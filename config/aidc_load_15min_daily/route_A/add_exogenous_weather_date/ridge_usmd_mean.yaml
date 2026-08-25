@@ -31,7 +31,7 @@ overrides:
     enable_datetime_features: true
     custom_features: []
     weather_history_path: weather_15min_20250101_20260731.csv
-    weather_future_path: weather_15min_future_proxy_20260731_20260831.csv
+    weather_future_path: weather_15min_future_proxy_20260801_20260831.csv
     weather_ts_feat: ts
     weather_features:
     - rt_tt2

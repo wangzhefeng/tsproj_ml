@@ -3,7 +3,7 @@ base_config: config.univariate_config
 overrides:
   output:
     scenario_subpath: aidc_load_15min_short/route_B/baseline
-    setting_suffix: -conformal
+    setting_suffix: -conformal-intraday
   runtime:
     horizon_mode: fixed_steps
     train_window_length: null
@@ -22,15 +22,21 @@ overrides:
     target_ts_feat: time
     target: value
   exogenous_features:
-    enable_datetime_features: false
-    datetime_features: []
+    date_history_path: null
+    date_future_path: null
+    weather_history_path: null
     weather_backtest_path: null
+    weather_future_path: null
+    strict_date_information_set: false
     strict_weather_information_set: false
     weather_history_source: ''
     weather_backtest_source: ''
     weather_future_source: ''
     enable_date_features: false
     enable_weather_features: false
+    enable_datetime_features: false
+    custom_features: []
+    datetime_features: []
     datetime_categorical_features: []
   time_lag_features:
     lags:
@@ -45,6 +51,7 @@ overrides:
     - 192
     - 672
   model_strategy:
+    enable_ensemble: false
     quantile_monotone: true
     align_direct_features_to_target: false
     model_type: lightgbm

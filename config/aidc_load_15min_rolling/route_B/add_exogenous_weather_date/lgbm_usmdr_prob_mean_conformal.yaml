@@ -3,7 +3,7 @@ base_config: config.univariate_config
 overrides:
   output:
     scenario_subpath: aidc_load_15min_rolling/route_B/add_exogenous_weather_date
-    setting_suffix: -conformal
+    setting_suffix: -conformal-intraday
   runtime:
     horizon_mode: fixed_steps
     train_window_length: null
@@ -24,7 +24,8 @@ overrides:
   exogenous_features:
     date_history_path: null
     date_future_path: null
-    weather_backtest_path: weather_15min_backtest_proxy_20250101_20260731.csv
+    weather_backtest_path: weather_15min_backtest_proxy_20260101_20260731.csv
+    strict_date_information_set: false
     strict_weather_information_set: true
     weather_history_source: actual
     weather_backtest_source: proxy
@@ -33,8 +34,8 @@ overrides:
     enable_weather_features: true
     enable_datetime_features: true
     custom_features: []
-    weather_history_path: weather_15min_20250101_20260731.csv
-    weather_future_path: weather_15min_future_proxy_20260731_20260831.csv
+    weather_history_path: weather_15min_20250101_20260731T1345.csv
+    weather_future_path: weather_15min_future_proxy_20260731T1400_20260831.csv
     weather_ts_feat: ts
     weather_features:
     - rt_tt2

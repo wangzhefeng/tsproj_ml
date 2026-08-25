@@ -22,7 +22,12 @@ overrides:
     target_ts_feat: time
     target: value
   exogenous_features:
+    date_history_path: null
+    date_future_path: null
+    weather_history_path: null
     weather_backtest_path: null
+    weather_future_path: null
+    strict_date_information_set: false
     strict_weather_information_set: false
     weather_history_source: ''
     weather_backtest_source: ''
@@ -31,17 +36,7 @@ overrides:
     enable_weather_features: false
     enable_datetime_features: false
     custom_features: []
-    datetime_features:
-    - hour
-    - minute
-    - day
-    - day_of_week
-    - week_of_year
-    - month
-    - days_in_month
-    - quarter
-    - day_of_year
-    - year
+    datetime_features: []
     datetime_categorical_features: []
   time_lag_features:
     lags:

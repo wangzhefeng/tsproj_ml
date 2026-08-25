@@ -22,6 +22,7 @@ overrides:
     target_ts_feat: time
     target: value
   exogenous_features:
+    custom_features: []
     weather_backtest_path: exogenous_weather_raw/weather_derived_backtest_forecast_20260628_20260728.csv
     strict_weather_information_set: true
     weather_history_source: actual
@@ -70,6 +71,7 @@ overrides:
     - 1728
     - 2016
   model_strategy:
+    enable_ensemble: false
     quantile_monotone: true
     align_direct_features_to_target: false
     model_type: lightgbm
@@ -89,7 +91,7 @@ overrides:
     percentile: 5.0
   preprocessing:
     target_calendar_normalization: none
-    decomposition_method: linear  # 窗口内线性目标分解（与 scale_target 互斥）
+    decomposition_method: none
   performance:
     window_parallel_workers: 8
     multi_output_n_jobs: 1

@@ -5,18 +5,18 @@
   dataset/aidc_load_5min/weather_in_20250101_20260731.csv（1h 实测）
 
 输出（写入 dataset/aidc_load_15min_rolling/）：
-  weather_15min_20250101_20260731.csv
+  weather_15min_20250101_20260731T1345.csv
   weather_15min_backtest_proxy_20260101_20260731.csv
-  weather_15min_future_proxy_20260731_20260831.csv
+  weather_15min_future_proxy_20260731T1400_20260831.csv
 
 口径：
   1. 历史实测：1h 数据先补齐缺测，再按时间线性插值到 15min；cal_rh 由
      插值后的 rt_tt2 / rt_dt 通过 Magnus-Tetens 公式逐点重算。
   2. 滑窗回测：目标时刻 t 使用上一年同月同日同一 15min 时刻的历史值；
      available_at 为目标月前一个月月末，保证严格早于目标月。
-  3. 正式预测：2026-07-31~2026-08-31 使用 2025 年同期逐 15min 代理；
-     available_at 固定为 2026-07-31 00:00，覆盖 07-31 14:00 的 intraday
-     预测原点和 08-01 00:00 的 daily 预测原点。
+  3. 正式预测：2026-07-31 14:00~2026-08-31 使用 2025 年同期逐 15min
+     代理；available_at 固定为 2026-07-31 00:00，覆盖 07-31 14:00 的
+     intraday 预测原点。history 严格截止到预测原点前一时刻 13:45。
 """
 from __future__ import annotations
 
@@ -31,15 +31,15 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 SOURCE_PATH = PROJECT_ROOT / "dataset/aidc_load_5min/weather_in_20250101_20260731.csv"
 SCENARIO_DIR = PROJECT_ROOT / "dataset/aidc_load_15min_rolling"
 
-HISTORY_NAME = "weather_15min_20250101_20260731.csv"
+HISTORY_NAME = "weather_15min_20250101_20260731T1345.csv"
 BACKTEST_NAME = "weather_15min_backtest_proxy_20260101_20260731.csv"
-FUTURE_NAME = "weather_15min_future_proxy_20260731_20260831.csv"
+FUTURE_NAME = "weather_15min_future_proxy_20260731T1400_20260831.csv"
 
 HISTORY_START = pd.Timestamp("2025-01-01 00:00:00")
-HISTORY_END = pd.Timestamp("2026-07-31 23:45:00")
+HISTORY_END = pd.Timestamp("2026-07-31 13:45:00")
 BACKTEST_START = pd.Timestamp("2026-01-01 00:00:00")
 BACKTEST_END = pd.Timestamp("2026-07-31 23:45:00")
-FUTURE_START = pd.Timestamp("2026-07-31 00:00:00")
+FUTURE_START = pd.Timestamp("2026-07-31 14:00:00")
 FUTURE_END = pd.Timestamp("2026-08-31 23:45:00")
 FUTURE_AVAILABLE_AT = pd.Timestamp("2026-07-31 00:00:00")
 

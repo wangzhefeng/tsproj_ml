@@ -1,9 +1,10 @@
-# A — st — recursive (日频单变量 · 季节模板基线 point) # + 日度气象外生
-# SeasonalTemplate 仅使用原始目标的 lag/day-of-week，不直接消费气象列；本文件保留在气象组作为同口径基线。
+# A — st — recursive (日频单变量 · 季节模板基线 point) # + 日期时间外生 · control-no-weather
+# SeasonalTemplate 使用目标 lag/day-of-week，不消费气象列；保留为日期时间对照。
 base_config: config.univariate_config
 overrides:
   output:
-    scenario_subpath: aidc_power_month/route_A/freq_1day/add_exogenous_weather
+    scenario_subpath: aidc_power_month/route_A/freq_1day/add_exogenous_weather_date
+    setting_suffix: -control-no-weather
   runtime:
     horizon_mode: calendar_month  # 预测 forecast_start 所在的完整自然月
     train_window_length: 120  # 固定训练天数，保持旧配置有效训练长度
@@ -21,15 +22,20 @@ overrides:
     target_ts_feat: time
     target: value
   exogenous_features:
-    weather_backtest_path: weather_daily_stats_backtest_proxy_20260101_20260731.csv
-    strict_weather_information_set: true
-    weather_history_source: actual
-    weather_backtest_source: proxy
-    weather_future_source: proxy
-    enable_date_features: false
-    enable_weather_features: true
-    weather_history_path: weather_daily_stats_20251001_20260731.csv
-    weather_future_path: weather_daily_stats_future_20260801_20260831.csv  # 纯上一年同日代理，不含2026-08实测（derive_weather_daily_future.py）
+    custom_features: []
+    enable_datetime_features: true  # SeasonalTemplate 用 dt_day_of_week 分工作日/周末模板
+    enable_date_features: false  # 本场景没有 date_type
+    date_history_path: null
+    date_future_path: null
+    strict_date_information_set: false
+    enable_weather_features: false  # 模型实现不消费天气列
+    weather_history_path: null
+    weather_backtest_path: null
+    weather_future_path: null
+    strict_weather_information_set: false
+    weather_history_source: ''
+    weather_backtest_source: ''
+    weather_future_source: ''
     weather_ts_feat: ts
     weather_features:
     - rt_tt2   # 日均 2m 气温（Kelvin）
@@ -62,6 +68,7 @@ overrides:
     - 14
     - 28
   model_strategy:
+    enable_ensemble: false
     align_direct_features_to_target: false
     model_type: st
     pred_method: univariate-single-multistep-recursive
@@ -75,7 +82,7 @@ overrides:
     percentile: 5.0
   preprocessing:
     target_calendar_normalization: none
-    decomposition_method: none  # add_exogenous_weather 对照组：不做目标分解
+    decomposition_method: none
   performance:
     window_parallel_workers: 8
     multi_output_n_jobs: 1

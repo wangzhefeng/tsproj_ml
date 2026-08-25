@@ -79,7 +79,8 @@ overrides:
     align_direct_features_to_target: false
     model_type: lightgbm
     pred_method: univariate-single-multistep-direct
-    predict_type: quantile  # 概率预测:输出各分位数(predict_qXX)
+    predict_type: quantile
+    quantile_monotone: true  # 概率预测:输出各分位数(predict_qXX)
     quantiles:
     - 0.1
     - 0.5

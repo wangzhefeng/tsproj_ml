@@ -58,7 +58,7 @@ overrides:
     - 0.1
     - 0.5
     - 0.9
-    enable_conformal_calibration: true  # 当前仅 3–4 个滑窗，默认 min_scores=30 时会跳过校准
+    # enable_conformal_calibration 已关闭：月频 hist=10~12 个月、H=1，最多 12 个 score < min_scores=30，CQR 永远跳过；历史 ≥33 个月可恢复
   training_enhancement:
     enable_time_decay_sample_weight: false
   train_outlier:

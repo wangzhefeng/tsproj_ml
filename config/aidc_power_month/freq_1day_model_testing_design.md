@@ -121,10 +121,10 @@ weather_future_source: proxy
 
 | 分组 | 数量/路 | 构成 | 目的 |
 |---|---:|---|---|
-| `baseline` | 11 | 7 个 quantile+conformal（lgbm usmd/usmdr/usmr/usmdp/usbr、horizon-feature usmd、qr usmd）+ 4 个 point（ridge/enet/lasso usmd、st usmr） | 无天气基础对照，含概率区间主链 |
-| `add_exogenous_weather_date` | 11 | baseline 同构 + 严格天气信息集 | 天气消融实验组 |
-| `add_decomposition` | 20 | 10 个模型/方法 × {linear, STL7}，天气开启、conformal 关闭 | 目标分解消融实验组 |
-| `add_load_state` | 40 | decomposition 同构 + 15 列 origin-frozen 状态 | 负荷状态消融实验组 |
+| `baseline` | 10 | 6 个 quantile+conformal（lgbm usmd/usmdr/usmr/usmdp/usbr、horizon-feature usmd）+ 4 个 point（ridge/enet/lasso usmd、st usmr） | 无天气基础对照，含概率区间主链（qr 已移除） |
+| `add_exogenous_weather_date` | 10 | baseline 同构 + 严格天气信息集 | 天气消融实验组（qr 已移除） |
+| `add_decomposition` | 16 | 8 个模型/方法 × {linear, STL7, quadratic, damped}，天气开启、conformal 关闭 | 目标分解消融实验组（qr 已移除） |
+| `add_load_state` | 32 | decomposition 同构 + 15 列 origin-frozen 状态 | 负荷状态消融实验组（qr 已移除） |
 
 ### 4.2 模型与方法选型理由
 

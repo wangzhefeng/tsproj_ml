@@ -34,6 +34,7 @@ import pandas as pd  # noqa: E402
 
 from config.config_loader import load_yaml_config  # noqa: E402
 from models.ModelTesting import Tester  # noqa: E402
+from models.multistep.spec import RolloutFamily, get_strategy_spec  # noqa: E402
 from probabilistic.objectives import validate_quantile_model_support  # noqa: E402
 from probabilistic.spec import resolve_probabilistic_spec  # noqa: E402
 from utils.frequency import resolve_samples_per_day  # noqa: E402
@@ -121,8 +122,10 @@ def check_model_yaml(f: str) -> tuple[Any, list[str]]:
     except ValueError as exc:
         problems.append(f"probabilistic 配置错误: {exc}")
 
+    strategy_spec = get_strategy_spec(cfg.pred_method)
+    is_pointwise = strategy_spec.rollout == RolloutFamily.POINTWISE
     constructs_lags = (
-        cfg.pred_method != "univariate-single-multistep-direct-pointwise"
+        not is_pointwise
         or bool(getattr(cfg, "align_direct_features_to_target", False))
     )
     if constructs_lags:
@@ -165,7 +168,7 @@ def check_model_yaml(f: str) -> tuple[Any, list[str]]:
 
     adv = getattr(cfg, "enable_advanced_features", False)
     if adv:
-        is_usmdp = cfg.pred_method == "univariate-single-multistep-direct-pointwise"
+        is_usmdp = is_pointwise
         target_dependent_features = {
             "rolling": bool(getattr(cfg, "enable_rolling_features", False))
             and "y" in (getattr(cfg, "rolling_columns", []) or []),

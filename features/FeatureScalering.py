@@ -17,6 +17,8 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+
+from models.multistep.spec import RolloutFamily, get_strategy_spec
 from sklearn.preprocessing import StandardScaler, MinMaxScaler, RobustScaler, PowerTransformer
 from sklearn.base import clone
 
@@ -233,22 +235,13 @@ class TargetScaler:
         根据预测方法确定预测结果对应的目标列。
         horizon_feature 模式下训练只 fit 了单列目标，推理 restore 也按单列。
         """
-        direct_multi_step_methods = {
-            "univariate-single-multistep-direct",
-            "univariate-single-multistep-direct-recursive",
-            "multivariate-single-multistep-direct",
-            "multivariate-single-multistep-direct-recursive",
-        }
-        if pred_method in direct_multi_step_methods:
+        rollout = get_strategy_spec(pred_method).rollout
+        if rollout in {RolloutFamily.DIRECT, RolloutFamily.DIRREC}:
             if str(direct_strategy).lower() == "horizon_feature":
                 return [target_output_features[0]]
             return list(target_output_features)
         # Blend（Direct+Recursive）：预测混合了两策略，用 shift_0（=target 本身）近似 restore
-        blend_methods = {
-            "univariate-single-multistep-blend-direct-recursive",
-            "multivariate-single-multistep-blend-direct-recursive",
-        }
-        if pred_method in blend_methods:
+        if rollout == RolloutFamily.BLEND:
             return [target_output_features[-1]]
         return [target_output_features[0]]
 
@@ -388,7 +381,7 @@ class FeatureScaler:
 
     def _align_feature_schema(self, X: pd.DataFrame) -> pd.DataFrame:
         """
-        对齐预测阶段特征 schema（补缺失、去多余、按训练顺序重排）
+        对齐预测阶段特征 schema（缺列失败、去多余、按训练顺序重排）
         """
         if not self.training_columns:
             return X
@@ -398,9 +391,9 @@ class FeatureScaler:
         extra_cols = [c for c in X_aligned.columns if c not in self.training_columns]
 
         if missing_cols:
-            logger.warning(f"{self.log_prefix} Missing columns at inference: {missing_cols}")
-            for col in missing_cols:
-                X_aligned[col] = self.training_fill_values.get(col, 0.0)
+            raise ValueError(
+                f"{self.log_prefix} Missing required inference feature columns: {missing_cols}."
+            )
 
         if extra_cols:
             logger.warning(f"{self.log_prefix} Extra columns at inference (dropped): {extra_cols}")
@@ -463,6 +456,36 @@ class FeatureScaler:
             X_processed[col] = X_processed[col].apply(encode_value)
         
         return X_processed
+
+    def _validate_global_series_ids(self, X: pd.DataFrame) -> None:
+        """拒绝把训练期未见序列静默映射成其他序列。"""
+        if not bool(getattr(self.args, "enable_global_training", False)):
+            return
+        series_id_col = str(getattr(self.args, "series_id_feature", "series_id"))
+        if series_id_col not in X.columns:
+            raise ValueError(
+                f"{self.log_prefix} global panel input missing series ID column "
+                f"'{series_id_col}'."
+            )
+        mapping = self.category_mappings.get(series_id_col, {})
+        known = list(mapping.get("categories", ()))
+        if not known:
+            known = list(self.category_info.get(series_id_col, ()))
+        if not known:
+            raise ValueError(
+                f"{self.log_prefix} no training series IDs recorded for '{series_id_col}'."
+            )
+        known_set = set(known)
+        unknown = [
+            value
+            for value in pd.unique(X[series_id_col].dropna())
+            if value not in known_set
+        ]
+        if unknown:
+            raise ValueError(
+                f"{self.log_prefix} unknown series IDs for '{series_id_col}': {unknown}. "
+                "global_unknown_series_policy='raise'."
+            )
     
     def _fit_transform_numeric(self, X: pd.DataFrame, categorical_features: List[str]) -> pd.DataFrame:
         """
@@ -628,6 +651,7 @@ class FeatureScaler:
         logger.info(f"{self.log_prefix} {'-' * 69}")
         # 先按训练阶段 schema 对齐
         X_processed = self._align_feature_schema(X.copy())
+        self._validate_global_series_ids(X_processed)
         # 1. 确定实际存在的类别特征
         actual_categorical = [f for f in categorical_features if f in X_processed.columns]
         # 2. 处理类别特征

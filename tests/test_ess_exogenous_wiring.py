@@ -8,6 +8,7 @@ import pandas as pd
 
 from features.FeatureEngineering import ExogenousFeatureEngineer, FeatureEngineer
 from models.ModelForecasting import Forecaster
+from models.multistep.executors.recursive import RecursiveExecutor
 
 
 class NativeDerivedWeatherTest(unittest.TestCase):
@@ -117,7 +118,11 @@ class RecursiveCustomFutureWiringTest(unittest.TestCase):
                 return frame, ["pcs_plan"], ["y_shift_0"], []
 
         forecaster = object.__new__(Forecaster)
-        forecaster.args = SimpleNamespace(enable_step_logging=False, forecast_log_interval=1)
+        forecaster.args = SimpleNamespace(
+            pred_method="univariate-single-multistep-recursive",
+            enable_step_logging=False,
+            forecast_log_interval=1,
+        )
         forecaster.horizon = 1
         forecaster.df_future = pd.DataFrame({
             "time": [pd.Timestamp("2026-07-29 00:00:00")],
@@ -154,7 +159,7 @@ class RecursiveCustomFutureWiringTest(unittest.TestCase):
         forecaster._append_history_row = lambda row: None
         forecaster._finalize_recursive_quantiles = lambda store: None
 
-        prediction = forecaster.univariate_single_multi_step_recursive_forecast()
+        prediction = RecursiveExecutor().execute(forecaster)
 
         np.testing.assert_allclose(prediction, [11.0])
         self.assertIs(captured.get("df_custom_future"), forecaster.df_custom_future)

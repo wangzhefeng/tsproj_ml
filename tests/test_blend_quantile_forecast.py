@@ -3,11 +3,13 @@
 from types import SimpleNamespace
 from typing import Any
 import unittest
+from unittest.mock import patch
 
 import numpy as np
 import pandas as pd
 
 from models.ModelForecasting import Forecaster
+from models.multistep.executors.blend import BlendExecutor
 from probabilistic.spec import ProbabilisticSpec
 from probabilistic.types import BlendQuantileModel, ProbabilisticModelBundle
 
@@ -49,20 +51,28 @@ class BlendQuantileForecastTest(unittest.TestCase):
             recursive_q90: np.array([300.0, 400.0]),
         }
         forecaster.args = SimpleNamespace(
-            pred_method="univariate-single-multistep-blend-direct-recursive"
+            pred_method="univariate-single-multistep-blend-direct-recursive",
+            predict_type="quantile",
         )
+        forecaster.horizon = 2
         forecaster.model = original_bundle
         forecaster.df_history = pd.DataFrame({"y": [1.0, 2.0]})
+        forecaster.df_history_for_lags = forecaster.df_history.copy(deep=True)
         forecaster.max_lag = 1
         forecaster.history_context_length = 1
         forecaster._recursive_schema_cache = {}
         forecaster._is_quantile_bundle = lambda: True
         forecaster._resolve_blend_weights = lambda: np.array([0.25, 0.75])
-        forecaster.univariate_single_multi_step_direct_forecast = lambda: predictions[forecaster.model]
-        forecaster.univariate_single_multi_step_recursive_forecast = lambda: predictions[forecaster.model]
         forecaster.log_prefix = "[test]"
 
-        point_prediction = forecaster._blend_forecast_quantile()
+        with patch(
+            "models.multistep.executors.blend.DirectExecutor.execute",
+            side_effect=lambda context: predictions[context.model],
+        ), patch(
+            "models.multistep.executors.blend.RecursiveExecutor.execute",
+            side_effect=lambda context: predictions[context.model],
+        ):
+            point_prediction = BlendExecutor().execute(forecaster)
 
         np.testing.assert_allclose(forecaster.quantile_outputs[0.1], [2.5, 3.5])
         np.testing.assert_allclose(forecaster.quantile_outputs[0.5], [25.0, 35.0])
@@ -109,24 +119,28 @@ class BlendQuantileForecastTest(unittest.TestCase):
             recursive_models[0.9]: np.array([300.0, 400.0]),
         }
         forecaster.args = SimpleNamespace(
-            pred_method="multivariate-single-multistep-blend-direct-recursive"
+            pred_method="multivariate-single-multistep-blend-direct-recursive",
+            predict_type="quantile",
         )
+        forecaster.horizon = 2
         forecaster.model = bundle
         forecaster.df_history = pd.DataFrame({"y": [1.0, 2.0]})
+        forecaster.df_history_for_lags = forecaster.df_history.copy(deep=True)
         forecaster.max_lag = 1
         forecaster.history_context_length = 1
         forecaster._recursive_schema_cache = {}
         forecaster._is_quantile_bundle = lambda: True
         forecaster._resolve_blend_weights = lambda: np.array([0.5, 0.5])
-        forecaster.multivariate_single_multi_step_direct_forecast = (
-            lambda: predictions[forecaster.model]
-        )
-        forecaster.multivariate_single_multi_step_recursive_forecast = (
-            lambda: predictions[forecaster.model]
-        )
         forecaster.log_prefix = "[test]"
 
-        point_prediction = forecaster._blend_forecast_quantile()
+        with patch(
+            "models.multistep.executors.blend.DirectExecutor.execute",
+            side_effect=lambda context: predictions[context.model],
+        ), patch(
+            "models.multistep.executors.blend.RecursiveExecutor.execute",
+            side_effect=lambda context: predictions[context.model],
+        ):
+            point_prediction = BlendExecutor().execute(forecaster)
 
         self.assertEqual(point_prediction.shape, (2,))
         self.assertEqual(

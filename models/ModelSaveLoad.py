@@ -96,27 +96,11 @@ class ModelDeployPkl(ModelDeploy):
         # 挂载 decomposition bundle：若内容是 DecompositionBundle 则按 bundle 返回，
         # 普通模型/其他对象按原样返回（向后兼容）。
         from decomposition.bundle import DecompositionBundle
-        from probabilistic.types import (
-            ForecastModelBundle,
-            ProbabilisticModelBundle,
-            migrate_legacy_quantile_bundle,
-        )
+        from models.multistep.artifacts import LegacyArtifactAdapter
 
-        if isinstance(model, ForecastModelBundle):
-            if int(model.schema_version) != 1:
-                raise ValueError(
-                    f"Unsupported ForecastModelBundle schema_version={model.schema_version}"
-                )
-            return model
-        if isinstance(model, ProbabilisticModelBundle):
-            if int(model.schema_version) != 1:
-                raise ValueError(
-                    f"Unsupported ProbabilisticModelBundle schema_version={model.schema_version}"
-                )
-            return model
         if isinstance(model, DecompositionBundle):
             return model
-        return migrate_legacy_quantile_bundle(model)
+        return LegacyArtifactAdapter.adapt(model)
 
 
 class ModelDeployPmml(ModelDeploy):

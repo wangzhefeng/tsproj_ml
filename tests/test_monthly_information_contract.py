@@ -107,6 +107,44 @@ class MonthlyFeatureAlignmentTests(unittest.TestCase):
         self.assertEqual(row[targets[0]], 200.0)
         self.assertIn("y_lag_1", predictors)
 
+    def test_usmr_default_row_uses_previous_month_lag_and_target_month_weather(self):
+        args = self._args("univariate-single-multistep-recursive")
+        args.align_direct_features_to_target = False
+        series, weather = self._series_and_weather()
+
+        featured, predictors, targets, _ = FeatureEngineer(
+            args,
+            "[test]",
+            verbose=False,
+        ).create_features(
+            df_series=series,
+            df_weather_history=weather,
+            endogenous_features_with_target=["y"],
+            target_feature="y",
+            horizon=1,
+        )
+
+        row = featured.loc[pd.Timestamp("2026-02-28")]
+        self.assertEqual(row["y_lag_1"], 100.0)
+        self.assertEqual(row["rt_tt2"], 293.15)
+        self.assertEqual(row[targets[0]], 200.0)
+        self.assertIn("y_lag_1", predictors)
+
+    def test_monthly_usmr_configs_do_not_set_direct_only_alignment(self):
+        project_root = Path(__file__).resolve().parents[1]
+        config_root = project_root / "config" / "aidc_power_month"
+        config_paths = sorted(
+            config_root.glob(
+                "route_*/freq_1month/window_length_*/lgbm_usmr_prob_mean.yaml"
+            )
+        )
+
+        self.assertEqual(len(config_paths), 8)
+        for config_path in config_paths:
+            with self.subTest(config_path=config_path):
+                text = config_path.read_text(encoding="utf-8")
+                self.assertNotIn("align_direct_features_to_target", text)
+
 
 class WeatherInformationContractTests(unittest.TestCase):
     def test_future_weather_available_after_origin_is_rejected(self):

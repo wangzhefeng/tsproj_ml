@@ -73,7 +73,7 @@ overrides:
     - 672
   model_strategy:
     quantile_monotone: true
-    align_direct_features_to_target: false
+    align_direct_features_to_target: true  # safe-lag: min(lags)=horizon=288，不读取未来目标
     model_type: lightgbm
     pred_method: univariate-single-multistep-direct-pointwise
     predict_type: quantile  # 概率预测:输出各分位数(predict_qXX)

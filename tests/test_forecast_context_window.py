@@ -26,6 +26,7 @@ class ForecastContextWindowTest(unittest.TestCase):
 
     def test_initial_history_buffer_uses_feature_context_length(self):
         args: Any = SimpleNamespace(
+            pred_method="univariate-single-multistep-direct",
             lags=[288, 2016],
             enable_advanced_features=True,
             enable_rolling_features=True,
@@ -43,7 +44,9 @@ class ForecastContextWindowTest(unittest.TestCase):
             feature_scaler=None,
             target_scaler=None,
             df_history=history,
-            df_future=pd.DataFrame(),
+            df_future=pd.DataFrame(
+                {"time": pd.date_range("2026-01-01", periods=288, freq="5min")}
+            ),
             df_date_future=pd.DataFrame(),
             df_weather_future=pd.DataFrame(),
             endogenous_features=[],

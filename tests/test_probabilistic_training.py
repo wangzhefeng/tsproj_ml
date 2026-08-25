@@ -101,6 +101,22 @@ class ProbabilisticTrainingTest(unittest.TestCase):
             )
         )
 
+    def test_blend_short_code_resolves_to_canonical_strategy(self):
+        backend = _Backend()
+        trainer = QuantileTrainer(
+            spec=self._spec(),
+            model_type="lightgbm",
+            pred_method="usbr",
+            train_single=backend.train_single,
+            train_blend=backend.train_blend,
+        )
+
+        self.assertTrue(trainer.is_blend)
+        self.assertEqual(
+            trainer.pred_method,
+            "univariate-single-multistep-blend-direct-recursive",
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

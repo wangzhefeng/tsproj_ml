@@ -8,6 +8,7 @@ from typing import Any, Callable, Optional, Sequence
 
 import pandas as pd
 
+from models.multistep.spec import RolloutFamily, get_strategy_spec
 from probabilistic.spec import ProbabilisticSpec
 from probabilistic.types import BlendQuantileModel, ProbabilisticModelBundle
 
@@ -35,17 +36,15 @@ class QuantileTrainer:
             raise ValueError("QuantileTrainer requires spec.mode=quantile")
         self.spec = spec
         self.model_type = str(model_type)
-        self.pred_method = str(pred_method)
+        self.strategy_spec = get_strategy_spec(pred_method)
+        self.pred_method = self.strategy_spec.method
         self.train_single = train_single
         self.train_blend = train_blend
         self.max_workers = max(1, int(max_workers or 1))
 
     @property
     def is_blend(self) -> bool:
-        return self.pred_method in {
-            "univariate-single-multistep-blend-direct-recursive",
-            "multivariate-single-multistep-blend-direct-recursive",
-        }
+        return self.strategy_spec.rollout == RolloutFamily.BLEND
 
     @staticmethod
     def _split_blend_targets(Y: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:

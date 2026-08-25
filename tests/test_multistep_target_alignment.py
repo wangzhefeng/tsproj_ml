@@ -9,6 +9,8 @@ import pandas as pd
 
 from features.FeatureEngineering import FeatureEngineer
 from models.ModelForecasting import Forecaster
+from models.multistep.artifacts import LegacyArtifactAdapter
+from models.multistep.executors.direct import DirectExecutor
 from probabilistic.spec import ProbabilisticSpec
 from probabilistic.types import ProbabilisticModelBundle
 
@@ -35,16 +37,21 @@ class MultistepTargetAlignmentTest(unittest.TestCase):
             horizon=3,
         )
 
-    def test_multivariate_direct_methods_start_at_next_time_step(self):
-        for pred_method in (
-            "multivariate-single-multistep-direct",
-            "multivariate-single-multistep-direct-recursive",
-        ):
-            with self.subTest(pred_method=pred_method):
-                featured, _predictors, targets = self._build_features(pred_method)
+    def test_multivariate_direct_starts_at_next_time_step(self):
+        featured, _predictors, targets = self._build_features(
+            "multivariate-single-multistep-direct"
+        )
 
-                self.assertEqual(targets, ["y_shift_1", "y_shift_2", "y_shift_3"])
-                self.assertEqual(featured.iloc[0][targets].tolist(), [11, 12, 13])
+        self.assertEqual(targets, ["y_shift_1", "y_shift_2", "y_shift_3"])
+        self.assertEqual(featured.iloc[0][targets].tolist(), [11, 12, 13])
+
+    def test_multivariate_dirrec_without_lags_uses_one_step_block(self):
+        featured, _predictors, targets = self._build_features(
+            "multivariate-single-multistep-direct-recursive"
+        )
+
+        self.assertEqual(targets, ["y_shift_1"])
+        self.assertEqual(featured.iloc[0][targets].tolist(), [11])
 
     def test_univariate_and_multivariate_direct_targets_are_symmetric(self):
         method_pairs = (
@@ -106,7 +113,7 @@ class DirectPredictionLengthContractTest(unittest.TestCase):
             ValueError,
             r"point direct prediction length mismatch: expected 3, got 2",
         ):
-            forecaster.univariate_single_multi_step_direct_forecast()
+            DirectExecutor().execute(forecaster)
 
     def test_point_direct_rejects_long_output(self):
         forecaster = self._forecaster(self._Model([[1.0, 2.0, 3.0, 4.0]]))
@@ -115,7 +122,7 @@ class DirectPredictionLengthContractTest(unittest.TestCase):
             ValueError,
             r"point direct prediction length mismatch: expected 3, got 4",
         ):
-            forecaster.univariate_single_multi_step_direct_forecast()
+            DirectExecutor().execute(forecaster)
 
     def test_quantile_direct_rejects_short_output(self):
         bundle = {
@@ -128,13 +135,13 @@ class DirectPredictionLengthContractTest(unittest.TestCase):
                 0.9: self._Model([[2.0, 3.0, 4.0]]),
             },
         }
-        forecaster = self._forecaster(bundle)
+        forecaster = self._forecaster(LegacyArtifactAdapter.adapt(bundle))
 
         with self.assertRaisesRegex(
             ValueError,
             r"quantile q=0.1 direct prediction length mismatch: expected 3, got 2",
         ):
-            forecaster.univariate_single_multi_step_direct_forecast()
+            DirectExecutor().execute(forecaster)
 
     def test_typed_quantile_bundle_drives_direct_prediction(self):
         spec = ProbabilisticSpec(
@@ -161,7 +168,7 @@ class DirectPredictionLengthContractTest(unittest.TestCase):
         )
         forecaster = self._forecaster(bundle)
 
-        prediction = forecaster.univariate_single_multi_step_direct_forecast()
+        prediction = DirectExecutor().execute(forecaster)
 
         np.testing.assert_array_equal(prediction, [2.0, 3.0, 4.0])
         np.testing.assert_array_equal(

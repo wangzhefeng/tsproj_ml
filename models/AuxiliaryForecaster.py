@@ -15,6 +15,8 @@ import numpy as np
 import pandas as pd
 
 from models.ModelFactory import ModelFactory
+from models.multistep.artifacts import AuxiliaryEndogenousArtifact
+from models.multistep.spec import RolloutFamily, get_strategy_spec
 from utils.log_util import logger
 
 LOGGING_LABEL = Path(__file__).name[:-3]
@@ -109,8 +111,10 @@ class AuxiliaryEndogenousForecaster:
             logger.info(f"{self.log_prefix} No endogenous cols to train aux models (single-output target only).")
             return self
         if not self.lags:
-            logger.warning(f"{self.log_prefix} No lags configured; aux models cannot be trained. Falling back to persistence.")
-            return self
+            raise ValueError(
+                "AuxiliaryForecaster requires at least one positive lag; "
+                "persistence fallback is not allowed."
+            )
 
         factory = ModelFactory(log_prefix=self.log_prefix)
         aux_params = dict(getattr(self.args, "auxiliary_model_params", {}) or {})
@@ -125,8 +129,9 @@ class AuxiliaryEndogenousForecaster:
         for col in self.endogenous_cols:
             df_train = self._build_training_frame(df_history, col)
             if df_train is None or df_train.empty:
-                logger.warning(f"{self.log_prefix} Skip aux model for '{col}': empty training frame.")
-                continue
+                raise ValueError(
+                    f"AuxiliaryForecaster has no valid training rows for '{col}'."
+                )
             X_aux = df_train[self.feature_cols[col]]
             y_aux = df_train[f"__{col}_next"].values
             try:
@@ -134,8 +139,17 @@ class AuxiliaryEndogenousForecaster:
                 wrapper.fit(X_aux, y_aux)
                 self.models[col] = wrapper
                 trained += 1
-            except Exception as e:
-                logger.warning(f"{self.log_prefix} Failed to train aux model for '{col}': {e}")
+            except Exception as exc:
+                raise RuntimeError(
+                    f"AuxiliaryForecaster training failed for '{col}'."
+                ) from exc
+        missing_models = [
+            column for column in self.endogenous_cols if column not in self.models
+        ]
+        if missing_models:
+            raise ValueError(
+                f"AuxiliaryForecaster missing fitted models for columns: {missing_models}."
+            )
         logger.info(f"{self.log_prefix} Auxiliary models trained: {trained}/{len(self.endogenous_cols)} cols.")
         # 设计断言：配置了 datetime_features 但没有一个辅助模型用到 datetime 特征 → 大概率 time 列缺失或特征名不匹配
         if self.datetime_features and self.models:
@@ -159,7 +173,7 @@ class AuxiliaryEndogenousForecaster:
         """
         逐步递归预测每个非目标内生变量的未来轨迹。
 
-        返回 {col: np.array(horizon)}；未训练成功的 col 返回 NaN 数组（调用方回退持久性）。
+        返回 {col: np.array(horizon)}；缺模型、缺历史或非有限输出均失败。
         """
         trajectories: Dict[str, np.ndarray] = {}
         max_lag = max(self.lags) if self.lags else 1
@@ -168,16 +182,22 @@ class AuxiliaryEndogenousForecaster:
 
         for col in self.endogenous_cols:
             if col not in self.models:
-                trajectories[col] = np.full(horizon, np.nan)
-                continue
+                raise ValueError(f"AuxiliaryForecaster has no fitted model for '{col}'.")
             # 初始化 lag buffer（从 df_history 尾部取 max_lag 个值）
             if col in df_history.columns:
                 seed = df_history[col].iloc[-max_lag:].tolist()
             else:
-                seed = [0.0]
-            seed = [0.0 if pd.isna(v) else float(v) for v in seed]
+                raise ValueError(f"AuxiliaryForecaster history missing column '{col}'.")
+            seed = [float(v) for v in seed if pd.notna(v)]
+            if not seed:
+                raise ValueError(
+                    f"AuxiliaryForecaster history has no finite values for '{col}'."
+                )
             if len(seed) < max_lag:
-                seed = [seed[0]] * (max_lag - len(seed)) + seed
+                raise ValueError(
+                    f"AuxiliaryForecaster history for '{col}' is shorter than max lag "
+                    f"{max_lag}."
+                )
             buffer = deque(seed[-max_lag:], maxlen=max_lag)
 
             preds: List[float] = []
@@ -195,11 +215,21 @@ class AuxiliaryEndogenousForecaster:
                     if dt_col in df_future_dt.columns and h < len(df_future_dt):
                         row[dt_col] = float(df_future_dt[dt_col].iloc[h])
                     else:
-                        row[dt_col] = 0.0
+                        raise ValueError(
+                            f"AuxiliaryForecaster future missing datetime feature '{dt_col}' "
+                            f"at step {h}."
+                        )
                 X = pd.DataFrame([row]).reindex(columns=feat_cols)
-                pred = float(np.asarray(self.models[col].predict(X)).reshape(-1)[0])
+                try:
+                    pred = float(np.asarray(self.models[col].predict(X)).reshape(-1)[0])
+                except Exception as exc:
+                    raise RuntimeError(
+                        f"AuxiliaryForecaster prediction failed for '{col}' at step {h}."
+                    ) from exc
                 if not np.isfinite(pred):
-                    pred = float(buffer[-1]) if buffer else 0.0
+                    raise ValueError(
+                        f"AuxiliaryForecaster produced non-finite value for '{col}' at step {h}."
+                    )
                 preds.append(pred)
                 buffer.append(pred)
             trajectories[col] = np.array(preds)
@@ -218,20 +248,17 @@ def maybe_build_auxiliary_bundle(
     log_prefix: str,
 ) -> Any:
     """
-    如果启用 auxiliary 回填策略（MSMR/MSMDR），训练辅助模型并返回 bundle dict；
+    如果启用 auxiliary 回填策略（MSMR/MSMDR），训练辅助模型并返回 typed artifact；
     否则原样返回 model。调用方（Model.train / _window_test）在 Trainer.train 返回后调用。
 
-    bundle 格式: {"bundle_type": "auxiliary_endogenous", "main": model, "aux": AuxiliaryEndogenousForecaster}
-    Forecaster 解包时识别 bundle_type，aux 预先预测全部内生变量轨迹供回填使用。
+    产物类型为 AuxiliaryEndogenousArtifact；Forecaster 预先用 auxiliary_model
+    预测全部非目标内生变量轨迹，供严格 provider 链回填。
     """
-    pred_method = str(getattr(args, "pred_method", "")).lower()
     backfill = str(getattr(args, "endogenous_backfill_strategy", "persistence")).lower()
     if backfill != "auxiliary":
         return model
-    if pred_method not in (
-        "multivariate-single-multistep-recursive",
-        "multivariate-single-multistep-direct-recursive",
-    ):
+    strategy = get_strategy_spec(str(getattr(args, "pred_method", "")))
+    if strategy.rollout not in {RolloutFamily.RECURSIVE, RolloutFamily.DIRREC}:
         return model
     other_endo = [c for c in endogenous_features_with_target if c != target_feature]
     if not other_endo:
@@ -240,8 +267,9 @@ def maybe_build_auxiliary_bundle(
 
     aux = AuxiliaryEndogenousForecaster(args, other_endo, target_feature, log_prefix=log_prefix)
     aux.fit(df_history)
-    if aux.is_empty():
-        logger.warning(f"{log_prefix} auxiliary: all aux models failed, keeping raw model (will fall back to persistence).")
-        return model
     logger.info(f"{log_prefix} auxiliary: wrapping model into aux bundle (trained cols: {list(aux.models.keys())}).")
-    return {"bundle_type": "auxiliary_endogenous", "main": model, "aux": aux}
+    return AuxiliaryEndogenousArtifact(
+        main_model=model,
+        auxiliary_model=aux,
+        endogenous_features=tuple(other_endo),
+    )

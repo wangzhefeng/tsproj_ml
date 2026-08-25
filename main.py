@@ -36,7 +36,6 @@ import numpy as np
 import pandas as pd
 
 from config.config_loader import load_yaml_config
-from config.config_sections import PRED_METHOD_CODE
 from data_provider.data_loader import DataLoader
 from features.FeatureScalering import (
     FeatureScaler,
@@ -53,6 +52,11 @@ from features.TargetTransformation import TargetTransformPipeline
 from models.ModelTraining import Trainer
 from models.ModelTesting import Tester
 from models.ModelForecasting import Forecaster
+from models.multistep.panel import PanelSeriesSlice, execute_panel
+from models.multistep.plans import LagPolicy, RowAlignment
+from models.multistep.resolve import resolve_strategy
+from models.multistep.spec import InputScope, RolloutFamily, get_strategy_spec
+from models.multistep.weights import BlendWeights
 from probabilistic.calibration import attach_cqr_interval_columns
 from probabilistic.evaluation import (
     append_final_calibration_report,
@@ -104,7 +108,7 @@ class Model:
                 "Supported: fixed_steps, calendar_month."
             )
         data_name = Path(self.args.data_path).stem if getattr(self.args, "data_path", None) else "unknown_data"
-        pred_method_code = PRED_METHOD_CODE.get(self.args.pred_method, str(self.args.pred_method).lower())
+        pred_method_code = get_strategy_spec(self.args.pred_method).code
         # 概率预测(quantile)用独立 setting 后缀,避免与点预测版本的结果目录/模型撞车
         _predict_suffix = "-quantile" if str(getattr(self.args, "predict_type", "point")).lower() == "quantile" else ""
         # 可选自定义后缀（如 "-intraday"），用于同配置不同语义版本的结果隔离
@@ -175,6 +179,7 @@ class Model:
             future_time = now_time + pd.DateOffset(months=1)
         else:
             self.horizon = int(self.args.predict_steps)
+        self.resolved_strategy = resolve_strategy(self.args, self.horizon)
         # 时间序列未来结束时刻
         if is_monthly:
             future_time = now_time + pd.DateOffset(months=self.horizon)
@@ -269,21 +274,12 @@ class Model:
                 )
         # 滞后特征可用性校验:滑窗训练行数必须 > max(lags),
         # 否则 shift(lag) 产出的滞后列全 NaN,模型无声退化(仅对真正构造 lag 列的方法校验)。
-        constructs_lags = (
-            self.args.pred_method != "univariate-single-multistep-direct-pointwise"
-            or bool(getattr(self.args, "align_direct_features_to_target", False))
-        )
+        constructs_lags = self.resolved_strategy.feature_plan.lag_policy != LagPolicy.NONE
         if constructs_lags:
             effective_lags = [int(l) for l in (getattr(self.args, "lags", []) or []) if int(l) > 0]
             if effective_lags:
                 max_lag = max(effective_lags)
-                if (
-                    bool(getattr(self.args, "align_direct_features_to_target", False))
-                    and self.args.pred_method in {
-                        "univariate-single-multistep-direct",
-                        "univariate-single-multistep-direct-recursive",
-                    }
-                ):
+                if self.resolved_strategy.feature_plan.row_alignment == RowAlignment.TARGET_TIME:
                     max_lag -= 1
                 min_train_rows = self.train_window_len
                 if min_train_rows <= max_lag:
@@ -297,12 +293,7 @@ class Model:
         # ------------------------------
         # 预测增强策略(v1)组合校验:不支持的模式必须显式拒绝,避免裸奔崩溃或静默错配
         # ------------------------------
-        pred_method_l = str(self.args.pred_method).lower()
-        blend_methods = {
-            "univariate-single-multistep-blend-direct-recursive",
-            "multivariate-single-multistep-blend-direct-recursive",
-        }
-        if pred_method_l in blend_methods:
+        if self.resolved_strategy.spec.rollout == RolloutFamily.BLEND:
             if bool(getattr(self.args, "enable_ensemble", False)):
                 raise ValueError(
                     f"{self.log_prefix} USBR/MSBR blend + enable_ensemble is not supported in v1 "
@@ -500,7 +491,8 @@ class Model:
         
         window_workers = int(getattr(self.args, "window_parallel_workers", 1) or 1)
         if (
-            str(getattr(self.args, "pred_method", "")) == "multivariate-single-multistep-direct"
+            self.resolved_strategy.spec.input_scope == InputScope.ALL_ENDOGENOUS
+            and self.resolved_strategy.spec.rollout == RolloutFamily.DIRECT
             and window_workers > 1
         ):
             logger.warning(
@@ -601,20 +593,54 @@ class Model:
                  target_output_features,
                  categorical_features,
                  selected_features=None,
-                 df_custom_future=None):
+                 df_custom_future=None,
+                 _panel_child: bool = False,
+                 _save_results: bool = True):
         """
         模型预测
         """
         forecast_start = time.perf_counter()
+        if bool(getattr(self.args, "enable_global_training", False)) and not _panel_child:
+            series_id_col = str(getattr(self.args, "series_id_feature", "series_id"))
+
+            def execute_one(series_slice: PanelSeriesSlice) -> pd.DataFrame:
+                return self.forecast(
+                    model=model,
+                    scaler_forecasting=scaler_forecasting,
+                    target_scaler_forecasting=target_scaler_forecasting,
+                    df_history=series_slice.history,
+                    df_future=series_slice.future,
+                    df_date_future=df_date_future,
+                    df_weather_future=df_weather_future,
+                    df_custom_future=df_custom_future,
+                    endogenous_features_with_target=endogenous_features_with_target,
+                    target_feature=target_feature,
+                    target_output_features=target_output_features,
+                    categorical_features=categorical_features,
+                    selected_features=selected_features,
+                    _panel_child=True,
+                    _save_results=False,
+                )
+
+            panel_prediction = execute_panel(
+                df_history,
+                df_future,
+                series_id_col=series_id_col,
+                horizon=self.horizon,
+                execute_one=execute_one,
+            )
+            if _save_results:
+                panel_history = df_history[
+                    [series_id_col, "time", target_feature]
+                ].rename(columns={target_feature: "y"})
+                self._last_panel_predictor.forecast_results_save(
+                    panel_history,
+                    panel_prediction,
+                    self.n_per_day,
+                )
+            return panel_prediction
         # 未来数据复制
         df_future_prediction = df_future.copy()
-        # Global 模式下，未来数据补齐 series_id（若缺失）
-        if getattr(self.args, "enable_global_training", False):
-            series_id_col = getattr(self.args, "series_id_feature", "series_id")
-            if series_id_col not in df_future_prediction.columns and series_id_col in df_history.columns:
-                last_series_id = df_history[series_id_col].dropna()
-                if not last_series_id.empty:
-                    df_future_prediction[series_id_col] = last_series_id.iloc[-1]
         # 模型预测
         predictor = Forecaster(
             args=self.args,
@@ -636,6 +662,7 @@ class Model:
             target_transform=getattr(self, "target_transform", None),
             log_prefix=self.log_prefix,
         )
+        self._last_panel_predictor = predictor
         forecast_result = predictor._predict_by_method()
         if isinstance(forecast_result, ForecastDistribution):
             Y_pred = forecast_result.point
@@ -769,12 +796,22 @@ class Model:
             for c in df_future_prediction.columns
             if c.startswith("predict_q") or c.startswith("predict_pi")
         ]
+        identity_columns = []
+        if bool(getattr(self.args, "enable_global_training", False)):
+            series_id_col = str(getattr(self.args, "series_id_feature", "series_id"))
+            if series_id_col not in df_future_prediction.columns:
+                raise ValueError(
+                    f"{self.log_prefix} panel forecast output missing '{series_id_col}'."
+                )
+            identity_columns = [series_id_col]
         if probability_cols:
             df_future_prediction = df_future_prediction[
-                ["time", "predict_value"] + probability_cols
+                identity_columns + ["time", "predict_value"] + probability_cols
             ]
         else:
-            df_future_prediction = df_future_prediction[["time", "predict_value"]]
+            df_future_prediction = df_future_prediction[
+                identity_columns + ["time", "predict_value"]
+            ]
         logger.info(f"{self.log_prefix} after forecast df_future_prediction: \n{df_future_prediction.head()}")
         logger.info(f"{self.log_prefix} after forecast df_future_prediction.shape: {df_future_prediction.shape}")
         # 模型预测结果保存
@@ -788,35 +825,51 @@ class Model:
                 df_history_plot_src,
                 [target_output_features[0]],
             )
-        predictor.forecast_results_save(df_history_for_plot, df_future_prediction, self.n_per_day)
-        logger.info(f"{self.log_prefix} Model Forecasting result saved in: {self.args.pred_results_dir}")
+        if _save_results:
+            predictor.forecast_results_save(
+                df_history_for_plot,
+                df_future_prediction,
+                self.n_per_day,
+            )
+            logger.info(
+                f"{self.log_prefix} Model Forecasting result saved in: "
+                f"{self.args.pred_results_dir}"
+            )
         logger.info(f"{self.log_prefix} Model Forecasting runtime: {time.perf_counter() - forecast_start:.3f}s")
 
         return df_future_prediction
 
-    def _learn_blend_weights(self):
-        """Blend ridge_stacking：从 cv_plot_df 学 Direct/Recursive 最优权重，写 blend_weights.csv。"""
+    def _learn_blend_weights(self) -> BlendWeights:
+        """从 CV 分量预测学习权重；CSV 仅作诊断，产物中的权重才是权威。"""
         cv_path = self.args.test_results_dir.joinpath("cv_plot_df.csv")
         if not cv_path.exists():
-            logger.warning(f"{self.log_prefix} ridge_stacking: cv_plot_df.csv not found; using fixed blend_weights.")
-            return
+            raise ValueError(
+                f"{self.log_prefix} ridge_stacking requires cv_plot_df.csv; "
+                "enable testing before forecasting."
+            )
         cv = pd.read_csv(cv_path)
         needed = ["Y_trues", "blend_direct_pred", "blend_recursive_pred"]
         if not all(c in cv.columns for c in needed):
-            logger.warning(f"{self.log_prefix} ridge_stacking: cv_plot_df missing blend columns; using fixed blend_weights.")
-            return
+            missing = [column for column in needed if column not in cv.columns]
+            raise ValueError(
+                f"{self.log_prefix} ridge_stacking CV artifact missing columns: {missing}."
+            )
         cv_clean = cv.dropna(subset=needed)
         if len(cv_clean) < 10:
-            logger.warning(f"{self.log_prefix} ridge_stacking: only {len(cv_clean)} valid rows; using fixed blend_weights.")
-            return
+            raise ValueError(
+                f"{self.log_prefix} ridge_stacking requires at least 10 valid rows; "
+                f"got {len(cv_clean)}."
+            )
         # 与 conformal 校准一致：只用最近 N 个窗口的数据学权重（分布更贴合当前预测任务）
         n_cal_windows = int(getattr(self.args, "blend_weight_windows", 5))
         if "window" in cv_clean.columns:
             recent_windows = sorted(cv_clean["window"].unique())[-n_cal_windows:]
             cv_clean = cv_clean[cv_clean["window"].isin(recent_windows)]
         if len(cv_clean) < 10:
-            logger.warning(f"{self.log_prefix} ridge_stacking: only {len(cv_clean)} rows in recent {n_cal_windows} windows; using fixed blend_weights.")
-            return
+            raise ValueError(
+                f"{self.log_prefix} ridge_stacking requires at least 10 rows in recent "
+                f"{n_cal_windows} windows; got {len(cv_clean)}."
+            )
         from sklearn.linear_model import Ridge
         X_stack = cv_clean[["blend_direct_pred", "blend_recursive_pred"]].values
         y_stack = cv_clean["Y_trues"].values
@@ -825,9 +878,14 @@ class Model:
         w = ridge.coef_
         total = float(w.sum())
         if total <= 0:
-            w = np.array([0.5, 0.5])
-            total = 1.0
+            raise ValueError("ridge_stacking produced non-positive total weight.")
         w_norm = w / total
+        weights = BlendWeights(
+            direct=float(w_norm[0]),
+            recursive=float(w_norm[1]),
+            strategy="ridge_stacking",
+            calibration_windows=n_cal_windows,
+        )
         w_df = pd.DataFrame([{
             "direct_weight": float(w_norm[0]),
             "recursive_weight": float(w_norm[1]),
@@ -838,6 +896,7 @@ class Model:
             f"{self.log_prefix} ridge_stacking weights: direct={w_norm[0]:.4f}, "
             f"recursive={w_norm[1]:.4f} (n_samples={len(cv_clean)})"
         )
+        return weights
 
     def run(self):
         run_start = time.perf_counter()
@@ -962,6 +1021,14 @@ class Model:
              df_weather_future,
              df_custom_future) = dataloader.process_future_data(input_data=input_data)
 
+            if (
+                self.resolved_strategy.spec.rollout == RolloutFamily.BLEND
+                and str(getattr(self.args, "blend_weight_strategy", "fixed")).lower()
+                == "ridge_stacking"
+            ):
+                learned_weights = self._learn_blend_weights()
+                self.args.resolved_blend_weights = learned_weights
+
             # 模型训练
             logger.info(f"{self.log_prefix} {'=' * 87}")
             logger.info(f"{self.log_prefix} Model Training start...")
@@ -980,16 +1047,6 @@ class Model:
             logger.info(f"{self.log_prefix} {'=' * 87}")
             logger.info(f"{self.log_prefix} Model Forecasting start...")
             logger.info(f"{self.log_prefix} {'=' * 87}")
-            # Blend ridge_stacking：forecast 前从测试结果学权重（需 is_testing=True 先产出 cv_plot_df）
-            if (
-                str(getattr(self.args, "pred_method", "")).lower()
-                in (
-                    "univariate-single-multistep-blend-direct-recursive",
-                    "multivariate-single-multistep-blend-direct-recursive",
-                )
-                and str(getattr(self.args, "blend_weight_strategy", "fixed")).lower() == "ridge_stacking"
-            ):
-                self._learn_blend_weights()
             df_future_predicted = self.forecast(
                 model=model,
                 scaler_forecasting=scaler_forecasting,

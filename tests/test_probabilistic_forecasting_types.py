@@ -3,6 +3,7 @@
 
 import unittest
 from types import SimpleNamespace
+from unittest.mock import patch
 
 import numpy as np
 import pandas as pd
@@ -37,6 +38,7 @@ class ForecastDistributionOutputTest(unittest.TestCase):
             pred_method="univariate-single-multistep-direct-pointwise",
             predict_type="quantile",
         )
+        forecaster.horizon = 2
         forecaster.model = bundle
         forecaster.df_future = pd.DataFrame(
             {"time": pd.date_range("2026-08-01", periods=2, freq="1D")}
@@ -53,9 +55,9 @@ class ForecastDistributionOutputTest(unittest.TestCase):
             }
             return np.array([10.0, 11.0])
 
-        forecaster.univariate_single_multi_step_direct_pointwise_forecast = predict_method
-
-        result = forecaster._predict_by_method()
+        executor = SimpleNamespace(execute=lambda _context: predict_method())
+        with patch("models.ModelForecasting.get_executor", return_value=executor):
+            result = forecaster._predict_by_method()
 
         self.assertIsInstance(result, ForecastDistribution)
         self.assertEqual(result.space, "model")

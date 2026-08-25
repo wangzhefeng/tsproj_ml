@@ -92,7 +92,7 @@ overrides:
 
         self.assertFalse(any("不足两个完整周期" in problem for problem in problems))
 
-    def test_usmdp_advanced_feature_checker_distinguishes_target_and_missing_lags(self):
+    def test_usmdp_rolllag_config_enables_safe_lags_without_target_leakage(self):
         checker = load_config_checker()
         rolllag_path = (
             ROOT
@@ -100,14 +100,7 @@ overrides:
             "lgbm_usmdp_prob_mean_rolllag.yaml"
         )
         _, rolllag_problems = checker.check_model_yaml(str(rolllag_path))
-        self.assertTrue(
-            any(
-                problem.startswith(
-                    "提示：USMDP 仅在 align_direct_features_to_target=true 时生成 y_lag_*"
-                )
-                for problem in rolllag_problems
-            )
-        )
+        self.assertFalse(any(problem.startswith("提示：") for problem in rolllag_problems))
         self.assertFalse(any("不能依赖目标列 y" in problem for problem in rolllag_problems))
 
         with tempfile.TemporaryDirectory() as tmp_dir:

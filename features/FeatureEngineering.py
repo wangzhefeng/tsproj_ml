@@ -49,6 +49,9 @@ from typing import Any, Dict, List, Optional, cast
 import numpy as np
 import pandas as pd
 
+from models.multistep.plans import ExogenousTiming, LagPolicy, RowAlignment
+from models.multistep.resolve import resolve_strategy
+from models.multistep.spec import InputScope, RolloutFamily, get_strategy_spec
 from utils.frequency import resolve_freq_step_minutes, resolve_samples_per_day
 from utils.log_util import logger
 
@@ -1063,10 +1066,10 @@ class FeatureEngineer:
             # 行 t 合并到 state(t-1)；Direct/DirRec 的行 t 是预测原点，保留
             # state(t) 并在所有 horizon 冻结。
             is_history = bool(df_custom_history)
-            shift_history_for_method = str(self.args.pred_method).lower() in {
-                "univariate-single-multistep-direct-pointwise",
-                "univariate-single-multistep-recursive",
-                "multivariate-single-multistep-recursive",
+            rollout = get_strategy_spec(self.args.pred_method).rollout
+            shift_history_for_method = rollout in {
+                RolloutFamily.POINTWISE,
+                RolloutFamily.RECURSIVE,
             }
             prepared_sources = []
             for source in custom_sources:
@@ -1193,12 +1196,9 @@ class FeatureEngineer:
         """
         df_series_featured = df_series.copy()
         self.endogenous_feature_engineer.reset()
-        align_direct_to_target = bool(
-            getattr(self.args, "align_direct_features_to_target", False)
-        ) and self.args.pred_method in [
-            "univariate-single-multistep-direct",
-            "univariate-single-multistep-direct-recursive",
-        ]
+        resolved = resolve_strategy(self.args, horizon, target_feature=target_feature)
+        feature_plan = resolved.feature_plan
+        target_plan = resolved.target_plan
         configured_lags = self.args.lags if getattr(self.args, "enable_lags_features", True) else []
         group_col = _resolve_series_group_col(self.args, df_series_featured)
         lag_support_samples = len(df_series_featured)
@@ -1212,151 +1212,56 @@ class FeatureEngineer:
             log_prefix=self.log_prefix,
         )
 
-        if self.args.pred_method == "univariate-single-multistep-direct-pointwise":
-            if bool(getattr(self.args, "align_direct_features_to_target", False)):
+        if resolved.spec.rollout == RolloutFamily.POINTWISE:
+            if feature_plan.lag_policy == LagPolicy.SAFE_TARGET_ROW:
                 df_series_featured = self.endogenous_feature_engineer.extend_lag_feature_univariate(
                     df=df_series_featured,
                     target=target_feature,
                     lags=lags,
                 )
             df_series_featured = self.endogenous_feature_engineer.extend_direct_multi_step_targets(
-                df = df_series_featured,
-                target = target_feature,
-                horizon = 1,
+                df=df_series_featured,
+                target=target_feature,
+                horizon=1,
+                start_step=0,
             )
-            if self.verbose:
-                logger.info(f"{self.log_prefix} after extend_direct_multi_step_targets df_series_featured: \n{df_series_featured.head()}")
-                logger.info(f"{self.log_prefix} after extend_direct_multi_step_targets df_series_featured shape: {df_series_featured.shape}")
-        elif self.args.pred_method == "univariate-single-multistep-direct":
-            df_series_featured = self.endogenous_feature_engineer.extend_lag_feature_univariate(
-                df = df_series_featured,
-                target = target_feature,
-                lags = lags,
-                shift_offset=-1 if align_direct_to_target else 0,
-            )
-            if self.verbose:
-                logger.info(f"{self.log_prefix} after extend_lag_feature_univariate df_series_featured: \n{df_series_featured.head()}")
-                # logger.info(f"{self.log_prefix} after extend_lag_feature_univariate df_series_featured.columns: {df_series_featured.columns}")
-                logger.info(f"{self.log_prefix} after extend_lag_feature_univariate df_series_featured shape: {df_series_featured.shape}")
-            df_series_featured = self.endogenous_feature_engineer.extend_direct_multi_step_targets(
-                df = df_series_featured,
-                target = target_feature,
-                horizon = horizon,
-                start_step = 1,
-            )
-            if self.verbose:
-                logger.info(f"{self.log_prefix} after extend_direct_multi_step_targets df_series_featured: \n{df_series_featured.head()}")
-                logger.info(f"{self.log_prefix} after extend_direct_multi_step_targets df_series_featured shape: {df_series_featured.shape}")
-        elif self.args.pred_method == "univariate-single-multistep-recursive":
-            df_series_featured = self.endogenous_feature_engineer.extend_lag_feature_univariate(
-                df = df_series_featured,
-                target = target_feature,
-                lags = lags,
-            )
-            if self.verbose:
-                logger.info(f"{self.log_prefix} after extend_lag_feature_univariate df_series_featured: \n{df_series_featured.head()}")
-                logger.info(f"{self.log_prefix} after extend_lag_feature_univariate df_series_featured shape: {df_series_featured.shape}")
-            df_series_featured = self.endogenous_feature_engineer.extend_direct_multi_step_targets(
-                df = df_series_featured,
-                target = target_feature,
-                horizon = 1,
-            )
-            if self.verbose:
-                logger.info(f"{self.log_prefix} after extend_direct_multi_step_targets df_series_featured: \n{df_series_featured.head()}")
-                logger.info(f"{self.log_prefix} after extend_direct_multi_step_targets df_series_featured shape: {df_series_featured.shape}")
-        elif self.args.pred_method == "univariate-single-multistep-direct-recursive":
-            df_series_featured = self.endogenous_feature_engineer.extend_lag_feature_univariate(
-                df = df_series_featured,
-                target = target_feature,
-                lags = lags,
-                shift_offset=-1 if align_direct_to_target else 0,
-            )
-            if self.verbose:
-                logger.info(f"{self.log_prefix} after extend_lag_feature_univariate df_series_featured: \n{df_series_featured.head()}")
-                logger.info(f"{self.log_prefix} after extend_lag_feature_univariate df_series_featured shape: {df_series_featured.shape}")
-            df_series_featured = self.endogenous_feature_engineer.extend_direct_multi_step_targets(
-                df = df_series_featured,
-                target = target_feature,
-                horizon = horizon,
-                start_step = 1,
-            )
-            if self.verbose:
-                logger.info(f"{self.log_prefix} after extend_direct_multi_step_targets df_series_featured: \n{df_series_featured.head()}")
-                logger.info(f"{self.log_prefix} after extend_direct_multi_step_targets df_series_featured shape: {df_series_featured.shape}")
-        elif self.args.pred_method == "multivariate-single-multistep-direct":
-            df_series_featured = self.endogenous_feature_engineer.extend_lag_feature_multivariate(
-                df = df_series_featured,
-                endogenous_cols = endogenous_features_with_target,
-                lags = lags,
-            )
-            if self.verbose:
-                logger.info(f"{self.log_prefix} after extend_lag_feature_multivariate df_series_featured: \n{df_series_featured.head()}")
-                logger.info(f"{self.log_prefix} after extend_lag_feature_multivariate df_series_featured shape: {df_series_featured.shape}")
-            df_series_featured = self.endogenous_feature_engineer.extend_direct_multi_step_targets(
-                df = df_series_featured,
-                target = target_feature,
-                horizon = horizon,
-                start_step = 1,
-            )
-            if self.verbose:
-                logger.info(f"{self.log_prefix} after extend_direct_multi_step_targets df_series_featured: \n{df_series_featured.head()}")
-                logger.info(f"{self.log_prefix} after extend_direct_multi_step_targets df_series_featured shape: {df_series_featured.shape}")
-        elif self.args.pred_method == "multivariate-single-multistep-recursive":
-            df_series_featured = self.endogenous_feature_engineer.extend_lag_feature_multivariate(
-                df = df_series_featured,
-                endogenous_cols = endogenous_features_with_target,
-                lags = lags,
-            )
-            if self.verbose:
-                logger.info(f"{self.log_prefix} after extend_lag_feature_multivariate df_series_featured: \n{df_series_featured.head()}")
-                logger.info(f"{self.log_prefix} after extend_lag_feature_multivariate df_series_featured shape: {df_series_featured.shape}")
-            df_series_featured = self.endogenous_feature_engineer.extend_direct_multi_step_targets(
-                df = df_series_featured,
-                target = target_feature,
-                horizon = 1,
-            )
-            if self.verbose:
-                logger.info(f"{self.log_prefix} after extend_direct_multi_step_targets df_series_featured: \n{df_series_featured.head()}")
-                logger.info(f"{self.log_prefix} after extend_direct_multi_step_targets df_series_featured shape: {df_series_featured.shape}")
-        elif self.args.pred_method == "multivariate-single-multistep-direct-recursive":
-            df_series_featured = self.endogenous_feature_engineer.extend_lag_feature_multivariate(
-                df = df_series_featured,
-                endogenous_cols = endogenous_features_with_target,
-                lags = lags,
-            )
-            if self.verbose:
-                logger.info(f"{self.log_prefix} after extend_lag_feature_multivariate df_series_featured: \n{df_series_featured.head()}")
-                logger.info(f"{self.log_prefix} after extend_lag_feature_multivariate df_series_featured shape: {df_series_featured.shape}")
-            df_series_featured = self.endogenous_feature_engineer.extend_direct_multi_step_targets(
-                df = df_series_featured,
-                target = target_feature,
-                horizon = horizon,
-                start_step = 1,
-            )
-            if self.verbose:
-                logger.info(f"{self.log_prefix} after extend_direct_multi_step_targets df_series_featured: \n{df_series_featured.head()}")
-                logger.info(f"{self.log_prefix} after extend_direct_multi_step_targets df_series_featured shape: {df_series_featured.shape}")
-        elif self.args.pred_method == "univariate-single-multistep-blend-direct-recursive":
-            # Blend = Direct(多步宽表 shift_1..H) + Recursive(1步 shift_0) 融合
-            df_series_featured = self.endogenous_feature_engineer.extend_lag_feature_univariate(
-                df=df_series_featured, target=target_feature, lags=lags,
-            )
-            df_series_featured = self.endogenous_feature_engineer.extend_direct_multi_step_targets(
-                df=df_series_featured, target=target_feature, horizon=horizon, start_step=1,
-            )
-            df_series_featured = self.endogenous_feature_engineer.extend_direct_multi_step_targets(
-                df=df_series_featured, target=target_feature, horizon=1, start_step=0,
-            )
-        elif self.args.pred_method == "multivariate-single-multistep-blend-direct-recursive":
-            df_series_featured = self.endogenous_feature_engineer.extend_lag_feature_multivariate(
-                df=df_series_featured, endogenous_cols=endogenous_features_with_target, lags=lags,
-            )
-            df_series_featured = self.endogenous_feature_engineer.extend_direct_multi_step_targets(
-                df=df_series_featured, target=target_feature, horizon=horizon, start_step=1,
-            )
-            df_series_featured = self.endogenous_feature_engineer.extend_direct_multi_step_targets(
-                df=df_series_featured, target=target_feature, horizon=1, start_step=0,
-            )
+        else:
+            shift_offset = -1 if feature_plan.row_alignment == RowAlignment.TARGET_TIME else 0
+            if feature_plan.input_scope == InputScope.TARGET_ONLY:
+                df_series_featured = self.endogenous_feature_engineer.extend_lag_feature_univariate(
+                    df=df_series_featured,
+                    target=target_feature,
+                    lags=lags,
+                    shift_offset=shift_offset,
+                )
+            else:
+                df_series_featured = self.endogenous_feature_engineer.extend_lag_feature_multivariate(
+                    df=df_series_featured,
+                    endogenous_cols=endogenous_features_with_target,
+                    lags=lags,
+                )
+
+            if resolved.spec.rollout == RolloutFamily.BLEND:
+                df_series_featured = self.endogenous_feature_engineer.extend_direct_multi_step_targets(
+                    df=df_series_featured,
+                    target=target_feature,
+                    horizon=horizon,
+                    start_step=1,
+                )
+                df_series_featured = self.endogenous_feature_engineer.extend_direct_multi_step_targets(
+                    df=df_series_featured,
+                    target=target_feature,
+                    horizon=1,
+                    start_step=0,
+                )
+            else:
+                steps = target_plan.label_steps
+                df_series_featured = self.endogenous_feature_engineer.extend_direct_multi_step_targets(
+                    df=df_series_featured,
+                    target=target_feature,
+                    horizon=len(steps),
+                    start_step=steps[0],
+                )
 
         # 获取所有生成的特征: 内生变量特征、多步预测目标特征
         endogenous_features, target_output_features = self.endogenous_feature_engineer.get_generated_features()
@@ -1484,6 +1389,7 @@ class FeatureEngineer:
         """
         # 复制数据
         df_series_copy = df_series.copy()
+        resolved = resolve_strategy(self.args, horizon, target_feature=target_feature)
         # 用于构建滞后特征的内生变量
         endogenous_features_with_target_copy = endogenous_features_with_target
         # 构建多步直接预测目标变量的目标变量
@@ -1507,27 +1413,15 @@ class FeatureEngineer:
             df_custom_future=df_custom_future,
         )
         origin_frozen_features = self.exogenous_feature_engineer.get_origin_frozen_features()
-        model_horizon = horizon
-        if self.args.pred_method in [
-            "univariate-single-multistep-direct-recursive",
-            "multivariate-single-multistep-direct-recursive",
-        ]:
-            configured_block = int(getattr(self.args, "block_size", 0) or 0)
-            if configured_block > 0:
-                model_horizon = min(configured_block, horizon)
-        align_direct_to_target = bool(
-            getattr(self.args, "align_direct_features_to_target", False)
-        ) and self.args.pred_method in [
-            "univariate-single-multistep-direct",
-            "univariate-single-multistep-direct-recursive",
-        ]
+        model_horizon = resolved.runtime_plan.block_size or horizon
+        align_direct_to_target = (
+            resolved.feature_plan.row_alignment == RowAlignment.TARGET_TIME
+        )
         if align_direct_to_target:
-            if horizon != 1:
-                raise ValueError(
-                    "align_direct_features_to_target currently supports horizon=1 only."
-                )
-            # Direct 的训练目标位于 t+1；把 t+1 的可预知外生量移到特征行 t，
+            # Direct（horizon=1）的训练目标位于 t+1；把 t+1 的可预知外生量移到特征行 t，
             # 使训练与预测都使用目标月份的气象/日历，而不是预测原点月份。
+            # USMDP safe-lag（POINTWISE）不进入此分支：其 lag 在目标行直接构造，
+            # 外生列保持 FORECAST_ORIGIN 对齐。
             for col in exogenous_features:
                 if col in df_series_featured.columns:
                     df_series_featured[col] = _series_shift(
@@ -1538,15 +1432,12 @@ class FeatureEngineer:
                     ).to_numpy()
         # Direct 系列方法下，按 horizon 展开外生特征
         should_expand_horizon_exogenous = (
-            getattr(self.args, "use_horizon_exogenous_for_direct", False)
-            or str(getattr(self.args, "direct_strategy", "multioutput")).lower() == "horizon_feature"
+            resolved.feature_plan.exogenous_timing == ExogenousTiming.BY_HORIZON
         )
-        if should_expand_horizon_exogenous and self.args.pred_method in [
-            "univariate-single-multistep-direct",
-            "multivariate-single-multistep-direct",
-            "univariate-single-multistep-direct-recursive",
-            "multivariate-single-multistep-direct-recursive",
-        ]:
+        if should_expand_horizon_exogenous and resolved.spec.rollout in {
+            RolloutFamily.DIRECT,
+            RolloutFamily.DIRREC,
+        }:
             (df_series_featured, exogenous_features) = self._expand_horizon_exogenous_for_direct(
                 df=df_series_featured,
                 exogenous_features=exogenous_features,

@@ -37,6 +37,11 @@ from features.FeatureScalering import (
 from features.TargetTransformation import TargetTransformPipeline
 from models.ModelTraining import Trainer
 from models.ModelForecasting import Forecaster
+from models.multistep.panel import (
+    PanelSeriesSlice,
+    execute_panel,
+    split_panel_window,
+)
 from data_provider.data_loader import materialize_custom_future_sources
 from data_provider.outlier_handling import (
     empty_train_outlier_report,
@@ -143,6 +148,7 @@ class Tester:
         if payload.get("force_single_thread_env"):
             os.environ["OMP_NUM_THREADS"] = "1"
         args = payload["args"]
+        series_id_col = str(getattr(args, "series_id_feature", "series_id"))
         log_prefix = payload["log_prefix"]
         horizon = payload["horizon"]
         window_len = payload["window_len"]
@@ -150,14 +156,27 @@ class Tester:
         train_outlier_report = empty_train_outlier_report()
 
         # 滑窗数据分割：先切原始历史，再在窗口内构造训练标签，避免 Direct 标签跨入测试期
-        split_result = Tester._evaluate_split(
-            payload["df_history"],
-            window,
-            horizon=horizon,
-            window_len=window_len,
-            log_prefix=log_prefix,
-            split_indices=payload.get("split_indices"),
-        )
+        if bool(getattr(args, "enable_global_training", False)):
+            series_id_col = str(getattr(args, "series_id_feature", "series_id"))
+            split_result = split_panel_window(
+                payload["df_history"],
+                series_id_col=series_id_col,
+                window=window,
+                horizon=horizon,
+                window_len=window_len,
+                incomplete_policy=str(
+                    getattr(args, "global_incomplete_series_policy", "raise") or "raise"
+                ),
+            )
+        else:
+            split_result = Tester._evaluate_split(
+                payload["df_history"],
+                window,
+                horizon=horizon,
+                window_len=window_len,
+                log_prefix=log_prefix,
+                split_indices=payload.get("split_indices"),
+            )
         if split_result is None:
             return {
                 "window": window,
@@ -167,13 +186,40 @@ class Tester:
                 "residual_diag_row": None,
             }
         df_history_train, df_history_test = split_result
-        df_history_train, train_outlier_report = handle_train_outliers(
-            args=args,
-            df_history_train=df_history_train,
-            target_feature=payload["target_feature"],
-            window=window,
-            log_prefix=log_prefix,
-        )
+        if bool(getattr(args, "enable_global_training", False)):
+            cleaned_parts = []
+            report_parts = []
+            for series_id, series_frame in df_history_train.groupby(
+                series_id_col,
+                sort=False,
+                observed=True,
+            ):
+                cleaned, report = handle_train_outliers(
+                    args=args,
+                    df_history_train=series_frame.copy(),
+                    target_feature=payload["target_feature"],
+                    window=window,
+                    log_prefix=f"{log_prefix}[series={series_id}]",
+                )
+                cleaned_parts.append(cleaned)
+                if report is not None and not report.empty:
+                    report = report.copy()
+                    report[series_id_col] = series_id
+                    report_parts.append(report)
+            df_history_train = pd.concat(cleaned_parts, ignore_index=True)
+            train_outlier_report = (
+                pd.concat(report_parts, ignore_index=True)
+                if report_parts
+                else empty_train_outlier_report()
+            )
+        else:
+            df_history_train, train_outlier_report = handle_train_outliers(
+                args=args,
+                df_history_train=df_history_train,
+                target_feature=payload["target_feature"],
+                window=window,
+                log_prefix=log_prefix,
+            )
         target_transform = TargetTransformPipeline.from_args(args)
         df_history_train = target_transform.fit_transform_history(
             df_history_train,
@@ -275,10 +321,22 @@ class Tester:
         # ------------------------------
         # 窗口预测
         # ------------------------------
-        df_future_for_test = Tester._build_test_future_frame(df_history_test)
+        df_future_for_test = Tester._build_test_future_frame(
+            df_history_test,
+            series_id_col=(
+                series_id_col
+                if bool(getattr(args, "enable_global_training", False))
+                else None
+            ),
+        )
+        weather_test_frame = (
+            df_history_test.drop_duplicates(subset="time", keep="last")
+            if bool(getattr(args, "enable_global_training", False))
+            else df_history_test
+        )
         df_weather_future_for_test = Tester._resolve_window_weather_future(
             args=args,
-            df_history_test=df_history_test,
+            df_history_test=weather_test_frame,
             df_weather_history=payload["df_weather_history"],
             df_weather_backtest=payload.get("df_weather_backtest"),
             fold_origin=df_history_train["time"].max(),
@@ -289,45 +347,125 @@ class Tester:
             # explicit 策略维持既有 CV 语义：历史归档按测试期时间戳对齐；
             # freeze 策略会忽略 cutoff 之后的行并冻结训练末状态。
             custom_future=payload.get("df_custom_history"),
-            future_times=df_future_for_test["time"],
+            future_times=pd.unique(df_future_for_test["time"]),
             cutoff=df_history_train["time"].max(),
         )
-        predictor = Forecaster(
-            args=args,
-            horizon=min(horizon, len(df_future_for_test)),
-            model=model,
-            feature_scaler=scaler_testing,
-            target_scaler=target_scaler_testing,
-            df_history=df_history_train,
-            df_future=df_future_for_test,
-            df_date_future=payload["df_date_history"],
-            df_weather_future=df_weather_future_for_test,
-            df_custom_future=df_custom_future_for_test,
-            endogenous_features=payload["endogenous_features_with_target"],
-            target_feature=payload["target_feature"],
-            target_output_features=target_output_features,
-            categorical_features=categorical_features,
-            selected_features=selected_features,
-            target_decomposer=target_decomposer,
-            target_transform=target_transform,
-            log_prefix=log_prefix,
-        )
-        forecast_result = predictor._predict_by_method()
-        if isinstance(forecast_result, ForecastDistribution):
-            y_pred = forecast_result.point
-            output_quantile_grid = forecast_result.quantile_grid
+        predictor = None
+        if bool(getattr(args, "enable_global_training", False)):
+            direct_components: list[np.ndarray] = []
+            recursive_components: list[np.ndarray] = []
+            quantile_column_levels: dict[str, float] = {}
+
+            def execute_one(series_slice: PanelSeriesSlice) -> pd.DataFrame:
+                nonlocal predictor
+                predictor = Forecaster(
+                    args=args,
+                    horizon=horizon,
+                    model=model,
+                    feature_scaler=scaler_testing,
+                    target_scaler=target_scaler_testing,
+                    df_history=series_slice.history,
+                    df_future=series_slice.future,
+                    df_date_future=payload["df_date_history"],
+                    df_weather_future=df_weather_future_for_test,
+                    df_custom_future=df_custom_future_for_test,
+                    endogenous_features=payload["endogenous_features_with_target"],
+                    target_feature=payload["target_feature"],
+                    target_output_features=target_output_features,
+                    categorical_features=categorical_features,
+                    selected_features=selected_features,
+                    target_decomposer=target_decomposer,
+                    target_transform=target_transform,
+                    log_prefix=f"{log_prefix}[series={series_slice.series_id}]",
+                )
+                result = predictor._predict_by_method()
+                output = series_slice.future[[series_id_col, "time"]].copy()
+                if isinstance(result, ForecastDistribution):
+                    output["predict_value"] = result.point
+                    for index, level in enumerate(result.quantile_grid.levels):
+                        column = result.quantile_grid.column_name(level)
+                        quantile_column_levels[column] = float(level)
+                        output[column] = (
+                            result.quantile_values[:, index]
+                        )
+                else:
+                    output["predict_value"] = np.asarray(result).reshape(-1)
+                    for level, values in (predictor.quantile_outputs or {}).items():
+                        column = QuantileGrid((float(level),)).column_name(float(level))
+                        quantile_column_levels[column] = float(level)
+                        output[column] = np.asarray(values).reshape(-1)
+                if predictor.blend_direct_pred is not None:
+                    direct_components.append(
+                        np.asarray(predictor.blend_direct_pred).reshape(-1)
+                    )
+                    recursive_components.append(
+                        np.asarray(predictor.blend_recursive_pred).reshape(-1)
+                    )
+                return output
+
+            panel_output = execute_panel(
+                df_history_train,
+                df_future_for_test,
+                series_id_col=series_id_col,
+                horizon=horizon,
+                execute_one=execute_one,
+            )
+            y_pred = panel_output["predict_value"].to_numpy(dtype=float)
+            quantile_columns = sorted(
+                column
+                for column in panel_output.columns
+                if str(column).startswith("predict_q")
+            )
             quantile_outputs = {
-                level: forecast_result.quantile_values[:, index]
-                for index, level in enumerate(forecast_result.quantile_grid.levels)
+                quantile_column_levels[column]: panel_output[column].to_numpy(dtype=float)
+                for column in quantile_columns
             }
-        else:
-            y_pred = forecast_result
-            quantile_outputs = getattr(predictor, "quantile_outputs", None)
             output_quantile_grid = (
                 QuantileGrid(tuple(sorted(quantile_outputs)), point_level=0.5)
                 if quantile_outputs
                 else None
             )
+            assert predictor is not None
+            if direct_components:
+                predictor.blend_direct_pred = np.concatenate(direct_components)
+                predictor.blend_recursive_pred = np.concatenate(recursive_components)
+        else:
+            predictor = Forecaster(
+                args=args,
+                horizon=min(horizon, len(df_future_for_test)),
+                model=model,
+                feature_scaler=scaler_testing,
+                target_scaler=target_scaler_testing,
+                df_history=df_history_train,
+                df_future=df_future_for_test,
+                df_date_future=payload["df_date_history"],
+                df_weather_future=df_weather_future_for_test,
+                df_custom_future=df_custom_future_for_test,
+                endogenous_features=payload["endogenous_features_with_target"],
+                target_feature=payload["target_feature"],
+                target_output_features=target_output_features,
+                categorical_features=categorical_features,
+                selected_features=selected_features,
+                target_decomposer=target_decomposer,
+                target_transform=target_transform,
+                log_prefix=log_prefix,
+            )
+            forecast_result = predictor._predict_by_method()
+            if isinstance(forecast_result, ForecastDistribution):
+                y_pred = forecast_result.point
+                output_quantile_grid = forecast_result.quantile_grid
+                quantile_outputs = {
+                    level: forecast_result.quantile_values[:, index]
+                    for index, level in enumerate(forecast_result.quantile_grid.levels)
+                }
+            else:
+                y_pred = forecast_result
+                quantile_outputs = getattr(predictor, "quantile_outputs", None)
+                output_quantile_grid = (
+                    QuantileGrid(tuple(sorted(quantile_outputs)), point_level=0.5)
+                    if quantile_outputs
+                    else None
+                )
         # ------------------------------
         # 模型滑窗预测结果收集
         # ------------------------------
@@ -348,15 +486,17 @@ class Tester:
             y_pred = np.asarray(y_pred)[:min_len]
             y_test_for_eval = np.asarray(y_test_for_eval)[:min_len]
         # 季节 naive 对照（昨日同时刻实际值），与评估标签对齐
-        y_naive = Tester._build_seasonal_naive(
-            df_history=payload["df_history"],
-            window=window,
-            horizon=horizon,
-            window_len=window_len,
-            target_feature=payload["target_feature"],
-            n_per_day=int(getattr(args, "n_per_day", 1) or 1),
-            split_indices=payload.get("split_indices"),
-        )
+        y_naive = None
+        if not bool(getattr(args, "enable_global_training", False)):
+            y_naive = Tester._build_seasonal_naive(
+                df_history=payload["df_history"],
+                window=window,
+                horizon=horizon,
+                window_len=window_len,
+                target_feature=payload["target_feature"],
+                n_per_day=int(getattr(args, "n_per_day", 1) or 1),
+                split_indices=payload.get("split_indices"),
+            )
         if y_naive is not None:
             y_naive = np.asarray(y_naive).reshape(-1)
             if len(y_naive) >= len(y_test_for_eval):
@@ -389,6 +529,12 @@ class Tester:
             min_value=args.min_value,
             max_value=args.max_value,
         )
+        if bool(getattr(args, "enable_global_training", False)):
+            cv_plot_df_window.insert(
+                0,
+                series_id_col,
+                df_history_test[series_id_col].to_numpy()[: len(cv_plot_df_window)],
+            )
         # 分位数预测(若启用):补入 cv_plot,使回测也体现分位数区间
         if quantile_outputs:
             if output_quantile_grid is None:
@@ -645,11 +791,21 @@ class Tester:
         return X_train, Y_train, target_output_features, categorical_features
 
     @staticmethod
-    def _build_test_future_frame(df_history_test: pd.DataFrame):
+    def _build_test_future_frame(
+        df_history_test: pd.DataFrame,
+        series_id_col: Optional[str] = None,
+    ) -> pd.DataFrame:
         """
         测试预测阶段只能看到未来时间模板，不透传测试期真实 y。
         """
-        return df_history_test[["time"]].copy()
+        columns = ["time"]
+        if series_id_col is not None:
+            if series_id_col not in df_history_test.columns:
+                raise ValueError(
+                    f"Panel test frame missing series ID column '{series_id_col}'."
+                )
+            columns.insert(0, series_id_col)
+        return pd.DataFrame(df_history_test.loc[:, columns]).copy()
 
     @staticmethod
     def _build_seasonal_naive(
@@ -888,6 +1044,12 @@ class Tester:
             )
         if cv_plot_df.empty or not required_cols.issubset(set(cv_plot_df.columns)):
             logger.warning(f"{log_prefix} No valid prediction columns found for visualization.")
+            return
+        if bool(getattr(args, "enable_global_training", False)):
+            logger.info(
+                f"{log_prefix} Panel test artifacts saved without a single-series plot; "
+                "cv_plot_df.csv preserves series identity."
+            )
             return
         if len(cv_plot_df["Y_preds"].values) == 0 or len(cv_plot_df["Y_trues"].values) == 0:
             logger.warning(f"{log_prefix} No data to visualize for test prediction.")

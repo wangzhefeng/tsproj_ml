@@ -11,22 +11,12 @@ import datetime
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
+from models.multistep.spec import STRATEGY_SPECS
 
-# 预测方法元信息 (full_method, short_code, description)
-_PRED_METHODS = [
-    ("univariate-single-multistep-direct-pointwise", "usmdp", "单变量输入，按未来时点逐点 direct 预测"),
-    ("univariate-single-multistep-direct", "usmd", "单变量输入，多步直接预测"),
-    ("univariate-single-multistep-recursive", "usmr", "单变量输入，多步递归预测"),
-    ("univariate-single-multistep-direct-recursive", "usmdr", "单变量输入，多步直接递归预测"),
-    ("multivariate-single-multistep-direct", "msmd", "多变量输入，多步直接预测"),
-    ("multivariate-single-multistep-recursive", "msmr", "多变量输入，多步递归预测"),
-    ("multivariate-single-multistep-direct-recursive", "msmdr", "多变量输入，多步直接递归预测"),
-    ("univariate-single-multistep-blend-direct-recursive", "usbr", "单变量输入，Direct+Recursive 加权融合"),
-    ("multivariate-single-multistep-blend-direct-recursive", "msbr", "多变量输入，Direct+Recursive 加权融合"),
-]
-
-# 派生映射：保持向后兼容
-PRED_METHOD_CODE = {full: code for full, code, _ in _PRED_METHODS}  # full name → short code
+# 从多步策略权威目录派生，保留原公开映射接口。
+PRED_METHOD_CODE = {
+    method: spec.code for method, spec in STRATEGY_SPECS.items()
+}
 
 
 # 标准频率 → 每天样本数映射，用于生成与频率匹配的滞后步数。
@@ -279,7 +269,7 @@ class ModelStrategyConfig:
     #   GBDT 原生容忍，线性/KNN 等成员需要）
     ensemble_model_specs: List[Dict] = field(default_factory=list)
 
-    # 可选预测方法详见 _PRED_METHODS。
+    # 可选预测方法详见 models.multistep.spec.STRATEGY_SPECS。
     pred_method: str = "univariate-single-multistep-direct"
     multi_output_strategy: str = "multioutput"  # 多输出策略: multioutput / regressor_chain
     predict_type: str = "point"  # 预测类型: point / quantile
@@ -303,6 +293,10 @@ class ModelStrategyConfig:
     enable_global_training: bool = False  # 全局训练模式，跨序列联合训练
     # 全局训练时标识不同序列的列名（默认 series_id）
     series_id_feature: str = "series_id"
+    # 面板不完整序列处理：raise=硬失败；drop=整条序列排除
+    global_incomplete_series_policy: str = "raise"
+    # 预测出现训练期未见 series_id 时的处理；当前只支持硬失败
+    global_unknown_series_policy: str = "raise"
 
     # 多变量递归（MSMR/MSMDR）非目标内生变量的未来值回填策略：
     #   "persistence"（默认，向后兼容）= 取最后一个已知值常量外推

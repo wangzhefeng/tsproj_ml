@@ -22,6 +22,11 @@ import lightgbm as lgb
 import xgboost as xgb
 import catboost as cab
 
+from models.multistep.spec import InputScope, get_strategy_spec
+from models.multistep.panel import (
+    materialize_panel_future,
+    materialize_panel_history,
+)
 from utils.log_util import logger
 from utils.exogenous_contract import (
     select_asof_rows,
@@ -121,15 +126,6 @@ def materialize_custom_future_sources(
     return resolved
 
 
-UNIVARIATE_PRED_METHODS = {
-    "univariate-single-multistep-direct-pointwise",
-    "univariate-single-multistep-direct",
-    "univariate-single-multistep-recursive",
-    "univariate-single-multistep-direct-recursive",
-    "univariate-single-multistep-blend-direct-recursive",
-}
-
-
 class DataLoader:
     
     def __init__(self, 
@@ -147,7 +143,10 @@ class DataLoader:
         self.log_prefix = log_prefix
 
     def _is_univariate_method(self) -> bool:
-        return str(getattr(self.args, "pred_method", "")).lower() in UNIVARIATE_PRED_METHODS
+        return (
+            get_strategy_spec(getattr(self.args, "pred_method", "")).input_scope
+            == InputScope.TARGET_ONLY
+        )
 
     def _load_optional_frame(self, relative_path: Optional[str], label: str) -> Optional[pd.DataFrame]:
         if not relative_path:
@@ -358,8 +357,22 @@ class DataLoader:
         # 转换时间戳类型
         df_processed[col_ts] = pd.to_datetime(df_processed[col_ts])
         # del df_processed[ts_col]
-        # 去除重复时间戳
-        df_processed.drop_duplicates(subset=col_ts, keep="last", inplace=True, ignore_index=True)
+        # 单序列按 time 去重；global panel 必须按复合主键去重。
+        duplicate_key = [col_ts]
+        if bool(getattr(self.args, "enable_global_training", False)):
+            series_id_col = str(getattr(self.args, "series_id_feature", "series_id"))
+            if series_id_col not in df_processed.columns:
+                raise ValueError(
+                    f"{self.log_prefix} global panel source missing series ID column "
+                    f"'{series_id_col}'."
+                )
+            duplicate_key = [series_id_col, col_ts]
+        df_processed.drop_duplicates(
+            subset=duplicate_key,
+            keep="last",
+            inplace=True,
+            ignore_index=True,
+        )
         return df_processed
 
     def __process_target_series(self, df_template: pd.DataFrame, df_series: pd.DataFrame, col_ts: str, col_numeric: List, col_categorical: List, col_drop: List):
@@ -367,6 +380,38 @@ class DataLoader:
         目标特征数据预处理
         """
         df_template_copy = df_template.copy()
+        if bool(getattr(self.args, "enable_global_training", False)):
+            if df_series is None:
+                raise ValueError(f"{self.log_prefix} global panel requires target series data.")
+            series_id_col = str(getattr(self.args, "series_id_feature", "series_id"))
+            filtered_numeric = [
+                column
+                for column in col_numeric
+                if column not in [col_ts, self.args.target, series_id_col, *col_categorical, *col_drop]
+            ]
+            filtered_categorical = [
+                column
+                for column in col_categorical
+                if column not in [col_ts, self.args.target, series_id_col, *col_numeric, *col_drop]
+            ]
+            panel = materialize_panel_history(
+                df_series,
+                df_template_copy["time"],
+                series_id_col=series_id_col,
+                source_time_col=col_ts,
+                target_col=self.args.target,
+                numeric_columns=filtered_numeric,
+                categorical_columns=filtered_categorical,
+                incomplete_policy=str(
+                    getattr(self.args, "global_incomplete_series_policy", "raise") or "raise"
+                ),
+            )
+            endogenous_features = [
+                column
+                for column in panel.columns
+                if column not in {"time", series_id_col, "y"}
+            ]
+            return panel, endogenous_features, "y"
         if df_series is not None:
             # 目标特征数据转换为浮点数
             series_indexed = df_series.set_index(col_ts)
@@ -475,7 +520,11 @@ class DataLoader:
         if self._is_univariate_method():
             if not target_feature or target_feature not in df_history.columns:
                 raise ValueError(f"{self.log_prefix} univariate prediction requires target feature in history data.")
-            df_history = df_history[["time", target_feature]].copy()
+            keep_columns = ["time", target_feature]
+            if bool(getattr(self.args, "enable_global_training", False)):
+                series_id_col = str(getattr(self.args, "series_id_feature", "series_id"))
+                keep_columns.insert(1, series_id_col)
+            df_history = df_history[keep_columns].copy()
             if target_feature != "y":
                 df_history = df_history.rename(columns={target_feature: "y"})
             target_feature = "y"
@@ -531,6 +580,19 @@ class DataLoader:
         """
         # 未来数据时间戳
         df_future_template = pd.DataFrame({"time": pd.date_range(self.forecast_start_time, self.forecast_end_time, freq=self.args.freq, inclusive="left")})
+        if bool(getattr(self.args, "enable_global_training", False)):
+            series_id_col = str(getattr(self.args, "series_id_feature", "series_id"))
+            target_source = input_data.get("target_series")
+            if target_source is None or series_id_col not in target_source.columns:
+                raise ValueError(
+                    f"{self.log_prefix} global panel future requires source series IDs in "
+                    f"'{series_id_col}'."
+                )
+            df_future_template = materialize_panel_future(
+                tuple(pd.unique(target_source[series_id_col].dropna())),
+                df_future_template["time"],
+                series_id_col=series_id_col,
+            )
         logger.info(f"{self.log_prefix} df_future_template: \n{df_future_template.head()}")
         logger.info(f"{self.log_prefix} df_future_template shape: {df_future_template.shape}")
         # 特征工程：日期类型(节假日、特殊事件)特征
@@ -570,7 +632,7 @@ class DataLoader:
         df_custom_future = materialize_custom_future_sources(
             custom_history=input_data.get("custom_history"),
             custom_future=input_data.get("custom_future"),
-            future_times=df_future_template["time"],
+            future_times=pd.unique(df_future_template["time"]),
             cutoff=self.forecast_start_time - pd.Timedelta(nanoseconds=1),
         )
         return (df_future_template, df_date_future, df_weather_future, df_custom_future)

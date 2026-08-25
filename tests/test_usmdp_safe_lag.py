@@ -10,6 +10,7 @@ import pandas as pd
 
 from features.FeatureEngineering import FeatureEngineer
 from models.ModelForecasting import Forecaster
+from models.multistep.executors.pointwise import PointwiseExecutor
 
 
 class _LagEchoModel:
@@ -79,7 +80,7 @@ class UsmdpSafeLagTest(unittest.TestCase):
     def test_multistep_safe_lag_uses_only_known_history(self):
         forecaster, model = self._forecaster([3, 4])
 
-        prediction = forecaster.univariate_single_multi_step_direct_pointwise_forecast()
+        prediction = PointwiseExecutor().execute(forecaster)
 
         np.testing.assert_array_equal(prediction, np.array([12.0, 13.0, 14.0]))
         model_input = cast(pd.DataFrame, model.last_X)
@@ -93,7 +94,7 @@ class UsmdpSafeLagTest(unittest.TestCase):
             ValueError,
             r"USMDP safe-lag requires min\(lags\) >= horizon; got min_lag=2, horizon=3",
         ):
-            forecaster.univariate_single_multi_step_direct_pointwise_forecast()
+            PointwiseExecutor().execute(forecaster)
 
 
 if __name__ == "__main__":

@@ -40,6 +40,11 @@ from models.ModelSaveLoad import ModelDeployPkl
 from models.ModelEnsemble import TimeSeriesEnsembleRegressor, EnsembleConfig
 from models.learning_rate import resolve_learning_rate
 from models.losses import get_loss_name_from_model_params, get_scorer_by_loss_name
+from models.multistep.artifacts import BlendArtifact, MultistepArtifactMetadata
+from models.multistep.plans import ExogenousTiming, TrainingLayout
+from models.multistep.resolve import resolve_strategy
+from models.multistep.spec import InputScope, RolloutFamily
+from models.multistep.weights import BlendWeights
 from probabilistic.objectives import inject_quantile_objective
 from probabilistic.spec import resolve_probabilistic_spec
 from probabilistic.training import QuantileTrainer
@@ -49,14 +54,6 @@ from utils.frequency import compute_time_decay_weights
 
 # global variable
 LOGGING_LABEL = Path(__file__).name[:-3]
-
-
-UNIVARIATE_PRED_METHODS = {
-    "univariate-single-multistep-direct-pointwise",
-    "univariate-single-multistep-direct",
-    "univariate-single-multistep-recursive",
-    "univariate-single-multistep-direct-recursive",
-}
 
 
 class DirectMultiOutputRegressor:
@@ -231,6 +228,22 @@ class Trainer:
         )
         # 时间衰减样本权重;在 train() 中按启用开关计算,baseline 路径自行计算
         self.sample_weight = None
+        self.resolved_strategy = None
+
+    def _get_resolved_strategy(self, horizon: Optional[int] = None):
+        if horizon is None:
+            horizon = getattr(self.args, "horizon", None)
+        if horizon is None:
+            horizon = getattr(self.args, "predict_steps", None)
+        if horizon is None:
+            raise ValueError("Trainer requires args.horizon or args.predict_steps to resolve the training plan.")
+        resolved = resolve_strategy(
+            self.args,
+            int(horizon),
+            target_feature=str(getattr(self.args, "target_feature", "y")),
+        )
+        self.resolved_strategy = resolved
+        return resolved
 
     def _resolve_worker_count(self, attr_name: str, default: int = 1) -> int:
         value = int(getattr(self.args, attr_name, default) or default)
@@ -241,14 +254,11 @@ class Trainer:
         return value
 
     def _should_use_horizon_aligned_direct(self) -> bool:
-        return bool(getattr(self.args, "use_horizon_exogenous_for_direct", False)) and str(
-            getattr(self.args, "pred_method", "")
-        ).lower() in {
-            "univariate-single-multistep-direct",
-            "multivariate-single-multistep-direct",
-            "univariate-single-multistep-direct-recursive",
-            "multivariate-single-multistep-direct-recursive",
-        }
+        try:
+            resolved = self.resolved_strategy or self._get_resolved_strategy()
+        except ValueError:
+            return False
+        return resolved.feature_plan.exogenous_timing == ExogenousTiming.BY_HORIZON
 
     @staticmethod
     def _thread_limited_params(model_type: str, params: Dict[str, Any], threads: int) -> Dict[str, Any]:
@@ -337,7 +347,14 @@ class Trainer:
         return MultiOutputRegressor(estimator=base_estimator, n_jobs=multi_output_n_jobs)
 
     def _is_fourmethods_univariate_method(self) -> bool:
-        return str(getattr(self.args, "pred_method", "")).lower() in UNIVARIATE_PRED_METHODS
+        try:
+            resolved = self.resolved_strategy or self._get_resolved_strategy()
+        except ValueError:
+            return False
+        return (
+            resolved.spec.input_scope == InputScope.TARGET_ONLY
+            and resolved.spec.rollout != RolloutFamily.BLEND
+        )
 
     def _should_use_fourmethods_baseline_training(self) -> bool:
         """
@@ -616,19 +633,19 @@ class Trainer:
     # ------------------------------
     def _should_use_horizon_feature(self) -> bool:
         """USMD/MSMD 且 direct_strategy=horizon_feature 时启用长表 melt。"""
-        if str(getattr(self.args, "pred_method", "")).lower() not in (
-            "univariate-single-multistep-direct",
-            "multivariate-single-multistep-direct",
-        ):
+        try:
+            resolved = self.resolved_strategy or self._get_resolved_strategy()
+        except ValueError:
             return False
-        return str(getattr(self.args, "direct_strategy", "multioutput")).lower() == "horizon_feature"
+        return resolved.training_plan.layout == TrainingLayout.HORIZON_LONG
 
     def _is_blend_method(self) -> bool:
         """USBR/MSBR = Direct+Recursive 加权融合。"""
-        return str(getattr(self.args, "pred_method", "")).lower() in (
-            "univariate-single-multistep-blend-direct-recursive",
-            "multivariate-single-multistep-blend-direct-recursive",
-        )
+        try:
+            resolved = self.resolved_strategy or self._get_resolved_strategy()
+        except ValueError:
+            return False
+        return resolved.training_plan.layout == TrainingLayout.COMPOSITE
 
     def _resolve_horizon_period(self, horizon: int) -> int:
         """horizon sin/cos 编码周期：子日频用 n_per_day（日周期），日频用 7（周周期）。"""
@@ -907,6 +924,17 @@ class Trainer:
         # 训练集
         X_train_df = X_train.copy()
         Y_train_df = Y_train.copy()
+        resolved = self._get_resolved_strategy()
+        target_feature = str(getattr(self.args, "target_feature", "y"))
+        expected_source_columns = [
+            f"{target_feature}_shift_{step}"
+            for step in resolved.target_plan.label_steps
+        ]
+        if list(Y_train_df.columns) != expected_source_columns:
+            raise ValueError(
+                f"{self.log_prefix} training targets do not match resolved TargetPlan: "
+                f"expected {expected_source_columns}, got {list(Y_train_df.columns)}."
+            )
         if self._should_use_fourmethods_baseline_training():
             return self._train_fourmethods_baseline(
                 X_train_df=X_train_df,
@@ -1068,19 +1096,14 @@ class Trainer:
             # 单模型 - 点预测
             # ------------------------------
             if predict_type == "point":
-                if self._is_blend_method():
+                if resolved.training_plan.layout == TrainingLayout.COMPOSITE:
                     # ------------------------------
                     # Blend（Direct+Recursive 融合）：分离 Y，分别训练两个子模型
                     # ------------------------------
                     logger.info(f"{self.log_prefix} Training blend (Direct+Recursive) model...")
                     logger.info(f"{self.log_prefix} {'-' * 71}")
-                    rec_cols = [c for c in Y_train_df_processed.columns if str(c).endswith("_shift_0")]
-                    dir_cols = [c for c in Y_train_df_processed.columns if c not in rec_cols]
-                    if len(dir_cols) <= 1 or len(rec_cols) != 1:
-                        raise ValueError(
-                            f"{self.log_prefix} Blend requires >=1 direct target cols and exactly 1 recursive col "
-                            f"(shift_0); got dir={len(dir_cols)}, rec={len(rec_cols)}."
-                        )
+                    dir_cols = list(resolved.target_plan.direct.column_names)
+                    rec_cols = list(resolved.target_plan.recursive.column_names)
                     Y_direct = Y_train_df_processed[dir_cols]
                     Y_recursive = Y_train_df_processed[rec_cols]
 
@@ -1112,14 +1135,21 @@ class Trainer:
                         fit_kwargs_r["native_train_data"] = native_data_bundle.get("train_native")
                     estimator_recursive.fit(X_fit_r, np.ravel(y_fit_r), **fit_kwargs_r)
 
-                    model = {
-                        "bundle_type": "blend_direct_recursive",
-                        "direct": model_direct,
-                        "recursive": estimator_recursive,
-                    }
+                    model = BlendArtifact(
+                        direct_model=model_direct,
+                        recursive_model=estimator_recursive,
+                        weights=BlendWeights.from_args(self.args),
+                        metadata=MultistepArtifactMetadata.from_strategy(
+                            resolved,
+                            selected_features,
+                        ),
+                    )
                     logger.info(f"{self.log_prefix} Blend training completed!")
                     return model, feature_scaler, target_scaler, selected_features
-                elif Y_train_df_processed.shape[1] == 1:
+                elif resolved.training_plan.layout in {
+                    TrainingLayout.SINGLE_OUTPUT,
+                    TrainingLayout.HORIZON_LONG,
+                }:
                     logger.info(f"{self.log_prefix} Training single-output regressor...")
                     logger.info(f"{self.log_prefix} {'-' * 71}")
                     estimator_wrapper = self.model_factory.create_model(
@@ -1232,6 +1262,12 @@ class Trainer:
                 Y_train_df_processed,
                 categorical_features=actual_categorical,
             )
+            if resolved.spec.rollout == RolloutFamily.BLEND:
+                weights = BlendWeights.from_args(self.args)
+                quantile_bundle.metadata = {
+                    **dict(quantile_bundle.metadata),
+                    "blend_weights": weights.metadata(),
+                }
             logger.info(f"{self.log_prefix} Quantile model training completed!")
             return quantile_bundle, feature_scaler, target_scaler, selected_features
 
@@ -1264,6 +1300,31 @@ class Trainer:
             schema["columns"] = list(
                 getattr(feature_scaler, "training_columns", ()) or ()
             )
+        resolved = self._get_resolved_strategy()
+        schema["multistep"] = MultistepArtifactMetadata.from_strategy(
+            resolved,
+            schema.get("columns", ()),
+        ).payload()
+        if bool(getattr(self.args, "enable_global_training", False)):
+            series_id_col = str(getattr(self.args, "series_id_feature", "series_id"))
+            category_mappings = getattr(feature_scaler, "category_mappings", {}) or {}
+            category_info = getattr(feature_scaler, "category_info", {}) or {}
+            known_series_ids = list(
+                category_mappings.get(series_id_col, {}).get("categories", ())
+                or category_info.get(series_id_col, ())
+            )
+            if not known_series_ids:
+                raise ValueError(
+                    f"{self.log_prefix} global panel model artifact requires training "
+                    f"series IDs for '{series_id_col}'."
+                )
+            schema["panel"] = {
+                "series_id_feature": series_id_col,
+                "known_series_ids": known_series_ids,
+                "unknown_series_policy": str(
+                    getattr(self.args, "global_unknown_series_policy", "raise") or "raise"
+                ).lower(),
+            }
         bundle = ForecastModelBundle(
             schema_version=1,
             model=model,

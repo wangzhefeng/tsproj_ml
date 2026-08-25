@@ -176,6 +176,8 @@ class TargetDecomposerTest(unittest.TestCase):
                 checkpoints_dir=Path(tmpdir),
                 model_type="lightgbm",
                 pred_method="univariate-single-multistep-recursive",
+                horizon=2,
+                lags=[1],
             )
             trainer.log_prefix = "[test]"
 

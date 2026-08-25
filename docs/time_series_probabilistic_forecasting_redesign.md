@@ -625,7 +625,7 @@ probabilistic/
 | `features/` | 特征和多步目标列 | 只消费 X/Y，不重定义 shift 语义 |
 | `models/ModelFactory.py` | 创建具体回归器 | capability adapter 注入 quantile 目标 |
 | `models/ModelTraining.py` | 训练主流程和数据预处理 | 委托 `QuantileTrainer` |
-| `models/ModelForecasting.py` | 9 种方法的时序递归/Direct 编排 | 返回统一 `ForecastDistribution` |
+| `models/ModelForecasting.py` | 构造上下文并委托五类多步 executor | 返回统一 `ForecastDistribution` |
 | `features/TargetTransformation.py` | 实现共享 `TargetTransformPipeline`，记录 calendar/decomposition/scaler 的训练顺序 | 对 point/quantile 执行同一逆序 restore |
 | `decomposition/` | 确定性分量还原 | 作为 TargetTransformPipeline 的一个有序步骤 |
 | `utils/eval_mask.py` | 点预测业务掩码 | 不默认改变 conformal 覆盖总体 |

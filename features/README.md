@@ -7,8 +7,8 @@
 
 | 文件 | 职责 |
 |---|---|
-| `FeatureEngineering.py` | 外生特征（含 `custom_features` 自定义外生注册表）、内生滞后特征、多步目标列和高级统计特征构造 |
-| `FeatureScalering.py` | 特征缩放、目标缩放、目标逆变换和训练/预测 schema 对齐 |
+| `FeatureEngineering.py` | 按 `ResolvedStrategy` 的 `FeaturePlan`/`TargetPlan` 构造外生特征、内生滞后、多步目标列和高级统计特征 |
+| `FeatureScalering.py` | 特征缩放、目标缩放、目标逆变换和训练/预测严格 schema 对齐 |
 | `FeatureSelection.py` | 基于 `SelectKBest` 的训练集特征选择，并在预测阶段复用选择结果 |
 | `DataAugment.py` | 训练集 bootstrap + numeric jitter 数据增强 |
 | `feature_engineering/` | 实验性特征子包（fft/wavelet/statistical/holiday/periodicity/weather 等），**未接入主流程**，修改不影响模型运行 |
@@ -53,7 +53,8 @@ categorical_features
 - 单变量方法只使用目标 `y` 构造滞后特征。
 - 多变量方法可使用配置中的其他内生变量。
 - `enable_lags_features=True` 时按 `lags` 生成 `<col>_lag_<n>`。
-- Direct 类方法会构造 `y_shift_1 ... y_shift_horizon` 这类多步目标列；blend 方法（USBR/MSBR）同时构造 Direct（`shift_1..H`）和 Recursive（`shift_0`）两套目标列。
+- 多步目标列不再由本模块解释原始方法字符串，而是严格按 `TargetPlan.label_steps` 构造并校验；Direct 类通常使用 `shift_1..H`，Recursive 使用 `shift_0`，blend（USBR/MSBR）组合两套目标计划。
+- USMDP 默认不生成目标 lag；显式开启 `align_direct_features_to_target` 后采用 safe-lag，要求 `enable_lags_features=true` 且 `min(lags) >= horizon`，保证整个未来跨度只引用预测原点之前的已知历史。
 - `direct_strategy: horizon_feature`（仅 USMD/MSMD）时训练表 melt 为 N×H 长表，`forecast_horizon_idx`（可选 sin/cos 周期编码）作为特征。
 
 高级内生特征：
@@ -78,7 +79,7 @@ categorical_features
 - `feature_scaler_type` 支持 `standard`、`minmax`。
 - `encode_categorical_features=True` 时会对类别特征编码。
 - 未编码的类别特征会转为 pandas `category` 类型，便于 LightGBM 等模型使用。
-- 训练阶段会记录 schema，预测阶段按训练 schema 对齐列。
+- 训练阶段会记录 schema；预测阶段缺少训练列直接失败，多余列显式丢弃，再按训练顺序重排。NaN 值处理与“整列缺失”严格区分，不用训练期默认值伪造缺失列。
 
 `TargetScaler` 处理训练目标 `Y`：
 

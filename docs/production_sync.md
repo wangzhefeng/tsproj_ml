@@ -10,6 +10,7 @@
 
 - `models/ModelTesting.py`
 - `models/ModelForecasting.py`
+- `models/multistep/`（策略目录、解析计划、五类 executor、panel 与 typed artifact；与 `ModelTraining`/`ModelForecasting` 同步迁移）
 - `features/FeatureEngineering.py`
 - `features/FeatureScalering.py`
 - `features/TargetTransformation.py`
@@ -77,3 +78,10 @@
 - 是否需要迁移项目 2：生产侧开始消费概率输出或预训练 bundle 时需要；当前未要求立即同步。
 - 项目 2 适配点：只实现生产输入/输出 adapter；PI 读取 `predict_pi*`，不得继续把校准边界当 `predict_q*`；加载时拒绝未知 schema version。
 - 验证结果：本仓库 327 项 unittest、863 个模型 YAML dry-run、fixed horizon 与 calendar-month/decomposition/scaling/CQR 真实配置验收通过；新算法事实以 `docs/time_series_probabilistic_forecasting_redesign.md` §15 为准。
+
+### 2026-08-25 multistep-strategy-redesign
+
+- 变更摘要：九种外部 `pred_method` 收敛为 `StrategySpec + ResolvedStrategy` 单一事实源；目标、特征、训练和运行计划统一解析；推理由 pointwise/direct/recursive/dirrec/blend 五类 executor 执行；blend、auxiliary 和普通策略改用 typed artifact；global panel 补齐复合主键、逐序列切窗/状态隔离及 bundle 持久化契约。
+- 是否需要迁移项目 2：生产侧同步 `ModelTraining.py`、`ModelForecasting.py` 或读取新模型产物时需要整体迁移，不能只复制单个 executor。
+- 项目 2 适配点：保留九种外部方法名兼容；生产 adapter 只负责输入输出，必须同时迁移 `models/multistep/`、严格特征 schema、panel `series_id` 元数据和 legacy artifact 只读适配；不得继续从结果目录读取 blend 权重。
+- 验证结果：本仓库 371 项 unittest、863 个模型 YAML dry-run、compileall 与 `git diff --check` 通过；受语义修复影响的存量结果见 `docs/multistep_forecasting_invalidation.md`，未重跑结果不得与新实现混用。

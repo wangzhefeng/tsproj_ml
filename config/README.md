@@ -71,6 +71,8 @@ overrides:
 
 `overrides.probabilistic` 是一个有意保留嵌套结构的原始 mapping，由 `resolve_probabilistic_spec()` 自行严格校验，不走普通分组字段展平。legacy `model_strategy.predict_type/quantiles/quantile_monotone` 与 `conformal.*` 继续可用；两套入口同时存在时必须归一化后完全一致，否则 RAISE。
 
+九种 `pred_method` 的全名、短码与输入范围/推进族以 `models/multistep/spec.py::STRATEGY_SPECS` 为唯一事实源；配置加载后由 `models/multistep/resolve.py` 统一生成目标、训练、特征和运行计划。非适用方法写入非默认增强字段会直接 RAISE，不再静默 no-op。
+
 规范概率写法示例：
 
 ```yaml
@@ -138,7 +140,11 @@ exogenous_features:
 
 strict 模式要求 backtest 每行 `available_at` 早于目标月、future 每行不晚于 `now_time`，且目标时间戳全覆盖；不允许把测试月实测天气当未来天气。Direct/DirRec 使用天气时必须启用 `use_horizon_exogenous_for_direct: true`，训练侧 `*_h1..*_hH` 按目标日构造；horizon-feature melt 按 h 折叠回基础列名，与推理端未来逐日外生一致。USBR 的 Direct/Recursive 共享 X 暂不支持目标日天气，保留为无天气 control。
 
-USMDP 当前不生成目标 lag，配置必须显式 `enable_lags_features: false`、`lags: []`，语义是日历/天气逐点模板；需要目标历史递归回填时使用 USMR。
+USMDP 默认不生成目标 lag，适合日历/天气逐点模板；如需使用已知历史 lag，必须同时设置 `align_direct_features_to_target: true`、`enable_lags_features: true` 且 `min(lags) >= horizon`。该 safe-lag 路径只读取已知历史，不递归消费预测值；需要逐步回填自身预测时使用 USMR。
+
+DirRec（USMDR/MSMDR）的 `block_size: 0` 表示从最短 lag 推导有效块长，显式正值则直接指定；最终均截到 horizon。训练目标宽度、模型输出宽度和推理块长统一使用解析后的 B。
+
+Global panel 配置使用 `enable_global_training: true` 与 `series_id_feature`；历史/未来按 `(series_id, time)` 校验，每条序列必须覆盖完整 horizon。`global_incomplete_series_policy` 支持 `raise`/`drop`，未知 series 当前只允许 `raise`。
 
 ### preprocessing：目标分解
 
@@ -155,7 +161,7 @@ USMDP 当前不生成目标 lag，配置必须显式 `enable_lags_features: fals
 | `decomposition_trend_lookback` | `28` | damped 趋势末端斜率估计使用的最近样本数 |
 | `decomposition_seasonal_cycles` | `4` | 未来季节模板取最近周期的相位均值 |
 
-`scale_target`、USBR/MSBR blend、CQR conformal 暂不与目标分解组合。point 与全部 quantile 会加回同一确定性趋势/季节分量；启用分解的最终训练会额外保存 `target_decomposer.pkl`。
+USBR/MSBR blend 暂不与目标分解组合；point、全部 quantile、target scaling 与 CQR 共用 `TargetTransformPipeline`，按严格逆序恢复到目标空间。启用分解的最终训练状态随统一模型 bundle 保存。
 
 ```yaml
   preprocessing:

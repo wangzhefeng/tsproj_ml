@@ -10,7 +10,8 @@
 | `ModelFactory.py` | 统一创建 10 类回归器封装（LightGBM、XGBoost、CatBoost、RandomForest、HistGradientBoosting、Ridge、ElasticNet、Lasso、QuantileRegressor、SeasonalTemplate） |
 | `ModelTraining.py` | 训练、调参、分位数模型、融合、blend 双子模型、时间衰减样本权重、特征选择和数据增强入口 |
 | `ModelTesting.py` | 滑窗测试、窗口内训练预测、指标计算和测试结果保存 |
-| `ModelForecasting.py` | 9 种多步预测策略的推理实现 |
+| `ModelForecasting.py` | 构造预测上下文、调用多步 executor、恢复目标空间并保存结果 |
+| `multistep/` | 九方法策略目录、解析计划、五类 executor、递归状态、panel、回填、权重与 typed artifact |
 | `ModelEnsemble.py` | averaging、weighted、stacking、blending 融合回归器（成员级 preprocessor） |
 | `AuxiliaryForecaster.py` | 非目标内生变量的 reduced-form 递归辅助预测器（`endogenous_backfill_strategy: auxiliary`） |
 | `ModelSaveLoad.py` | pickle 模型和目标缩放器保存/加载 |
@@ -80,7 +81,7 @@ quantile 模式按 `ProbabilisticSpec` 指定 interval 在 processed target-spac
 
 ## 预测
 
-`Forecaster._predict_by_method()` 根据 `args.pred_method` 分发；point 返回一维数组，quantile 返回统一的 `ForecastDistribution`。迁移期 `quantile_outputs` 仅保留只读兼容视图：
+`Forecaster` 先把外部 `pred_method` 解析为 `ResolvedStrategy`，再由 `EXECUTOR_CATALOG` 按 rollout family 调用 Pointwise / Direct / Recursive / DirRec / Blend executor。executor 不再读取原始方法字符串；point 返回一维数组，quantile 返回统一的 `ForecastDistribution`。迁移期 `quantile_outputs` 仅保留只读兼容视图：
 
 | 方法 | 说明 |
 |---|---|
@@ -93,6 +94,16 @@ quantile 模式按 `ProbabilisticSpec` 指定 interval 在 processed target-spac
 | MSMDR | 多变量分块 direct-recursive |
 | USBR | 单变量 Direct+Recursive 加权融合（blend） |
 | MSBR | 多变量 Direct+Recursive 加权融合（blend） |
+
+九种方法的全名、短码和描述以 `models/multistep/spec.py::STRATEGY_SPECS` 为唯一事实源。DirRec 的训练与推理共享同一有效块长 B；Recursive/DirRec 的运行日志统一输出模型调用次数，并按能力附带 `block_size`、`backfill_source` 或 `weight_source`。
+
+Global panel 使用 `(series_id, time)` 复合主键，训练窗口、未来 H 行、递归状态和输出按 series 隔离。当前组合限制由 `models/multistep/resolve.py` 集中校验。
+
+## 模型产物
+
+新训练模型统一封装为 `ForecastModelBundle`；多步元数据和复合模型分别使用 `StrategyArtifact`、`BlendArtifact`、`AuxiliaryEndogenousArtifact`。`ModelSaveLoad.py` 加载历史裸估计器或 dict bundle 时统一经过 `LegacyArtifactAdapter`，仅构造只读运行时视图，不改写旧文件。
+
+受 MSMD/MSMDR 目标时点、默认 DirRec 块长、safe-lag、auxiliary 和 ridge-stacking 自描述化影响的旧结果清单见 `docs/multistep_forecasting_invalidation.md`。
 
 预测输出：
 

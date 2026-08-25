@@ -71,7 +71,8 @@ tsproj_ml/
 │   ├── ModelFactory.py          # 模型工厂和模型封装（10 类回归器）
 │   ├── ModelTraining.py         # 训练、调参、分位数、融合、blend 双子模型
 │   ├── ModelTesting.py          # 滑窗测试与指标保存
-│   ├── ModelForecasting.py      # 9 种预测策略的推理实现
+│   ├── ModelForecasting.py      # 预测上下文、executor 调度、目标恢复与结果保存
+│   ├── multistep/               # 策略目录、计划、五类 executor、panel、状态与 typed artifact
 │   ├── ModelEnsemble.py         # 融合模型
 │   ├── AuxiliaryForecaster.py   # 非目标内生变量辅助递归预测器（auxiliary 回填）
 │   ├── ModelSaveLoad.py         # pickle 保存/加载
@@ -99,9 +100,9 @@ tsproj_ml/
 1. `DataLoader.load_data()` 读取目标序列、日期外生、天气外生。
 2. `DataLoader.process_history_data()` 根据 `now_time/history_length/freq` 构造历史时间轴，并把目标列统一映射为 `y`。
 3. 单变量策略只保留 `time + y`；多变量策略保留配置中的其他内生变量。
-4. `FeatureEngineer.create_features()` 生成外生、滞后和可选高级特征，并构造多步目标列。
+4. `models.multistep.resolve_strategy()` 把外部方法配置解析为唯一 `ResolvedStrategy`；`FeatureEngineer.create_features()` 按其中的 `TargetPlan` / `FeaturePlan` 生成特征和目标列。
 5. 若 `is_testing=True`，`Tester._window_test()` 做滑窗验证，可按窗口并行。
-6. 若 `is_forecasting=True`，`Trainer.train()` 用全历史训练；quantile 路径返回 `ProbabilisticModelBundle`，`Forecaster._predict_by_method()` 统一返回 `ForecastDistribution`。
+6. 若 `is_forecasting=True`，`Trainer.train()` 按 `TrainingPlan` 用全历史训练；quantile 路径返回 `ProbabilisticModelBundle`，`Forecaster` 通过五类 executor 执行并统一返回 `ForecastDistribution`。
 7. point/quantile 经同一个 `TargetTransformPipeline` 严格逆序恢复；crossing repair、prequential/final CQR 和概率指标均在 target space 执行。
 8. 测试、唯一 `ForecastModelBundle`、预测结果分别保存到配置指定目录。
 
@@ -301,7 +302,7 @@ uv run python config/generate_configs.py \
 
 `<scenario>` 由 YAML 中的 `scenario_subpath` 显式指定（如 `aidc_load_month/route_A`），使结果路径与 config 目录布局对齐；未指定时回退为从 `data_dir` 自动推导（去掉 `dataset/` 前缀和 `demand_load` 段）。多组配置共用同一 `data_dir` 时（如三个 `aidc_power_*` 场景共用 `dataset/aidc_power/`）必须显式指定，否则结果会混入同一目录。不同场景的结果因此互不覆盖。
 
-`<setting>` 由 `{model_type}-{data_name}-{pred_method_code}-{window_length}` 组成，例如 `lightgbm-df_power-usmr-15`。
+`<setting>` 由 `{model_type}-{data_name}-{pred_method_code}-{window_token}[-quantile][setting_suffix][-calendar-month]` 组成；固定步长的 `window_token=window_length`，自然月模式取 `train_window_length`。
 
 ```text
 results/
@@ -349,6 +350,7 @@ df_power_anomalies.png
 - `now_time` 为预测锚点：`schedule_mode=daily`（默认）时规整到次日 00:00 作为历史结束/预测开始（预测下一完整自然日），`intraday` 时保留调度时刻；历史区间为 `[now_time - history_length, now_time)`，预测区间为 `[now_time, now_time + predict_steps × freq)`。
 - 分位数预测训练多个子模型；点预测融合只在 `predict_type="point"` 时生效。
 - 多变量递归类方法（MSMR/MSMDR）对非目标内生变量默认持久性回填，可配置 `endogenous_backfill_strategy: auxiliary` 为每个内生变量训练独立递归辅助模型。
+- `enable_global_training=true` 时输入和输出保留 `series_id`，lag/shift、窗口和递归状态按 series 隔离；当前不与 calendar normalization、目标分解、auxiliary backfill 或 calendar-month 组合。
 - `.DS_Store`、`__pycache__/`、`logs/`、`results/` 不是源码或数据契约。
 
 ## 生产同步边界
@@ -359,6 +361,7 @@ df_power_anomalies.png
 
 - `models/ModelTesting.py`
 - `models/ModelForecasting.py`
+- `models/multistep/`
 - `features/FeatureEngineering.py`
 - `features/FeatureScalering.py`
 - `features/TargetTransformation.py`

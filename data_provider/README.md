@@ -6,7 +6,7 @@
 
 | 文件 | 职责 |
 |---|---|
-| `data_loader.py` | 读取目标、日期、天气 CSV；构造历史/未来时间轴；统一目标列为 `y` |
+| `data_loader.py` | 读取目标、日期、天气 CSV；构造单序列或 global panel 历史/未来时间轴；统一目标列为 `y` |
 | `outlier_handling.py` | 滑窗测试训练段异常处理，不修改测试真实值 |
 
 离线/批处理脚本（频率聚合 `data_aggregate.py`、填充回测 `fill_method_backtest.py`、离线异常清洗 `outlier_process.py`、算力预处理 `computility_process.py` 等）统一放在 `data_process/` 和 `config/aidc_electricity_computility/electricity/2026-06-11/scripts/`。
@@ -38,6 +38,17 @@
 
 `process_history_data()` 会按历史区间构造模板并映射真实目标；`process_future_data()`
 只构造未来模板和外生特征，不读取未来真实目标。
+
+## Global panel 契约
+
+启用 `enable_global_training=true` 时：
+
+- `series_id_feature` 指定实体列，历史和未来主键变为 `(series_id, time)`；同一时刻允许不同序列并存，但复合键重复直接失败。
+- 每条序列独立对齐完整历史时间轴；缺失策略由 `global_incomplete_series_policy` 控制，`raise` 硬失败，`drop` 整条排除，不跨序列填值。
+- 未来模板按训练期已知 series ID 展开为每条序列各 H 行；外生时间索引先去重，再由预测层逐序列消费。
+- 未见过的 series ID 由模型产物中的 panel metadata 校验，当前 `global_unknown_series_policy` 只支持 `raise`。
+
+滑窗分组、递归状态隔离和逐序列执行位于 `models/multistep/panel.py`；DataLoader 只负责复合键数据物化，不解释具体推进策略。
 
 ## 异常处理边界
 

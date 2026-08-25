@@ -110,7 +110,6 @@ overrides:
     model_type: enet
     pred_method: univariate-single-multistep-direct
     predict_type: point
-    enable_conformal_calibration: false
   training_enhancement:
     enable_time_decay_sample_weight: true
     decay_halflife_days: 60

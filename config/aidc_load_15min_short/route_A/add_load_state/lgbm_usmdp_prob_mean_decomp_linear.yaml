@@ -86,7 +86,6 @@ overrides:
     - 0.1
     - 0.5
     - 0.9
-    enable_conformal_calibration: false
   training_enhancement:
     enable_time_decay_sample_weight: true
     decay_halflife_days: 14

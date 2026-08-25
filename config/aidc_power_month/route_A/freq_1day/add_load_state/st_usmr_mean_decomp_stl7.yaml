@@ -91,7 +91,6 @@ overrides:
     model_type: st
     pred_method: univariate-single-multistep-recursive
     predict_type: point
-    enable_conformal_calibration: false  # point 分解配置不启用 conformal
   training_enhancement:
     enable_time_decay_sample_weight: false  # SeasonalTemplate 不使用样本权重
   train_outlier:

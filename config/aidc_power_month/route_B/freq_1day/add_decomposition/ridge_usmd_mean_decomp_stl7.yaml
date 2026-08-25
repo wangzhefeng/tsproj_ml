@@ -88,7 +88,6 @@ overrides:
     model_type: ridge
     pred_method: univariate-single-multistep-direct
     predict_type: point
-    enable_conformal_calibration: false  # point 分解配置不启用 conformal
   training_enhancement:
     enable_time_decay_sample_weight: true
     decay_halflife_days: 60  # 半衰期天数,按数据漂移速度调整

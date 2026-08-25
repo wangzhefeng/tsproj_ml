@@ -93,7 +93,6 @@ overrides:
     - 0.1
     - 0.5
     - 0.9
-    enable_conformal_calibration: false  # 目标分解暂不与 CQR conformal 组合
   training_enhancement:
     enable_time_decay_sample_weight: false  # 多输出分位数路径不透传 sample_weight
   train_outlier:

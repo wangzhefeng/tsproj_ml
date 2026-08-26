@@ -39,11 +39,21 @@ class BlendWeights:
         object.__setattr__(self, "calibration_windows", int(self.calibration_windows))
 
     @classmethod
+    def _fixed_from_args(cls, args: Any) -> "BlendWeights":
+        configured = list(getattr(args, "blend_weights", [0.5, 0.5]) or [])
+        if len(configured) != 2:
+            raise ValueError("blend_weights must contain exactly two values.")
+        direct, recursive = (float(value) for value in configured)
+        total = direct + recursive
+        if total <= 0.0:
+            raise ValueError("blend_weights must have a positive total.")
+        return cls(direct / total, recursive / total, strategy="fixed")
+
+    @classmethod
     def from_args(cls, args: Any) -> "BlendWeights":
         strategy = str(getattr(args, "blend_weight_strategy", "fixed") or "fixed").lower()
         if strategy == "fixed":
-            direct = float(getattr(args, "blend_direct_weight", 0.5))
-            return cls(direct, 1.0 - direct, strategy="fixed")
+            return cls._fixed_from_args(args)
         if strategy != "ridge_stacking":
             raise ValueError(f"Unsupported blend_weight_strategy='{strategy}'.")
 
@@ -63,6 +73,14 @@ class BlendWeights:
             strategy="ridge_stacking",
             calibration_windows=int(resolved.get("calibration_windows", 0)),
         )
+
+    @classmethod
+    def for_backtest(cls, args: Any) -> "BlendWeights":
+        """解析滑窗回测权重；ridge 学习前使用配置中的临时固定权重。"""
+        strategy = str(getattr(args, "blend_weight_strategy", "fixed") or "fixed").lower()
+        if strategy == "ridge_stacking" and getattr(args, "resolved_blend_weights", None) is None:
+            return cls._fixed_from_args(args)
+        return cls.from_args(args)
 
     def combine(self, direct_output, recursive_output, horizon: int) -> np.ndarray:
         direct = require_exact_vector_output(direct_output, horizon, label="blend direct")

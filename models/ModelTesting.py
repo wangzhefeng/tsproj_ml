@@ -101,6 +101,33 @@ def _load_plot_overlay_df(args, log_prefix: str) -> Optional[pd.DataFrame]:
 
 
 class Tester:
+    @staticmethod
+    def _attach_window_target_scaler(
+        args,
+        target_output_features,
+        target_scaler,
+        target_transform,
+    ):
+        if target_scaler is None:
+            return list(target_output_features)
+        try:
+            pred_target_columns = target_scaler.get_prediction_target_columns(
+                args.pred_method,
+                target_output_features,
+                direct_strategy=str(getattr(args, "direct_strategy", "multioutput")),
+            )
+        except TypeError:
+            # 测试/旧 adapter 的兼容签名；生产 TargetScaler 支持 direct_strategy。
+            pred_target_columns = target_scaler.get_prediction_target_columns(
+                args.pred_method,
+                target_output_features,
+            )
+        target_transform.attach_fitted_target_scaler(
+            target_scaler,
+            target_columns=pred_target_columns,
+        )
+        return pred_target_columns
+
     
     def __init__(self, args, log_prefix: str, horizon: int, window_len: int):
         self.args = args
@@ -300,21 +327,11 @@ class Tester:
             target_scaler=target_scaler,
             categorical_features=categorical_features,
         )
-        try:
-            pred_target_columns = target_scaler_testing.get_prediction_target_columns(
-                args.pred_method,
-                target_output_features,
-                direct_strategy=str(getattr(args, "direct_strategy", "multioutput")),
-            )
-        except TypeError:
-            # 测试/旧 adapter 的兼容签名；生产 TargetScaler 支持 direct_strategy。
-            pred_target_columns = target_scaler_testing.get_prediction_target_columns(
-                args.pred_method,
-                target_output_features,
-            )
-        target_transform.attach_fitted_target_scaler(
-            target_scaler_testing,
-            target_columns=pred_target_columns,
+        Tester._attach_window_target_scaler(
+            args=args,
+            target_output_features=target_output_features,
+            target_scaler=target_scaler_testing,
+            target_transform=target_transform,
         )
         # 多变量递归辅助预测器包装（滑窗测试段同样需要 aux 轨迹回填）
         from models.AuxiliaryForecaster import maybe_build_auxiliary_bundle

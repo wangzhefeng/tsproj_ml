@@ -503,6 +503,8 @@ class Model:
             )
         payload_args = copy.deepcopy(self.args)
         apply_window_parallel_budget(payload_args, window_workers)
+        if self.resolved_strategy.spec.rollout == RolloutFamily.BLEND:
+            payload_args.resolved_blend_weights = BlendWeights.for_backtest(payload_args)
         payloads = [
             {
                 "args": payload_args,

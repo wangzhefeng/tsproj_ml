@@ -358,58 +358,36 @@ class EssStrategyPipelineTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "forecast_steps"):
             self._build(validate_only=True)
 
-    def test_v2_model_configs_are_pointwise_with_safe_lags(self):
+    def test_c5_model_matrix_is_testing_only_and_selects_joint_columns(self):
         root = Path(__file__).resolve().parent.parent / "config/aidc_ess_selfuse_load"
-        seen = set()
+        filenames = (
+            "lgbm_usmd_prob_mean_conformal.yaml",
+            "lgbm_usmd_mean_prob_horizon_conformal.yaml",
+            "lgbm_usmdp_prob_mean_conformal.yaml",
+            "lgbm_usmdr_prob_mean_conformal.yaml",
+            "lgbm_usmr_prob_mean_conformal.yaml",
+        )
         for route in ("A", "B"):
-            for group in ("c0", "c1", "c2", "c3"):
-                path = root / f"route_{route}/add_strategy_features/lgbm_usmdp_mean_{group}.yaml"
+            for filename in filenames:
+                path = root / f"route_{route}/add_strategy_features/{filename}"
                 loaded = yaml.safe_load(path.read_text(encoding="utf-8"))
                 overrides = loaded["overrides"]
+                self.assertTrue(overrides["runtime"]["is_testing"])
+                self.assertFalse(overrides["runtime"]["is_forecasting"])
+                self.assertEqual(overrides["model_strategy"]["predict_type"], "quantile")
+                self.assertTrue(overrides["model_strategy"]["enable_conformal_calibration"])
+                self.assertEqual(overrides["preprocessing"]["decomposition_method"], "none")
+                columns = overrides["exogenous_features"]["custom_features"][0][
+                    "columns"
+                ]
                 self.assertEqual(
-                    overrides["model_strategy"]["pred_method"],
-                    "univariate-single-multistep-direct-pointwise",
+                    columns[-len(JOINT_CLUSTER_FEATURE_COLUMNS) :],
+                    JOINT_CLUSTER_FEATURE_COLUMNS,
                 )
-                self.assertEqual(overrides["model_strategy"]["predict_type"], "point")
-                self.assertTrue(overrides["time_lag_features"]["enable_lags_features"])
-                self.assertTrue(overrides["model_strategy"]["align_direct_features_to_target"])
-                self.assertEqual(overrides["time_lag_features"]["lags"], ESS_SAFE_LAGS)
-                key = (
-                    overrides["output"]["scenario_subpath"],
-                    overrides["output"]["setting_suffix"],
-                )
-                self.assertNotIn(key, seen)
-                seen.add(key)
-
-    def test_c5_joint_configs_are_testing_only_and_select_joint_columns(self):
-        root = Path(__file__).resolve().parent.parent / "config/aidc_ess_selfuse_load"
-        for route in ("A", "B"):
-            path = (
-                root
-                / f"route_{route}/add_strategy_features/lgbm_usmdp_mean_c5_joint.yaml"
-            )
-            loaded = yaml.safe_load(path.read_text(encoding="utf-8"))
-            overrides = loaded["overrides"]
-            self.assertEqual(
-                overrides["output"]["setting_suffix"], "-v2-c5-joint"
-            )
-            self.assertTrue(overrides["runtime"]["is_testing"])
-            self.assertFalse(overrides["runtime"]["is_forecasting"])
-            self.assertEqual(
-                overrides["model_strategy"]["pred_method"],
-                "univariate-single-multistep-direct-pointwise",
-            )
-            self.assertEqual(overrides["model_strategy"]["predict_type"], "point")
-            self.assertTrue(overrides["time_lag_features"]["enable_lags_features"])
-            self.assertTrue(overrides["model_strategy"]["align_direct_features_to_target"])
-            self.assertEqual(overrides["time_lag_features"]["lags"], ESS_SAFE_LAGS)
-            columns = overrides["exogenous_features"]["custom_features"][0][
-                "columns"
-            ]
-            self.assertEqual(
-                columns[-len(JOINT_CLUSTER_FEATURE_COLUMNS) :],
-                JOINT_CLUSTER_FEATURE_COLUMNS,
-            )
+                if "usmdp" in filename:
+                    self.assertTrue(overrides["time_lag_features"]["enable_lags_features"])
+                    self.assertTrue(overrides["model_strategy"]["align_direct_features_to_target"])
+                    self.assertEqual(overrides["time_lag_features"]["lags"], ESS_SAFE_LAGS)
 
     def test_validate_only_writes_nothing_and_overwrite_requires_force(self):
         output_dir = self.data_root / "forecasting_data" / "strategy_features"

@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""ESS quantile 配置矩阵契约。"""
+"""ESS 模型配置矩阵契约。"""
 import unittest
 from pathlib import Path
 
@@ -14,12 +14,19 @@ WEATHER_COLS = [
 ]
 METHODS = ["usmd", "usmdp", "usmdr", "usmr"]
 USMDP_SAFE_LAGS = [288, 576, 864, 1152, 1440, 1728, 2016]
+STRATEGY_FILES = {
+    "lgbm_usmd_prob_mean_conformal.yaml": "univariate-single-multistep-direct",
+    "lgbm_usmd_mean_prob_horizon_conformal.yaml": "univariate-single-multistep-direct",
+    "lgbm_usmdp_prob_mean_conformal.yaml": "univariate-single-multistep-direct-pointwise",
+    "lgbm_usmdr_prob_mean_conformal.yaml": "univariate-single-multistep-direct-recursive",
+    "lgbm_usmr_prob_mean_conformal.yaml": "univariate-single-multistep-recursive",
+}
 
 
 class EssQuantileConfigMatrixTest(unittest.TestCase):
     def test_all_model_configs_use_five_test_windows(self):
         config_paths = sorted(CONFIG_ROOT.glob("route_*/**/*.yaml"))
-        self.assertEqual(len(config_paths), 88)
+        self.assertEqual(len(config_paths), 82)
 
         for path in config_paths:
             cfg = load_yaml_config(str(path))
@@ -37,6 +44,7 @@ class EssQuantileConfigMatrixTest(unittest.TestCase):
             "add_exogenous_weather_date": 4,
             "add_exogenous_plan_strategy": 4,
             "add_exogenous_weather_date_plan_strategy": 4,
+            "add_strategy_features": 5,
         }
         for route in ("A", "B"):
             for group, count in expected_counts.items():
@@ -60,6 +68,9 @@ class EssQuantileConfigMatrixTest(unittest.TestCase):
                 self.assertEqual(mstl.decomposition_method, "mstl")
                 self.assertEqual(stl.decomposition_periods, [288])
                 self.assertEqual(mstl.decomposition_periods, [288, 2016])
+                self.assertFalse(linear.enable_datetime_features)
+                self.assertFalse(stl.enable_datetime_features)
+                self.assertFalse(mstl.enable_datetime_features)
                 self.assertEqual(linear.scenario_subpath, f"aidc_ess_selfuse_load/route_{route}/add_decomposition")
                 self.assertEqual(stl.scenario_subpath, f"aidc_ess_selfuse_load/route_{route}/add_decomposition")
                 self.assertEqual(mstl.scenario_subpath, f"aidc_ess_selfuse_load/route_{route}/add_decomposition")
@@ -99,7 +110,11 @@ class EssQuantileConfigMatrixTest(unittest.TestCase):
                     self.assertFalse(cfg.enable_ensemble)
                     if group == "add_exogenous_weather_date":
                         self.assertEqual(cfg.custom_features, [])
-                        self.assertEqual(cfg.decomposition_method, "none")
+                    self.assertEqual(cfg.decomposition_method, "none")
+                    self.assertEqual(
+                        cfg.scenario_subpath,
+                        f"aidc_ess_selfuse_load/route_{route}/{group}",
+                    )
                     self.assertTrue((Path(cfg.data_dir) / cfg.weather_history_path).exists())
                     self.assertTrue((Path(cfg.data_dir) / cfg.weather_backtest_path).exists())
                     self.assertTrue((Path(cfg.data_dir) / cfg.weather_future_path).exists())
@@ -124,8 +139,73 @@ class EssQuantileConfigMatrixTest(unittest.TestCase):
                     self.assertEqual(source.get("available_at_col"), "available_at")
                     self.assertTrue((Path(cfg.data_dir) / source["history_path"]).exists())
                     self.assertTrue((Path(cfg.data_dir) / source["future_path"]).exists())
+                    if group == "add_exogenous_plan_strategy":
+                        self.assertFalse(cfg.enable_datetime_features)
                     if method in {"usmd", "usmdr"}:
                         self.assertTrue(cfg.use_horizon_exogenous_for_direct)
+
+    def test_endogenous_actual_strategy_is_point_only_without_decomposition(self):
+        expected_files = {
+            "lgbm_msbr_mean_pcs.yaml",
+            "lgbm_msmd_mean_pcs.yaml",
+            "lgbm_msmd_mean_pcs_horizon.yaml",
+            "lgbm_msmdr_mean_pcs.yaml",
+            "lgbm_msmdr_mean_pcs_aux.yaml",
+            "lgbm_msmr_mean_pcs.yaml",
+            "lgbm_msmr_mean_pcs_aux.yaml",
+        }
+        for route in ("A", "B"):
+            folder = CONFIG_ROOT / f"route_{route}" / "add_endogenous_actual_strategy"
+            paths = sorted(folder.glob("*.yaml"))
+            self.assertEqual({path.name for path in paths}, expected_files)
+            for path in paths:
+                cfg = load_yaml_config(str(path))
+                self.assertEqual(cfg.predict_type, "point", path)
+                self.assertEqual(cfg.decomposition_method, "none", path)
+                self.assertFalse(cfg.enable_ensemble, path)
+                self.assertEqual(
+                    cfg.scenario_subpath,
+                    f"aidc_ess_selfuse_load/route_{route}/add_endogenous_actual_strategy",
+                    path,
+                )
+                if cfg.endogenous_backfill_strategy == "auxiliary":
+                    self.assertIn(cfg.pred_method, {
+                        "multivariate-single-multistep-recursive",
+                        "multivariate-single-multistep-direct-recursive",
+                    })
+
+    def test_strategy_features_use_c5_on_five_lightgbm_methods(self):
+        for route in ("A", "B"):
+            folder = CONFIG_ROOT / f"route_{route}" / "add_strategy_features"
+            paths = sorted(folder.glob("*.yaml"))
+            self.assertEqual({path.name for path in paths}, set(STRATEGY_FILES))
+            settings = set()
+            for path in paths:
+                cfg = load_yaml_config(str(path))
+                self.assertEqual(cfg.pred_method, STRATEGY_FILES[path.name], path)
+                self.assertEqual(cfg.predict_type, "quantile", path)
+                self.assertTrue(cfg.enable_conformal_calibration, path)
+                self.assertEqual(cfg.decomposition_method, "none", path)
+                self.assertFalse(cfg.enable_datetime_features, path)
+                self.assertFalse(cfg.enable_date_features, path)
+                self.assertFalse(cfg.enable_weather_features, path)
+                self.assertFalse(cfg.enable_ensemble, path)
+                self.assertTrue(cfg.is_testing, path)
+                self.assertFalse(cfg.is_forecasting, path)
+                self.assertEqual(len(cfg.custom_features), 1, path)
+                source = cfg.custom_features[0]
+                self.assertEqual(source.get("name"), "strategy_features_v2_c5_joint", path)
+                self.assertEqual(len(source.get("columns", [])), 50, path)
+                settings.add((cfg.pred_method, cfg.direct_strategy, cfg.setting_suffix))
+                if path.name == "lgbm_usmd_mean_prob_horizon_conformal.yaml":
+                    self.assertEqual(cfg.direct_strategy, "horizon_feature", path)
+                    self.assertEqual(cfg.setting_suffix, "-horizon-conformal-strategy-c5", path)
+                else:
+                    self.assertEqual(cfg.setting_suffix, "-conformal-strategy-c5", path)
+                if "usmdp" in path.name:
+                    self.assertTrue(cfg.align_direct_features_to_target, path)
+                    self.assertEqual(cfg.lags, USMDP_SAFE_LAGS, path)
+            self.assertEqual(len(settings), 5)
 
     def test_usmdp_explicitly_enables_safe_lags(self):
         for route in ("A", "B"):

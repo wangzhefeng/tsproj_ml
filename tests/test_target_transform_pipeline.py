@@ -9,6 +9,7 @@ import pandas as pd
 
 from features.TargetTransformation import TargetTransformPipeline
 from models.ModelForecasting import Forecaster
+from models.ModelTesting import Tester
 
 
 class TargetTransformPipelineTest(unittest.TestCase):
@@ -91,6 +92,24 @@ class TargetTransformPipelineTest(unittest.TestCase):
                 frame["time"],
                 target_columns=["y"],
             )
+
+    def test_window_without_target_scaler_keeps_pipeline_default(self):
+        args = self._args()
+        args.target_calendar_normalization = "none"
+        args.decomposition_method = "none"
+        args.scale_target = False
+        pipeline = TargetTransformPipeline.from_args(args)
+        default_scaler = pipeline.target_scaler
+
+        target_columns = Tester._attach_window_target_scaler(
+            args=args,
+            target_output_features=["y_shift_0"],
+            target_scaler=None,
+            target_transform=pipeline,
+        )
+
+        self.assertEqual(target_columns, ["y_shift_0"])
+        self.assertIs(pipeline.target_scaler, default_scaler)
 
     def test_forecaster_restores_point_and_all_quantiles_through_one_pipeline(self):
         args = self._args()

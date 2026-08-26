@@ -20,10 +20,33 @@ from models.multistep.weights import BlendWeights
 
 
 class BlendWeightsContractTest(unittest.TestCase):
+    def test_fixed_weights_follow_configured_pair(self):
+        args = SimpleNamespace(
+            blend_weight_strategy="fixed",
+            blend_weights=[0.25, 0.75],
+        )
+
+        weights = BlendWeights.from_args(args)
+
+        self.assertEqual(weights.direct, 0.25)
+        self.assertEqual(weights.recursive, 0.75)
+
     def test_ridge_weights_must_be_resolved_before_training(self):
         args = SimpleNamespace(blend_weight_strategy="ridge_stacking")
         with self.assertRaisesRegex(ValueError, "resolved_blend_weights"):
             BlendWeights.from_args(args)
+
+    def test_ridge_backtest_uses_configured_provisional_weights(self):
+        args = SimpleNamespace(
+            blend_weight_strategy="ridge_stacking",
+            blend_weights=[0.4, 0.6],
+        )
+
+        weights = BlendWeights.for_backtest(args)
+
+        self.assertEqual(weights.strategy, "fixed")
+        self.assertEqual(weights.direct, 0.4)
+        self.assertEqual(weights.recursive, 0.6)
 
     def test_combine_requires_two_complete_horizon_outputs(self):
         weights = BlendWeights(0.25, 0.75, strategy="fixed")

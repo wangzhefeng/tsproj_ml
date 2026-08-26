@@ -10,7 +10,7 @@ overrides:
     horizon_mode: fixed_steps
     train_window_length: null
     is_testing: true
-    is_forecasting: true   # 2026-08 未来气象已补齐（前半月实测+去年同期仿真）
+    is_forecasting: false   # 2026-08 未来气象已补齐（前半月实测+去年同期仿真）
     forecast_mode: forecast  # 严格预测：仅使用预测原点可获得的气象
     history_length: 11   # window=9 硬校验要求 history>window；11 → 3 个滑窗与 window_lenth_8/10 可比
     predict_steps: 1    # 月频预测 1 步 = 1 个月

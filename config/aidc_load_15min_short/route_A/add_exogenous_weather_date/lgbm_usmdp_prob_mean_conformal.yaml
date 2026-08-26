@@ -9,7 +9,7 @@ overrides:
     train_window_length: null
     forecast_mode: forecast
     is_testing: true
-    is_forecasting: true
+    is_forecasting: false
     history_length: 16
     predict_steps: 16
     window_length: 15

@@ -9,7 +9,7 @@ overrides:
     train_window_length: 120  # 固定训练天数，保持旧配置有效训练长度
     forecast_mode: forecast
     is_testing: true
-    is_forecasting: true
+    is_forecasting: false
     history_length: 304
     predict_steps: 30
     window_length: 150

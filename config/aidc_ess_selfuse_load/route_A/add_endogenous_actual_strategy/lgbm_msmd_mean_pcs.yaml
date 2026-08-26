@@ -2,7 +2,7 @@
 base_config: config.multivariate_config
 overrides:
   output:
-    scenario_subpath: aidc_ess_selfuse_load/route_A/add_endogenous
+    scenario_subpath: aidc_ess_selfuse_load/route_A/add_endogenous_actual_strategy
     plot_overlay_path: forecasting_data/A_ESS_PCS_merged_5min_20251001_20260728.csv
     plot_overlay_col: pcs_power
   runtime:
@@ -10,7 +10,7 @@ overrides:
     train_window_length: null
     forecast_mode: forecast
     is_testing: true
-    is_forecasting: true
+    is_forecasting: false
     history_length: 34
     predict_steps: 288
     window_length: 30
@@ -89,7 +89,7 @@ overrides:
     percentile: 5.0
   preprocessing:
     target_calendar_normalization: none
-    decomposition_method: linear  # 窗口内线性目标分解（与 scale_target 互斥）
+    decomposition_method: none  # 窗口内线性目标分解（与 scale_target 互斥）
   performance:
     window_parallel_workers: 8
     multi_output_n_jobs: 8

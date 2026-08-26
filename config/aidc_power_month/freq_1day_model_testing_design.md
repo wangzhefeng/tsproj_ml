@@ -70,13 +70,13 @@ weather_future_source: proxy
 | Recursive/Pointwise 训练 | source 时间戳后移 1 天，行 t 用 `state(t-1)` | 预测 t 时只能看到 t-1 日末状态 |
 | CV/final future | 取 cutoff 前最后状态冻结到全 horizon | 与训练语义一致 |
 
-### 2.4 目标分解（add_decomposition / add_load_state 组）
+### 2.4 目标分解（仅 add_decomposition 组）
 
-`decomposition_method: linear | stl`（STL 周期 7）。因果边界：
+`decomposition_method: linear | stl`（另含 quadratic/damped 趋势外推变体，STL 周期 7）。`add_load_state` 明确保持 `decomposition_method: none`，与 weather-date 基线只差状态特征。因果边界：
 
 - 每个回测 fold **只用该 fold 的训练段**拟合分解器，测试段 y 保持原始电平；
 - 最终预测才在全部 304 天上拟合；
-- 与 `scale_target`、Conformal、USBR blend 互斥（配置层面已遵守）。
+- decomposition 组为单独归因而关闭 Conformal；load_state 组继承 weather-date 的 Conformal，不再混入目标分解。
 
 ---
 
@@ -111,7 +111,7 @@ weather_future_source: proxy
 | USMDP | **无 lag**（`enable_lags_features: false`，日历/天气逐点模板）；rolling/diff 关闭 |
 | USMR | lag + 日历 + 天气 + state（无 rolling/diff，递归逐步构造） |
 | USBR | Direct（shift_1..H）+ Recursive（shift_0）双子模型共享 X，**天气组降级为无天气 control**（共享 X 无法同时满足两子模型的外生时点） |
-| ST（USMR） | wrapper 只消费 lag 与 dt_day_of_week，天气/state 列注入但不生效——在 weather/load_state 组中是 no-op 对照 |
+| ST（USMR） | wrapper 只消费 lag 与 dt_day_of_week；保留在 baseline/decomposition 组，不进入 weather/load_state 实验组 |
 
 ---
 
@@ -123,8 +123,8 @@ weather_future_source: proxy
 |---|---:|---|---|
 | `baseline` | 10 | 6 个 quantile+conformal（lgbm usmd/usmdr/usmr/usmdp/usbr、horizon-feature usmd）+ 4 个 point（ridge/enet/lasso usmd、st usmr） | 无天气基础对照，含概率区间主链（qr 已移除） |
 | `add_exogenous_weather_date` | 8 | baseline 同构 + 严格天气信息集；USBR/st 不进入（no-op control 不混入实验组，对照走 baseline 同名配置） | 天气消融实验组（qr 已移除） |
-| `add_decomposition` | 16 | 8 个模型/方法 × {linear, STL7, quadratic, damped}，天气开启、conformal 关闭 | 目标分解消融实验组（qr 已移除） |
-| `add_load_state` | 32 | decomposition 同构 + 15 列 origin-frozen 状态 | 负荷状态消融实验组（qr 已移除） |
+| `add_decomposition` | 36 | 9 个模型 × {linear, STL7, quadratic, damped}，天气开启、conformal 关闭 | 目标分解消融实验组（qr 已移除） |
+| `add_load_state` | 8 | weather-date 同名配置 + 15 列 origin-frozen 状态；decomposition=none，概率配置保留 conformal | 负荷状态的独立消融实验组（qr/st/USBR 不进入） |
 
 ### 4.2 模型与方法选型理由
 
@@ -132,17 +132,16 @@ weather_future_source: proxy
 |---|---|---|
 | LightGBM | USMD/USMDR/USMR/USMDP/USBR + horizon-feature | 主力非线性模型；五种方法覆盖 direct/recursive/blend 全谱系对比 |
 | Ridge/ElasticNet/Lasso | USMD point + `scale_features: true` | 线性基线；特征量纲差异大必须标准化；Lasso 兼做特征选择 |
-| QuantileRegressor | USMD quantile + 标准化 + 关闭时间衰减 | 线性分位数对照；多输出 quantile 不透传 sample_weight |
 | SeasonalTemplate | USMR point | NNLS 学 lag 权重的季节模板，是 Naive 的可学习推广；单输出递归避免多输出 wrapper 不兼容 |
 
 ### 4.3 训练增强与约束
 
 | 配置 | 取值 | 为什么 |
 |---|---|---|
-| `quantile_monotone: true` | 全部 84 个 quantile 配置 | 消除 q50 > q90 的 quantile crossing（月频实测曾大量出现） |
+| `quantile_monotone: true` | A/B 合计 72 个 quantile 配置 | 消除 q50 > q90 的 quantile crossing（月频实测曾大量出现） |
 | 时间衰减样本权重 | halflife 60 天；多输出 quantile / USBR 显式关闭 | 近期样本更重要；不支持的路径不得"假启用" |
-| Conformal（CQR） | baseline/weather 概率组开启，取最近 5 窗 score | 6 fold × ~30 天 ≈ 150 个校准分，超过 min_scores=30 可真实生效 |
-| 分解 × conformal | 硬互斥，decomposition 组全部关闭 | 框架约束 |
+| Conformal（CQR） | baseline/weather/load_state 概率组开启，取最近 5 窗 score | 6 fold × ~30 天 ≈ 150 个校准分，超过 min_scores=30 可真实生效；各组保持可比 |
+| 分解实验隔离 | decomposition 组全部关闭 conformal | 避免把分解效果与区间校准一次改变混在一起 |
 | 并行 | `window_parallel_workers: 8`，窗口内强制单线程 | 6 fold 并行不超额订阅（本机 8 核） |
 
 ---
@@ -163,5 +162,5 @@ weather_future_source: proxy
 
 - 自然月版本（124 配置）已完成 P0/P1 修复（严格天气、目标日外生对齐、origin-frozen 状态、quantile 单调化、setting 命名），代表链路冒烟通过，但**全量回测尚未运行**，`results_test` 下暂无正式结果。
 - horizon=1 的月频实验已证明 LightGBM 类在小样本上劣于 naive；日频 120 天训练窗样本量充足，结论可能不同，以回测为准。
-- ST 在 weather/load_state 组是 no-op 对照，汇总时不要计入"天气/状态模型"。
+- weather/load_state 组只保留真实消费天气/状态的 8 个模型；ST/USBR 对照统一读取 baseline 同名配置。
 - 概率区间是**逐日**的；逐日 P10/P90 直接求和不等于月总量区间（日误差相关），月总量区间需另行评估。

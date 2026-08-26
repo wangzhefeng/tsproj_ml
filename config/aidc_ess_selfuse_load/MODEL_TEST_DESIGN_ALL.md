@@ -1,30 +1,29 @@
 # ESS 储能站用电预测：模型测试设计总览
 
-> 覆盖 `config/aidc_ess_selfuse_load` 下 A/B 两路共 94 个模型配置（忽略 `ensemble`、`params_tuning`）。A/B 结构一致，本文按场景合并说明。本文描述测试设计，不代表已有有效结果；配置或数据变更后必须重跑，指标以各 setting 下的 `test_scores_df.csv` 为准。
+> 覆盖 `config/aidc_ess_selfuse_load` 下 A/B 两路共82个模型配置（每路41个）。A/B结构完全对称，本文按场景合并说明。本文描述当前测试设计，不代表已有有效结果；配置或数据变更后必须重跑，指标以各setting下的`test_scores_df.csv`为准。
 
 ## 场景矩阵
 
 | 场景 | 配置/路 | 方法 | 测试目标 |
 |---|---:|---|---|
 | baseline | 5 | USBR/USMD/USMDP/USMDR/USMR | 概率预测方法基线 |
-| add_decomposition | 8 | USMD/USMDP/USMDR/USMR × 2 | linear 与 STL(288) 分解 |
-| tuning | 7 | USMD/USMDP | horizon、CQR、衰减、窗口等增强 |
-| add_endogenous | 10 | MSBR/MSMD/MSMDR/MSMR | 实际 PCS 内生变量及回填策略 |
+| add_decomposition | 12 | USMD/USMDP/USMDR/USMR × 3 | linear、STL(288)、MSTL(288,2016) 分解 |
+| add_endogenous_actual_strategy | 7 | MSBR/MSMD/MSMDR/MSMR | 实际PCS内生变量、horizon与auxiliary；仅point |
 | add_exogenous_weather_date | 4 | USMD/USMDP/USMDR/USMR | 严格天气 + date_type + datetime |
 | add_exogenous_plan_strategy | 4 | USMD/USMDP/USMDR/USMR | 显式未来 PCS 计划 |
-| add_exogenous_all | 4 | USMD/USMDP/USMDR/USMR | 严格天气 + 日期 + PCS 计划 |
-| add_strategy_features | 5 | USMDP | C0–C5 因果策略特征消融 |
+| add_exogenous_weather_date_plan_strategy | 4 | USMD/USMDP/USMDR/USMR | 严格天气 + 日期 + PCS计划；无分解 |
+| add_strategy_features | 5 | USMD/USMD-horizon/USMDP/USMDR/USMR | baseline + C5完整策略特征；quantile+CQR |
 
 ## 共用口径
 
 - 数据：A/B 站用电清洗数据，5min 粒度，每日 288 点；多变量组使用 ESS+PCS 合并数据。
-- 默认滑窗：34 天评估历史、30 天训练窗、预测 288 点、5 窗；`window_length=14` 的 tuning 配置使用 18 天评估历史，同样保持 5 窗。
-- 本轮 baseline/add_decomposition/三类外生组只维护 quantile q10/q50/q90，`quantile_monotone=true`，不新增 point；既有 tuning、add_endogenous、add_strategy_features 中的 point 实验保持不变。
+- 所有配置：34天评估历史、30天总窗口、预测288点、5窗；每窗实际训练29天、测试1天。
+- quantile配置共68个，point配置共14个；point只存在于`add_endogenous_actual_strategy`。
 - 评估：窗口 MAPE 中位数为主，同时报告 MAE/RMSE、有效点比例和昨日同时刻 Naive。
 - Gate：A/B 同向且 median ΔMAPE ≥ 0.005 才判定有效。
-- USMDP 不生成框架目标 lag，配置显式 `enable_lags_features=false`、`lags=[]`。
+- USMDP统一使用self-lag safe-lag：`enable_lags_features=true`、`align_direct_features_to_target=true`、`min(lags)>=horizon`。
 - USMDR 使用 `block_size=96`，288步预测由3个block组成；每个block只训练/输出96步并把预测回填到下一block的lag状态。
-- 多输出 quantile 不透传时间衰减 sample weight，运行时 WARNING 后跳过。
+- 所有配置`is_testing=true`、`is_forecasting=false`，只生成滑窗测试结果，不训练/保存final forecast。
 
 ## 1. Baseline
 
@@ -33,33 +32,30 @@
 | 配置 | 方法 | 目标处理 |
 |---|---|---|
 | `lgbm_usbr_prob_mean.yaml` | USBR | none（blend 不支持分解） |
-| `lgbm_usmd_prob_mean.yaml` | USMD | linear |
-| `lgbm_usmdp_prob_mean.yaml` | USMDP | linear |
-| `lgbm_usmdr_prob_mean.yaml` | USMDR | linear |
-| `lgbm_usmr_prob_mean.yaml` | USMR | linear |
+| `lgbm_usmd_prob_mean.yaml` | USMD | none |
+| `lgbm_usmdp_prob_mean.yaml` | USMDP | none |
+| `lgbm_usmdr_prob_mean.yaml` | USMDR | none |
+| `lgbm_usmr_prob_mean.yaml` | USMR | none |
 
-USBR 与其他方法的横向差异同时包含预测结构和目标分解差异，因此严格分解对照由下一组承担。
+baseline关闭datetime/date/weather/custom和`ModelEnsemble`，只使用目标self-lag及方法允许的目标rolling/diff。USBR是Direct+Recursive多步策略，不是模型融合。
 
 ## 2. Add decomposition
 
-四种非 blend 方法各测试两种分解：
+四种非blend方法各测试三种分解，且全部关闭datetime，避免分解消融混入时间外生特征：
 
 | 文件模式 | 分解 | 周期 |
 |---|---|---:|
 | `lgbm_<method>_prob_mean_decomp_linear.yaml` | linear trend | — |
 | `lgbm_<method>_prob_mean_decomp_stl288.yaml` | robust STL | 288（1 天） |
+| `lgbm_<method>_prob_mean_decomp_mstl288-2016.yaml` | robust MSTL | 288、2016（1 天、1 周） |
 
-方法为 USMD/USMDP/USMDR/USMR；每路 8 个，setting suffix 分别为 `-decomp-linear`、`-decomp-stl288`。USBR 因 blend 与分解硬性不兼容，不进入本组。
+方法为USMD/USMDP/USMDR/USMR；每路12个，setting suffix分别为`-decomp-linear`、`-decomp-stl288`、`-decomp-mstl288-2016`。USBR因blend与分解硬性不兼容，不进入本组。
 
-## 3. Tuning
+## 3. Actual PCS endogenous
 
-保留 7 个单因素增强：USMD horizon feature、USMD CQR、USMDP decay14/30、历史命名为 21/14 与 30/14 的窗口配置、USMDP rolllag。为统一加速测试，两个 `window_length=14` 配置当前均使用 `history_length=18`，得到 5 个滑窗；文件名和 setting suffix 只保留实验谱系标识，不再表示当前 history_length。rolllag 仍作为独立诊断项保留。
+目标`ess_power`，附加内生变量`pcs_power`；每路保留MSBR、MSMD、MSMD-horizon、MSMDR persistence/auxiliary、MSMR persistence/auxiliary共7个point配置，全部`decomposition_method=none`。auxiliary只适用于需要逐步回填的MSMR/MSMDR；MSMD/MSBR不支持用单一开关接入辅助PCS轨迹。结果路径与目录同名：`add_endogenous_actual_strategy`。
 
-## 4. Actual PCS endogenous
-
-目标 `ess_power`，附加内生变量 `pcs_power`；比较 MSBR/MSMD/MSMDR/MSMR、horizon feature、persistence 与 auxiliary 回填、quantile+CQR。目标日真实 PCS 不作为未来已知输入。
-
-## 5. Weather + date
+## 4. Weather + date
 
 - 日期：开启 `date_type`，按 categorical 处理；同时保留 datetime。
 - 天气：7 列派生量 `rt_ssr/rt_tt2/cal_rh/rt_ws10/tt2_mean_3h/tt2_diff_1h/ssr_mean_3h`。
@@ -67,7 +63,7 @@ USBR 与其他方法的横向差异同时包含预测结构和目标分解差异
 - 来源契约：history=`actual`、backtest=`forecast`、future=`forecast`；backtest/future 带 `source_ts/available_at`。每个CV fold要求 `available_at <= fold_origin` 且精确覆盖288个目标点。
 - 方法对齐：USMD/USMDR启用horizon-aware外生，但第h个输出模型只消费第h个目标时刻外生；USMR逐步使用future weather；USMDP按未来时间戳逐点使用。
 
-## 6. PCS plan
+## 5. PCS plan
 
 PCS 计划走通用 `custom_features` 注册表，而非 weather loader：历史/未来列同名，无 `pred_*→rt_*` 映射。契约为：
 
@@ -80,27 +76,29 @@ available_at_col: available_at
 
 当前计划数据契约声明目标日完整计划在前一日23:55可用；缺目标点或发布时间晚于fold origin直接失败。USMD/USMDR按输出horizon使用计划；USMR逐步传入custom future；USMDP逐时间戳使用。
 
-## 7. Weather + date + plan
+本组关闭datetime，只增加显式PCS计划；当前仍使用linear分解。
 
-组合严格天气、categorical `date_type`、datetime 和显式 `pcs_plan`。解读时分别与 baseline、weather+date、plan 做同路同方法比较，判断联合增益与冗余。
+## 6. Weather + date + plan
+
+组合严格天气、categorical`date_type`、datetime和显式`pcs_plan`，全部`decomposition_method=none`。结果路径与目录同名：`add_exogenous_weather_date_plan_strategy`。
 
 USBR 不进入外生组：Direct/Recursive 子模型共享 X，当前不能同时表达 Direct 的 horizon-aware 外生轨迹和 Recursive 的逐步外生量；baseline USBR 作为 no-exogenous control。
 
-## 8. Strategy features C0–C5
+## 7. Strategy features C5 model matrix
 
-| 层级 | 新增信息 |
-|---|---|
-| C0 | datetime 基线，无框架 lag |
-| C1 | ESS/PCS 日滞后、上一完整调度周期摘要 |
-| C2 | 当前计划与计划周期画像 |
-| C3 | 相似日、稳健近期模板、novelty 与 gate |
-| C5 | D−1 联合聚类 one-hot/距离/rare/ready |
+策略特征数据仍按C1→C2→C3→C5累积构建，但模型配置只消费C5完整50列，不再保留C0/C1/C2/C3阶段性YAML。每路配置为：
 
-目标日 D 只允许 D 日完整计划和 D−1 及以前的 ESS/实际 PCS；C5 固定 reference 到 2026-06-27，仅 testing，不做 final forecasting。
+- `lgbm_usmd_prob_mean_conformal.yaml`
+- `lgbm_usmd_mean_prob_horizon_conformal.yaml`
+- `lgbm_usmdp_prob_mean_conformal.yaml`
+- `lgbm_usmdr_prob_mean_conformal.yaml`
+- `lgbm_usmr_prob_mean_conformal.yaml`
+
+五个配置均以baseline为基座，追加同一C5 custom source，使用q10/q50/q90+CQR、无分解、关闭datetime/date/weather/ensemble并保留目标self-lag。目标日D只允许D日完整计划和D−1及以前的ESS/实际PCS；C5固定reference到2026-06-27。
 
 ## 结果产物
 
-每个 setting 目录均包含 `test_scores_df.csv`、`cv_plot_df.csv`、`test_prediction.png`、`window_plots/`、final `prediction.csv` 与预训练模型。2026-08-23 的历史批次已完成三类外生组 A/B 共24个正式配置：每配置31个测试窗口、288步 final forecast，失败0，所有分位数满足 q10≤q50≤q90。当前配置已统一改为5窗，下次运行会覆盖同 setting 下的历史31窗测试产物。
+当前配置只生成`test_scores_df.csv`、`cv_plot_df.csv`、`test_prediction.png`、`window_plots/`及概率/残差诊断，不生成final`prediction.csv`与final预训练模型。下表是2026-08-23旧31窗+forecast口径的历史结果；当前窗口数、分解、datetime、结果路径和forecast开关均已改变，因此这些数值只作历史证据，不得用于当前配置判定。
 
 | 组 | 方法 | A median MAPE | B median MAPE |
 |---|---|---:|---:|

@@ -3,7 +3,7 @@ base_config: config.univariate_config
 overrides:
   output:
     scenario_subpath: aidc_load_15min_short/route_A/add_decomposition
-    setting_suffix: -decomp-mstl96-672
+    setting_suffix: -horizon-decomp-mstl96-672
   runtime:
     horizon_mode: fixed_steps
     train_window_length: null

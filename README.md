@@ -1,38 +1,38 @@
 # tsproj-ml
 
-基于机器学习回归器的时间序列多步预测项目。当前主链路围绕 LightGBM / XGBoost / CatBoost 构建，模型工厂层还支持 RandomForest、HistGradientBoosting、Ridge/ElasticNet/Lasso、QuantileRegressor 和 SeasonalTemplate（季节模板）；支持单变量/多变量、多步逐点 direct、direct、recursive、direct-recursive 分块和 direct+recursive 加权融合（blend）预测。
+基于机器学习回归器的时间序列多步预测项目。现役模型配置统一为 canonical schema（`schema_version: 2`），canonical 主链以预测问题、数据角色、七种标准多步策略、估计器耦合、Local/Global scope 和 point/边际 quantile 为正交维度；模型工厂支持 LightGBM、XGBoost、CatBoost、RandomForest、HistGradientBoosting、Ridge/ElasticNet/Lasso、QuantileRegressor 和 SeasonalTemplate。
 
-本文档按当前代码和当前目录整理，未使用 `docs/` 和 `logs/` 目录中的历史材料作为事实来源。目录级细节可继续查阅 `config/README.md`、`dataset/README.md`、`data_provider/README.md`、`models/README.md`、`utils/README.md` 和 `docs/production_sync.md`。
+本文档按当前代码和权威 [`docs/multistep_forecasting_redesign.md`](docs/multistep_forecasting_redesign.md) 整理；旧设计已被该文档合并取代，历史细节通过 git 溯源。目录级细节可继续查阅 `config/README.md`、`dataset/README.md`、`data_provider/README.md`、`models/README.md`、`utils/README.md` 和 `docs/production_sync.md`。
 
 ## 当前能力
 
-预测策略由 `pred_method` 控制：
+canonical strategy：
 
-| 缩写 | `pred_method` | 说明 |
-|---|---|---|
-| USMDP | `univariate-single-multistep-direct-pointwise` | 单变量，按未来时点逐点 direct 预测 |
-| USMD | `univariate-single-multistep-direct` | 单变量，一个多输出模型直接预测整个 horizon |
-| USMR | `univariate-single-multistep-recursive` | 单变量，一步模型递归回填 |
-| USMDR | `univariate-single-multistep-direct-recursive` | 单变量，按块 direct，块间递归回填 |
-| MSMD | `multivariate-single-multistep-direct` | 多变量，一个多输出模型直接预测目标 horizon |
-| MSMR | `multivariate-single-multistep-recursive` | 多变量递归预测目标，其他内生变量默认持久性回填 |
-| MSMDR | `multivariate-single-multistep-direct-recursive` | 多变量按块 direct，块间递归回填 |
-| USBR | `univariate-single-multistep-blend-direct-recursive` | 单变量，Direct+Recursive 加权融合 |
-| MSBR | `multivariate-single-multistep-blend-direct-recursive` | 多变量，Direct+Recursive 加权融合 |
+| Strategy | 推进语义 |
+|---|---|
+| Recursive | 单个一步模型逐步回填 |
+| Direct | 每个 horizon 一个独立模型 |
+| MIMO | 一个模型一次输出全部 horizon × target |
+| RecMO | 一个模型按固定块输出并块间递归 |
+| DirRec | 每个 horizon 一个模型，消费此前预测 |
+| DirMO | 每个块一个独立模型 |
+| DirRecMO | 每个块一个模型，块间递归 |
+
+point 输出固定 `(N,H,K)`，边际 quantile 固定 `(N,H,K,Q)`；BR 使用 `EnsembleSpec`，不是第八种 strategy。数据列只允许 target/observed-past/known-future/static/key/ignored 六角色，并执行严格 as-of。joint samples 与 canonical CQR 不在当前已实现范围。
 
 主要能力：
 
 - 树模型主链路：`lightgbm` / `xgboost` / `catboost`。
 - 工厂层额外支持：`randomforest` / `histgb` / `ridge` / `elasticnet` / `lasso` / `quantileregressor` / `seasonaltemplate`（共 10 类，均带别名，见 `models/ModelFactory.py`）。
-- 点预测与分位数预测：`predict_type="point"` 或 `"quantile"`（可选 `quantile_monotone` 单调化）。
-- 多输出训练策略：`multioutput`、`regressor_chain`，以及 direct 专用的逐 horizon 训练器；`direct_strategy: horizon_feature` 可把 horizon 索引作为特征将训练成本从 H× 降到 1×（仅 USMD/MSMD）。
-- 可选模型融合：`averaging`、`weighted`、`stacking`、`blending`（支持成员级 `ensemble_model_specs`）。
-- 可选预测增强：多变量内生变量 auxiliary 回填（MSMR/MSMDR）、Direct+Recursive blend（USBR/MSBR）、conformal（CQR）分位数校准。
+- canonical point 与每目标边际 quantile；quantile crossing 独立按 target 修复，recursive 使用 median path。
+- multi-target adapter：independent、RegressorChain、native capability gate；禁止静默降级。
+- `EnsembleSpec`：weighted 与无泄漏 stacking；Local/Global、K1/K2、point/quantile 正交。
+- source registry + FeatureCompiler：统一 date/weather/custom/static，输出 source lineage 与 visibility proof，observed-past 无隐式 persistence。
 - 可选数据增强、特征选择、目标/特征缩放、窗口内因果目标分解、时间衰减样本权重、自动学习率、`RandomizedSearchCV` + `TimeSeriesSplit` 调参。
 - 滑窗测试支持训练窗口异常值局部修复，测试真实值不被清洗。
-- 滑窗测试中的 `MAPE Accuracy = 1 - MAPE` 按 `eval_mask` 掩码过滤后计算（默认 `mode: percentile` 即窗口正样本 `P5`；可设 `min_value`/`max_value` 绝对上下限），近零/越界异常点不再制造失真指标；汇总指标用 median，并附季节 naive 对照列。
+- 滑窗测试中的 `MAPE Accuracy = 1 - MAPE` 按 `eval_mask` 掩码过滤后计算（默认 `mode: percentile` 即窗口正样本 `P5`；可设 `min_value`/`max_value` 绝对上下限），近零/越界异常点不再制造失真指标；汇总指标用 median，并附季节 naive 对照列。（legacy 测试链行为；canonical 结果层当前只保留 `plot_valid` 通道，掩码指标待接入。）
 - 预测输出保存历史上下文和预测绘图拼接数据，便于生产问题定位。
-- 滑窗测试图（`test_prediction.png`）按 `eval_mask` 对无效点断线显示；未来预测图（`prediction.png`）绘制原始值保证线条连续，掩码结果保留在 `prediction_plot_concat.csv` 的 `plot_value`/`plot_valid` 列。
+- 滑窗测试图（`test_prediction.png`）按 `eval_mask` 对无效点断线显示；未来预测图（`prediction.png`）绘制原始值保证线条连续，掩码结果保留在 `prediction_plot_concat.csv` 的 `plot_value`/`plot_valid` 列。（同上，legacy 行为。）
 
 ## 项目结构
 
@@ -42,16 +42,11 @@ tsproj_ml/
 ├── run.py                       # 保留的兼容入口，不作为本地直跑推荐方式
 ├── pyproject.toml               # uv 依赖定义，Python == 3.10.11
 ├── config/
-│   ├── config_sections.py       # 共享分组 dataclass 和预测策略说明
-│   ├── config_loader.py         # 无 import-time argparse 副作用的配置加载器
-│   ├── generate_configs.py      # 根据 dataset 自动检测字段并批量生成模型配置
-│   ├── univariate_config.py     # ETTm1 单变量示例配置
-│   ├── multivariate_config.py   # ETTm1 多变量示例配置
+│   ├── config_loader.py         # canonical schema strict parser（非 canonical 一律 RAISE）
 │   ├── aidc_electricity_computility/
-│   └── ETT-small/
-├── dataset/                     # ETT-small 和 AIDC electricity 数据
+│   └── <场景配置目录>/
+├── dataset/                     # ETT-small（演示数据保留）和 AIDC electricity 数据
 ├── data_provider/
-│   ├── data_loader.py           # 数据读取、时间轴构造、历史/未来切片
 │   └── outlier_handling.py      # 滑窗训练段异常处理
 ├── data_process/                # 离线/批处理脚本（不接入主流程模型代码）
 │   ├── data_aggregate.py        # 单目标时序频率聚合 CLI（配置驱动，含缺失填充注册表）
@@ -59,20 +54,18 @@ tsproj_ml/
 │   ├── outlier_process.py       # 原始负荷数据异常标记、清洗与可视化（配置驱动）
 │   └── 其余工具脚本             # decomposition/difference/impute/normalization 等，当前未被模型代码引用
 ├── docs/
+│   ├── multistep_forecasting_redesign.md
 │   └── production_sync.md       # 生产包同步边界、可迁移模块和同步记录
+├── model_forecasting/                 # canonical specs/data/features/strategies/transforms/runtime/results
 ├── features/
-│   ├── FeatureEngineering.py    # 日期时间、日期类型、天气、自定义外生、滞后、高级特征
 │   ├── FeatureScalering.py      # 特征/目标缩放与逆变换
 │   ├── TargetTransformation.py  # calendar/decomposition/scaler 有序目标变换栈
 │   ├── FeatureSelection.py      # 训练集特征选择
-│   ├── DataAugment.py           # 训练集数据增强
-│   └── feature_engineering/     # 实验性特征子包（fft/wavelet/statistical 等），未接入主流程
+│   └── DataAugment.py           # 训练集数据增强
 ├── models/
 │   ├── ModelFactory.py          # 模型工厂和模型封装（10 类回归器）
-│   ├── ModelTraining.py         # 训练、调参、分位数、融合、blend 双子模型
-│   ├── ModelTesting.py          # 滑窗测试与指标保存
-│   ├── ModelForecasting.py      # 预测上下文、executor 调度、目标恢复与结果保存
-│   ├── multistep/               # 策略目录、计划、五类 executor、panel、状态与 typed artifact
+│   ├── ModelTraining.py         # CanonicalTrainer 与 estimator helper
+│   ├── ModelForecasting.py      # CanonicalForecaster
 │   ├── ModelEnsemble.py         # 融合模型
 │   ├── AuxiliaryForecaster.py   # 非目标内生变量辅助递归预测器（auxiliary 回填）
 │   ├── ModelSaveLoad.py         # pickle 保存/加载
@@ -83,10 +76,7 @@ tsproj_ml/
 ├── tests/                       # 已纳入版本控制的 unittest 回归测试
 └── utils/
     ├── frequency.py             # pandas 频率解析
-    ├── eval_mask.py             # 评估/绘图有效点掩码
-    ├── conformal.py             # CQR 兼容入口（主实现位于 probabilistic/）
-    ├── quantile.py              # 分位数后处理兼容入口
-    ├── parallel_budget.py       # 窗口并行下的统一内部并行预算
+    ├── eval_mask.py             # 评估/绘图有效点掩码（独立工具，当前主流程未 import）
     ├── runtime_env.py           # 运行期环境变量辅助
     └── log_util.py              # 日志器
 ```
@@ -95,18 +85,15 @@ tsproj_ml/
 
 ## 核心流程
 
-`main.Model.run()` 是当前主线：
+`main.py` 读取 YAML 后调用 `build_model()`：只有 canonical `ForecastConfigSpec` 能进入 `CanonicalModel`（其余直接 `TypeError` 拒绝），不存在第二运行时。canonical 流程：
 
-1. `DataLoader.load_data()` 读取目标序列、日期外生、天气外生。
-2. `DataLoader.process_history_data()` 根据 `now_time/history_length/freq` 构造历史时间轴，并把目标列统一映射为 `y`。
-3. 单变量策略只保留 `time + y`；多变量策略保留配置中的其他内生变量。
-4. `models.multistep.resolve_strategy()` 把外部方法配置解析为唯一 `ResolvedStrategy`；`FeatureEngineer.create_features()` 按其中的 `TargetPlan` / `FeaturePlan` 生成特征和目标列。
-5. 若 `is_testing=True`，`Tester._window_test()` 做滑窗验证，可按窗口并行。
-6. 若 `is_forecasting=True`，`Trainer.train()` 按 `TrainingPlan` 用全历史训练；quantile 路径返回 `ProbabilisticModelBundle`，`Forecaster` 通过五类 executor 执行并统一返回 `ForecastDistribution`。
-7. point/quantile 经同一个 `TargetTransformPipeline` 严格逆序恢复；crossing repair、prequential/final CQR 和概率指标均在 target space 执行。
-8. 测试、唯一 `ForecastModelBundle`、预测结果分别保存到配置指定目录。
+1. `SourceRegistry` 读取显式 sources，按每个 origin 物化严格 information set。
+2. `FeatureCompiler` 生成固定 schema、lineage 和 visibility proof。
+3. `CanonicalTrainer` 按七策略与 estimator adapter teacher-forced 训练；rolling holdout 保证训练标签不跨测试边界。
+4. `CanonicalForecaster` 按 series/target 隔离递归状态，返回 `(N,H,K[,Q])`。
+5. per-series/per-target transform 严格逆序恢复；结果写 long CSV、schema-2 bundle、resolved config/model 与 fingerprint identity。
 
-未来预测阶段只构造未来时间模板和未来外生特征，不读取未来真实目标值；递归类策略需要的目标值由预测结果逐步回填。
+未来阶段不读取真实 target；observed-past 若需要推进期值，必须绑定显式 provider。
 
 ## 快速开始
 
@@ -119,88 +106,21 @@ uv sync
 本地直跑入口：
 
 ```bash
-uv run python main.py
+env -u PYTHONPATH UV_CACHE_DIR=.uv_cache uv run --no-sync python main.py
 ```
 
 使用方式：
 
-1. 打开 [main.py](/Users/wangzf/projects/tsproj_ml/main.py)。
-2. 修改 `CONFIG_YAML`，指向要测试的本地 YAML 配置文件；当前默认值是 `config/aidc_load_month/route_B/lgbm_usmd_prob_mean.yaml`。
+1. 打开 [`main.py`](main.py)。
+2. 修改 `CONFIG_YAML`，指向要测试的本地 YAML 配置文件；当前默认值是 `config/aidc_load_15min_short/route_A/baseline/st_usmr_mean.yaml`。
 3. 如需调整数据路径、模型类型、预测策略、测试与预测开关，直接修改对应 YAML。
-4. 运行 `uv run python main.py`。
+4. 运行上述 `env -u PYTHONPATH ...` 命令。
 
 `main.py` 不提供命令行参数覆盖；本地开发和测试统一采用“手动改 YAML + 直接运行”的方式。
 
-## 配置生成
+## Legacy 清理结论
 
-`config/generate_configs.py` 是批量生成分组 YAML 配置文件的工具，不是模型运行入口。它从一个 dataset 叶子目录读取目标 CSV，自动检测数据文件、时间列、频率、预测基准时间、内生特征列和外生文件，然后按模型 × 策略矩阵写入 `config/`。
-
-YAML 按 `config_sections.py` 的分组语义保存覆盖项，例如 `target_series`、`exogenous_features`、`time_lag_features`、`model_strategy`。标准默认值由 YAML 内的 `base_config` 字段指定（通常为 `config.univariate_config` 或 `config.multivariate_config`）。
-
-默认模型矩阵是 3 个树模型：
-
-- `lightgbm` -> 文件名缩写 `lgbm`
-- `xgboost` -> 文件名缩写 `xgb`
-- `catboost` -> 文件名缩写 `cab`
-
-默认单变量策略矩阵是 4 种方法：
-
-- `usmdp`: `univariate-single-multistep-direct-pointwise`
-- `usmd`: `univariate-single-multistep-direct`
-- `usmr`: `univariate-single-multistep-recursive`
-- `usmdr`: `univariate-single-multistep-direct-recursive`
-
-脚本的关键输入：
-
-| 参数 | 说明 |
-|---|---|
-| `--dataset` | 一个具体数据集叶子目录，目录内应包含目标 CSV |
-| `--target` | 目标列名，例如 `h_total_use` |
-| `--data-file` | 可选；不传时选目录中第一个非外生 CSV |
-| `--target-ts-feat` | 可选；不传时使用目标 CSV 第一列 |
-| `--models` | 逗号分隔模型列表，默认 `lightgbm,xgboost,catboost` |
-| `--strategies` | 逗号分隔策略列表，默认 `usmdp,usmd,usmr,usmdr` |
-| `--variant` | 输出子目录后缀，例如 `A1_201`、`A`、`B`；用于区分同数据集不同场景的配置目录，不写入文件名 |
-| `--config-dir` | 输出目录；建议显式传入，避免默认路径和项目约定漂移 |
-| `--base-config` | 可选；不传时按策略和内生特征自动选择 `config.univariate_config` 或 `config.multivariate_config` |
-| `--dry-run` | 只打印将生成的文件，不写入磁盘 |
-
-自动检测规则：
-
-- 目标数据文件默认排除 `df_date.csv`、`df_date_future.csv`、`df_weather.csv`、`df_weather_future.csv` 后取第一个 CSV。
-- `target_ts_feat` 默认取目标 CSV 第一列。
-- `freq` 优先用 `pandas.infer_freq` 推断，失败时按前两个时间戳间隔回退到 `1min`、`5min`、`15min`、`30min`、`1h`、`1D` 等固定频率。
-- `now_time` 默认取目标 CSV 最后一行时间戳。
-- 同时存在 `df_date.csv` 和 `df_date_future.csv` 时启用日期外生特征。
-- 同时存在 `df_weather.csv` 和 `df_weather_future.csv` 时启用天气外生特征。
-- 日期时间特征和滞后特征默认启用，分别可用 `--no-datetime`、`--no-lags` 关闭。
-
-例如为 `2026-06-11` 的一个 demand load 数据集预览配置：
-
-```bash
-uv run python config/generate_configs.py \
-  --dataset dataset/aidc_electricity_computility/electricity/2026-06-11/demand_load/A1_201 \
-  --target h_total_use \
-  --models lightgbm,xgboost,catboost \
-  --strategies usmdp,usmd,usmr,usmdr \
-  --config-dir config/aidc_electricity_computility/electricity/2026-06-11/A1_201 \
-  --dry-run
-```
-
-确认输出路径后去掉 `--dry-run` 即可生成实际配置。当前 `2026-06-11/demand_load` 已按 6 个叶子数据集生成了 84 个模型 YAML 配置（另含 1 个 `outlier_detect.yaml`）：
-
-| 数据集 | 配置目录 | 文件数 |
-|---|---|---:|
-| `A1_201` | `config/aidc_electricity_computility/electricity/2026-06-11/A1_201` | 15 |
-| `A1_01a` | `config/aidc_electricity_computility/electricity/2026-06-11/A1_01a` | 15 |
-| `A1_IT` | `config/aidc_electricity_computility/electricity/2026-06-11/A1_IT` | 15 |
-| `A3_01e` | `config/aidc_electricity_computility/electricity/2026-06-11/A3_01e` | 15 |
-| `AIDC/route_A` | `config/aidc_electricity_computility/electricity/2026-06-11/AIDC/route_A` | 12 |
-| `AIDC/route_B` | `config/aidc_electricity_computility/electricity/2026-06-11/AIDC/route_B` | 12 |
-
-这些配置共用时间列 `count_data_time`、目标列 `h_total_use`、频率 `5min` 和 `now_time = 2026-06-11T23:55:00`。其中单变量 YAML 继续以 `df_power.csv` 为目标文件并使用 `config.univariate_config`，4 个房间场景的 `lgbm_msmd.yaml`、`lgbm_msmr.yaml`、`lgbm_msmdr.yaml` 为多变量配置，使用 `config.multivariate_config`，目标文件为筛后的 `df_selected.csv`。
-
-另有 `2026-08-10` 场景目录（`A2_IT`、`A3_IT`、`liantong_IT`、`yancheng_IT`，各 7 个 YAML：4 单变量 + 3 多变量 lgbm）；对应 `dataset/.../2026-08-10/` 房间目录当前为空，这些 YAML 的 `data_dir` 指向 2026-06-11 数据，作为新房间的配置模板复用。
+legacy 体系（config generator、`base_config + overrides + pred_method` YAML、九方法语义层、迁移器、只读适配层）已于 2026-08-29 全部删除：`main.py` / `run.py` 只执行 canonical `ForecastConfigSpec`，非 canonical 输入直接 RAISE；旧 pkl 与旧宽表结果在本仓库不可读。历史映射与删除清单见 `docs/multistep_forecasting_redesign.md` §8。
 
 ## 数据契约
 
@@ -223,13 +143,6 @@ uv run python config/generate_configs.py \
 - 日期类型：`date_history_path`、`date_future_path`、`date_ts_feat`、`datetype_features`
 - 天气：`weather_history_path`、`weather_future_path`、`weather_ts_feat`、`weather_features`
 - 其他内生变量：由 `target_series_numeric_features` / `target_series_categorical_features` / `target_series_drop_features` 控制；历史处理时会自动排除时间列、目标列和 drop 列。
-
-当前模板说明：
-
-- `config/univariate_config.py` 和 `config/multivariate_config.py` 均默认指向 `dataset/ETT-small/ETTm1.csv`，目标列为 `OT`，使用 `dataset/ETT-small/ETTm1_exogenous/` 下的仿真外生数据。单变量策略共用同一数据源，区别在于只使用目标列自身历史。
-- `config/multivariate_config.py` 默认指向 `dataset/ETT-small/ETTm1.csv`，目标列为 `OT`，多变量输入列为 `HUFL`、`HULL`、`MUFL`、`MULL`、`LUFL`、`LULL`。
-- `config/multivariate_config.py` 默认启用 `dataset/ETT-small/ETTm1_exogenous/` 下的仿真日期类型和天气外生数据。
-- 单变量默认 `pred_method` 为 `univariate-single-multistep-direct`；多变量默认 `pred_method` 为 `multivariate-single-multistep-direct-recursive`。
 
 ### AIDC 算力链路
 
@@ -300,6 +213,19 @@ uv run python config/generate_configs.py \
 
 ## 输出结构
 
+canonical schema 输出：
+
+```text
+results/<scenario>/<result_identity>/
+  pretrained_models/{model.pkl,resolved_model.json}
+  results_test/{cv_plot_df.csv,test_scores_df.csv,result_metadata.json,...}
+  results_forecast/{prediction.csv,resolved_config.json}
+```
+
+`result_identity=<strategy|ensemble>-<model>-<scope>-k<K>-<fingerprint[:12]>`；prediction/CV 使用 `(series_id,time,target[,window])` long 唯一键。canonical 当前只输出 `predict_q*`，不输出 CQR `predict_pi*`。
+
+### 旧输出布局（已废弃）
+
 `<scenario>` 由 YAML 中的 `scenario_subpath` 显式指定（如 `aidc_load_month/route_A`），使结果路径与 config 目录布局对齐；未指定时回退为从 `data_dir` 自动推导（去掉 `dataset/` 前缀和 `demand_load` 段）。多组配置共用同一 `data_dir` 时（如三个 `aidc_power_*` 场景共用 `dataset/aidc_power/`）必须显式指定，否则结果会混入同一目录。不同场景的结果因此互不覆盖。
 
 `<setting>` 由 `{model_type}-{data_name}-{pred_method_code}-{window_token}[-quantile][setting_suffix][-calendar-month]` 组成；固定步长的 `window_token=window_length`，自然月模式取 `train_window_length`。
@@ -345,12 +271,12 @@ df_power_anomalies.png
 ## 常见边界
 
 - 根 README 只做项目总览和主流程说明；配置映射、数据目录、目录职责请以对应子目录 README 为准。
-- 标准默认值由 Python dataclass 模板提供；新增具体数据配置优先用分组 YAML 管理。
+- canonical 默认与校验由 `model_forecasting/specs/` 提供；新增模型配置只写 canonical schema YAML（`schema_version: 2`）。
 - `main.py` 是本地开发与测试的主入口；切换任务时直接修改 `CONFIG_YAML` 和对应 YAML 内容。
 - `now_time` 为预测锚点：`schedule_mode=daily`（默认）时规整到次日 00:00 作为历史结束/预测开始（预测下一完整自然日），`intraday` 时保留调度时刻；历史区间为 `[now_time - history_length, now_time)`，预测区间为 `[now_time, now_time + predict_steps × freq)`。
-- 分位数预测训练多个子模型；点预测融合只在 `predict_type="point"` 时生效。
-- 多变量递归类方法（MSMR/MSMDR）对非目标内生变量默认持久性回填，可配置 `endogenous_backfill_strategy: auxiliary` 为每个内生变量训练独立递归辅助模型。
-- `enable_global_training=true` 时输入和输出保留 `series_id`，lag/shift、窗口和递归状态按 series 隔离；当前不与 calendar normalization、目标分解、auxiliary backfill 或 calendar-month 组合。
+- canonical quantile 按 target/level 训练并保持 `(N,H,K,Q)`；Ensemble 与 probabilistic mode 正交。
+- observed-past 不允许默认持久性回填，必须配置 explicit provider；需要共同预测时应提升为 target。
+- Global 由 `problem.training_scope=global` 与 `series_id_cols` 声明，lag/shift/窗口/递归状态按 series 隔离，series order 写入 bundle。
 - `.DS_Store`、`__pycache__/`、`logs/`、`results/` 不是源码或数据契约。
 
 ## 生产同步边界
@@ -359,17 +285,14 @@ df_power_anomalies.png
 
 允许从本仓库向生产包迁移的核心模块包括：
 
-- `models/ModelTesting.py`
+- `model_forecasting/`（必须按完整合同迁移）
 - `models/ModelForecasting.py`
-- `models/multistep/`
-- `features/FeatureEngineering.py`
-- `features/FeatureScalering.py`
-- `features/TargetTransformation.py`
+- `models/ModelTraining.py`
 - `probabilistic/`
 - `models/losses.py`
 - `models/learning_rate.py`
 - `data_provider/outlier_handling.py`
-- `utils/parallel_budget.py`
+
 
 禁止直接回迁或反向污染本仓库的内容包括：
 
@@ -408,14 +331,16 @@ df_power_anomalies.png
 轻量入口运行检查：
 
 ```bash
-uv run python main.py
+env -u PYTHONPATH UV_CACHE_DIR=.uv_cache uv run --no-sync python main.py
 ```
 
 静态和测试检查：
 
 ```bash
-uv run python -m py_compile main.py run.py config/config_loader.py config/config_sections.py config/univariate_config.py config/multivariate_config.py config/generate_configs.py
-uv run python -m unittest discover -s tests -p "test_*.py"
+env -u PYTHONPATH UV_CACHE_DIR=.uv_cache uv run --no-sync \
+  python -m compileall forecasting models/ModelTraining.py models/ModelForecasting.py main.py run.py
+env -u PYTHONPATH UV_CACHE_DIR=.uv_cache uv run \
+  python -m unittest discover -s tests -p "test_*.py"
 ```
 
 批量 YAML 配置的合法性 dry-run 校验（不训练不预测）：

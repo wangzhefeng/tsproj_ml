@@ -8,19 +8,15 @@
 
 ## 可迁移核心模块
 
-- `models/ModelTesting.py`
+- `forecasting/`（canonical specs/tensors、source registry/information set/providers、FeatureCompiler、七策略、transforms、Ensemble、runtime、long results；必须作为一个合同整体迁移）
 - `models/ModelForecasting.py`
-- `models/multistep/`（策略目录、解析计划、五类 executor、panel 与 typed artifact；与 `ModelTraining`/`ModelForecasting` 同步迁移）
-- `features/FeatureEngineering.py`
-- `features/FeatureScalering.py`
-- `features/TargetTransformation.py`
+- `models/ModelTraining.py`
+- legacy 只读层（`forecasting/legacy/`）已删除；旧 pkl/旧宽表在生产侧同样不可读
 - `probabilistic/`（spec/types/training/postprocessing/calibration/evaluation；生产侧只写 I/O adapter，不复制算法）
 - `models/losses.py`
 - `models/learning_rate.py`
 - `data_provider/outlier_handling.py`
-- `utils/eval_mask.py`（MAPE 评估掩码与绘图掩码，被 `ModelTesting`/`ModelForecasting` 依赖）
-- `utils/frequency.py`（采样频率解析，被 `FeatureEngineering` 依赖）
-- `utils/parallel_budget.py`（窗口并行下的内部并行预算）
+- `utils/frequency.py`
 
 ## 禁止直接回迁内容
 
@@ -83,5 +79,14 @@
 
 - 变更摘要：九种外部 `pred_method` 收敛为 `StrategySpec + ResolvedStrategy` 单一事实源；目标、特征、训练和运行计划统一解析；推理由 pointwise/direct/recursive/dirrec/blend 五类 executor 执行；blend、auxiliary 和普通策略改用 typed artifact；global panel 补齐复合主键、逐序列切窗/状态隔离及 bundle 持久化契约。
 - 是否需要迁移项目 2：生产侧同步 `ModelTraining.py`、`ModelForecasting.py` 或读取新模型产物时需要整体迁移，不能只复制单个 executor。
-- 项目 2 适配点：保留九种外部方法名兼容；生产 adapter 只负责输入输出，必须同时迁移 `models/multistep/`、严格特征 schema、panel `series_id` 元数据和 legacy artifact 只读适配；不得继续从结果目录读取 blend 权重。
-- 验证结果：本仓库 371 项 unittest、863 个模型 YAML dry-run、compileall 与 `git diff --check` 通过；受语义修复影响的存量结果见 `docs/multistep_forecasting_invalidation.md`，未重跑结果不得与新实现混用。
+- 项目 2 适配点：保留九种外部方法名兼容；生产 adapter 只负责输入输出，必须同时迁移严格特征 schema、panel `series_id` 元数据；不得继续从结果目录读取 blend 权重。
+- 验证结果：本仓库 371 项 unittest、863 个模型 YAML dry-run、compileall 与 `git diff --check` 通过；受语义修复影响的存量结果现统一并入 `docs/multistep_forecasting_redesign.md` §10 的失效清单（该记录为历史快照），未重跑结果不得与新实现混用。
+
+### 2026-08-28 forecast-problem-orthogonal-redesign
+
+- 变更摘要：现役 831 个模型 YAML 一次迁移为 canonical schema；canonical runtime 使用六列角色、统一 source registry/as-of、FeatureCompiler、七种标准多步策略、Local/Global `(N,H,K[,Q])`、多目标 adapter、per-series/per-target transforms、`EnsembleSpec`、long result、schema-2 `ForecastModelBundle` 与 fingerprint identity。
+- 是否需要迁移项目 2：生产侧准备消费 canonical YAML、long result 或 schema-2 bundle 时必须整体迁移；不得只复制单个 strategy executor 或沿用旧 `pred_method` 路由。
+- 项目 2 适配点：生产 adapter 只负责平台输入输出；核心需同步 `forecasting/`、`CanonicalTrainer/CanonicalForecaster`、`ModelFactory` adapter 和 `ModelSaveLoad`。旧 YAML/pkl/result 在本仓库已不可读；生产侧如需消费历史产物必须自带独立解析器。
+- 概率边界：canonical 当前只包含 point 与每目标边际 quantile；canonical CQR/`predict_pi*` 尚未实现，不能按旧概率管线能力推定生产侧已具备 CQR。
+- 收口状态：legacy 体系（generator、旧运行类、旧 executor、九方法只读层、迁移器）已全部删除；18 个非整除 RecMO 曾获批映射为 `recursive`（记录见 redesign §8.2）。生产侧不得复制这些历史运行路径。
+- 验证结果：最新命令、精确 unittest/config/smoke 数和状态只见 `docs/multistep_forecasting_redesign.md` §11；正式旧→新 identity/fingerprint 映射规则见该文档 §10，逐配置机器清单不随仓库驻留、按需由 `scripts/generate_result_invalidation_manifest.py` 再生。

@@ -1,66 +1,66 @@
-# 2026-08-14 / A1_IT — usmd — LightGBM 模型测试
-base_config: config.univariate_config
-overrides:
-  runtime:
-    horizon_mode: fixed_steps
-    train_window_length: null
-    forecast_mode: forecast
-    is_testing: true
-    is_forecasting: false
-    history_length: 32
-    predict_steps: 288
-    window_length: 15
-    now_time: '2026-08-14T23:55:00'
-  target_series:
-    data_dir: ./dataset/aidc_electricity_computility/electricity/2026-08-14/A1_IT/
-    data_path: df_power.csv
-    freq: 5min
-    target_ts_feat: time
-    target: value
-  exogenous_features:
-    weather_backtest_path: null
-    strict_weather_information_set: false
-    weather_history_source: ''
-    weather_backtest_source: ''
-    weather_future_source: ''
-    # 日期类型：显式启用，并按离散类别传给 LightGBM。
-    enable_date_features: true
-    date_history_path: date_in_20260611_20260814.csv
-    date_future_path: date_in_20260611_20260814.csv
-    date_ts_feat: date
-    datetype_features:
-    - date_type
-    datetype_categorical_features:
-    - date_type
-    # 原生气象：历史 rt_* 与未来 pred_* 在特征工程中统一为以下字段。
-    enable_weather_features: true
-    weather_history_path: weather_in_20260611_20260814.csv
-    weather_future_path: weather_in_20260611_20260814.csv
-    weather_ts_feat: ts
-    weather_features:
-    - rt_ssr
-    - rt_ws10
-    - rt_tt2
-    - cal_rh
-    - rt_ps
-    - rt_rain
-    weather_categorical_features: []
-    # 与参考外生配置一致：仅保留无同义重复的 10 个 datetime 特征。
-    enable_datetime_features: true
-    datetime_features:
-    - hour
-    - minute
-    - day
-    - day_of_week
-    - week_of_year
-    - month
-    - days_in_month
-    - quarter
-    - day_of_year
-    - year
-    datetime_categorical_features: []  # 不传 categorical_feature 给 LightGBM
-  time_lag_features:
-    lags:
+schema_version: 2
+problem:
+  time_col: time
+  freq: 5min
+  horizon: 288
+  targets:
+  - value
+  information_mode: forecast
+  training_scope: local
+  series_id_cols: []
+data:
+  sources:
+  - name: target_history
+    source_type: file
+    columns:
+    - name: value
+      role: target
+      categorical: false
+    history_path: dataset/aidc_electricity_computility/electricity/2026-08-14/A1_IT/df_power.csv
+    time_col: time
+    series_id_cols: []
+    availability: source_time
+  - name: date_type
+    source_type: file
+    columns:
+    - name: date_type
+      role: known_future
+      categorical: true
+    history_path: dataset/aidc_electricity_computility/electricity/2026-08-14/A1_IT/date_in_20260611_20260814.csv
+    future_path: dataset/aidc_electricity_computility/electricity/2026-08-14/A1_IT/date_in_20260611_20260814.csv
+    time_col: date
+    series_id_cols: []
+    availability: forecast_origin
+  - name: weather
+    source_type: file
+    columns:
+    - name: rt_ssr
+      role: known_future
+      categorical: false
+    - name: rt_ws10
+      role: known_future
+      categorical: false
+    - name: rt_tt2
+      role: known_future
+      categorical: false
+    - name: cal_rh
+      role: known_future
+      categorical: false
+    - name: rt_ps
+      role: known_future
+      categorical: false
+    - name: rt_rain
+      role: known_future
+      categorical: false
+    history_path: dataset/aidc_electricity_computility/electricity/2026-08-14/A1_IT/weather_in_20260611_20260814.csv
+    backtest_path: null
+    future_path: dataset/aidc_electricity_computility/electricity/2026-08-14/A1_IT/weather_in_20260611_20260814.csv
+    time_col: ts
+    series_id_cols: []
+    availability: forecast_origin
+features:
+  target_lags:
+    value:
     - 1
     - 2
     - 3
@@ -80,71 +80,49 @@ overrides:
     - 1440
     - 1728
     - 2016
-  advanced_features:
-    enable_advanced_features: true
-    enable_rolling_features: true
-    rolling_columns:
-    - y
-    rolling_windows:
-    - 12
-    - 24
-    - 72
-    - 288
-    rolling_stats:
-    - mean
-    - std
-    - min
-    - max
-    enable_expanding_features: false
-    enable_diff_features: true
-    diff_columns:
-    - y
-    diff_periods:
-    - 1
-    - 12
-    - 288
-    enable_pct_change_features: false
-    enable_time_since_features: false
-    enable_cyclical_features: false
-    enable_interaction_features: false
-    enable_polynomial_features: false
-  preprocessing:
-    target_calendar_normalization: none
-  model_strategy:
-    align_direct_features_to_target: false
-    model_type: lightgbm
-    pred_method: univariate-single-multistep-direct
-  train_outlier:
-    enable_train_outlier_handling: true
-    train_outlier_method: local_interpolate
-    high_outlier_threshold: null
-    high_outlier_max_run_points: 4
-    rise_outlier_max_run_points: 2
-    rise_rebound_min_abs_diff: 1000.0
-    low_outlier_threshold: null
-    low_outlier_max_run_points: 4
-    drop_outlier_max_run_points: 2
-    drop_rebound_min_abs_diff: 1000.0
-  training_enhancement:
-    enable_time_decay_sample_weight: true
-    decay_halflife_days: 14  # 半衰期天数,按数据漂移速度调整
-  eval_mask:
-    mode: percentile
-    percentile: 5.0
-    min_value: null
-    max_value: null
-  performance:
-    window_parallel_workers: 8
-    multi_output_n_jobs: 8
-    model_thread_count: 1
-  # preprocessing:
-  #   scale_target: false
-  #   target_scaler_type: standard
-  #   inverse_target: false
-  # advanced_features:
-  #   enable_advanced_features: false
-  #   enable_rolling_features: false
-  #   enable_diff_features: false
-
-  output:
-    scenario_subpath: aidc_electricity_computility/electricity/2026-08-14/A1_IT
+  observed_past_lags: {}
+  datetime_features:
+  - hour
+  - minute
+  - day
+  - day_of_week
+  - week_of_year
+  - month
+  - days_in_month
+  - quarter
+  - day_of_year
+  - year
+  transformations:
+    direct_layout: independent_models
+    advanced:
+      rolling_windows:
+      - 12
+      - 24
+      - 72
+      - 288
+      diff_periods:
+      - 1
+      - 12
+      - 288
+      pct_change_periods:
+      - 1
+      - 7
+strategy:
+  name: direct
+estimator:
+  model_type: lightgbm
+  target_adapter: independent
+  params: {}
+probabilistic:
+  mode: point
+validation:
+  forecast_origin: '2026-08-14T23:55:00'
+  schedule_mode: daily
+  horizon_mode: fixed_steps
+  history_length: 577
+  window_length: 15
+  train_window_length: null
+output:
+  scenario_subpath: aidc_electricity_computility/electricity/2026-08-14/A1_IT
+  setting_suffix: ''
+  results_root: results

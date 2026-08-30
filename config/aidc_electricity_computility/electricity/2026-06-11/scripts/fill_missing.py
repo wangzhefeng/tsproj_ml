@@ -39,7 +39,7 @@ ROOMS = ("A1_01a", "A1_201", "A3_01e", "A1_IT")
 
 
 def build_raw_column_names() -> List[str]:
-    """生成 162 个原始聚合列名（training/inference/pod × 9 指标 × 统计量）。
+    """生成 162 个原始聚合列名（model_training/inference/pod × 9 指标 × 统计量）。
 
     统计量集合与 ``computility_process.expand_metric_file`` 完全对齐：
     所有指标都有 min/max/mean/std/count；SUM_METRICS 加 sum；gpu_util 加

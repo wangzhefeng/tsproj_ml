@@ -1,43 +1,28 @@
-# A — lasso — direct (日频单变量 · LASSO 线性基线 point)
-base_config: config.univariate_config
-overrides:
-  output:
-    scenario_subpath: aidc_power_month/route_A/freq_1day/baseline
-  runtime:
-    horizon_mode: calendar_month  # 预测 forecast_start 所在的完整自然月
-    train_window_length: 120  # 固定训练天数，保持旧配置有效训练长度
-    forecast_mode: forecast
-    is_testing: true
-    is_forecasting: false
-    history_length: 304
-    predict_steps: 30
-    window_length: 150
-    now_time: '2026-07-31T00:00:00'
-  target_series:
-    data_dir: ./dataset/aidc_power_month/freq_1day/
-    data_path: A_Loads_1day_sum_20251001_20260731.csv
-    freq: 1D
-    target_ts_feat: time
-    target: value
-  exogenous_features:
-    date_history_path: null
-    date_future_path: null
-    weather_history_path: null
-    weather_backtest_path: null
-    weather_future_path: null
-    strict_date_information_set: false
-    strict_weather_information_set: false
-    weather_history_source: ''
-    weather_backtest_source: ''
-    weather_future_source: ''
-    enable_date_features: false
-    enable_weather_features: false
-    enable_datetime_features: false
-    custom_features: []
-    datetime_features: []
-    datetime_categorical_features: []
-  time_lag_features:
-    lags:
+schema_version: 2
+problem:
+  time_col: time
+  freq: 1D
+  horizon: 31
+  targets:
+  - value
+  information_mode: forecast
+  training_scope: local
+  series_id_cols: []
+data:
+  sources:
+  - name: target_history
+    source_type: file
+    columns:
+    - name: value
+      role: target
+      categorical: false
+    history_path: dataset/aidc_power_month/freq_1day/A_Loads_1day_sum_20251001_20260731.csv
+    time_col: time
+    series_id_cols: []
+    availability: source_time
+features:
+  target_lags:
+    value:
     - 1
     - 2
     - 3
@@ -47,46 +32,38 @@ overrides:
     - 7
     - 14
     - 28
-  advanced_features:
-    enable_advanced_features: true
-    enable_rolling_features: true
-    rolling_columns:
-    - y
-    rolling_windows:
-    - 7
-    - 14
-    - 28
-    rolling_stats:
-    - mean
-    - std
-    - min
-    - max
-    enable_diff_features: true
-    diff_columns:
-    - y
-    diff_periods:
-    - 1
-    - 7
-    - 28
-  model_strategy:
-    enable_ensemble: false
-    align_direct_features_to_target: false
-    model_type: lasso
-    pred_method: univariate-single-multistep-direct
-    predict_type: point
-  training_enhancement:
-    enable_time_decay_sample_weight: true
-    decay_halflife_days: 60  # 半衰期天数,按数据漂移速度调整
-  train_outlier:
-    enable_train_outlier_handling: false  # 日频稀疏点不宜插值清洗
-  eval_mask:
-    mode: percentile
-    percentile: 5.0
-  preprocessing:
-    target_calendar_normalization: none
-    scale_features: true  # 线性模型对特征量纲敏感
-    decomposition_method: none
-  performance:
-    window_parallel_workers: 8
-    multi_output_n_jobs: 8
-    model_thread_count: 1
+  observed_past_lags: {}
+  datetime_features: []
+  transformations:
+    direct_layout: independent_models
+    advanced:
+      rolling_windows:
+      - 7
+      - 14
+      - 28
+      diff_periods:
+      - 1
+      - 7
+      - 28
+      pct_change_periods:
+      - 1
+      - 7
+strategy:
+  name: direct
+estimator:
+  model_type: lasso
+  target_adapter: independent
+  params: {}
+probabilistic:
+  mode: point
+validation:
+  forecast_origin: '2026-07-31T00:00:00'
+  schedule_mode: daily
+  horizon_mode: calendar_month
+  history_length: 304
+  window_length: 150
+  train_window_length: 120
+output:
+  scenario_subpath: aidc_power_month/route_A/freq_1day/baseline
+  setting_suffix: ''
+  results_root: results

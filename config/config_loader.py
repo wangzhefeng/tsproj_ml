@@ -6,38 +6,78 @@
 # * Email       : zfwang7@gmail.com
 # * Date        : 2026-06-13
 # * Version     : 1.0.061316
-# * Description : description
-# * Link        : link
-# * Requirement : 相关模块版本需求(例如: numpy >= 2.1.0)
+# * Description : 配置加载器：canonical schema 严格解析
 # ***************************************************
 
-import datetime
-import importlib
+
 from pathlib import Path
-from typing import Any, Mapping, Optional
+from typing import Any, Mapping
 
 try:
     import yaml
 except ImportError:  # pragma: no cover - exercised only in incomplete envs
     yaml = None
 
+MODEL_CONFIG_FIELDS = frozenset(
+    {
+        "schema_version",
+        "problem",
+        "data",
+        "features",
+        "strategy",
+        "estimator",
+        "probabilistic",
+        "validation",
+        "output",
+    }
+)
+MODEL_GROUP_FIELDS = frozenset({"problem", "data", "features", "strategy", "estimator"})
 
-DEPRECATED_NOOP_CONFIG_FIELDS = {"start_time", "future_time"}
+def _strict_yaml_load(text: str, source: str | Path) -> Any:
+    if yaml is None:
+        raise ImportError("PyYAML is required for YAML configs. Install dependency: pyyaml")
 
+    class UniqueKeyLoader(yaml.SafeLoader):
+        pass
 
-def load_model_config(
-    config_module: str = "config.univariate_config",
-    config_class: str = "ModelConfig",
-    instantiate: bool = False,
-):
-    module = importlib.import_module(config_module)
-    model_config = getattr(module, config_class, None)
-    if model_config is None:
-        raise ImportError(f"Config class '{config_class}' not found in module: {config_module}")
-    if instantiate:
-        return model_config()
-    return model_config
+    def construct_mapping(loader, node, deep=False):
+        loader.flatten_mapping(node)
+        mapping = {}
+        for key_node, value_node in node.value:
+            key = loader.construct_object(key_node, deep=deep)
+            try:
+                duplicate = key in mapping
+            except TypeError as exc:
+                raise ValueError(f"Unhashable YAML mapping key in {source}: {key!r}") from exc
+            if duplicate:
+                raise ValueError(f"Duplicate YAML key {key!r} in {source}")
+            mapping[key] = loader.construct_object(value_node, deep=deep)
+        return mapping
 
+    UniqueKeyLoader.add_constructor(
+        yaml.resolver.BaseResolver.DEFAULT_MAPPING_TAG,
+        construct_mapping,
+    )
+    return yaml.load(text, Loader=UniqueKeyLoader)
+
+def is_model_yaml(path: str | Path) -> bool:
+    """按顶层 schema 识别模型配置，避免把独立数据工具 YAML 当默认模型。"""
+    config_path = Path(path)
+    payload = _strict_yaml_load(
+        config_path.read_text(encoding="utf-8"),
+        config_path,
+    )
+    if not isinstance(payload, dict):
+        return False
+    schema_version = payload.get("schema_version")
+    if isinstance(schema_version, int) and not isinstance(schema_version, bool) and schema_version == 2:
+        return True
+    if "schema_version" in payload and set(payload) & MODEL_GROUP_FIELDS:
+        return True
+    # A model-schema-shaped file with a missing schema_version is still a model config;
+    # route it to load_yaml_config so the missing version is reported instead
+    # of silently skipping the file during audits.
+    return bool(MODEL_GROUP_FIELDS.issubset(set(payload)))
 
 def _load_yaml_file(config_yaml: str | Path) -> Mapping[str, Any]:
     if yaml is None:
@@ -47,82 +87,37 @@ def _load_yaml_file(config_yaml: str | Path) -> Mapping[str, Any]:
     if not config_path.exists():
         raise FileNotFoundError(f"YAML config file not found: {config_path}")
 
-    loaded = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
+    loaded = _strict_yaml_load(
+        config_path.read_text(encoding="utf-8"),
+        config_path,
+    ) or {}
     if not isinstance(loaded, Mapping):
         raise ValueError(f"YAML config must be a mapping: {config_path}")
     return loaded
 
-
-def _coerce_override_value(field_name: str, current_value: Any, new_value: Any) -> Any:
-    if new_value is None:
-        return None
-    if isinstance(current_value, datetime.datetime) and isinstance(new_value, str):
-        return datetime.datetime.fromisoformat(new_value)
-    if field_name == "now_time" and isinstance(new_value, str):
-        return datetime.datetime.fromisoformat(new_value)
-    return new_value
-
-
-def apply_config_overrides(cfg: Any, overrides: Mapping[str, Any], source: str = "YAML config") -> Any:
-    for key, value in overrides.items():
-        if key in DEPRECATED_NOOP_CONFIG_FIELDS:
-            continue
-        if not hasattr(cfg, key):
-            raise AttributeError(f"Unknown config override '{key}' in {source}")
-        current_value = getattr(cfg, key)
-        setattr(cfg, key, _coerce_override_value(key, current_value, value))
-    return cfg
-
-
-def _flatten_overrides(overrides: Mapping[str, Any], cfg: Any, source: str) -> dict[str, Any]:
-    flattened = {}
-    for key, value in overrides.items():
-        if hasattr(cfg, key):
-            flattened[key] = value
-            continue
-        if isinstance(value, Mapping):
-            for nested_key, nested_value in value.items():
-                if isinstance(nested_value, Mapping) and not hasattr(cfg, nested_key):
-                    raise AttributeError(
-                        f"Nested config groups are not supported under '{key}.{nested_key}' in {source}"
-                    )
-                if nested_key in flattened:
-                    raise ValueError(f"Duplicate config override '{nested_key}' in {source}")
-                flattened[nested_key] = nested_value
-            continue
-        flattened[key] = value
-    return flattened
-
-
-def load_yaml_config(
-    config_yaml: str | Path,
-    config_module: Optional[str] = None,
-    config_class: Optional[str] = None,
-):
+def load_yaml_config(config_yaml: str | Path):
     loaded = _load_yaml_file(config_yaml)
-    base_config = loaded.get("base_config") or config_module or "config.univariate_config"
-    class_name = config_class or "ModelConfig"
-    overrides = loaded.get("overrides", {})
+    if "schema_version" not in loaded and MODEL_GROUP_FIELDS.issubset(set(loaded)):
+        raise ValueError(f"Missing YAML schema_version for canonical model config: {config_yaml}")
+    if "schema_version" not in loaded:
+        raise ValueError(
+            f"Non-canonical YAML (missing schema_version): {config_yaml}"
+        )
+    schema_version = loaded["schema_version"]
+    if (
+        isinstance(schema_version, bool)
+        or not isinstance(schema_version, int)
+        or schema_version != 2
+    ):
+        raise ValueError(
+            f"Unknown YAML schema_version {schema_version!r}: {config_yaml}"
+        )
+    # v4 §5.2: route by mutually exclusive field sets. An `ensemble` mapping
+    # marks a reference-based ensemble config; anything else must be a
+    # single-model base config.
+    from model_ensemble.loader import parse_ensemble_document
+    from model_forecasting.specs.config import parse_model_config
 
-    if not isinstance(base_config, str) or not base_config:
-        raise ValueError(f"YAML field 'base_config' must be a non-empty string: {config_yaml}")
-    if not isinstance(class_name, str) or not class_name:
-        raise ValueError(f"YAML field 'config_class' must be a non-empty string: {config_yaml}")
-    if overrides is None:
-        overrides = {}
-    if not isinstance(overrides, Mapping):
-        raise ValueError(f"YAML field 'overrides' must be a mapping: {config_yaml}")
-
-    cfg = load_model_config(base_config, class_name, instantiate=True)
-    flattened_overrides = _flatten_overrides(overrides, cfg, source=str(config_yaml))
-    return apply_config_overrides(cfg, flattened_overrides, source=str(config_yaml))
-
-
-
-
-# 测试代码 main 函数
-def main():
-    pass
-
-if __name__ == "__main__":
-    main()
+    if isinstance(loaded.get("ensemble"), Mapping):
+        return parse_ensemble_document(loaded, source_path=config_yaml)
+    return parse_model_config(loaded, source=config_yaml)

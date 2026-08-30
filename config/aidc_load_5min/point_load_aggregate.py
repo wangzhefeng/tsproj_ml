@@ -375,16 +375,44 @@ def run_point_load_aggregation(
                 included.append(loaded)
 
             point_columns = [point.spot_id for point in included]
-            output = pd.DataFrame(
+            point_output = pd.DataFrame(
                 {
                     "time": full_index,
                     **{point.spot_id: point.series.to_numpy(dtype=float) for point in included},
                 }
             )
-            if point_columns:
-                output["value"] = output[point_columns].sum(axis=1, min_count=1)
+
+            if len(spec.data_types) > 1:
+                output = pd.DataFrame({"time": full_index})
+                building_value_columns: list[str] = []
+                for data_type in spec.data_types:
+                    data_type_columns = [
+                        point.spot_id for point in included if point.data_type == data_type
+                    ]
+                    building = next(
+                        (item for item in ("A1", "A2", "A3") if data_type.startswith(f"{item}楼")),
+                        None,
+                    )
+                    if building is None:
+                        raise ValueError(f"Cannot resolve building from data_type: {data_type}")
+                    building_value_column = f"{building.lower()}_value"
+                    if data_type_columns:
+                        output[building_value_column] = point_output[data_type_columns].sum(
+                            axis=1, min_count=1
+                        )
+                    else:
+                        output[building_value_column] = np.nan
+                    building_value_columns.append(building_value_column)
+                output["value"] = output[building_value_columns].sum(axis=1, min_count=1)
+                value_completeness_policy = "available_buildings"
             else:
-                output["value"] = np.nan
+                output = point_output
+                building_value_columns = []
+                if point_columns:
+                    output["value"] = output[point_columns].sum(axis=1, min_count=1)
+                else:
+                    output["value"] = np.nan
+                value_completeness_policy = "any_point"
 
             output_path = destination_dir / f"route_{spec.route}" / _build_output_filename(
                 spec, full_index, freq
@@ -418,6 +446,8 @@ def run_point_load_aggregation(
                 "missing_files": missing_files,
                 "duplicate_output_spot_id_count": int(len(duplicate_column_spot_ids)),
                 "duplicate_output_spot_ids": duplicate_column_spot_ids,
+                "value_completeness_policy": value_completeness_policy,
+                "building_value_columns": building_value_columns,
                 "output_rows": int(len(output)),
                 "value_non_missing_count": int(output["value"].notna().sum()),
                 "value_missing_count": int(output["value"].isna().sum()),

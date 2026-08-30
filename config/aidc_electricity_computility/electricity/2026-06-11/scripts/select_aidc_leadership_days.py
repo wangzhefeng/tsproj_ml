@@ -11,6 +11,8 @@ import numpy as np
 import pandas as pd
 from matplotlib import font_manager
 
+from model_forecasting.results import CanonicalResultReader
+
 
 DEFAULT_RESULTS_ROOT = Path(
     "results/results_test/aidc_electricity_computility/electricity/2026-06-11"
@@ -147,8 +149,47 @@ def resolve_report_font() -> font_manager.FontProperties:
 
 def _read_daily_scores(results_root: Path, scenario: str, model_name: str) -> pd.DataFrame:
     score_path = results_root.joinpath(scenario, model_name, "test_scores_df.csv")
-    score_df = pd.read_csv(score_path)
-    daily_df = score_df[score_df["time_range"].astype(str).str.contains("~", na=False)].copy()
+    score_df = CanonicalResultReader.read_scores(score_path)
+    if {"window", "scope", "target", "MAE", "RMSE", "MAPE"}.issubset(score_df):
+        daily_df = score_df[score_df["scope"] == "target"].copy()
+        curve_df = CanonicalResultReader.read_backtest(
+            results_root.joinpath(scenario, model_name, "cv_plot_df.csv"),
+        )
+        ranges = (
+            curve_df.groupby(["window", "target"], sort=True)["time"]
+            .agg(["min", "max"])
+            .reset_index()
+        )
+        ranges["time_range"] = (
+            pd.to_datetime(ranges["min"]).dt.strftime("%Y-%m-%d %H:%M:%S")
+            + "~"
+            + pd.to_datetime(ranges["max"]).dt.strftime("%Y-%m-%d %H:%M:%S")
+        )
+        daily_df = daily_df.merge(
+            ranges[["window", "target", "time_range"]],
+            on=["window", "target"],
+            how="left",
+            validate="one_to_one",
+        )
+        daily_df["MSE"] = np.square(pd.to_numeric(daily_df["RMSE"], errors="coerce"))
+        daily_df["R2"] = np.nan
+        daily_df["MAPE Accuracy"] = daily_df.get("Accuracy", np.nan)
+        daily_df["MAPE Threshold"] = np.nan
+        daily_df["MAPE Valid Points"] = daily_df.get("Valid Points", 0)
+        daily_df["MAPE Excluded Points"] = (
+            pd.to_numeric(daily_df.get("n_points", 0), errors="coerce")
+            - pd.to_numeric(daily_df["MAPE Valid Points"], errors="coerce")
+        )
+        denominator = pd.to_numeric(daily_df.get("n_points", 0), errors="coerce")
+        daily_df["MAPE Excluded Ratio"] = np.where(
+            denominator > 0,
+            daily_df["MAPE Excluded Points"] / denominator,
+            np.nan,
+        )
+    else:
+        daily_df = score_df[
+            score_df["time_range"].astype(str).str.contains("~", na=False)
+        ].copy()
     if daily_df.empty:
         raise ValueError(f"No daily score rows found: scenario={scenario}, model={model_name}")
     numeric_columns = [
@@ -177,8 +218,12 @@ def load_day_curve(
     results_root: Path, scenario: str, model_name: str, selected_date: str
 ) -> pd.DataFrame:
     curve_path = results_root.joinpath(scenario, model_name, "cv_plot_df.csv")
-    curve_df = pd.read_csv(curve_path)
-    curve_df["time"] = pd.to_datetime(curve_df["time"])
+    curve_df = CanonicalResultReader.read_backtest(curve_path)
+    targets = tuple(dict.fromkeys(curve_df["target"].astype(str)))
+    if len(targets) != 1:
+        raise ValueError(
+            f"Leadership selection requires one target, got {targets}"
+        )
     selected_day_df = curve_df[
         curve_df["time"].dt.strftime("%Y-%m-%d") == selected_date
     ].copy()
@@ -199,8 +244,8 @@ def _compute_candidate_features(
     day_curve_df: pd.DataFrame,
     tail_points: int,
 ) -> dict:
-    y_true = day_curve_df["Y_trues"].astype(float).to_numpy()
-    y_pred = day_curve_df["Y_preds"].astype(float).to_numpy()
+    y_true = day_curve_df["actual_value"].astype(float).to_numpy()
+    y_pred = day_curve_df["predict_value"].astype(float).to_numpy()
     tail_true = y_true[-tail_points:]
     tail_pred = y_pred[-tail_points:]
     errors = np.abs(y_pred - y_true)
@@ -213,9 +258,9 @@ def _compute_candidate_features(
     candidate["corr"] = _safe_corr(y_true, y_pred)
     candidate["tail_MAE"] = float(tail_errors.mean())
     candidate["tail_bias"] = float(tail_pred.mean() - tail_true.mean())
-    candidate["plot_nan"] = int(day_curve_df["Y_trues_plot"].isna().sum())
-    candidate["display_true_nan"] = int(day_curve_df["Y_trues"].isna().sum())
-    candidate["display_pred_nan"] = int(day_curve_df["Y_preds"].isna().sum())
+    candidate["plot_nan"] = int((~day_curve_df["plot_valid"].astype(bool)).sum())
+    candidate["display_true_nan"] = int(day_curve_df["actual_value"].isna().sum())
+    candidate["display_pred_nan"] = int(day_curve_df["predict_value"].isna().sum())
     candidate["daily_MAE_from_curve"] = float(errors.mean())
     candidate["original_plot_path"] = str(
         results_root.joinpath(scenario, model_name, "test_prediction.png")
@@ -361,8 +406,8 @@ def _plot_day_curve(
     fill_method: str,
 ) -> None:
     plot_df = day_curve_df.sort_values("time").copy()
-    plot_df["display_true"] = fill_display_series(plot_df["Y_trues"], fill_method=fill_method)
-    plot_df["display_pred"] = fill_display_series(plot_df["Y_preds"], fill_method=fill_method)
+    plot_df["display_true"] = fill_display_series(plot_df["actual_value"], fill_method=fill_method)
+    plot_df["display_pred"] = fill_display_series(plot_df["predict_value"], fill_method=fill_method)
     if plot_df["display_true"].isna().any() or plot_df["display_pred"].isna().any():
         raise ValueError(f"Display series still contain NaN for scenario={selection['scenario']}")
 
@@ -387,8 +432,8 @@ def _plot_report_day_curve(
     fill_method: str,
 ) -> None:
     plot_df = day_curve_df.sort_values("time").copy()
-    plot_df["display_true"] = fill_display_series(plot_df["Y_trues"], fill_method=fill_method)
-    plot_df["display_pred"] = fill_display_series(plot_df["Y_preds"], fill_method=fill_method)
+    plot_df["display_true"] = fill_display_series(plot_df["actual_value"], fill_method=fill_method)
+    plot_df["display_pred"] = fill_display_series(plot_df["predict_value"], fill_method=fill_method)
     if plot_df["display_true"].isna().any() or plot_df["display_pred"].isna().any():
         raise ValueError(f"Display series still contain NaN for report scenario={scenario}")
 
@@ -411,6 +456,13 @@ def _plot_report_day_curve(
 
 def _copy_original_plot(results_root: Path, scenario: str, model_name: str, output_path: Path) -> None:
     original_plot = results_root.joinpath(scenario, model_name, "test_prediction.png")
+    if not original_plot.exists():
+        original_plot = results_root.joinpath(
+            scenario,
+            model_name,
+            "target_plots",
+            "power.png",
+        )
     if original_plot.exists():
         output_path.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(original_plot, output_path)

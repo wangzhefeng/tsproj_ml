@@ -1,36 +1,66 @@
-# A1_01a — catboost — direct-recursive
-base_config: config.univariate_config
-overrides:
-  runtime:
-    horizon_mode: fixed_steps
-    train_window_length: null
-    forecast_mode: forecast
-    is_testing: true
-    is_forecasting: true
-    history_length: 65
-    predict_steps: 288
-    window_length: 15
-    now_time: '2026-06-11T23:55:00'
-  target_series:
-    data_dir: ./dataset/aidc_electricity_computility/electricity/2026-06-11/demand_load/A1_01a/
-    data_path: df_power.csv
-    freq: 5min
-    target_ts_feat: count_data_time
-    target: h_total_use
-  exogenous_features:
-    weather_backtest_path: null
-    strict_weather_information_set: false
-    weather_history_source: ''
-    weather_backtest_source: ''
-    weather_future_source: ''
-    date_history_path: df_date.csv
-    date_future_path: df_date_future.csv
-    date_ts_feat: date
-    weather_history_path: df_weather.csv
-    weather_future_path: df_weather_future.csv
-    weather_ts_feat: ts
-  time_lag_features:
-    lags:
+schema_version: 2
+problem:
+  time_col: count_data_time
+  freq: 5min
+  horizon: 288
+  targets:
+  - h_total_use
+  information_mode: forecast
+  training_scope: local
+  series_id_cols: []
+data:
+  sources:
+  - name: target_history
+    source_type: file
+    columns:
+    - name: h_total_use
+      role: target
+      categorical: false
+    history_path: dataset/aidc_electricity_computility/electricity/2026-06-11/demand_load/A1_01a/df_power.csv
+    time_col: count_data_time
+    series_id_cols: []
+    availability: source_time
+  - name: date_type
+    source_type: file
+    columns:
+    - name: date_type
+      role: known_future
+      categorical: true
+    history_path: dataset/aidc_electricity_computility/electricity/2026-06-11/demand_load/A1_01a/df_date.csv
+    future_path: dataset/aidc_electricity_computility/electricity/2026-06-11/demand_load/A1_01a/df_date_future.csv
+    time_col: date
+    series_id_cols: []
+    availability: forecast_origin
+  - name: weather
+    source_type: file
+    columns:
+    - name: rt_ssr
+      role: known_future
+      categorical: false
+    - name: rt_ws10
+      role: known_future
+      categorical: false
+    - name: rt_tt2
+      role: known_future
+      categorical: false
+    - name: cal_rh
+      role: known_future
+      categorical: false
+    - name: rt_ps
+      role: known_future
+      categorical: false
+    - name: rt_rain
+      role: known_future
+      categorical: false
+    history_path: dataset/aidc_electricity_computility/electricity/2026-06-11/demand_load/A1_01a/df_weather.csv
+    backtest_path: null
+    future_path: dataset/aidc_electricity_computility/electricity/2026-06-11/demand_load/A1_01a/df_weather_future.csv
+    time_col: ts
+    series_id_cols: []
+    availability: forecast_origin
+features:
+  target_lags:
+    h_total_use:
     - 288
     - 576
     - 864
@@ -38,40 +68,35 @@ overrides:
     - 1440
     - 1728
     - 2016
-  preprocessing:
-    target_calendar_normalization: none
-  model_strategy:
-    align_direct_features_to_target: false
-    model_type: catboost
-    pred_method: univariate-single-multistep-direct-recursive
-  train_outlier:
-    enable_train_outlier_handling: true
-    train_outlier_method: local_interpolate
-    high_outlier_threshold: null
-    high_outlier_max_run_points: 4
-    rise_outlier_max_run_points: 2
-    rise_rebound_min_abs_diff: 1000.0
-    low_outlier_threshold: null
-    low_outlier_max_run_points: 4
-    drop_outlier_max_run_points: 2
-    drop_rebound_min_abs_diff: 1000.0
-  training_enhancement:
-    enable_time_decay_sample_weight: true
-    decay_halflife_days: 14  # 半衰期天数,按数据漂移速度调整
-  eval_mask:
-    mode: percentile
-    percentile: 5.0
-    min_value: null
-    max_value: null
-  performance:
-    window_parallel_workers: 8
-    multi_output_n_jobs: 8
-    model_thread_count: 1
-  # preprocessing:
-  #   scale_target: false
-  #   target_scaler_type: standard
-  #   inverse_target: false
-  # advanced_features:
-  #   enable_advanced_features: false
-  #   enable_rolling_features: false
-  #   enable_diff_features: false
+  observed_past_lags: {}
+  datetime_features:
+  - minute
+  - hour
+  - day
+  - day_of_week
+  - week_of_year
+  - month
+  - days_in_month
+  - quarter
+  - day_of_year
+  - year
+  transformations: {}
+strategy:
+  name: mimo
+estimator:
+  model_type: catboost
+  target_adapter: independent
+  params: {}
+probabilistic:
+  mode: point
+validation:
+  forecast_origin: '2026-06-11T23:55:00'
+  schedule_mode: daily
+  horizon_mode: fixed_steps
+  history_length: 577
+  window_length: 15
+  train_window_length: null
+output:
+  scenario_subpath: ''
+  setting_suffix: ''
+  results_root: results

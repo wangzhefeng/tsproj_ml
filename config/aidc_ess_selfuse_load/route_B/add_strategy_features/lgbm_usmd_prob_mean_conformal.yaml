@@ -1,102 +1,186 @@
-# B — lightgbm — direct (5min 单变量 · 概率预测 quantile) · C5 strategy features · CQR
-base_config: config.univariate_config
-overrides:
-  output:
-    scenario_subpath: aidc_ess_selfuse_load/route_B/add_strategy_features
-    setting_suffix: -conformal-strategy-c5
-    plot_overlay_path: forecasting_data/B_ESS_PCS_merged_5min_20251001_20260728.csv
-    plot_overlay_col: pcs_power
-  runtime:
-    horizon_mode: fixed_steps
-    train_window_length: null
-    forecast_mode: forecast
-    is_testing: true
-    is_forecasting: false
-    history_length: 34
-    predict_steps: 288
-    window_length: 30
-    now_time: '2026-07-28T23:55:00'
-  target_series:
-    data_dir: ./dataset/aidc_ess_selfuse_load/
-    data_path: forecasting_data/B_GateEnergys_5min_20251001_20260728_remove_outlier.csv
-    freq: 5min
-    target_ts_feat: time
-    target: value
-  exogenous_features:
-    date_history_path: null
-    date_future_path: null
-    weather_history_path: null
-    weather_backtest_path: null
-    weather_future_path: null
-    strict_date_information_set: false
-    strict_weather_information_set: false
-    weather_history_source: ''
-    weather_backtest_source: ''
-    weather_future_source: ''
-    enable_date_features: false
-    enable_weather_features: false
-    enable_datetime_features: false
-    custom_features:
-    - name: strategy_features_v2_c5_joint
-      history_path: forecasting_data/strategy_features/model_features_history_B.csv
-      future_path: forecasting_data/strategy_features/model_features_future_B.csv
-      ts_col: time
-      columns:
-      - pcs_plan
-      - plan_direction_charge
-      - plan_direction_standby
-      - plan_direction_discharge
-      - plan_power_abs
-      - plan_cycle_charge_hours
-      - plan_cycle_standby_hours
-      - plan_cycle_discharge_hours
-      - plan_cycle_charge_segment_count
-      - plan_cycle_standby_segment_count
-      - plan_cycle_discharge_segment_count
-      - plan_cycle_charge_energy_kwh
-      - plan_cycle_discharge_energy_kwh
-      - plan_cycle_switch_count
-      - plan_cycle_max_ramp
-      - plan_cycle_first_charge_slot_sin
-      - plan_cycle_first_charge_slot_cos
-      - plan_cycle_first_discharge_slot_sin
-      - plan_cycle_first_discharge_slot_cos
-      - plan_cycle_has_charge
-      - plan_cycle_has_discharge
-      - ess_lag_288
-      - pcs_actual_lag_288
-      - actual_operating_charge_lag_288
-      - actual_operating_standby_lag_288
-      - actual_operating_discharge_lag_288
-      - last_completed_cycle_charge_hours
-      - last_completed_cycle_standby_hours
-      - last_completed_cycle_discharge_hours
-      - last_completed_cycle_plan_state_agreement
-      - lag_feature_ready
-      - plan_nearest_day_distance
-      - plan_knn_mean_distance
-      - plan_novelty_score
-      - plan_is_novel
-      - similar_day_effective_samples
-      - plan_similar_day_ess_template
-      - plan_similar_day_template_std
-      - robust_recent_ess_template
-      - template_gate_weight
-      - gated_ess_template
-      - template_feature_ready
-      - joint_cluster_lag1_c0
-      - joint_cluster_lag1_c1
-      - joint_cluster_lag1_c2
-      - joint_cluster_lag1_c3
-      - joint_cluster_lag1_c4
-      - joint_cluster_lag1_distance
-      - joint_cluster_lag1_rare
-      - joint_cluster_feature_ready
-      categorical_columns: []
-    datetime_features: []
-    datetime_categorical_features: []
-  time_lag_features:
-    lags:
+schema_version: 2
+problem:
+  time_col: time
+  freq: 5min
+  horizon: 288
+  targets:
+  - value
+  information_mode: forecast
+  training_scope: local
+  series_id_cols: []
+data:
+  sources:
+  - name: target_history
+    source_type: file
+    columns:
+    - name: value
+      role: target
+      categorical: false
+    history_path: dataset/aidc_ess_selfuse_load/forecasting_data/B_GateEnergys_5min_20251001_20260728_remove_outlier.csv
+    time_col: time
+    series_id_cols: []
+    availability: source_time
+  - name: strategy_features_v2_c5_joint
+    source_type: file
+    columns:
+    - name: pcs_plan
+      role: known_future
+      categorical: false
+    - name: plan_direction_charge
+      role: known_future
+      categorical: false
+    - name: plan_direction_standby
+      role: known_future
+      categorical: false
+    - name: plan_direction_discharge
+      role: known_future
+      categorical: false
+    - name: plan_power_abs
+      role: known_future
+      categorical: false
+    - name: plan_cycle_charge_hours
+      role: known_future
+      categorical: false
+    - name: plan_cycle_standby_hours
+      role: known_future
+      categorical: false
+    - name: plan_cycle_discharge_hours
+      role: known_future
+      categorical: false
+    - name: plan_cycle_charge_segment_count
+      role: known_future
+      categorical: false
+    - name: plan_cycle_standby_segment_count
+      role: known_future
+      categorical: false
+    - name: plan_cycle_discharge_segment_count
+      role: known_future
+      categorical: false
+    - name: plan_cycle_charge_energy_kwh
+      role: known_future
+      categorical: false
+    - name: plan_cycle_discharge_energy_kwh
+      role: known_future
+      categorical: false
+    - name: plan_cycle_switch_count
+      role: known_future
+      categorical: false
+    - name: plan_cycle_max_ramp
+      role: known_future
+      categorical: false
+    - name: plan_cycle_first_charge_slot_sin
+      role: known_future
+      categorical: false
+    - name: plan_cycle_first_charge_slot_cos
+      role: known_future
+      categorical: false
+    - name: plan_cycle_first_discharge_slot_sin
+      role: known_future
+      categorical: false
+    - name: plan_cycle_first_discharge_slot_cos
+      role: known_future
+      categorical: false
+    - name: plan_cycle_has_charge
+      role: known_future
+      categorical: false
+    - name: plan_cycle_has_discharge
+      role: known_future
+      categorical: false
+    - name: ess_lag_288
+      role: known_future
+      categorical: false
+    - name: pcs_actual_lag_288
+      role: known_future
+      categorical: false
+    - name: actual_operating_charge_lag_288
+      role: known_future
+      categorical: false
+    - name: actual_operating_standby_lag_288
+      role: known_future
+      categorical: false
+    - name: actual_operating_discharge_lag_288
+      role: known_future
+      categorical: false
+    - name: last_completed_cycle_charge_hours
+      role: known_future
+      categorical: false
+    - name: last_completed_cycle_standby_hours
+      role: known_future
+      categorical: false
+    - name: last_completed_cycle_discharge_hours
+      role: known_future
+      categorical: false
+    - name: last_completed_cycle_plan_state_agreement
+      role: known_future
+      categorical: false
+    - name: lag_feature_ready
+      role: known_future
+      categorical: false
+    - name: plan_nearest_day_distance
+      role: known_future
+      categorical: false
+    - name: plan_knn_mean_distance
+      role: known_future
+      categorical: false
+    - name: plan_novelty_score
+      role: known_future
+      categorical: false
+    - name: plan_is_novel
+      role: known_future
+      categorical: false
+    - name: similar_day_effective_samples
+      role: known_future
+      categorical: false
+    - name: plan_similar_day_ess_template
+      role: known_future
+      categorical: false
+    - name: plan_similar_day_template_std
+      role: known_future
+      categorical: false
+    - name: robust_recent_ess_template
+      role: known_future
+      categorical: false
+    - name: template_gate_weight
+      role: known_future
+      categorical: false
+    - name: gated_ess_template
+      role: known_future
+      categorical: false
+    - name: template_feature_ready
+      role: known_future
+      categorical: false
+    - name: joint_cluster_lag1_c0
+      role: known_future
+      categorical: false
+    - name: joint_cluster_lag1_c1
+      role: known_future
+      categorical: false
+    - name: joint_cluster_lag1_c2
+      role: known_future
+      categorical: false
+    - name: joint_cluster_lag1_c3
+      role: known_future
+      categorical: false
+    - name: joint_cluster_lag1_c4
+      role: known_future
+      categorical: false
+    - name: joint_cluster_lag1_distance
+      role: known_future
+      categorical: false
+    - name: joint_cluster_lag1_rare
+      role: known_future
+      categorical: false
+    - name: joint_cluster_feature_ready
+      role: known_future
+      categorical: false
+    history_path: dataset/aidc_ess_selfuse_load/forecasting_data/strategy_features/model_features_history_B.csv
+    future_path: dataset/aidc_ess_selfuse_load/forecasting_data/strategy_features/model_features_future_B.csv
+    time_col: time
+    series_id_cols: []
+    availability: forecast_origin
+features:
+  target_lags:
+    value:
     - 288
     - 576
     - 864
@@ -104,52 +188,50 @@ overrides:
     - 1440
     - 1728
     - 2016
-  advanced_features:
-    enable_advanced_features: true
-    enable_rolling_features: true
-    rolling_columns:
-    - y
-    rolling_windows:
-    - 2016
-    - 4032
-    - 8064
-    rolling_stats:
-    - mean
-    - std
-    - min
-    - max
-    enable_diff_features: true
-    diff_columns:
-    - y
-    diff_periods:
-    - 288
-    - 2016
-    - 8064
-  model_strategy:
-    enable_ensemble: false
-    use_horizon_exogenous_for_direct: true
-    quantile_monotone: true
-    align_direct_features_to_target: false
-    model_type: lightgbm
-    pred_method: univariate-single-multistep-direct
-    predict_type: quantile  # 概率预测:输出各分位数(predict_qXX)
-    quantiles:
-    - 0.1
-    - 0.5
-    - 0.9
-    enable_conformal_calibration: true
-  training_enhancement:
-    enable_time_decay_sample_weight: true
-    decay_halflife_days: 60  # 半衰期天数,按数据漂移速度调整
-  train_outlier:
-    enable_train_outlier_handling: false  # 高频稀疏点不宜插值清洗
-  eval_mask:
-    mode: percentile
-    percentile: 5.0
-  preprocessing:
-    decomposition_method: none
-    target_calendar_normalization: none
-  performance:
-    window_parallel_workers: 8
-    multi_output_n_jobs: 8
-    model_thread_count: 1
+  observed_past_lags: {}
+  datetime_features: []
+  transformations:
+    direct_layout: independent_models
+    advanced:
+      rolling_windows:
+      - 2016
+      - 4032
+      - 8064
+      diff_periods:
+      - 288
+      - 2016
+      - 8064
+      pct_change_periods:
+      - 1
+      - 7
+strategy:
+  name: direct
+estimator:
+  model_type: lightgbm
+  target_adapter: independent
+  params: {}
+probabilistic:
+  mode: quantile
+  quantiles:
+  - 0.1
+  - 0.5
+  - 0.9
+  point_quantile: 0.5
+  recursive_propagation: median_path
+  crossing_method: isotonic
+  conformal:
+    method: cqr
+    coverage: 0.9
+    min_scores: 30
+    min_windows: 3
+validation:
+  forecast_origin: '2026-07-28T23:55:00'
+  schedule_mode: daily
+  horizon_mode: fixed_steps
+  history_length: 577
+  window_length: 30
+  train_window_length: null
+output:
+  scenario_subpath: aidc_ess_selfuse_load/route_B/add_strategy_features
+  setting_suffix: -conformal-strategy-c5
+  results_root: results

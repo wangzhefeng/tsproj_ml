@@ -1,87 +1,211 @@
-# A1_01a — lightgbm — recursive
-base_config: config.multivariate_config
-overrides:
-  runtime:
-    horizon_mode: fixed_steps
-    train_window_length: null
-    forecast_mode: forecast
-    is_testing: true
-    is_forecasting: false
-    history_length: 65
-    predict_steps: 288
-    window_length: 15
-    now_time: '2026-06-11T23:55:00'
-  target_series:
-    data_dir: ./dataset/aidc_electricity_computility/electricity/2026-06-11/demand_load/A1_01a/
-    data_path: df_selected.csv
-    freq: 5min
-    target_ts_feat: count_data_time
-    target: h_total_use
-    target_series_numeric_features:
-    - inference_cpu_util_count
-    - inference_active_jobs_roll_mean_12
-    - inference_memory_util_count
-    - inference_memory_amount_count
-    - inference_gpu_power_usage_sum_roll_mean_12
-    - training_gpu_power_usage_std
-    - inference_active_jobs_roll_mean_3
-    - inference_gpu_power_usage_sum
-    - inference_memory_total_count
-    - inference_gpu_power_usage_sum_roll_mean_3
-    - inference_active_jobs
-    - inference_memory_total_sum
-    - inference_gpu_util_count
-    - inference_gpu_memory_amount_count
-    - inference_gpu_memory_util_count
-    - inference_gpu_memory_total_count
-    - inference_gpu_power_usage_count
-    - inference_gpu_memory_total_sum
-    - inference_memory_amount_sum
-    - pod_memory_total_sum
-    - pod_gpu_memory_total_sum
-    - training_share_gpu_power_usage
-    - inference_share_gpu_power_usage
-    - inference_memory_util_std
-    - training_gpu_power_usage_mean
-    - pod_memory_total_mean
-    - pod_gpu_memory_total_std
-    - pod_memory_total_std
-    - pod_gpu_memory_total_mean
-    - inference_gpu_power_usage_std
-    - inference_memory_amount_std
-    - jobs_total_gpu_power_usage_sum_roll_mean_12
-    - jobs_total_gpu_power_usage_sum_roll_mean_3
-    - training_to_inference_power_ratio
-    - jobs_total_gpu_power_usage_sum
-    - pod_gpu_memory_amount_sum
-    - training_gpu_memory_util_mean
-    - pod_gpu_memory_util_std
-    - training_gpu_util_std
-    - training_gpu_power_usage_sum_roll_mean_3
-    - training_gpu_power_usage_sum_roll_mean_12
-    - inference_gpu_memory_amount_sum
-    - training_gpu_power_usage_sum
-    - pod_gpu_util_std
-    - pod_minus_jobs_gpu_power_usage_sum
-    - training_minus_inference_power_sum
-    - inference_gpu_memory_util_mean
-    - training_memory_amount_std
-    target_series_categorical_features: []
-    target_series_drop_features: []
-  exogenous_features:
-    weather_backtest_path: null
-    strict_weather_information_set: false
-    weather_history_source: ''
-    weather_backtest_source: ''
-    weather_future_source: ''
-    date_history_path: df_date.csv
-    date_future_path: df_date_future.csv
-    date_ts_feat: date
-    weather_history_path: df_weather.csv
-    weather_future_path: df_weather_future.csv
-    weather_ts_feat: ts
-  time_lag_features:
-    lags:
+schema_version: 2
+problem:
+  time_col: count_data_time
+  freq: 5min
+  horizon: 288
+  targets:
+  - h_total_use
+  information_mode: forecast
+  training_scope: local
+  series_id_cols: []
+data:
+  sources:
+  - name: target_history
+    source_type: file
+    columns:
+    - name: h_total_use
+      role: target
+      categorical: false
+    - name: inference_cpu_util_count
+      role: observed_past
+      categorical: false
+    - name: inference_active_jobs_roll_mean_12
+      role: observed_past
+      categorical: false
+    - name: inference_memory_util_count
+      role: observed_past
+      categorical: false
+    - name: inference_memory_amount_count
+      role: observed_past
+      categorical: false
+    - name: inference_gpu_power_usage_sum_roll_mean_12
+      role: observed_past
+      categorical: false
+    - name: training_gpu_power_usage_std
+      role: observed_past
+      categorical: false
+    - name: inference_active_jobs_roll_mean_3
+      role: observed_past
+      categorical: false
+    - name: inference_gpu_power_usage_sum
+      role: observed_past
+      categorical: false
+    - name: inference_memory_total_count
+      role: observed_past
+      categorical: false
+    - name: inference_gpu_power_usage_sum_roll_mean_3
+      role: observed_past
+      categorical: false
+    - name: inference_active_jobs
+      role: observed_past
+      categorical: false
+    - name: inference_memory_total_sum
+      role: observed_past
+      categorical: false
+    - name: inference_gpu_util_count
+      role: observed_past
+      categorical: false
+    - name: inference_gpu_memory_amount_count
+      role: observed_past
+      categorical: false
+    - name: inference_gpu_memory_util_count
+      role: observed_past
+      categorical: false
+    - name: inference_gpu_memory_total_count
+      role: observed_past
+      categorical: false
+    - name: inference_gpu_power_usage_count
+      role: observed_past
+      categorical: false
+    - name: inference_gpu_memory_total_sum
+      role: observed_past
+      categorical: false
+    - name: inference_memory_amount_sum
+      role: observed_past
+      categorical: false
+    - name: pod_memory_total_sum
+      role: observed_past
+      categorical: false
+    - name: pod_gpu_memory_total_sum
+      role: observed_past
+      categorical: false
+    - name: training_share_gpu_power_usage
+      role: observed_past
+      categorical: false
+    - name: inference_share_gpu_power_usage
+      role: observed_past
+      categorical: false
+    - name: inference_memory_util_std
+      role: observed_past
+      categorical: false
+    - name: training_gpu_power_usage_mean
+      role: observed_past
+      categorical: false
+    - name: pod_memory_total_mean
+      role: observed_past
+      categorical: false
+    - name: pod_gpu_memory_total_std
+      role: observed_past
+      categorical: false
+    - name: pod_memory_total_std
+      role: observed_past
+      categorical: false
+    - name: pod_gpu_memory_total_mean
+      role: observed_past
+      categorical: false
+    - name: inference_gpu_power_usage_std
+      role: observed_past
+      categorical: false
+    - name: inference_memory_amount_std
+      role: observed_past
+      categorical: false
+    - name: jobs_total_gpu_power_usage_sum_roll_mean_12
+      role: observed_past
+      categorical: false
+    - name: jobs_total_gpu_power_usage_sum_roll_mean_3
+      role: observed_past
+      categorical: false
+    - name: training_to_inference_power_ratio
+      role: observed_past
+      categorical: false
+    - name: jobs_total_gpu_power_usage_sum
+      role: observed_past
+      categorical: false
+    - name: pod_gpu_memory_amount_sum
+      role: observed_past
+      categorical: false
+    - name: training_gpu_memory_util_mean
+      role: observed_past
+      categorical: false
+    - name: pod_gpu_memory_util_std
+      role: observed_past
+      categorical: false
+    - name: training_gpu_util_std
+      role: observed_past
+      categorical: false
+    - name: training_gpu_power_usage_sum_roll_mean_3
+      role: observed_past
+      categorical: false
+    - name: training_gpu_power_usage_sum_roll_mean_12
+      role: observed_past
+      categorical: false
+    - name: inference_gpu_memory_amount_sum
+      role: observed_past
+      categorical: false
+    - name: training_gpu_power_usage_sum
+      role: observed_past
+      categorical: false
+    - name: pod_gpu_util_std
+      role: observed_past
+      categorical: false
+    - name: pod_minus_jobs_gpu_power_usage_sum
+      role: observed_past
+      categorical: false
+    - name: training_minus_inference_power_sum
+      role: observed_past
+      categorical: false
+    - name: inference_gpu_memory_util_mean
+      role: observed_past
+      categorical: false
+    - name: training_memory_amount_std
+      role: observed_past
+      categorical: false
+    history_path: dataset/aidc_electricity_computility/electricity/2026-06-11/demand_load/A1_01a/df_selected.csv
+    time_col: count_data_time
+    series_id_cols: []
+    availability: source_time
+    provider: persistence
+  - name: date_type
+    source_type: file
+    columns:
+    - name: date_type
+      role: known_future
+      categorical: true
+    history_path: dataset/aidc_electricity_computility/electricity/2026-06-11/demand_load/A1_01a/df_date.csv
+    future_path: dataset/aidc_electricity_computility/electricity/2026-06-11/demand_load/A1_01a/df_date_future.csv
+    time_col: date
+    series_id_cols: []
+    availability: forecast_origin
+  - name: weather
+    source_type: file
+    columns:
+    - name: rt_ssr
+      role: known_future
+      categorical: false
+    - name: rt_ws10
+      role: known_future
+      categorical: false
+    - name: rt_tt2
+      role: known_future
+      categorical: false
+    - name: cal_rh
+      role: known_future
+      categorical: false
+    - name: rt_ps
+      role: known_future
+      categorical: false
+    - name: rt_rain
+      role: known_future
+      categorical: false
+    history_path: dataset/aidc_electricity_computility/electricity/2026-06-11/demand_load/A1_01a/df_weather.csv
+    backtest_path: null
+    future_path: dataset/aidc_electricity_computility/electricity/2026-06-11/demand_load/A1_01a/df_weather_future.csv
+    time_col: ts
+    series_id_cols: []
+    availability: forecast_origin
+features:
+  target_lags:
+    h_total_use:
     - 288
     - 576
     - 864
@@ -89,38 +213,419 @@ overrides:
     - 1440
     - 1728
     - 2016
-  advanced_features:
-    enable_advanced_features: false
-    enable_rolling_features: false
-    enable_diff_features: false
-    enable_pct_change_features: false
-  preprocessing:
-    target_calendar_normalization: none
-  model_strategy:
-    align_direct_features_to_target: false
-    model_type: lightgbm
-    pred_method: multivariate-single-multistep-recursive
-  train_outlier:
-    enable_train_outlier_handling: true
-    train_outlier_method: local_interpolate
-    high_outlier_threshold: null
-    high_outlier_max_run_points: 4
-    rise_outlier_max_run_points: 2
-    rise_rebound_min_abs_diff: 1000.0
-    low_outlier_threshold: null
-    low_outlier_max_run_points: 4
-    drop_outlier_max_run_points: 2
-    drop_rebound_min_abs_diff: 1000.0
-  training_enhancement:
-    enable_time_decay_sample_weight: true
-    decay_halflife_days: 14
-    enable_feature_selection: false
-  eval_mask:
-    mode: percentile
-    percentile: 5.0
-    min_value: null
-    max_value: null
-  performance:
-    window_parallel_workers: 8
-    multi_output_n_jobs: 1
-    model_thread_count: 8
+  observed_past_lags:
+    inference_cpu_util_count:
+    - 288
+    - 576
+    - 864
+    - 1152
+    - 1440
+    - 1728
+    - 2016
+    inference_active_jobs_roll_mean_12:
+    - 288
+    - 576
+    - 864
+    - 1152
+    - 1440
+    - 1728
+    - 2016
+    inference_memory_util_count:
+    - 288
+    - 576
+    - 864
+    - 1152
+    - 1440
+    - 1728
+    - 2016
+    inference_memory_amount_count:
+    - 288
+    - 576
+    - 864
+    - 1152
+    - 1440
+    - 1728
+    - 2016
+    inference_gpu_power_usage_sum_roll_mean_12:
+    - 288
+    - 576
+    - 864
+    - 1152
+    - 1440
+    - 1728
+    - 2016
+    training_gpu_power_usage_std:
+    - 288
+    - 576
+    - 864
+    - 1152
+    - 1440
+    - 1728
+    - 2016
+    inference_active_jobs_roll_mean_3:
+    - 288
+    - 576
+    - 864
+    - 1152
+    - 1440
+    - 1728
+    - 2016
+    inference_gpu_power_usage_sum:
+    - 288
+    - 576
+    - 864
+    - 1152
+    - 1440
+    - 1728
+    - 2016
+    inference_memory_total_count:
+    - 288
+    - 576
+    - 864
+    - 1152
+    - 1440
+    - 1728
+    - 2016
+    inference_gpu_power_usage_sum_roll_mean_3:
+    - 288
+    - 576
+    - 864
+    - 1152
+    - 1440
+    - 1728
+    - 2016
+    inference_active_jobs:
+    - 288
+    - 576
+    - 864
+    - 1152
+    - 1440
+    - 1728
+    - 2016
+    inference_memory_total_sum:
+    - 288
+    - 576
+    - 864
+    - 1152
+    - 1440
+    - 1728
+    - 2016
+    inference_gpu_util_count:
+    - 288
+    - 576
+    - 864
+    - 1152
+    - 1440
+    - 1728
+    - 2016
+    inference_gpu_memory_amount_count:
+    - 288
+    - 576
+    - 864
+    - 1152
+    - 1440
+    - 1728
+    - 2016
+    inference_gpu_memory_util_count:
+    - 288
+    - 576
+    - 864
+    - 1152
+    - 1440
+    - 1728
+    - 2016
+    inference_gpu_memory_total_count:
+    - 288
+    - 576
+    - 864
+    - 1152
+    - 1440
+    - 1728
+    - 2016
+    inference_gpu_power_usage_count:
+    - 288
+    - 576
+    - 864
+    - 1152
+    - 1440
+    - 1728
+    - 2016
+    inference_gpu_memory_total_sum:
+    - 288
+    - 576
+    - 864
+    - 1152
+    - 1440
+    - 1728
+    - 2016
+    inference_memory_amount_sum:
+    - 288
+    - 576
+    - 864
+    - 1152
+    - 1440
+    - 1728
+    - 2016
+    pod_memory_total_sum:
+    - 288
+    - 576
+    - 864
+    - 1152
+    - 1440
+    - 1728
+    - 2016
+    pod_gpu_memory_total_sum:
+    - 288
+    - 576
+    - 864
+    - 1152
+    - 1440
+    - 1728
+    - 2016
+    training_share_gpu_power_usage:
+    - 288
+    - 576
+    - 864
+    - 1152
+    - 1440
+    - 1728
+    - 2016
+    inference_share_gpu_power_usage:
+    - 288
+    - 576
+    - 864
+    - 1152
+    - 1440
+    - 1728
+    - 2016
+    inference_memory_util_std:
+    - 288
+    - 576
+    - 864
+    - 1152
+    - 1440
+    - 1728
+    - 2016
+    training_gpu_power_usage_mean:
+    - 288
+    - 576
+    - 864
+    - 1152
+    - 1440
+    - 1728
+    - 2016
+    pod_memory_total_mean:
+    - 288
+    - 576
+    - 864
+    - 1152
+    - 1440
+    - 1728
+    - 2016
+    pod_gpu_memory_total_std:
+    - 288
+    - 576
+    - 864
+    - 1152
+    - 1440
+    - 1728
+    - 2016
+    pod_memory_total_std:
+    - 288
+    - 576
+    - 864
+    - 1152
+    - 1440
+    - 1728
+    - 2016
+    pod_gpu_memory_total_mean:
+    - 288
+    - 576
+    - 864
+    - 1152
+    - 1440
+    - 1728
+    - 2016
+    inference_gpu_power_usage_std:
+    - 288
+    - 576
+    - 864
+    - 1152
+    - 1440
+    - 1728
+    - 2016
+    inference_memory_amount_std:
+    - 288
+    - 576
+    - 864
+    - 1152
+    - 1440
+    - 1728
+    - 2016
+    jobs_total_gpu_power_usage_sum_roll_mean_12:
+    - 288
+    - 576
+    - 864
+    - 1152
+    - 1440
+    - 1728
+    - 2016
+    jobs_total_gpu_power_usage_sum_roll_mean_3:
+    - 288
+    - 576
+    - 864
+    - 1152
+    - 1440
+    - 1728
+    - 2016
+    training_to_inference_power_ratio:
+    - 288
+    - 576
+    - 864
+    - 1152
+    - 1440
+    - 1728
+    - 2016
+    jobs_total_gpu_power_usage_sum:
+    - 288
+    - 576
+    - 864
+    - 1152
+    - 1440
+    - 1728
+    - 2016
+    pod_gpu_memory_amount_sum:
+    - 288
+    - 576
+    - 864
+    - 1152
+    - 1440
+    - 1728
+    - 2016
+    training_gpu_memory_util_mean:
+    - 288
+    - 576
+    - 864
+    - 1152
+    - 1440
+    - 1728
+    - 2016
+    pod_gpu_memory_util_std:
+    - 288
+    - 576
+    - 864
+    - 1152
+    - 1440
+    - 1728
+    - 2016
+    training_gpu_util_std:
+    - 288
+    - 576
+    - 864
+    - 1152
+    - 1440
+    - 1728
+    - 2016
+    training_gpu_power_usage_sum_roll_mean_3:
+    - 288
+    - 576
+    - 864
+    - 1152
+    - 1440
+    - 1728
+    - 2016
+    training_gpu_power_usage_sum_roll_mean_12:
+    - 288
+    - 576
+    - 864
+    - 1152
+    - 1440
+    - 1728
+    - 2016
+    inference_gpu_memory_amount_sum:
+    - 288
+    - 576
+    - 864
+    - 1152
+    - 1440
+    - 1728
+    - 2016
+    training_gpu_power_usage_sum:
+    - 288
+    - 576
+    - 864
+    - 1152
+    - 1440
+    - 1728
+    - 2016
+    pod_gpu_util_std:
+    - 288
+    - 576
+    - 864
+    - 1152
+    - 1440
+    - 1728
+    - 2016
+    pod_minus_jobs_gpu_power_usage_sum:
+    - 288
+    - 576
+    - 864
+    - 1152
+    - 1440
+    - 1728
+    - 2016
+    training_minus_inference_power_sum:
+    - 288
+    - 576
+    - 864
+    - 1152
+    - 1440
+    - 1728
+    - 2016
+    inference_gpu_memory_util_mean:
+    - 288
+    - 576
+    - 864
+    - 1152
+    - 1440
+    - 1728
+    - 2016
+    training_memory_amount_std:
+    - 288
+    - 576
+    - 864
+    - 1152
+    - 1440
+    - 1728
+    - 2016
+  datetime_features:
+  - minute
+  - hour
+  - day
+  - day_of_week
+  - week_of_year
+  - month
+  - days_in_month
+  - quarter
+  - day_of_year
+  - year
+  transformations: {}
+strategy:
+  name: recursive
+estimator:
+  model_type: lightgbm
+  target_adapter: independent
+  params: {}
+probabilistic:
+  mode: point
+validation:
+  forecast_origin: '2026-06-11T23:55:00'
+  schedule_mode: daily
+  horizon_mode: fixed_steps
+  history_length: 577
+  window_length: 15
+  train_window_length: null
+output:
+  scenario_subpath: ''
+  setting_suffix: ''
+  results_root: results

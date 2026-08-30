@@ -1,51 +1,39 @@
-# B — lightgbm — USMDP (5min 单变量 · quantile) · 目标分解 stl288
-base_config: config.univariate_config
-overrides:
-  output:
-    scenario_subpath: aidc_ess_selfuse_load/route_B/add_decomposition
-    setting_suffix: -decomp-stl288
-    plot_overlay_path: forecasting_data/B_ESS_PCS_merged_5min_20251001_20260728.csv
-    plot_overlay_col: pcs_power
-  runtime:
-    horizon_mode: fixed_steps
-    train_window_length: null
-    forecast_mode: forecast
-    is_testing: true
-    is_forecasting: false
-    history_length: 34
-    predict_steps: 288
-    window_length: 30
-    now_time: '2026-07-28T23:55:00'
-  target_series:
-    data_dir: ./dataset/aidc_ess_selfuse_load/
-    data_path: forecasting_data/B_GateEnergys_5min_20251001_20260728_remove_outlier.csv
-    freq: 5min
-    target_ts_feat: time
-    target: value
-  exogenous_features:
-    weather_backtest_path: null
-    strict_weather_information_set: false
-    weather_history_source: ''
-    weather_backtest_source: ''
-    weather_future_source: ''
-    enable_date_features: false
-    enable_weather_features: false
-    enable_datetime_features: false
-    datetime_features:
-    - hour
-    - minute
-    - day
-    - day_of_week
-    - week_of_year
-    - month
-    - days_in_month
-    - quarter
-    - day_of_year
-    - year
-    datetime_categorical_features: []  # 空列表=关闭类别特征(不传 categorical_feature 给 LightGBM)
-  time_lag_features:
-    enable_lags_features: true  # USMDP safe-lag：显式开启目标滞后特征
-    lags:
+schema_version: 2
+problem:
+  time_col: time
+  freq: 5min
+  horizon: 288
+  targets:
+  - value
+  information_mode: forecast
+  training_scope: local
+  series_id_cols: []
+data:
+  sources:
+  - name: target_history
+    source_type: file
+    columns:
+    - name: value
+      role: target
+      categorical: false
+    history_path: dataset/aidc_ess_selfuse_load/forecasting_data/B_GateEnergys_5min_20251001_20260728_remove_outlier.csv
+    time_col: time
+    series_id_cols: []
+    availability: source_time
+  - name: date_type
+    source_type: file
+    columns:
+    - name: date_type
+      role: known_future
+      categorical: true
+    history_path: dataset/aidc_ess_selfuse_load/ETTm1_exogenous/df_date.csv
+    future_path: dataset/aidc_ess_selfuse_load/ETTm1_exogenous/df_date_future.csv
+    time_col: date
+    series_id_cols: []
+    availability: forecast_origin
+features:
+  target_lags:
+    value:
     - 288
     - 576
     - 864
@@ -53,35 +41,42 @@ overrides:
     - 1440
     - 1728
     - 2016
-  model_strategy:
-    quantile_monotone: true
-    align_direct_features_to_target: true  # safe-lag：min(lags) >= horizon，只引用预测原点前真实目标
-    model_type: lightgbm
-    pred_method: univariate-single-multistep-direct-pointwise
-    predict_type: quantile  # 概率预测:输出各分位数(predict_qXX)
-    quantiles:
-    - 0.1
-    - 0.5
-    - 0.9
-  training_enhancement:
-    enable_time_decay_sample_weight: true
-    decay_halflife_days: 60  # 半衰期天数,按数据漂移速度调整
-  train_outlier:
-    enable_train_outlier_handling: false  # 高频稀疏点不宜插值清洗
-  eval_mask:
-    mode: percentile
-    percentile: 5.0
-  preprocessing:
-    target_calendar_normalization: none
-    scale_target: false
-    decomposition_method: stl
-    decomposition_periods:
-    - 288
-    decomposition_robust: true
-    decomposition_trend_degree: 1
-    decomposition_trend_forecast: polynomial
-    decomposition_seasonal_cycles: 4
-  performance:
-    window_parallel_workers: 8
-    multi_output_n_jobs: 1
-    model_thread_count: 8
+  observed_past_lags: {}
+  datetime_features: []
+  transformations:
+    direct_layout: single_model_horizon
+    target_transform:
+      calendar_normalization: none
+      decomposition: stl
+      target_scaling: none
+strategy:
+  name: direct
+estimator:
+  model_type: lightgbm
+  target_adapter: independent
+  params: {}
+probabilistic:
+  mode: quantile
+  quantiles:
+  - 0.1
+  - 0.5
+  - 0.9
+  point_quantile: 0.5
+  recursive_propagation: median_path
+  crossing_method: isotonic
+  conformal:
+    method: none
+    coverage: 0.9
+    min_scores: 30
+    min_windows: 3
+validation:
+  forecast_origin: '2026-07-28T23:55:00'
+  schedule_mode: daily
+  horizon_mode: fixed_steps
+  history_length: 577
+  window_length: 30
+  train_window_length: null
+output:
+  scenario_subpath: aidc_ess_selfuse_load/route_B/add_decomposition
+  setting_suffix: -decomp-stl288
+  results_root: results

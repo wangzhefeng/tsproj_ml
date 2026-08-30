@@ -1,0 +1,80 @@
+schema_version: 2
+problem:
+  time_col: time
+  freq: 15min
+  horizon: 96
+  targets:
+  - value
+  information_mode: forecast
+  training_scope: local
+  series_id_cols: []
+data:
+  sources:
+  - name: target_history
+    source_type: file
+    columns:
+    - name: value
+      role: target
+      categorical: false
+    history_path: dataset/aidc_load_15min_rolling/B_Loads_15min_mean_20251001_20260731.csv
+    time_col: time
+    series_id_cols: []
+    availability: source_time
+features:
+  target_lags:
+    value:
+    - 96
+    - 192
+    - 288
+    - 384
+    - 480
+    - 576
+    - 672
+  observed_past_lags: {}
+  datetime_features: []
+  transformations:
+    direct_layout: independent_models
+    advanced:
+      rolling_windows:
+      - 96
+      - 192
+      - 384
+      - 672
+      diff_periods:
+      - 96
+      - 192
+      - 672
+      pct_change_periods:
+      - 1
+      - 7
+estimator:
+  model_type: lightgbm
+  target_adapter: independent
+  params: {}
+probabilistic:
+  mode: quantile
+  quantiles:
+  - 0.1
+  - 0.5
+  - 0.9
+  point_quantile: 0.5
+  recursive_propagation: median_path
+  crossing_method: isotonic
+  conformal:
+    method: cqr
+    coverage: 0.9
+    min_scores: 30
+    min_windows: 3
+strategy:
+  name: recursive
+validation:
+  forecast_origin: '2026-07-31T14:00:00'
+  schedule_mode: intraday
+  horizon_mode: fixed_steps
+  history_length: 193
+  window_length: 30
+  train_window_length: null
+output:
+  scenario_subpath: aidc_load_15min_rolling/route_B/baseline/ensemble_members
+  setting_suffix: -conformal-intraday-recursive-member
+  results_root: results

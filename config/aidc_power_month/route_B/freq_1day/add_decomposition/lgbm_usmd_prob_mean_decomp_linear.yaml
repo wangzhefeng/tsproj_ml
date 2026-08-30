@@ -1,57 +1,61 @@
-# B — lightgbm — direct (日频单变量 · 概率预测 quantile) # + 日度气象外生 · 线性目标分解
-base_config: config.univariate_config
-overrides:
-  output:
-    scenario_subpath: aidc_power_month/route_B/freq_1day/add_decomposition
-    setting_suffix: -decomp-linear
-  runtime:
-    horizon_mode: calendar_month  # 预测 forecast_start 所在的完整自然月
-    train_window_length: 120  # 固定训练天数，保持旧配置有效训练长度
-    forecast_mode: forecast
-    is_testing: true
-    is_forecasting: false
-    history_length: 304
-    predict_steps: 30
-    window_length: 150
-    now_time: '2026-07-31T00:00:00'
-  target_series:
-    data_dir: ./dataset/aidc_power_month/freq_1day/
-    data_path: B_Loads_1day_sum_20251001_20260731.csv
-    freq: 1D
-    target_ts_feat: time
-    target: value
-  exogenous_features:
-    weather_backtest_path: weather_daily_stats_backtest_proxy_20260101_20260731.csv
-    strict_weather_information_set: true
-    weather_history_source: actual
-    weather_backtest_source: proxy
-    weather_future_source: proxy
-    enable_date_features: false
-    enable_weather_features: true
-    weather_history_path: weather_daily_stats_20251001_20260731.csv
-    weather_future_path: weather_daily_stats_future_20260801_20260831.csv  # 纯上一年同日代理，不含2026-08实测（derive_weather_daily_future.py）
-    weather_ts_feat: ts
-    weather_features:
-    - rt_tt2   # 日均 2m 气温（Kelvin）
-    - cal_rh   # 日均相对湿度 %
-    - rt_ssr   # 日总辐射
-    - rt_ws10  # 日均 10m 风速
-    datetime_features:
-    - day
-    - day_of_week
-    - week_of_year
-    - month
-    - days_in_month
-    - quarter
-    - day_of_year
-    - year
-    - is_month_start
-    - is_month_end
-    - is_quarter_start
-    - is_quarter_end
-    datetime_categorical_features: []  # 空列表=关闭类别特征(不传 categorical_feature 给 LightGBM)
-  time_lag_features:
-    lags:
+schema_version: 2
+problem:
+  time_col: time
+  freq: 1D
+  horizon: 31
+  targets:
+  - value
+  information_mode: forecast
+  training_scope: local
+  series_id_cols: []
+data:
+  sources:
+  - name: target_history
+    source_type: file
+    columns:
+    - name: value
+      role: target
+      categorical: false
+    history_path: dataset/aidc_power_month/freq_1day/B_Loads_1day_sum_20251001_20260731.csv
+    time_col: time
+    series_id_cols: []
+    availability: source_time
+  - name: date_type
+    source_type: file
+    columns:
+    - name: date_type
+      role: known_future
+      categorical: true
+    history_path: dataset/aidc_power_month/freq_1day/ETTm1_exogenous/df_date.csv
+    future_path: dataset/aidc_power_month/freq_1day/ETTm1_exogenous/df_date_future.csv
+    time_col: date
+    series_id_cols: []
+    availability: forecast_origin
+  - name: weather
+    source_type: file
+    columns:
+    - name: rt_tt2
+      role: known_future
+      categorical: false
+    - name: cal_rh
+      role: known_future
+      categorical: false
+    - name: rt_ssr
+      role: known_future
+      categorical: false
+    - name: rt_ws10
+      role: known_future
+      categorical: false
+    history_path: dataset/aidc_power_month/freq_1day/weather_daily_stats_20251001_20260731.csv
+    backtest_path: dataset/aidc_power_month/freq_1day/weather_daily_stats_backtest_proxy_20260101_20260731.csv
+    future_path: dataset/aidc_power_month/freq_1day/weather_daily_stats_future_20260801_20260831.csv
+    time_col: ts
+    series_id_cols: []
+    availability: column
+    available_at_col: available_at
+features:
+  target_lags:
+    value:
     - 1
     - 2
     - 3
@@ -61,53 +65,66 @@ overrides:
     - 7
     - 14
     - 28
-  advanced_features:
-    enable_advanced_features: true
-    enable_rolling_features: true
-    rolling_columns:
-    - y
-    rolling_windows:
-    - 7
-    - 14
-    - 28
-    rolling_stats:
-    - mean
-    - std
-    - min
-    - max
-    enable_diff_features: true
-    diff_columns:
-    - y
-    diff_periods:
-    - 1
-    - 7
-    - 28
-  model_strategy:
-    use_horizon_exogenous_for_direct: true  # 目标日天气/日历按 horizon 对齐
-    quantile_monotone: true  # 逐行排序消除 quantile crossing
-    align_direct_features_to_target: false
-    model_type: lightgbm
-    pred_method: univariate-single-multistep-direct
-    predict_type: quantile  # 概率预测:输出各分位数(predict_qXX)
-    quantiles:
-    - 0.1
-    - 0.5
-    - 0.9
-  training_enhancement:
-    enable_time_decay_sample_weight: false  # 多输出 quantile 不透传 sample_weight，显式关闭避免假启用
-    decay_halflife_days: 60  # 半衰期天数,按数据漂移速度调整
-  train_outlier:
-    enable_train_outlier_handling: false  # 日频稀疏点不宜插值清洗
-  eval_mask:
-    mode: percentile
-    percentile: 5.0
-  preprocessing:
-    target_calendar_normalization: none
-    scale_target: false  # 目标分解与 target scaling 互斥
-    decomposition_method: linear
-    decomposition_trend_degree: 1
-    decomposition_trend_forecast: polynomial
-  performance:
-    window_parallel_workers: 8
-    multi_output_n_jobs: 8
-    model_thread_count: 1
+  observed_past_lags: {}
+  datetime_features:
+  - day
+  - day_of_week
+  - week_of_year
+  - month
+  - days_in_month
+  - quarter
+  - day_of_year
+  - year
+  - is_month_start
+  - is_month_end
+  - is_quarter_start
+  - is_quarter_end
+  transformations:
+    direct_layout: independent_models
+    advanced:
+      rolling_windows:
+      - 7
+      - 14
+      - 28
+      diff_periods:
+      - 1
+      - 7
+      - 28
+      pct_change_periods:
+      - 1
+      - 7
+    target_transform:
+      calendar_normalization: none
+      decomposition: linear
+      target_scaling: none
+strategy:
+  name: direct
+estimator:
+  model_type: lightgbm
+  target_adapter: independent
+  params: {}
+probabilistic:
+  mode: quantile
+  quantiles:
+  - 0.1
+  - 0.5
+  - 0.9
+  point_quantile: 0.5
+  recursive_propagation: median_path
+  crossing_method: isotonic
+  conformal:
+    method: none
+    coverage: 0.9
+    min_scores: 30
+    min_windows: 3
+validation:
+  forecast_origin: '2026-07-31T00:00:00'
+  schedule_mode: daily
+  horizon_mode: calendar_month
+  history_length: 304
+  window_length: 150
+  train_window_length: 120
+output:
+  scenario_subpath: aidc_power_month/route_B/freq_1day/add_decomposition
+  setting_suffix: -decomp-linear
+  results_root: results

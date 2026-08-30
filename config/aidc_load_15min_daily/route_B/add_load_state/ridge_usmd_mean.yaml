@@ -1,77 +1,102 @@
-# B — aidc_load_15min_daily — add_load_state — 15min 模型测试配置；由 aidc_power_month/freq_1day/add_load_state 同名模板按频率语义转换 · 预测原点负荷状态
-base_config: config.univariate_config
-overrides:
-  output:
-    scenario_subpath: aidc_load_15min_daily/route_B/add_load_state
-    setting_suffix: -load-state
-  runtime:
-    horizon_mode: fixed_steps
-    train_window_length: null
-    forecast_mode: forecast
-    is_testing: true
-    is_forecasting: false
-    history_length: 34
-    predict_steps: 96
-    window_length: 30
-    now_time: '2026-07-31T23:45:00'
-    schedule_mode: daily
-  target_series:
-    data_dir: ./dataset/aidc_load_15min_daily/
-    data_path: B_Loads_15min_mean_20251001_20260731.csv
-    freq: 15min
-    target_ts_feat: time
-    target: value
-  exogenous_features:
-    weather_backtest_path: weather_15min_backtest_proxy_20260101_20260731.csv
-    strict_weather_information_set: true
-    weather_history_source: actual
-    weather_backtest_source: proxy
-    weather_future_source: proxy
-    enable_date_features: false
-    enable_weather_features: true
-    enable_datetime_features: true
-    custom_features:
-    - name: load_state
-      history_path: load_state_features/B_load_state_history.csv
-      future_path: null
-      future_strategy: freeze_last_observation
-      availability: end_of_period  # 当期结束后可得；预测期冻结原点最后状态
-      ts_col: time
-      columns:
-      - state_roll_1h_mean
-      - state_roll_1h_std
-      - state_roll_4h_mean
-      - state_roll_4h_std
-      - state_roll_24h_range
-      - state_diff_15min
-      - state_diff_1h
-      - state_diff_24h_pct
-      - state_robust_z_7d
-      - state_weekly_base_dev_pct
-      - state_route_diff_pct
-      categorical_columns: []
-    weather_history_path: weather_15min_20250101_20260731.csv
-    weather_future_path: weather_15min_future_proxy_20260801_20260831.csv
-    weather_ts_feat: ts
-    weather_features:
-    - rt_tt2
-    - cal_rh
-    - rt_ssr
-    - rt_ws10
-    datetime_features:
-    - hour
-    - minute
-    - day
-    - day_of_week
-    - week_of_year
-    - month
-    - days_in_month
-    - quarter
-    - day_of_year
-    - year
-    datetime_categorical_features: []
-  time_lag_features:
-    lags:
+schema_version: 2
+problem:
+  time_col: time
+  freq: 15min
+  horizon: 96
+  targets:
+  - value
+  information_mode: forecast
+  training_scope: local
+  series_id_cols: []
+data:
+  sources:
+  - name: target_history
+    source_type: file
+    columns:
+    - name: value
+      role: target
+      categorical: false
+    history_path: dataset/aidc_load_15min_daily/B_Loads_15min_mean_20251001_20260731.csv
+    time_col: time
+    series_id_cols: []
+    availability: source_time
+  - name: date_type
+    source_type: file
+    columns:
+    - name: date_type
+      role: known_future
+      categorical: true
+    history_path: dataset/aidc_load_15min_daily/ETTm1_exogenous/df_date.csv
+    future_path: dataset/aidc_load_15min_daily/ETTm1_exogenous/df_date_future.csv
+    time_col: date
+    series_id_cols: []
+    availability: forecast_origin
+  - name: weather
+    source_type: file
+    columns:
+    - name: rt_tt2
+      role: known_future
+      categorical: false
+    - name: cal_rh
+      role: known_future
+      categorical: false
+    - name: rt_ssr
+      role: known_future
+      categorical: false
+    - name: rt_ws10
+      role: known_future
+      categorical: false
+    history_path: dataset/aidc_load_15min_daily/weather_15min_20250101_20260731.csv
+    backtest_path: dataset/aidc_load_15min_daily/weather_15min_backtest_proxy_20260101_20260731.csv
+    future_path: dataset/aidc_load_15min_daily/weather_15min_future_proxy_20260801_20260831.csv
+    time_col: ts
+    series_id_cols: []
+    availability: column
+    available_at_col: available_at
+  - name: load_state
+    source_type: file
+    columns:
+    - name: state_roll_1h_mean
+      role: observed_past
+      categorical: false
+    - name: state_roll_1h_std
+      role: observed_past
+      categorical: false
+    - name: state_roll_4h_mean
+      role: observed_past
+      categorical: false
+    - name: state_roll_4h_std
+      role: observed_past
+      categorical: false
+    - name: state_roll_24h_range
+      role: observed_past
+      categorical: false
+    - name: state_diff_15min
+      role: observed_past
+      categorical: false
+    - name: state_diff_1h
+      role: observed_past
+      categorical: false
+    - name: state_diff_24h_pct
+      role: observed_past
+      categorical: false
+    - name: state_robust_z_7d
+      role: observed_past
+      categorical: false
+    - name: state_weekly_base_dev_pct
+      role: observed_past
+      categorical: false
+    - name: state_route_diff_pct
+      role: observed_past
+      categorical: false
+    history_path: dataset/aidc_load_15min_daily/load_state_features/B_load_state_history.csv
+    time_col: time
+    series_id_cols: []
+    availability: source_time
+    provider: persistence
+features:
+  target_lags:
+    value:
     - 96
     - 192
     - 288
@@ -79,48 +104,137 @@ overrides:
     - 480
     - 576
     - 672
-  advanced_features:
-    enable_advanced_features: true
-    enable_rolling_features: true
-    rolling_columns:
-    - y
-    rolling_windows:
+  observed_past_lags:
+    state_roll_1h_mean:
     - 96
     - 192
+    - 288
     - 384
+    - 480
+    - 576
     - 672
-    rolling_stats:
-    - mean
-    - std
-    - min
-    - max
-    enable_diff_features: true
-    diff_columns:
-    - y
-    diff_periods:
+    state_roll_1h_std:
     - 96
     - 192
+    - 288
+    - 384
+    - 480
+    - 576
     - 672
-  model_strategy:
-    enable_ensemble: false
-    use_horizon_exogenous_for_direct: true
-    align_direct_features_to_target: false
-    model_type: ridge
-    pred_method: univariate-single-multistep-direct
-    predict_type: point
-  training_enhancement:
-    enable_time_decay_sample_weight: true
-    decay_halflife_days: 60
-  train_outlier:
-    enable_train_outlier_handling: false
-  eval_mask:
-    mode: percentile
-    percentile: 5.0
-  preprocessing:
-    target_calendar_normalization: none
-    scale_features: true
-    decomposition_method: none
-  performance:
-    window_parallel_workers: 8
-    multi_output_n_jobs: 8
-    model_thread_count: 1
+    state_roll_4h_mean:
+    - 96
+    - 192
+    - 288
+    - 384
+    - 480
+    - 576
+    - 672
+    state_roll_4h_std:
+    - 96
+    - 192
+    - 288
+    - 384
+    - 480
+    - 576
+    - 672
+    state_roll_24h_range:
+    - 96
+    - 192
+    - 288
+    - 384
+    - 480
+    - 576
+    - 672
+    state_diff_15min:
+    - 96
+    - 192
+    - 288
+    - 384
+    - 480
+    - 576
+    - 672
+    state_diff_1h:
+    - 96
+    - 192
+    - 288
+    - 384
+    - 480
+    - 576
+    - 672
+    state_diff_24h_pct:
+    - 96
+    - 192
+    - 288
+    - 384
+    - 480
+    - 576
+    - 672
+    state_robust_z_7d:
+    - 96
+    - 192
+    - 288
+    - 384
+    - 480
+    - 576
+    - 672
+    state_weekly_base_dev_pct:
+    - 96
+    - 192
+    - 288
+    - 384
+    - 480
+    - 576
+    - 672
+    state_route_diff_pct:
+    - 96
+    - 192
+    - 288
+    - 384
+    - 480
+    - 576
+    - 672
+  datetime_features:
+  - hour
+  - minute
+  - day
+  - day_of_week
+  - week_of_year
+  - month
+  - days_in_month
+  - quarter
+  - day_of_year
+  - year
+  transformations:
+    direct_layout: independent_models
+    advanced:
+      rolling_windows:
+      - 96
+      - 192
+      - 384
+      - 672
+      diff_periods:
+      - 96
+      - 192
+      - 672
+      pct_change_periods:
+      - 1
+      - 7
+strategy:
+  name: direct
+estimator:
+  model_type: ridge
+  target_adapter: independent
+  params: {}
+probabilistic:
+  mode: point
+validation:
+  forecast_origin: '2026-07-31T23:45:00'
+  schedule_mode: daily
+  horizon_mode: fixed_steps
+  history_length: 193
+  window_length: 30
+  train_window_length: null
+output:
+  scenario_subpath: aidc_load_15min_daily/route_B/add_load_state
+  setting_suffix: -load-state
+  results_root: results

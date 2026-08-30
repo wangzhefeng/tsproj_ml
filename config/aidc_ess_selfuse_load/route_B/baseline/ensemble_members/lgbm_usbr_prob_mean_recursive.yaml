@@ -1,0 +1,79 @@
+schema_version: 2
+problem:
+  time_col: time
+  freq: 5min
+  horizon: 288
+  targets:
+  - value
+  information_mode: forecast
+  training_scope: local
+  series_id_cols: []
+data:
+  sources:
+  - name: target_history
+    source_type: file
+    columns:
+    - name: value
+      role: target
+      categorical: false
+    history_path: dataset/aidc_ess_selfuse_load/forecasting_data/B_GateEnergys_5min_20251001_20260728_remove_outlier.csv
+    time_col: time
+    series_id_cols: []
+    availability: source_time
+features:
+  target_lags:
+    value:
+    - 288
+    - 576
+    - 864
+    - 1152
+    - 1440
+    - 1728
+    - 2016
+  observed_past_lags: {}
+  datetime_features: []
+  transformations:
+    direct_layout: independent_models
+    advanced:
+      rolling_windows:
+      - 2016
+      - 4032
+      - 8064
+      diff_periods:
+      - 288
+      - 2016
+      - 8064
+      pct_change_periods:
+      - 1
+      - 7
+estimator:
+  model_type: lightgbm
+  target_adapter: independent
+  params: {}
+probabilistic:
+  mode: quantile
+  quantiles:
+  - 0.1
+  - 0.5
+  - 0.9
+  point_quantile: 0.5
+  recursive_propagation: median_path
+  crossing_method: isotonic
+  conformal:
+    method: none
+    coverage: 0.9
+    min_scores: 30
+    min_windows: 3
+strategy:
+  name: recursive
+validation:
+  forecast_origin: '2026-07-28T23:55:00'
+  schedule_mode: daily
+  horizon_mode: fixed_steps
+  history_length: 577
+  window_length: 30
+  train_window_length: null
+output:
+  scenario_subpath: aidc_ess_selfuse_load/route_B/baseline/ensemble_members
+  setting_suffix: -recursive-member
+  results_root: results

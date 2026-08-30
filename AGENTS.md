@@ -21,7 +21,7 @@ The general coding guidelines (Karpathy: think before coding, simplicity, surgic
 
 ### Canonical 预测架构
 - **权威状态**：`docs/multistep_forecasting_redesign.md` 是当前预测架构唯一权威文档与实施完成记录（历史分立设计文档已并入本文）。现役 canonical 配置由 `main.py::CanonicalModel` 调用 `model_forecasting.runtime.run_canonical_config()`，生产主链不再按九个 US/MS 名称分派。
-- **七种标准策略**：`recursive/direct/mimo/recmo/dirrec/dirmo/dirrecmo` 只在 `model_forecasting/specs/strategy.py` 定义，由 `model_forecasting/strategies/` 的七 executor 执行。MO 策略严格要求 `1 < B < H` 且 `H % B == 0`；Pointwise/horizon-feature 是 Direct layout，Local/Global 是 training scope，不得再扩充为策略名。
+- **七种标准策略**：`recursive/direct/mimo/recmo/dirrec/dirmo/dirrecmo` 只在 `model_forecasting/specs/strategy.py` 定义，由 `model_training/strategies/` 的七 executor 执行。MO 策略严格要求 `1 < B < H` 且 `H % B == 0`；Pointwise/horizon-feature 是 Direct layout，Local/Global 是 training scope，不得再扩充为策略名。
 - **统一张量**：point 为 `(N,H,K)`，边际 quantile 为 `(N,H,K,Q)`；内部 flatten 固定 time-major。joint samples 仅保留 `(N,S,H,K)` 类型边界，生成器明确 unsupported，不得宣称联合概率能力。
 - **数据与特征**：`SourceRegistry + InformationSetRequest + FeatureCompiler` 是 canonical 唯一通路。每列必须显式归为 target/observed_past/known_future/static/key/ignored；所有动态 source 执行严格 as-of，observed-past 只能使用显式 provider，不得隐式 persistence。
 - **训练与产物**：`CanonicalTrainer/CanonicalForecaster` 支持 Local/Global、K1/K2、七策略、point/independent quantile；target transform 按 `(series_id,target)` 隔离并执行 calendar normalization → decomposition → scaling，恢复严格逆序。新模型只写 schema-2 `ForecastModelBundle`，新结果只写 long schema 和 canonical fingerprint。
@@ -59,7 +59,7 @@ The general coding guidelines (Karpathy: think before coding, simplicity, surgic
 ### 包间分层规则（2026-08-29 架构收敛 P0 立规，详见 docs/architecture_convergence_plan.md §3.1）
 - **分层结构（2026-08-30 流水线阶段重排）**：L4 入口（`main.py`/`run.py`/`config/config_loader.py`）→ L3 能力扩展（`probabilistic/`、`model_ensemble/`）→ L2 编排（`model_forecasting/runtime.py` 唯一编排器 + `forecaster.py` 推理执行 + 核心合同 `model_forecasting/{specs,tensors,transforms,results}`）→ 阶段顶层包 `data_loading/`（数据构造与组织）→ `feature_engineering/`（特征工程）→ `model_training/`（训练）→ `model_testing/`（测试/回测），`model_evaluation/`（独立评估模块，只做指标计算）→ L1 基础设施（`models/`、`decomposition/`、`data_process/`）→ L0 基础（`utils/`）。
 - **依赖只允许从上往下**（高层 import 低层），同层禁止互依；唯一豁免：L3 内 `ensemble → probabilistic` 单向（数据合同 types + 评估实现 evaluation 复用，不得触及 pipeline/training 执行面）。低层不得反向 import 高层，**包括函数内延迟 import**。
-- 跨包复用的算法放 L1 并以**公开函数**暴露；**禁止下划线私有跨包导入**（ensemble 对 forecasting 的两处私有导入已随收敛 P3 修复为 `model_forecasting.backtest` 公开 API）。
+- 跨包复用的算法放 L1 并以**公开函数**暴露；**禁止下划线私有跨包导入**（ensemble 对 forecasting 的两处私有导入已随收敛 P3 修复为 `model_testing/backtest.py` 公开 API）。
 - 任何循环依赖视为架构缺陷，出现即修；不允许用函数内延迟 import 长期绕开。`models/ModelTraining.py`、`models/ModelForecasting.py` 兼容 shim 已于 2026-08-30 删除，Trainer/Forecaster 直接从 `model_training/trainer.py`、`model_forecasting/forecaster.py` 导入；分层边界由 `tests/test_package_layering.py` 门禁固化（白名单制 12 项全包扫描，函数内 import 同罪）。
 - 新增能力包一律按 ensemble 模式建：独立包 + Protocol 边界 + 单向依赖 + parity golden。ensemble 已知边界：`model_ensemble/loader.py` 直接操作 canonical YAML payload（成员身份锁定为现役单模型 YAML，属有意设计）。
 - **流水线数据契约**：进入模型的信息集默认「缺失/异常 = RAISE」（预测性维护数据前置）；填补与清洗只允许发生在离线数据准备阶段（`data_process/`，场景维度）或以 config 驱动的 compiler 前置步骤引入（须满足 as-of 可得性）；训练窗口内清洗（改数据）与评估掩码（只改评估口径）严格分离。
@@ -80,4 +80,4 @@ The general coding guidelines (Karpathy: think before coding, simplicity, surgic
 ### 仓库维护注意
 - **`tests/` 已纳入版本控制**（2026-08-15 起移出 `.gitignore`）：改动被测模块时必须同步修复测试导入与接口断言，并运行 `env -u PYTHONPATH UV_CACHE_DIR=.uv_cache uv run python -m unittest discover -s tests -p "test_*.py"`；预测架构的最新精确计数与命令只在 `docs/multistep_forecasting_redesign.md` 维护。AIDC 专项脚本目录路径含日期段、不是合法 Python 包，相关测试用 `sys.path.insert` 引导后按模块名导入。
 - `docs/feature_engineering/`（fft/wavelet/statistical/holiday/periodicity/weather 等）是实验性特征脚本集合，**未接入主流程**，2026-08-29 从 `features/feature_engineering/` 移入 `docs/` 归档，后续再决定处置
-- `utils/`（L0）只保留 frequency/log_util/runtime_env 三个无领域语义工具；`utils/metrics.py`、`utils/cv_plot.py`、`utils/eval_mask.py` 已删除（指标在 `model_forecasting/results.py` + `probabilistic/metrics.py`，评估掩码在 `model_forecasting/backtest.py::build_eval_mask`）
+- `utils/`（L0）只保留 frequency/log_util/runtime_env 三个无领域语义工具；`utils/metrics.py`、`utils/cv_plot.py`、`utils/eval_mask.py` 已删除（指标在 `model_evaluation/`（point.py/marginal.py/metrics.py），评估掩码在 `model_evaluation/mask.py::build_eval_mask`）

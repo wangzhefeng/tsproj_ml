@@ -1,0 +1,204 @@
+"""OOF cache: content-addressed storage keyed by an oof fingerprint (v4 §7.2).
+
+Fingerprint inputs: member names + single-model semantic fingerprints, the
+ensemble problem/data/probabilistic payload, OOF geometry, the SHA-256 of
+every actually-read source file, and the OOF schema/logic version. Corrupt or
+incomplete cache entries raise — partial reuse is never attempted.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import os
+import tempfile
+from pathlib import Path
+from typing import Any, Mapping
+
+import numpy as np
+import pandas as pd
+
+OOF_SCHEMA_VERSION = 1
+
+OOF_PREDICTIONS_FILE = "oof_predictions.csv"
+OOF_METADATA_FILE = "oof_metadata.json"
+MEMBER_MANIFEST_FILE = "member_manifest.json"
+_REQUIRED_FILES = (OOF_PREDICTIONS_FILE, OOF_METADATA_FILE, MEMBER_MANIFEST_FILE)
+
+
+def file_sha256(path: str | Path) -> str:
+    digest = hashlib.sha256()
+    with Path(path).open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1 << 20), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def compute_oof_fingerprint(
+    *,
+    members: Mapping[str, str],
+    ensemble_payload: Mapping[str, Any],
+    oof_payload: Mapping[str, Any],
+    source_hashes: Mapping[str, str],
+) -> str:
+    payload = {
+        "schema_version": OOF_SCHEMA_VERSION,
+        "members": {name: members[name] for name in sorted(members)},
+        "ensemble": dict(ensemble_payload),
+        "oof": dict(oof_payload),
+        "source_hashes": {name: source_hashes[name] for name in sorted(source_hashes)},
+    }
+    blob = json.dumps(payload, sort_keys=True, ensure_ascii=False).encode("utf-8")
+    return hashlib.sha256(blob).hexdigest()
+
+
+def cache_dir(results_root: str | Path, oof_fingerprint: str) -> Path:
+    return Path(results_root) / "_ensemble_oof" / oof_fingerprint
+
+
+def _atomic_write_bytes(path: Path, data: bytes) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp_name = tempfile.mkstemp(dir=str(path.parent), suffix=".tmp")
+    try:
+        with os.fdopen(fd, "wb") as handle:
+            handle.write(data)
+        os.replace(tmp_name, path)
+    finally:
+        if os.path.exists(tmp_name):
+            os.unlink(tmp_name)
+
+
+def save_oof_cache(
+    results_root: str | Path,
+    artifact,  # OOFPredictionArtifact
+    extra_metadata: Mapping[str, Any] | None = None,
+) -> Path:
+    """Atomically persist the OOF artifact; returns the cache directory."""
+    directory = cache_dir(results_root, artifact.oof_fingerprint)
+    member_frames = []
+    for name in artifact.member_order:
+        values = artifact.values_by_member[name]
+        flat = values.reshape(values.shape[0], -1)
+        columns = pd.MultiIndex.from_product(
+            [[name], [f"v{i}" for i in range(flat.shape[1])]]
+        )
+        member_frames.append(pd.DataFrame(flat, columns=columns))
+    stacked = pd.concat(member_frames, axis=1)
+    buffer = stacked.to_csv(index=False).encode("utf-8")
+    _atomic_write_bytes(directory / OOF_PREDICTIONS_FILE, buffer)
+
+    metadata = {
+        "oof_schema_version": OOF_SCHEMA_VERSION,
+        "oof_fingerprint": artifact.oof_fingerprint,
+        "member_order": list(artifact.member_order),
+        "targets": list(artifact.targets),
+        "horizon": artifact.horizon,
+        "quantile_levels": (
+            list(artifact.quantile_levels) if artifact.quantile_levels else None
+        ),
+        "series_ids": [list(s) if isinstance(s, tuple) else s for s in artifact.series_ids],
+        "folds": list(artifact.folds),
+        **(dict(extra_metadata) if extra_metadata else {}),
+    }
+    _atomic_write_bytes(
+        directory / OOF_METADATA_FILE,
+        json.dumps(metadata, sort_keys=True, ensure_ascii=False).encode("utf-8"),
+    )
+    manifest = {
+        name: {
+            "sha256": hashlib.sha256(
+                artifact.values_by_member[name].tobytes()
+            ).hexdigest(),
+            "shape": list(artifact.values_by_member[name].shape),
+        }
+        for name in artifact.member_order
+    }
+    _atomic_write_bytes(
+        directory / MEMBER_MANIFEST_FILE,
+        json.dumps(manifest, sort_keys=True).encode("utf-8"),
+    )
+    return directory
+
+
+def load_oof_cache(
+    results_root: str | Path,
+    oof_fingerprint: str,
+) -> "tuple[type[object], Any] | Any":
+    """Load and fully validate a cached OOFPredictionArtifact.
+
+    Raises FileNotFoundError for a missing cache and ValueError for any
+    corruption (missing files, incomplete columns, hash mismatch).
+    """
+    from model_ensemble.artifacts import OOFPredictionArtifact
+
+    directory = cache_dir(results_root, oof_fingerprint)
+    for name in _REQUIRED_FILES:
+        if not (directory / name).exists():
+            raise FileNotFoundError(
+                f"OOF cache incomplete at {directory}: missing {name}"
+            )
+    metadata = json.loads((directory / OOF_METADATA_FILE).read_text("utf-8"))
+    if int(metadata.get("oof_schema_version", -1)) != OOF_SCHEMA_VERSION:
+        raise ValueError(
+            f"OOF cache schema version mismatch at {directory}"
+        )
+    if str(metadata.get("oof_fingerprint")) != oof_fingerprint:
+        raise ValueError(f"OOF cache fingerprint mismatch at {directory}")
+
+    frame = pd.read_csv(directory / OOF_PREDICTIONS_FILE, header=[0, 1])
+    member_order = tuple(metadata["member_order"])
+    n_samples = int(frame.shape[0])
+    horizon = int(metadata["horizon"])
+    targets = tuple(metadata["targets"])
+    levels = metadata.get("quantile_levels")
+    depth = 4 if levels else 3
+    width = horizon * len(targets) * (len(levels) if levels else 1)
+
+    values_by_member = {}
+    manifest = json.loads((directory / MEMBER_MANIFEST_FILE).read_text("utf-8"))
+    for name in member_order:
+        if name not in frame.columns.get_level_values(0):
+            raise ValueError(
+                f"OOF cache missing member block {name!r} at {directory}"
+            )
+        block = frame[name]
+        if list(block.columns) != [f"v{i}" for i in range(width)]:
+            raise ValueError(
+                f"OOF cache column set mismatch for member {name!r} at {directory}"
+            )
+        values = block.to_numpy(dtype=float).reshape(
+            (n_samples, horizon, len(targets), len(levels)) if levels
+            else (n_samples, horizon, len(targets))
+        )
+        expected = manifest.get(name, {})
+        if expected.get("sha256") != hashlib.sha256(np.ascontiguousarray(values).tobytes()).hexdigest():
+            raise ValueError(
+                f"OOF cache hash mismatch for member {name!r} at {directory}"
+            )
+        values_by_member[name] = values
+
+    missing_members = set(member_order) - set(values_by_member)
+    if missing_members:
+        raise ValueError(
+            f"OOF cache incomplete member set at {directory}: {sorted(missing_members)}"
+        )
+    return OOFPredictionArtifact(
+        values_by_member=values_by_member,
+        member_order=member_order,
+        targets=targets,
+        horizon=horizon,
+        quantile_levels=tuple(float(v) for v in levels) if levels else None,
+        oof_fingerprint=oof_fingerprint,
+        folds=tuple(metadata.get("folds", ())),
+        series_ids=tuple(metadata.get("series_ids", ())),
+    )
+
+
+__all__ = [
+    "OOF_SCHEMA_VERSION",
+    "cache_dir",
+    "compute_oof_fingerprint",
+    "file_sha256",
+    "load_oof_cache",
+    "save_oof_cache",
+]

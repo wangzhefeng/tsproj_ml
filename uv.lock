@@ -93,15 +93,6 @@ wheels = [
 ]
 
 [[package]]
-name = "dill"
-version = "0.4.1"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/81/e1/56027a71e31b02ddc53c7d65b01e68edf64dea2932122fe7746a516f75d5/dill-0.4.1.tar.gz", hash = "sha256:423092df4182177d4d8ba8290c8a5b640c66ab35ec7da59ccfa00f6fa3eea5fa", size = 187315, upload-time = "2026-01-19T02:36:56.85Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/1e/77/dc8c558f7593132cf8fefec57c4f60c83b16941c574ac5f619abb3ae7933/dill-0.4.1-py3-none-any.whl", hash = "sha256:1e1ce33e978ae97fcfcff5638477032b801c46c7c65cf717f95fbc2248f79a9d", size = 120019, upload-time = "2026-01-19T02:36:55.663Z" },
-]
-
-[[package]]
 name = "et-xmlfile"
 version = "2.0.0"
 source = { registry = "https://pypi.org/simple" }
@@ -158,22 +149,6 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/41/f2/d34e8b3a08a9cc79a50b2208a93dce981fe615b64d5a4d4abee421d898df/joblib-1.5.3.tar.gz", hash = "sha256:8561a3269e6801106863fd0d6d84bb737be9e7631e33aaed3fb9ce5953688da3", size = 331603, upload-time = "2025-12-15T08:41:46.427Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/7b/91/984aca2ec129e2757d1e4e3c81c3fcda9d0f85b74670a094cc443d9ee949/joblib-1.5.3-py3-none-any.whl", hash = "sha256:5fc3c5039fc5ca8c0276333a188bbd59d6b7ab37fe6632daa76bc7f9ec18e713", size = 309071, upload-time = "2025-12-15T08:41:44.973Z" },
-]
-
-[[package]]
-name = "jpype1"
-version = "1.6.0"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "packaging" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/34/49/6090a131d84b22c6aae13b1853092028b060fd17da1af87c0e42ad69d50f/jpype1-1.6.0.tar.gz", hash = "sha256:2d46b2a14f8f0e6f17d8aa22b4fc3a64b2790851ebf1409ad79a37c698fd6e9a", size = 1057888, upload-time = "2025-07-07T14:04:11.244Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/8e/95/524c67e2aafa301d6ffd21747847c5e9c9785ff8b39d90275ead2877dd0c/jpype1-1.6.0-cp310-cp310-macosx_10_9_universal2.whl", hash = "sha256:533cf7ced58a4b74272f3d1e962fe33f305184d2fcb3856ca79867d5b6f0fb8b", size = 583402, upload-time = "2025-07-07T13:50:13.487Z" },
-    { url = "https://files.pythonhosted.org/packages/13/61/88288a341292d3b76967587e59b674b5445678dcf60e8c921507bd70baa6/jpype1-1.6.0-cp310-cp310-manylinux2014_aarch64.manylinux_2_17_aarch64.whl", hash = "sha256:597063698c074e5bf34e696626423a528cdf099989e22a837e889a0d671fd9e4", size = 468810, upload-time = "2025-07-07T13:50:16.967Z" },
-    { url = "https://files.pythonhosted.org/packages/08/ed/18a16c6ae0ac5978fe93ad5c265719a311a613ba3dd4d96bd89e93fd2444/jpype1-1.6.0-cp310-cp310-manylinux2014_i686.manylinux_2_17_i686.whl", hash = "sha256:2f0cd698d160ba825952393b4d87911e7eedcbf5af381bb6438126de863f66b6", size = 512880, upload-time = "2025-07-07T13:50:20.451Z" },
-    { url = "https://files.pythonhosted.org/packages/e2/da/9854e41f4b301a52210254d24d5d62792e0700527f7940445d763d0d64c6/jpype1-1.6.0-cp310-cp310-manylinux2014_x86_64.manylinux_2_17_x86_64.whl", hash = "sha256:fcabb8cce3be16528bd26e4b73e41d7b8c778111f14de52c33c25e2a9d4c9a9f", size = 496509, upload-time = "2025-07-07T13:50:24.541Z" },
-    { url = "https://files.pythonhosted.org/packages/74/85/2975be78a88678c9048d39141f39f1ced1b55e937e7854bfd824282ee176/jpype1-1.6.0-cp310-cp310-win_amd64.whl", hash = "sha256:f02c419d6cdd45ed5576d95f0ab4732371c760ba4b01ea9bd646b98b3c21a16f", size = 356591, upload-time = "2025-07-07T13:50:26.994Z" },
 ]
 
 [[package]]
@@ -423,34 +398,12 @@ wheels = [
 ]
 
 [[package]]
-name = "py4j"
-version = "0.10.9.9"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/38/31/0b210511177070c8d5d3059556194352e5753602fa64b85b7ab81ec1a009/py4j-0.10.9.9.tar.gz", hash = "sha256:f694cad19efa5bd1dee4f3e5270eb406613c974394035e5bfc4ec1aba870b879", size = 761089, upload-time = "2025-01-15T03:53:18.624Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/bd/db/ea0203e495be491c85af87b66e37acfd3bf756fd985f87e46fc5e3bf022c/py4j-0.10.9.9-py2.py3-none-any.whl", hash = "sha256:c7c26e4158defb37b0bb124933163641a2ff6e3a3913f7811b0ddbe07ed61533", size = 203008, upload-time = "2025-01-15T03:53:15.648Z" },
-]
-
-[[package]]
 name = "pyparsing"
 version = "3.3.2"
 source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/f3/91/9c6ee907786a473bf81c5f53cf703ba0957b23ab84c264080fb5a450416f/pyparsing-3.3.2.tar.gz", hash = "sha256:c777f4d763f140633dcb6d8a3eda953bf7a214dc4eff598413c070bcdc117cbc", size = 6851574, upload-time = "2026-01-21T03:57:59.36Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/10/bd/c038d7cc38edc1aa5bf91ab8068b63d4308c66c4c8bb3cbba7dfbc049f9c/pyparsing-3.3.2-py3-none-any.whl", hash = "sha256:850ba148bd908d7e2411587e247a1e4f0327839c40e2e5e6d05a007ecc69911d", size = 122781, upload-time = "2026-01-21T03:57:55.912Z" },
-]
-
-[[package]]
-name = "pypmml"
-version = "1.5.8"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "jpype1" },
-    { name = "py4j" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/4a/c5/c4c200b056c55f78b6eb2dbb848b6c6a1d957b48cfe605d9c0b5cc273920/pypmml-1.5.8.tar.gz", hash = "sha256:14d08c8a71303f87a2766853c4662b07653cba70916a51aed3c6e0fa2c3dcf48", size = 14112885, upload-time = "2025-08-22T18:35:58.727Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/b8/a8/d34857abefece98c3befdf27ee806c46f87bd036fa5a346fe7e3cd8ef87a/pypmml-1.5.8-py3-none-any.whl", hash = "sha256:cfa4e82b6d8d92f989e18a95fb4740a0ad81db094880cf7ac8dd5ff84147e617", size = 14117196, upload-time = "2025-08-22T18:35:56.319Z" },
 ]
 
 [[package]]
@@ -555,21 +508,6 @@ wheels = [
 ]
 
 [[package]]
-name = "sklearn2pmml"
-version = "0.129.1"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "dill" },
-    { name = "joblib" },
-    { name = "pandas" },
-    { name = "scikit-learn" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/2c/e5/b0aca670e94a598f5d104e9b61a4854fb0852f8cba9c0c8fec733e0f45b9/sklearn2pmml-0.129.1.tar.gz", hash = "sha256:c12ecfab707ec9610e47aac9f8ed9999b92b0c0e1314c9c68114a6d0b1036225", size = 7491898, upload-time = "2026-03-11T12:35:54.457Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/5d/3a/63f97f297078424eb751a4fde8dda35170239a887ebec344898dfd358b81/sklearn2pmml-0.129.1-py3-none-any.whl", hash = "sha256:2772d5745f2e6874e5740d0c239aef4c5eba535301e2d02c4a722421e992bc40", size = 7505987, upload-time = "2026-03-11T12:35:52.027Z" },
-]
-
-[[package]]
 name = "sqlalchemy"
 version = "2.0.48"
 source = { registry = "https://pypi.org/simple" }
@@ -652,12 +590,10 @@ dependencies = [
     { name = "openpyxl" },
     { name = "optuna" },
     { name = "pandas" },
-    { name = "pypmml" },
     { name = "pyyaml" },
     { name = "scikit-learn" },
     { name = "scipy" },
     { name = "sklearn-pandas" },
-    { name = "sklearn2pmml" },
     { name = "statsmodels" },
     { name = "tqdm" },
     { name = "xgboost" },
@@ -672,12 +608,10 @@ requires-dist = [
     { name = "openpyxl", specifier = ">=3.1.5" },
     { name = "optuna", specifier = ">=4.7.0" },
     { name = "pandas", specifier = ">=2.3.3" },
-    { name = "pypmml", specifier = ">=1.5.8" },
     { name = "pyyaml", specifier = ">=6.0.3" },
     { name = "scikit-learn", specifier = ">=1.7.2" },
     { name = "scipy", specifier = ">=1.15.3" },
     { name = "sklearn-pandas", specifier = ">=2.2.0" },
-    { name = "sklearn2pmml", specifier = ">=0.128.1" },
     { name = "statsmodels", specifier = ">=0.14.6" },
     { name = "tqdm", specifier = ">=4.67.3" },
     { name = "xgboost", specifier = ">=3.2.0" },

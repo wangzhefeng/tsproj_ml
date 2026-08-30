@@ -4,10 +4,11 @@
 # * File        : run.py
 # * Author      : Zhefeng Wang
 # * Email       : zfwang7@gmail.com
-# * Date        : 2026-03-12
+# * Date        : 2026-02-11
 # * Version     : 2.0.0
 # * Description : CLI entry for ML time-series forecasting
 # ***************************************************
+
 
 import os
 import sys
@@ -21,25 +22,12 @@ import json
 import random
 from typing import Any
 from config.config_loader import load_yaml_config
+from model_forecasting.specs import ForecastConfigSpec, parse_model_config
 
 # global variable
 LOGGING_LABEL = Path(__file__).name[:-3]
 os.environ['LOG_NAME'] = LOGGING_LABEL
 from utils.log_util import logger
-
-
-def _parse_bool_flag(value: Any) -> bool:
-    if isinstance(value, bool):
-        return value
-    if value is None:
-        return False
-    text = str(value).strip().lower()
-    if text in {"1", "true", "yes", "y", "on"}:
-        return True
-    if text in {"0", "false", "no", "n", "off"}:
-        return False
-    raise ValueError(f"Invalid boolean flag value: {value}")
-
 
 def _set_seed(seed: int) -> None:
     random.seed(seed)
@@ -49,118 +37,154 @@ def _set_seed(seed: int) -> None:
     except ImportError:
         logger.warning("[run.py] numpy is not installed, only Python random seed is set.")
 
-
 def _load_config(config_yaml: str):
     """加载 YAML 配置文件并返回配置实例。base_config 从 YAML 内部读取。"""
     return load_yaml_config(config_yaml)
 
-
 def _apply_overrides(cfg, args):
-    if args.data_dir is not None:
-        cfg.data_dir = args.data_dir
-    if args.data_path is not None:
-        cfg.data_path = args.data_path
-    if args.target is not None:
-        cfg.target = args.target
-    if args.target_ts_feat is not None:
-        cfg.target_ts_feat = args.target_ts_feat
-    if args.freq is not None:
-        cfg.freq = args.freq
+    """Apply CLI overrides; ensemble configs pass through untouched (v4 E6)."""
+    from model_ensemble.specs import EnsembleConfigSpec
 
-    if args.model_type is not None:
-        cfg.model_type = args.model_type
-    if args.pred_method is not None:
-        cfg.pred_method = args.pred_method
+    if isinstance(cfg, EnsembleConfigSpec):
+        if any(
+            getattr(args, name, None) is not None
+            for name in (
+                "model_type",
+                "pred_method",
+                "predict_steps",
+                "history_length",
+                "window_length",
+                "lags",
+                "model_params",
+            )
+        ):
+            raise ValueError(
+                "CLI model overrides are not valid for ensemble configs; "
+                "edit the model_ensemble/member YAML instead"
+            )
+        return cfg
+    if not isinstance(cfg, ForecastConfigSpec):
+        raise TypeError(
+            "only canonical ForecastConfigSpec can enter the runtime; "
+            f"got {type(cfg).__name__}"
+        )
+    return _apply_canonical_overrides(cfg, args)
 
-    if args.history_length is not None:
-        cfg.history_length = args.history_length
-    if args.predict_steps is not None:
-        cfg.predict_steps = args.predict_steps
-    if args.window_length is not None:
-        cfg.window_length = args.window_length
+def _apply_canonical_overrides(
+    cfg: ForecastConfigSpec,
+    args,
+) -> ForecastConfigSpec:
+    payload = cfg.canonical_payload()
+    value = lambda name: getattr(args, name, None)
+    output = payload["output"]
+    identity = output.setdefault(
+        "identity",
+        {
+            "scenario_subpath": str(output.pop("scenario_subpath", "") or ""),
+            "setting_suffix": str(output.pop("setting_suffix", "") or ""),
+        },
+    )
+    if not isinstance(identity, dict):
+        raise TypeError("canonical output.identity must be a mapping")
+    directories = output.setdefault("directories", {})
+    if not isinstance(directories, dict):
+        raise TypeError("canonical output.directories must be a mapping")
+    legacy_directories = {
+        "checkpoints_dir": "checkpoints",
+        "test_results_dir": "tests",
+        "pred_results_dir": "forecast",
+    }
+    for legacy_name, canonical_name in legacy_directories.items():
+        if legacy_name in output:
+            directories.setdefault(canonical_name, str(output.pop(legacy_name)))
 
-    if args.is_testing is not None:
-        cfg.is_testing = _parse_bool_flag(args.is_testing)
-    if args.is_forecasting is not None:
-        cfg.is_forecasting = _parse_bool_flag(args.is_forecasting)
+    target_sources = [
+        source
+        for source in payload["data"]["sources"]
+        if any(column["role"] == "target" for column in source["columns"])
+    ]
+    if len(target_sources) != 1:
+        raise ValueError("CLI overrides require exactly one canonical target source")
+    target_source = target_sources[0]
 
-    if args.scale is not None:
-        cfg.scale = _parse_bool_flag(args.scale)
-    if args.encode_categorical_features is not None:
-        cfg.encode_categorical_features = _parse_bool_flag(args.encode_categorical_features)
-    if args.perform_tuning is not None:
-        cfg.perform_tuning = _parse_bool_flag(args.perform_tuning)
-    if args.enable_data_augmentation is not None:
-        cfg.enable_data_augmentation = _parse_bool_flag(args.enable_data_augmentation)
-    if args.augmentation_ratio is not None:
-        cfg.augmentation_ratio = args.augmentation_ratio
-    if args.augmentation_feature_noise_std is not None:
-        cfg.augmentation_feature_noise_std = args.augmentation_feature_noise_std
-    if args.augmentation_target_noise_std is not None:
-        cfg.augmentation_target_noise_std = args.augmentation_target_noise_std
-    if args.augmentation_random_state is not None:
-        cfg.augmentation_random_state = args.augmentation_random_state
-    if args.enable_feature_selection is not None:
-        cfg.enable_feature_selection = _parse_bool_flag(args.enable_feature_selection)
-    if args.feature_selection_method is not None:
-        cfg.feature_selection_method = args.feature_selection_method
-    if args.feature_selection_max_features is not None:
-        cfg.feature_selection_max_features = args.feature_selection_max_features
-    if args.feature_selection_min_features is not None:
-        cfg.feature_selection_min_features = args.feature_selection_min_features
-    if args.enable_auto_learning_rate is not None:
-        cfg.enable_auto_learning_rate = _parse_bool_flag(args.enable_auto_learning_rate)
-    if args.auto_lr_min is not None:
-        cfg.auto_lr_min = args.auto_lr_min
-    if args.auto_lr_max is not None:
-        cfg.auto_lr_max = args.auto_lr_max
-    if args.huber_delta is not None:
-        cfg.huber_delta = args.huber_delta
-    if args.enable_train_outlier_handling is not None:
-        cfg.enable_train_outlier_handling = _parse_bool_flag(args.enable_train_outlier_handling)
-    if args.train_outlier_method is not None:
-        cfg.train_outlier_method = args.train_outlier_method
-    if args.high_outlier_threshold is not None:
-        cfg.high_outlier_threshold = args.high_outlier_threshold
-    if args.high_outlier_max_run_points is not None:
-        cfg.high_outlier_max_run_points = args.high_outlier_max_run_points
-    if args.drop_outlier_max_run_points is not None:
-        cfg.drop_outlier_max_run_points = args.drop_outlier_max_run_points
-    if args.drop_rebound_min_abs_diff is not None:
-        cfg.drop_rebound_min_abs_diff = args.drop_rebound_min_abs_diff
-    if args.low_outlier_threshold is not None:
-        cfg.low_outlier_threshold = args.low_outlier_threshold
-    if args.low_outlier_max_run_points is not None:
-        cfg.low_outlier_max_run_points = args.low_outlier_max_run_points
-    if args.rise_outlier_max_run_points is not None:
-        cfg.rise_outlier_max_run_points = args.rise_outlier_max_run_points
-    if args.rise_rebound_min_abs_diff is not None:
-        cfg.rise_rebound_min_abs_diff = args.rise_rebound_min_abs_diff
+    if value("data_dir") is not None or value("data_path") is not None:
+        current = Path(target_source["history_path"])
+        directory = Path(value("data_dir")) if value("data_dir") is not None else current.parent
+        filename = Path(value("data_path")) if value("data_path") is not None else Path(current.name)
+        target_source["history_path"] = (directory / filename).as_posix()
+    if value("target") is not None:
+        if len(payload["problem"]["targets"]) != 1:
+            raise ValueError("--target only supports a single-target canonical config")
+        old_target = payload["problem"]["targets"][0]
+        new_target = str(value("target"))
+        payload["problem"]["targets"] = [new_target]
+        for column in target_source["columns"]:
+            if column["name"] == old_target and column["role"] == "target":
+                column["name"] = new_target
+        lags = payload["features"]["target_lags"].pop(old_target, [])
+        payload["features"]["target_lags"][new_target] = lags
+    if value("target_ts_feat") is not None:
+        payload["problem"]["time_col"] = str(value("target_ts_feat"))
+        target_source["time_col"] = str(value("target_ts_feat"))
+    if value("freq") is not None:
+        payload["problem"]["freq"] = str(value("freq"))
+    if value("model_type") is not None:
+        payload["estimator"]["model_type"] = str(value("model_type"))
+    if value("pred_method") is not None:
+        if isinstance(payload.get("ensemble"), dict):
+            raise ValueError("--pred-method cannot replace an ensemble config")
+        payload["strategy"] = {"name": str(value("pred_method"))}
+    if value("predict_steps") is not None:
+        payload["problem"]["horizon"] = int(value("predict_steps"))
+    if value("history_length") is not None:
+        payload["validation"]["history_length"] = int(value("history_length"))
+    if value("window_length") is not None:
+        payload["validation"]["window_length"] = int(value("window_length"))
+    if value("now_time") is not None:
+        payload["validation"]["forecast_origin"] = datetime.datetime.fromisoformat(
+            value("now_time")
+        ).isoformat()
+    if value("lags") is not None:
+        lags = [int(item.strip()) for item in value("lags").split(",") if item.strip()]
+        payload["features"]["target_lags"] = {
+            target: list(lags) for target in payload["problem"]["targets"]
+        }
+    if value("model_params") is not None:
+        params = json.loads(value("model_params"))
+        if not isinstance(params, dict):
+            raise ValueError("--model-params must be a JSON object")
+        payload["estimator"]["params"] = params
+    directory_overrides = {
+        "checkpoints_dir": "checkpoints",
+        "test_results_dir": "tests",
+        "pred_results_dir": "forecast",
+    }
+    if any(value(field) is not None for field in directory_overrides):
+        for field, canonical_name in directory_overrides.items():
+            if value(field) is not None:
+                directories[canonical_name] = str(value(field))
+        for legacy_field in directory_overrides:
+            output.pop(legacy_field, None)
 
-    if args.patience is not None:
-        cfg.patience = args.patience
-
-    if args.checkpoints_dir is not None:
-        cfg.checkpoints_dir = args.checkpoints_dir
-    if args.test_results_dir is not None:
-        cfg.test_results_dir = args.test_results_dir
-    if args.pred_results_dir is not None:
-        cfg.pred_results_dir = args.pred_results_dir
-
-    if args.now_time is not None:
-        cfg.now_time = datetime.datetime.fromisoformat(args.now_time)
-
-    if args.lags is not None:
-        cfg.lags = [int(x.strip()) for x in args.lags.split(",") if x.strip()]
-
-    if args.model_params is not None:
-        loaded = json.loads(args.model_params)
-        if not isinstance(loaded, dict):
-            raise ValueError("--model-params must be a JSON object.")
-        cfg.model_params = loaded
-
-    return cfg
-
+    unsupported = [
+        name
+        for name in (
+            "scale",
+            "encode_categorical_features",
+            "perform_tuning",
+            "enable_data_augmentation",
+            "enable_feature_selection",
+            "enable_auto_learning_rate",
+            "enable_train_outlier_handling",
+        )
+        if value(name) is not None
+    ]
+    if unsupported:
+        raise ValueError(
+            "legacy CLI enhancement overrides are not valid for the canonical schema: "
+            + ", ".join(unsupported)
+        )
+    return parse_model_config(payload, source="<cli-overrides>")
 
 def args_parse():
     parser = argparse.ArgumentParser(description="Machine Learning Time Series Forecasting CLI")
@@ -173,9 +197,6 @@ def args_parse():
     )
 
     parser.add_argument("--seed", type=int, default=2025)
-
-    parser.add_argument("--is-testing", default=None, help="bool flag, supports 1/0/true/false")
-    parser.add_argument("--is-forecasting", default=None, help="bool flag, supports 1/0/true/false")
 
     parser.add_argument("--model-type", type=str, default=None, help="lightgbm/xgboost/catboost")
     parser.add_argument("--pred-method", type=str, default=None)
@@ -228,31 +249,62 @@ def args_parse():
 
     return parser.parse_args()
 
-
 def run(args):
     cfg = _load_config(args.config_yaml)
     cfg = _apply_overrides(cfg, args)
 
+    from model_ensemble.specs import EnsembleConfigSpec
+
+    if isinstance(cfg, EnsembleConfigSpec):
+        # reference-based ensemble: dispatch to the ensemble runtime (v4 E6)
+        from model_ensemble.runtime import run_ensemble_config_file
+
+        logger.info(
+            "[run.py] config=%s schema=2 kind=ensemble method=%s",
+            args.config_yaml,
+            cfg.method.name,
+        )
+        result = run_ensemble_config_file(
+            args.config_yaml,
+            output_root=None,
+        )
+        fused = result.get("fused_oof_scores") or {}
+        point_scores = fused.get("point")
+        if point_scores is not None:
+            aggregate = point_scores[point_scores["scope"] == "aggregate"]
+            if not aggregate.empty:
+                row = aggregate.iloc[0]
+                logger.info(
+                    "[run.py] ensemble fused OOF: MAE=%.4f RMSE=%.4f MAPE=%.4f",
+                    row["MAE"],
+                    row["RMSE"],
+                    row["MAPE"],
+                )
+        logger.info(
+            "[run.py] ensemble run complete: oof_fingerprint=%s",
+            result["oof_fingerprint"],
+        )
+        return result
+
+    if cfg.strategy is None:
+        raise ValueError("canonical config requires a strategy")
+    identity = cfg.strategy.name.value
     logger.info(
-        "[run.py] config=%s, model_type=%s, pred_method=%s, is_testing=%s, is_forecasting=%s",
+        "[run.py] config=%s schema=2 model_type=%s identity=%s",
         args.config_yaml,
-        cfg.model_type,
-        cfg.pred_method,
-        cfg.is_testing,
-        cfg.is_forecasting,
+        cfg.estimator.model_type,
+        identity,
     )
 
-    from main import Model
+    from main import build_model
 
-    model = Model(cfg)
+    model = build_model(cfg)
     model.run()
-
 
 def main():
     args = args_parse()
     _set_seed(args.seed)
     run(args)
-
 
 if __name__ == "__main__":
     main()

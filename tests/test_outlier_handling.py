@@ -5,7 +5,7 @@ from types import SimpleNamespace
 
 import pandas as pd
 
-from data_provider.outlier_handling import (
+from data_process.outlier_handling import (
     TRAIN_OUTLIER_REPORT_COLUMNS,
     handle_train_outliers,
 )

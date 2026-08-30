@@ -1,13 +1,17 @@
 # -*- coding: utf-8 -*-
-"""从滑窗宽表生成概率预测长表、窗口指标和 horizon 指标。"""
+"""从滑窗宽表生成概率预测长表、窗口指标和 horizon 指标（legacy 宽表工具，仅测试消费）。
+
+生产评估通路（evaluate_marginal_distribution / 指标内核）已迁入 `model_evaluation/`
+（2026-08-30 evaluation 模块化）。"""
 
 from pathlib import Path
-from typing import Dict, List, Sequence, Tuple, cast
+from typing import Any, Dict, List, Mapping, Sequence, Tuple, cast
 
 import numpy as np
 import pandas as pd
 
-from probabilistic.metrics import crossing_metrics, interval_metrics, pinball_loss
+from model_forecasting.tensors import PointForecastTensor
+from model_evaluation.metrics import crossing_metrics, interval_metrics, pinball_loss
 from probabilistic.calibration import (
     CalibrationRecord,
     CalibrationResult,
@@ -15,6 +19,7 @@ from probabilistic.calibration import (
 )
 from probabilistic.postprocessing import _parse_quantile_columns
 from probabilistic.spec import IntervalSpec
+from probabilistic.types import MarginalForecastDistribution
 
 
 def _resolve_interval_columns(

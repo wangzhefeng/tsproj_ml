@@ -1,141 +1,69 @@
 # models 模块说明
 
-`models/` 是训练、测试、预测、融合和模型持久化层。CSV 读取由
-`data_provider/` 完成，特征构造由 `features/` 完成。
+`models/` 提供 estimator factory 和模型持久化；canonical Trainer/Forecaster 实现位于 `model_training/trainer.py` / `model_forecasting/forecaster.py`（2026-08-29 架构收敛迁入 model_forecasting/，2026-08-30 流水线阶段重排迁为顶层阶段包）；source/feature/strategy/result 编排位于 `model_forecasting/runtime.py`。legacy 只读层已于 2026-08-29 全部删除。
 
 ## 文件职责
 
 | 文件 | 职责 |
 |---|---|
 | `ModelFactory.py` | 统一创建 10 类回归器封装（LightGBM、XGBoost、CatBoost、RandomForest、HistGradientBoosting、Ridge、ElasticNet、Lasso、QuantileRegressor、SeasonalTemplate） |
-| `ModelTraining.py` | 训练、调参、分位数模型、融合、blend 双子模型、时间衰减样本权重、特征选择和数据增强入口 |
-| `ModelTesting.py` | 滑窗测试、窗口内训练预测、指标计算和测试结果保存 |
-| `ModelForecasting.py` | 构造预测上下文、调用多步 executor、恢复目标空间并保存结果 |
-| `multistep/` | 九方法策略目录、解析计划、五类 executor、递归状态、panel、回填、权重与 typed artifact |
-| `ModelEnsemble.py` | averaging、weighted、stacking、blending 融合回归器（成员级 preprocessor） |
-| `AuxiliaryForecaster.py` | 非目标内生变量的 reduced-form 递归辅助预测器（`endogenous_backfill_strategy: auxiliary`） |
+| `model_training/trainer.py` | CanonicalTrainer / DirectMultiOutputRegressor / HorizonAlignedDirectRegressor |
+| `model_forecasting/forecaster.py` | CanonicalForecaster，严格返回 `(N,H,K)` |
+| `model_forecasting/runtime.py` | registry/compiler、滚动回测、变换、训练、预测和持久化编排 |
+| `model_training/strategies/` | Recursive / Direct / MIMO / RecMO / DirRec / DirMO / DirRecMO 七个标准 executor |
+| `model_forecasting/results.py` | canonical long CSV 读写；指标计算在 `model_evaluation/` |
 | `ModelSaveLoad.py` | pickle 模型和目标缩放器保存/加载 |
 | `learning_rate.py` | 固定/自动学习率解析 |
 | `losses.py` | 模型损失名称和调参 scorer 推断 |
 
-## 训练
+## Canonical 训练、回测与预测合同
 
-`Trainer.train()` 输入已经构造好的 `X_train`、`Y_train` 和类别特征列表。
-主流程包括：
+1. `SourceRegistry` 按预测原点物化 target / observed-past / known-future / static；`FeatureCompiler` 同时生成 visibility proof 与固定 feature schema。
+2. `CanonicalTrainer` 按 strategy 的标准 model count 和 dependency plan 训练；independent / regressor-chain / native adapter 必须通过显式 capability gate，禁止静默降级。
+3. rolling backtest 保证 `training_label_end < holdout_label_start`；每个窗口写 long `cv_plot_df.csv`、per-target + aggregate `test_scores_df.csv` 和 source/holdout metadata；quantile 模式追加 `test_scores_probabilistic_df.csv`（tidy long：pinball/central 区间指标，eval_mask 口径与点评估一致）。
+4. final forecast 复用同一 registry/compiler/transform 状态，写 long `prediction.csv`、`resolved_config.json`、`model.pkl`、`resolved_model.json`。
+5. point shape 固定 `(N,H,K)`；quantile shape 固定 `(N,H,K,Q)`，recursive quantile 只用 median path 推进。joint samples 明确 unsupported。
 
-1. 可选数据增强。
-2. 可选特征选择。
-3. 可选自动学习率。
-4. 特征缩放和目标缩放。
-5. 可选超参数搜索。
-6. 按 `predict_type` 和 `enable_ensemble` 进入点预测、融合或分位数训练。
-
-支持模型（`ModelFactory._models` 注册名，均带别名）：
-
-- `lightgbm` / `lgb`
-- `xgboost` / `xgb`
-- `catboost` / `cat`
-- `randomforest` / `rf`
-- `histgb` / `histgradientboosting`
-- `ridge`
-- `elasticnet` / `enet`
-- `lasso`
-- `quantileregressor` / `qr`
-- `seasonaltemplate` / `st`（工作日/周末分组建季节模板 + NNLS 学权重）
-
-## 测试
-
-`Tester._window_test()` 是单个滑窗任务入口。`main.Model.test()` 负责构造窗口任务，
-并在 `window_parallel_workers > 1` 时并行执行。
-
-窗口边界：
-
-- 训练窗口和测试窗口从历史数据尾部倒推。
-- 可选训练段异常处理只修改训练窗口目标列。
-- 测试段真实 `y` 不会透传给预测器。
-- Direct 类方法的训练标签只在训练窗口内部构造，避免跨入测试期。
-
-测试输出：
+canonical 结果目录：
 
 ```text
-<test_results_dir>/test_scores_df.csv
-<test_results_dir>/cv_plot_df.csv
-<test_results_dir>/probabilistic_predictions_df.csv
-<test_results_dir>/probabilistic_scores_df.csv
-<test_results_dir>/horizon_scores_df.csv
-<test_results_dir>/probabilistic_intervals_df.csv
-<test_results_dir>/calibration_report.csv
-<test_results_dir>/train_outlier_report.csv
-<test_results_dir>/test_prediction.png
+results/<scenario>/<result_identity>/
+├── pretrained_models/model.pkl
+├── pretrained_models/resolved_model.json
+├── results_test/cv_plot_df.csv
+├── results_test/test_scores_df.csv
+├── results_test/test_scores_probabilistic_df.csv  # 仅 quantile 模式
+├── results_test/result_metadata.json
+├── results_forecast/prediction.csv
+└── results_forecast/resolved_config.json
 ```
 
-`train_outlier_report.csv` 始终写出；未启用或未发现训练异常时为空表头。
+`prediction.csv` 的唯一键为 `(series_id,time,target)`；quantile 模式追加 `predict_q*`。canonical 当前不包含 CQR runtime，因此 canonical 结果当前不会写 `predict_pi*`。迁移配置中的 `probabilistic.conformal` 仅保留 legacy 意图。
 
-`test_scores_df.csv` 中的 `MAPE` 与 `MAPE Accuracy` 采用业务口径：按 `eval_mask`（`utils/eval_mask.build_eval_mask`）过滤后计算——默认 `mode: percentile` 即取窗口正样本的 `P5` 作为相对阈值，只对 `y_true >= threshold` 的点计算指标；`absolute`/`combined` 模式可启用 `min_value` 绝对下限，`max_value` 上限与 mode 正交。结果表会同步保存 `MAPE Threshold`、`MAPE Upper Threshold`、`MAPE Valid Points`、`MAPE Excluded Points`、`MAPE Excluded Ratio`。`cv_plot_df.csv` 也会保留对应的有效性标记，`test_prediction.png` 对无效点断线显示。
+## Legacy 清理结论
 
-每个窗口同时输出季节 naive 对照列 `Naive MAPE` / `Naive MAPE Accuracy`：naive 值取测试点 `n_per_day` 步前（昨日同时刻）的实际值，与模型指标共用同一 eval_mask，用于判断模型是否跑赢持久性锚点；窗口历史不足一天时记 `NaN`。
-
-全部窗口的汇总指标由 `main.py` 用 **median（中位数）** 追加为「中位数」行——单窗口 MAPE 爆炸不会拖垮汇总。
-
-quantile 模式按 `ProbabilisticSpec` 指定 interval 在 processed target-space boundaries 上记录 `conformal_score`。历史窗口按 `label_available_at <= current_origin` 做 prequential CQR，final forecast 复用同一 as-of selector；模型 quantile 与 calibrated prediction interval 分开保存。Blend 方法额外记录 `blend_direct_pred`/`blend_recursive_pred`，供 `ridge_stacking` 学共享权重。
-
-## 预测
-
-`Forecaster` 先把外部 `pred_method` 解析为 `ResolvedStrategy`，再由 `EXECUTOR_CATALOG` 按 rollout family 调用 Pointwise / Direct / Recursive / DirRec / Blend executor。executor 不再读取原始方法字符串；point 返回一维数组，quantile 返回统一的 `ForecastDistribution`。迁移期 `quantile_outputs` 仅保留只读兼容视图：
-
-| 方法 | 说明 |
-|---|---|
-| USMDP | 单变量多步逐点 direct |
-| USMD | 单变量多步 direct |
-| USMR | 单变量递归预测 |
-| USMDR | 单变量分块 direct-recursive |
-| MSMD | 多变量 direct 预测目标 |
-| MSMR | 多变量递归预测目标 |
-| MSMDR | 多变量分块 direct-recursive |
-| USBR | 单变量 Direct+Recursive 加权融合（blend） |
-| MSBR | 多变量 Direct+Recursive 加权融合（blend） |
-
-九种方法的全名、短码和描述以 `models/multistep/spec.py::STRATEGY_SPECS` 为唯一事实源。DirRec 的训练与推理共享同一有效块长 B；Recursive/DirRec 的运行日志统一输出模型调用次数，并按能力附带 `block_size`、`backfill_source` 或 `weight_source`。
-
-Global panel 使用 `(series_id, time)` 复合主键，训练窗口、未来 H 行、递归状态和输出按 series 隔离。当前组合限制由 `models/multistep/resolve.py` 集中校验。
+legacy 只读适配层（`LegacyArtifactAdapter`、`LegacyResultReader`）与迁移器已删除；`main.py` / `run.py` 只执行 canonical `ForecastConfigSpec`。
 
 ## 模型产物
 
-新训练模型统一封装为 `ForecastModelBundle`；多步元数据和复合模型分别使用 `StrategyArtifact`、`BlendArtifact`、`AuxiliaryEndogenousArtifact`。`ModelSaveLoad.py` 加载历史裸估计器或 dict bundle 时统一经过 `LegacyArtifactAdapter`，仅构造只读运行时视图，不改写旧文件。
+canonical 新训练模型统一保存 schema-2 `ForecastModelBundle`：`pred_method=None`，必须包含 canonical problem、strategy 或 ensemble spec、estimator capabilities、固定 output order、series order、feature/source lineage、transform/scaler 状态和 config fingerprint。普通策略保存 `CanonicalStrategyArtifact`，融合保存 `CanonicalEnsembleArtifact`；quantile bundle 保存每个 level 的 canonical strategy artifact。
 
-受 MSMD/MSMDR 目标时点、默认 DirRec 块长、safe-lag、auxiliary 和 ridge-stacking 自描述化影响的旧结果清单见 `docs/multistep_forecasting_invalidation.md`。
+`ModelSaveLoad.py::load_model()` 只加载 schema-2 bundle 与 decomposition bundle；旧裸估计器/legacy dict pkl 不再被适配（加载结果原样返回，调用方自行判型）。
 
-预测输出：
-
-```text
-<pred_results_dir>/prediction.csv
-<pred_results_dir>/prediction.png
-<pred_results_dir>/history_context.csv
-<pred_results_dir>/prediction_plot_concat.csv
-```
-
-`prediction.csv` 基础列为 `time,predict_value`。启用分位数预测时追加
-`predict_q10,predict_q50,predict_q90,...`，并强制 `predict_value == predict_q50`；启用 CQR 时另加 `predict_pi<coverage>_lower/upper`，不覆盖模型 quantile。
-
-`prediction_plot_concat.csv` 用于未来预测图排障，当前除 `time,value,series_type` 外还会保存：
-
-- `raw_value`：历史上下文真实值或未来预测原值
-- `plot_value`：eval_mask 掩码后的绘图候选值；历史上下文被掩码判为异常的点写为 `NaN`
-- `plot_valid`：该点是否通过 eval_mask
-
-`prediction.png` 的历史上下文主线当前直接绘制**原始 `y`**（保证线条连续不断线），未来预测主线使用 `prediction.csv` 中的原始 `predict_value`，不做裁剪或平滑；`plot_value`/`plot_valid` 保留在 CSV 中供排障和自定义绘图使用。（滑窗测试图 `test_prediction.png` 仍按 eval_mask 对无效点断线显示。）
+旧结果与 legacy 产物已废弃：`CanonicalResultReader` 只接受 canonical long schema。
 
 ## 与入口配置的关系
 
-- `models/` 不加载配置模块；配置实例由 `run.py` 或 `main.py` 创建后传入。
-- `config/config_loader.py` 导入时不解析命令行，避免 `run.py` 导入 `main.Model` 时发生二次参数解析。
-- 模型线程数由 `model_thread_count` 通过训练层映射到 LightGBM/XGBoost 的
-  `n_jobs` 或 CatBoost 的 `thread_count`。
+- `main.py` / `run.py` 只构造 `CanonicalModel`，且只接受 `ForecastConfigSpec`。
+- canonical estimator 能力与参数由 `model_training/estimators/capabilities.py` 和 `ModelFactory.py` 解析。
 
 ## 验证
 
 模型层已有 unittest 覆盖训练窗口异常报告和测试窗口边界。改动模型逻辑后至少运行：
 
 ```bash
-uv run python -m unittest discover -s tests -p "test_*.py"
+env -u PYTHONPATH UV_CACHE_DIR=.uv_cache uv run \
+  python -m unittest discover -s tests -p "test_*.py"
 ```
+
+最新精确测试/配置计数只在 [`docs/multistep_forecasting_redesign.md`](../docs/multistep_forecasting_redesign.md) 的实施完成记录维护。

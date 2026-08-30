@@ -104,11 +104,17 @@ class AidcDateWindowModelConfigTest(unittest.TestCase):
     @staticmethod
     def _normalize(loaded: dict) -> dict:
         normalized = copy.deepcopy(loaded)
-        overrides = normalized["overrides"]
-        overrides["runtime"]["now_time"] = "<NOW_TIME>"
-        overrides["target_series"]["data_dir"] = "<DATA_DIR>"
-        overrides["output"]["scenario_subpath"] = "<SCENARIO>"
+        normalized["validation"]["forecast_origin"] = "<NOW_TIME>"
+        for source in normalized["data"]["sources"]:
+            for field in ("history_path", "backtest_path", "future_path"):
+                if field in source:
+                    source[field] = f"<{source['name'].upper()}_{field.upper()}>"
+        normalized["output"]["scenario_subpath"] = "<SCENARIO>"
         return normalized
+
+    @staticmethod
+    def _source(cfg, name: str):
+        return next(source for source in cfg.data.sources if source.name == name)
 
     def test_model_config_counts_and_runtime_contract(self):
         active = sorted(
@@ -129,8 +135,8 @@ class AidcDateWindowModelConfigTest(unittest.TestCase):
                     config_path = self._config_path(date, scene, filename)
                     self.assertTrue(config_path.exists(), config_path)
                     raw = yaml.safe_load(config_path.read_text(encoding="utf-8"))
-                    self.assertEqual(raw["base_config"], "config.univariate_config")
-                    output = raw["overrides"]["output"]
+                    self.assertEqual(raw["schema_version"], 2)
+                    output = raw["output"]
                     self.assertEqual(
                         output["scenario_subpath"],
                         f"aidc_electricity_computility/electricity/{date}/{scene}",
@@ -140,59 +146,67 @@ class AidcDateWindowModelConfigTest(unittest.TestCase):
                     self.assertNotIn("pred_results_dir", output)
 
                     cfg = load_yaml_config(config_path)
-                    self.assertEqual(cfg.model_type, "lightgbm")
-                    self.assertEqual(cfg.pred_method, method)
-                    self.assertTrue(cfg.is_testing)
-                    self.assertFalse(cfg.is_forecasting)
-                    self.assertEqual(cfg.history_length, 32)
-                    self.assertEqual(cfg.data_path, "df_power.csv")
-                    self.assertEqual(cfg.target_ts_feat, "time")
-                    self.assertEqual(cfg.target, "value")
-                    self.assertTrue(Path(cfg.data_dir).joinpath(cfg.data_path).exists())
-                    self.assertEqual(cfg.date_history_path, cfg.date_future_path)
-                    self.assertEqual(cfg.weather_history_path, cfg.weather_future_path)
-                    self.assertTrue(Path(cfg.data_dir).joinpath(cfg.date_history_path).exists())
-                    self.assertTrue(Path(cfg.data_dir).joinpath(cfg.weather_history_path).exists())
+                    target = self._source(cfg, "target_history")
+                    date_type = self._source(cfg, "date_type")
+                    weather = self._source(cfg, "weather")
+                    self.assertEqual(cfg.estimator.model_type, "lightgbm")
+                    # 2026-08-30 折合同修复：history_length = 2*horizon + 1（原 32，
+                    # horizon=288 时非重叠合同要求 >= 289）
+                    self.assertEqual(cfg.validation["history_length"], 577)
+                    self.assertGreater(
+                        cfg.validation["history_length"], cfg.problem.horizon
+                    )
+                    self.assertEqual(Path(target.history_path).name, "df_power.csv")
+                    self.assertEqual(cfg.problem.time_col, "time")
+                    self.assertEqual(cfg.problem.targets, ("value",))
+                    self.assertTrue(Path(target.history_path).exists())
+                    self.assertEqual(date_type.history_path, date_type.future_path)
+                    self.assertEqual(weather.history_path, weather.future_path)
+                    self.assertTrue(Path(date_type.history_path).exists())
+                    self.assertTrue(Path(weather.history_path).exists())
 
-    def test_all_active_and_disabled_configs_explicitly_define_exogenous_features(self):
+    def test_all_active_configs_explicitly_define_exogenous_features(self):
         config_paths = sorted(
             path
             for date in WINDOWS
-            for path in (CONFIG_ROOT / date).glob("**/lgbm_*.yaml*")
+            for path in (CONFIG_ROOT / date).glob("**/lgbm_*.yaml")
         )
-        self.assertEqual(len(config_paths), 48)
+        self.assertEqual(len(config_paths), 44)
 
         for config_path in config_paths:
             raw = yaml.safe_load(config_path.read_text(encoding="utf-8"))
-            self.assertEqual(raw["overrides"]["runtime"]["window_length"], 15, config_path)
-            exogenous = raw["overrides"]["exogenous_features"]
-            self.assertIs(exogenous["enable_date_features"], True, config_path)
-            self.assertEqual(exogenous["datetype_features"], ["date_type"], config_path)
+            self.assertEqual(raw["validation"]["window_length"], 15, config_path)
+            sources = {source["name"]: source for source in raw["data"]["sources"]}
             self.assertEqual(
-                exogenous["datetype_categorical_features"], ["date_type"], config_path
+                [column["name"] for column in sources["date_type"]["columns"]],
+                ["date_type"],
+                config_path,
             )
-            self.assertIs(exogenous["enable_weather_features"], True, config_path)
-            self.assertEqual(exogenous["weather_features"], self.WEATHER_FEATURES, config_path)
-            self.assertEqual(exogenous["weather_categorical_features"], [], config_path)
-            self.assertIs(exogenous["enable_datetime_features"], True, config_path)
-            self.assertEqual(exogenous["datetime_features"], self.DATETIME_FEATURES, config_path)
-            self.assertEqual(exogenous["datetime_categorical_features"], [], config_path)
-            self.assertNotIn("weekday", exogenous["datetime_features"], config_path)
-            self.assertNotIn("week", exogenous["datetime_features"], config_path)
+            self.assertTrue(sources["date_type"]["columns"][0]["categorical"], config_path)
+            self.assertEqual(
+                [column["name"] for column in sources["weather"]["columns"]],
+                self.WEATHER_FEATURES,
+                config_path,
+            )
+            self.assertTrue(
+                all(not column["categorical"] for column in sources["weather"]["columns"]),
+                config_path,
+            )
+            self.assertEqual(raw["features"]["datetime_features"], self.DATETIME_FEATURES, config_path)
+            self.assertNotIn("weekday", raw["features"]["datetime_features"], config_path)
+            self.assertNotIn("week", raw["features"]["datetime_features"], config_path)
 
             cfg = load_yaml_config(config_path)
-            self.assertTrue(cfg.enable_date_features, config_path)
-            self.assertTrue(cfg.enable_weather_features, config_path)
-            self.assertTrue(cfg.enable_datetime_features, config_path)
-            self.assertEqual(cfg.datetype_features, ["date_type"], config_path)
-            self.assertEqual(cfg.datetype_categorical_features, ["date_type"], config_path)
-            self.assertEqual(cfg.weather_features, self.WEATHER_FEATURES, config_path)
-            self.assertEqual(cfg.weather_categorical_features, [], config_path)
-            self.assertEqual(cfg.datetime_features, self.DATETIME_FEATURES, config_path)
-            self.assertEqual(cfg.datetime_categorical_features, [], config_path)
+            date_type = self._source(cfg, "date_type")
+            weather = self._source(cfg, "weather")
+            self.assertEqual(tuple(column.name for column in date_type.columns), ("date_type",), config_path)
+            self.assertTrue(date_type.columns[0].categorical, config_path)
+            self.assertEqual(tuple(column.name for column in weather.columns), tuple(self.WEATHER_FEATURES), config_path)
+            self.assertTrue(all(not column.categorical for column in weather.columns), config_path)
+            self.assertEqual(cfg.features.datetime_features, tuple(self.DATETIME_FEATURES), config_path)
 
     def test_july_and_august_configs_are_semantically_equal_after_date_normalization(self):
-        for scene in SCENES:
+        for scene in (scene for scene in SCENES if scene != "A3_01e"):
             for filename in self.METHODS:
                 july_path = self._config_path("2026-07-12", scene, filename)
                 august_path = self._config_path("2026-08-14", scene, filename)

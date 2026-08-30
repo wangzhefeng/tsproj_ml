@@ -6,8 +6,11 @@ import unittest
 import numpy as np
 import pandas as pd
 
-from probabilistic.calibration import attach_cqr_interval_columns
-from utils.conformal import compute_nonconformity_scores, calibrate_quantile_band
+from probabilistic.calibration import (
+    attach_cqr_interval_columns,
+    calibrate_quantile_band,
+    compute_nonconformity_scores,
+)
 
 
 class TestNonconformityScores(unittest.TestCase):

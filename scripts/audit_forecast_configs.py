@@ -5,34 +5,26 @@
 from __future__ import annotations
 
 import argparse
-import calendar
 import json
 import sys
-from datetime import timedelta
 from pathlib import Path
 from typing import Any, Sequence
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-import yaml  # noqa: E402
-
-from config.config_loader import load_yaml_config  # noqa: E402
-from models.multistep.resolve import _resolve_block_size  # noqa: E402
-from models.multistep.spec import RolloutFamily, get_strategy_spec  # noqa: E402
-from scripts.check_model_configs import is_model_yaml  # noqa: E402
+from config.config_loader import is_model_yaml, load_yaml_config  # noqa: E402
+from model_forecasting.specs import ColumnRole, ForecastConfigSpec  # noqa: E402
 
 
 REQUIRED_KEYS = frozenset(
     {
         "path",
-        "legacy_method",
-        "method_code",
+        "canonical_identity",
         "base_config",
         "target",
         "target_series_numeric_features",
         "predict_type",
         "direct_strategy",
-        "block_size",
         "effective_block_size",
         "blend_weight_strategy",
         "blend_weights",
@@ -47,62 +39,83 @@ REQUIRED_KEYS = frozenset(
 )
 
 
-def _is_tool_yaml(path: Path) -> bool:
-    stem = path.stem.lower()
-    return stem.startswith(("aggregate", "outlier")) or "detect" in stem
-
-
-def _base_config(path: Path) -> str:
-    payload = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-    return str(payload.get("base_config") or "config.univariate_config")
-
-
-def _resolve_horizon(cfg: Any) -> int:
-    if str(getattr(cfg, "horizon_mode", "fixed_steps") or "fixed_steps").lower() != "calendar_month":
-        return int(cfg.predict_steps)
-    forecast_start = cfg.now_time.date() + timedelta(days=1)
-    return calendar.monthrange(forecast_start.year, forecast_start.month)[1]
-
-
 def _build_row(path: Path, root: Path) -> dict[str, Any]:
     cfg = load_yaml_config(path)
-    legacy_method = str(cfg.pred_method)
-    strategy = get_strategy_spec(legacy_method)
-    horizon = _resolve_horizon(cfg)
-    lags = [int(value) for value in (cfg.lags or [])]
-    effective_block_size = None
-    if strategy.rollout == RolloutFamily.DIRREC:
-        effective_block_size = _resolve_block_size(cfg, horizon, tuple(lags))
+    if not isinstance(cfg, ForecastConfigSpec):
+        raise TypeError(f"non-canonical model config rejected: {path}")
+    return _build_model_row(path, root, cfg)
 
+
+def _build_model_row(
+    path: Path,
+    root: Path,
+    cfg: ForecastConfigSpec,
+) -> dict[str, Any]:
+    identity = (
+        "ensemble" if cfg.ensemble is not None else cfg.strategy.name.value
+    )
+    lags = sorted(
+        {
+            int(lag)
+            for values in cfg.features.target_lags.values()
+            for lag in values
+        }
+    )
+    observed_sources = [
+        source
+        for source in cfg.data.sources
+        if any(column.role is ColumnRole.OBSERVED_PAST for column in source.columns)
+    ]
+    provider = next(
+        (source.provider for source in observed_sources if source.provider is not None),
+        "none",
+    )
+    direct_layout = str(cfg.features.transformations.get("direct_layout", "standard"))
+    effective_block_size = (
+        cfg.strategy.output_chunk_length
+        if cfg.strategy is not None
+        else None
+    )
+    blend_weights = list(cfg.ensemble.weights) if cfg.ensemble is not None else []
+    blend_strategy = cfg.ensemble.method if cfg.ensemble is not None else "none"
+    series_id_feature = (
+        cfg.problem.series_id_cols[0]
+        if len(cfg.problem.series_id_cols) == 1
+        else None
+    )
     return {
         "path": path.relative_to(root).as_posix(),
-        "legacy_method": legacy_method,
-        "method_code": strategy.code,
-        "base_config": _base_config(path),
-        "target": cfg.target,
-        "target_series_numeric_features": list(cfg.target_series_numeric_features or []),
-        "predict_type": cfg.predict_type,
-        "direct_strategy": cfg.direct_strategy,
-        "block_size": int(cfg.block_size or 0),
+        "canonical_identity": identity,
+        "base_config": "canonical",
+        "target": cfg.problem.targets[0],
+        "target_series_numeric_features": list(
+            cfg.data.role_columns(ColumnRole.OBSERVED_PAST)
+        ),
+        "predict_type": str(cfg.probabilistic.get("mode", "point")),
+        "direct_strategy": direct_layout,
         "effective_block_size": effective_block_size,
-        "blend_weight_strategy": cfg.blend_weight_strategy,
-        "blend_weights": list(cfg.blend_weights or []),
-        "endogenous_backfill_strategy": cfg.endogenous_backfill_strategy,
-        "enable_global_training": bool(cfg.enable_global_training),
-        "series_id_feature": cfg.series_id_feature,
-        "horizon": horizon,
+        "blend_weight_strategy": blend_strategy,
+        "blend_weights": blend_weights,
+        "endogenous_backfill_strategy": provider,
+        "enable_global_training": cfg.problem.is_global,
+        "series_id_feature": series_id_feature,
+        "horizon": cfg.problem.horizon,
         "lags": lags,
-        "scenario_subpath": cfg.scenario_subpath,
-        "setting_suffix": cfg.setting_suffix,
+        "scenario_subpath": str(cfg.output.get("scenario_subpath", "")),
+        "setting_suffix": str(cfg.output.get("setting_suffix", "")),
     }
 
 
 def build_catalog(root: str | Path = "config") -> list[dict[str, Any]]:
     root_path = Path(root)
+    if not root_path.exists():
+        raise FileNotFoundError(f"Config root does not exist: {root_path}")
+    if not root_path.is_dir():
+        raise ValueError(f"Config root must be a directory: {root_path}")
     paths = sorted(
         path
         for path in root_path.rglob("*.yaml")
-        if not _is_tool_yaml(path) and is_model_yaml(path)
+        if is_model_yaml(path)
     )
     return [_build_row(path, root_path) for path in paths]
 

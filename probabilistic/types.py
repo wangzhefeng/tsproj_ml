@@ -12,6 +12,10 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
+from model_forecasting.tensors import (
+    MarginalQuantileForecastTensor,
+    PointForecastTensor,
+)
 from probabilistic.spec import (
     ProbabilisticSpec,
     validate_interval_quantiles,
@@ -177,73 +181,64 @@ class ForecastDistribution:
         return len(self.point)
 
 
-@dataclass(frozen=True)
-class BlendQuantileModel:
-    """一个 quantile 的 Direct/Recursive 显式子模型对。"""
-
-    direct: Any
-    recursive: Any
-
-    def __post_init__(self) -> None:
-        if self.direct is None or self.recursive is None:
-            raise ValueError("blend quantile model requires direct and recursive models")
-
-
 @dataclass
-class ProbabilisticModelBundle:
-    """替代 legacy nested dict 的版本化概率模型 bundle。"""
+class MarginalForecastDistribution:
+    """Canonical per-target marginal quantiles; no joint dependence model."""
 
-    schema_version: int
-    spec: ProbabilisticSpec
-    model_type: str
-    pred_method: str
-    models_by_quantile: dict[float, Any]
-    recursive_propagation: str
+    point: PointForecastTensor
+    quantiles: MarginalQuantileForecastTensor
+    dependence_model: None = None
     metadata: dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
-        if int(self.schema_version) != 1:
-            raise ValueError(
-                f"Unsupported ProbabilisticModelBundle schema_version={self.schema_version}"
+        if not isinstance(self.point, PointForecastTensor):
+            raise TypeError("point must be a PointForecastTensor")
+        if not isinstance(self.quantiles, MarginalQuantileForecastTensor):
+            raise TypeError(
+                "quantiles must be a MarginalQuantileForecastTensor"
             )
-        if self.spec.mode != "quantile":
-            raise ValueError("ProbabilisticModelBundle requires spec.mode=quantile")
-        models = {float(level): model for level, model in self.models_by_quantile.items()}
-        expected = tuple(self.spec.quantiles)
-        actual = tuple(sorted(models))
-        if actual != expected:
+        if self.dependence_model is not None:
             raise ValueError(
-                f"models_by_quantile keys must exactly equal spec.quantiles; "
-                f"expected={expected}, actual={actual}"
+                "joint dependence models are unsupported; dependence_model must be None"
             )
-        if any(model is None for model in models.values()):
-            raise ValueError("models_by_quantile must not contain None")
-        propagation = str(self.recursive_propagation).lower()
-        if propagation != self.spec.recursive_propagation:
-            raise ValueError(
-                "bundle recursive_propagation must equal spec.recursive_propagation"
-            )
-        self.schema_version = 1
-        self.model_type = str(self.model_type).lower()
-        self.pred_method = str(self.pred_method)
-        self.models_by_quantile = {level: models[level] for level in expected}
-        self.recursive_propagation = propagation
-        self.metadata = dict(self.metadata)
+        quantile_point = self.quantiles.point()
+        if (
+            self.point.series_ids != quantile_point.series_ids
+            or self.point.targets != quantile_point.targets
+            or not self.point.forecast_times.equals(quantile_point.forecast_times)
+        ):
+            raise ValueError("point and quantiles must have identical axes")
+        if not np.allclose(
+            self.point.values,
+            quantile_point.values,
+            rtol=0.0,
+            atol=1e-12,
+        ):
+            raise ValueError("point must equal the configured point quantile")
+        self.metadata = {
+            **dict(self.metadata),
+            "distribution_kind": "marginal_quantile",
+            "dependence_model": None,
+        }
 
     @property
-    def quantile_grid(self) -> QuantileGrid:
-        return QuantileGrid(self.spec.quantiles, point_level=self.spec.point_quantile)
+    def shape(self) -> tuple[int, int, int, int]:
+        return self.quantiles.shape
 
-    @property
-    def point_quantile(self) -> float:
-        return self.spec.point_quantile
 
-    @property
-    def is_blend(self) -> bool:
-        return bool(self.models_by_quantile) and all(
-            isinstance(model, BlendQuantileModel)
-            for model in self.models_by_quantile.values()
-        )
+def generate_joint_samples(
+    quantiles: MarginalQuantileForecastTensor,
+    *,
+    n_samples: int,
+):
+    if not isinstance(quantiles, MarginalQuantileForecastTensor):
+        raise TypeError("quantiles must be a MarginalQuantileForecastTensor")
+    if isinstance(n_samples, bool) or not isinstance(n_samples, int) or n_samples <= 0:
+        raise ValueError("n_samples must be a positive integer")
+    raise NotImplementedError(
+        "joint sample generation is not implemented; marginal quantiles have "
+        "dependence_model=None"
+    )
 
 
 @dataclass
@@ -258,31 +253,139 @@ class ForecastModelBundle:
     input_schema: dict[str, Any]
     probabilistic_spec: ProbabilisticSpec
     model_type: str
-    pred_method: str
+    pred_method: str | None
+    canonical_problem: dict[str, Any] | None = None
+    strategy_spec: dict[str, Any] | None = None
+    ensemble_spec: dict[str, Any] | None = None
+    estimator_spec: dict[str, Any] | None = None
+    dimensions: tuple[int, int, int] | None = None
+    series_ids: tuple[Any, ...] = ()
+    target_order: tuple[str, ...] = ()
+    feature_lineage: tuple[dict[str, Any], ...] = ()
+    source_lineage: tuple[dict[str, Any], ...] = ()
+    training_scope: str | None = None
+    result_schema_version: int | None = None
+    config_fingerprint: str | None = None
 
     def __post_init__(self) -> None:
-        if int(self.schema_version) != 1:
+        version = int(self.schema_version)
+        if version not in {1, 2}:
             raise ValueError(
                 f"Unsupported ForecastModelBundle schema_version={self.schema_version}"
             )
         if self.model is None:
             raise ValueError("ForecastModelBundle.model must not be None")
-        self.schema_version = 1
+        self.schema_version = version
         self.selected_features = tuple(str(value) for value in self.selected_features)
         self.input_schema = dict(self.input_schema)
         self.model_type = str(self.model_type).lower()
-        self.pred_method = str(self.pred_method)
+        if version == 1:
+            if self.pred_method is None:
+                raise ValueError("schema v1 ForecastModelBundle requires pred_method")
+            self.pred_method = str(self.pred_method)
+            return
+
+        if self.pred_method is not None:
+            raise ValueError("canonical ForecastModelBundle forbids legacy pred_method")
+        if not isinstance(self.canonical_problem, dict):
+            raise TypeError("canonical ForecastModelBundle requires canonical_problem")
+        if (self.strategy_spec is None) == (self.ensemble_spec is None):
+            raise ValueError(
+                "canonical ForecastModelBundle requires exactly one strategy_spec or ensemble_spec"
+            )
+        if self.ensemble_spec is not None:
+            # ensemble bundle: fusion state lives in ensemble_spec and member
+            # bundles; top-level strategy/estimator specs must be absent (v4 §8.2)
+            if self.estimator_spec is not None or self.strategy_spec is not None:
+                raise ValueError(
+                    "canonical ensemble ForecastModelBundle forbids top-level "
+                    "strategy_spec/estimator_spec; they live in member bundles"
+                )
+        elif not isinstance(self.estimator_spec, dict):
+            raise TypeError("canonical ForecastModelBundle requires estimator_spec")
+        if (
+            not isinstance(self.dimensions, tuple)
+            or len(self.dimensions) != 3
+            or any(
+                isinstance(value, bool) or not isinstance(value, int) or value <= 0
+                for value in self.dimensions
+            )
+        ):
+            raise ValueError("canonical ForecastModelBundle dimensions must be positive (N,H,K)")
+        if len(self.target_order) != self.dimensions[2]:
+            raise ValueError("canonical ForecastModelBundle target_order must match K")
+        self.series_ids = tuple(self.series_ids)
+        if not self.series_ids:
+            panel = self.input_schema.get("panel", {})
+            known = panel.get("known_series_ids", ()) if isinstance(panel, dict) else ()
+            self.series_ids = tuple(
+                tuple(value) if isinstance(value, list) else value for value in known
+            )
+        if not self.series_ids and self.dimensions[0] == 1:
+            self.series_ids = ("__local__",)
+        if self.series_ids and len(self.series_ids) != self.dimensions[0]:
+            raise ValueError("canonical ForecastModelBundle series_ids must match N")
+        if self.training_scope not in {"local", "global"}:
+            raise ValueError("canonical ForecastModelBundle training_scope must be local or global")
+        if self.result_schema_version != 2:
+            raise ValueError("canonical ForecastModelBundle result_schema_version must be 2")
+        if (
+            not isinstance(self.config_fingerprint, str)
+            or len(self.config_fingerprint) != 64
+            or any(
+                character not in "0123456789abcdef"
+                for character in self.config_fingerprint
+            )
+        ):
+            raise ValueError(
+                "canonical ForecastModelBundle requires a SHA-256 config_fingerprint"
+            )
+        self.canonical_problem = dict(self.canonical_problem)
+        self.strategy_spec = (
+            dict(self.strategy_spec) if self.strategy_spec is not None else None
+        )
+        self.ensemble_spec = (
+            dict(self.ensemble_spec) if self.ensemble_spec is not None else None
+        )
+        self.estimator_spec = (
+            dict(self.estimator_spec) if self.estimator_spec is not None else None
+        )
+        self.target_order = tuple(str(target) for target in self.target_order)
+        self.feature_lineage = tuple(dict(item) for item in self.feature_lineage)
+        self.source_lineage = tuple(dict(item) for item in self.source_lineage)
 
     def schema_payload(self) -> dict[str, Any]:
         """返回不含模型对象、可供人工审计的 JSON metadata。"""
-        return {
+        payload = {
             "schema_version": self.schema_version,
             "model_type": self.model_type,
-            "pred_method": self.pred_method,
             "selected_features": list(self.selected_features),
             "input_schema": self.input_schema,
             "probabilistic": asdict(self.probabilistic_spec),
         }
+        if self.schema_version == 1:
+            payload["pred_method"] = self.pred_method
+            return payload
+        payload.update(
+            {
+                "canonical_problem": self.canonical_problem,
+                "strategy": self.strategy_spec,
+                "ensemble": self.ensemble_spec,
+                "estimator": self.estimator_spec,
+                "dimensions": list(self.dimensions or ()),
+                "series_ids": [
+                    list(value) if isinstance(value, tuple) else value
+                    for value in self.series_ids
+                ],
+                "target_order": list(self.target_order),
+                "feature_lineage": list(self.feature_lineage),
+                "source_lineage": list(self.source_lineage),
+                "training_scope": self.training_scope,
+                "result_schema_version": self.result_schema_version,
+                "config_fingerprint": self.config_fingerprint,
+            }
+        )
+        return payload
 
     def write_schema_json(self, path: Path) -> None:
         output_path = Path(path)
@@ -291,46 +394,3 @@ class ForecastModelBundle:
             json.dumps(self.schema_payload(), ensure_ascii=False, indent=2),
             encoding="utf-8",
         )
-
-
-def migrate_legacy_quantile_bundle(value: Any) -> Any:
-    """把旧 ``{"predict_type":"quantile", "models":...}`` 转为 runtime bundle。"""
-    if not (
-        isinstance(value, dict)
-        and value.get("predict_type") == "quantile"
-        and isinstance(value.get("models"), dict)
-    ):
-        return value
-    raw_models = value["models"]
-    raw_levels = value.get("quantiles", list(raw_models))
-    point_level = float(value.get("median_quantile", 0.5))
-    grid = QuantileGrid(tuple(float(level) for level in raw_levels), point_level)
-    models: dict[float, Any] = {}
-    for level in grid.levels:
-        model = raw_models.get(level, raw_models.get(str(level)))
-        if isinstance(model, dict) and {"direct", "recursive"} <= set(model):
-            model = BlendQuantileModel(
-                direct=model["direct"],
-                recursive=model["recursive"],
-            )
-        models[level] = model
-    spec = ProbabilisticSpec(
-        mode="quantile",
-        quantiles=grid.levels,
-        point_quantile=grid.point_level,
-        recursive_propagation=str(value.get("recursive_propagation", "median_path")),
-        crossing_method="none",
-        crossing_report_raw=True,
-        intervals=(),
-        calibration=None,
-        schema_version=1,
-    )
-    return ProbabilisticModelBundle(
-        schema_version=1,
-        spec=spec,
-        model_type=str(value.get("model_type", "legacy")),
-        pred_method=str(value.get("pred_method", "legacy")),
-        models_by_quantile=models,
-        recursive_propagation=spec.recursive_propagation,
-        metadata={"migrated_from_legacy_dict": True},
-    )

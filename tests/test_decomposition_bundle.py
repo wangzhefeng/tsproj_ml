@@ -55,7 +55,7 @@ class BundleTest(unittest.TestCase):
             np.testing.assert_allclose(expected, actual, atol=1e-10)
             self.assertEqual(loaded.spec_summary["method"], "stl")
             self.assertEqual(loaded.spec_summary["periods"], [24])
-            # v1 兼容入口（from_pipeline）不标 2；显式 v2 用 from_components
+            # legacy 兼容入口（from_pipeline）不标 2；canonical 用 from_components
             self.assertIn(loaded.schema_version, (1, 2))
 
     def test_bundle_rejects_wrong_type(self):
@@ -69,7 +69,7 @@ class BundleTest(unittest.TestCase):
                 DecompositionBundle.load(path)
 
 
-class BundleV2Test(unittest.TestCase):
+class CanonicalBundleTest(unittest.TestCase):
     """内嵌式 bundle：model + scaler + pipeline 单文件保存/加载。"""
 
     def test_embedded_bundle_roundtrip(self):

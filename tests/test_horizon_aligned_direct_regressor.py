@@ -1,14 +1,12 @@
 # -*- coding: utf-8 -*-
 """Direct多输出的目标horizon外生隔离测试。"""
 import unittest
+import tempfile
 
 import numpy as np
 import pandas as pd
 
-from config.config_loader import load_yaml_config
-from features.FeatureEngineering import FeatureEngineer
-from models.ModelTraining import HorizonAlignedDirectRegressor
-from pathlib import Path
+from model_training.trainer import HorizonAlignedDirectRegressor
 
 
 class RecordingEstimator:
@@ -69,43 +67,6 @@ class HorizonAlignedDirectRegressorTest(unittest.TestCase):
                 n_jobs=1,
                 log_prefix="[test]",
             ).fit(X, Y)
-
-
-class DirectRecursiveBlockContractTest(unittest.TestCase):
-    def test_usmdr_trains_block_size_outputs_not_outer_horizon(self):
-        root = Path(__file__).resolve().parents[1]
-        cfg = load_yaml_config(str(
-            root / "config/aidc_ess_selfuse_load/route_A/add_exogenous_plan_strategy/"
-            "lgbm_usmdr_prob_mean_plan.yaml"
-        ))
-        cfg.block_size = 4
-        cfg.lags = [1]
-        cfg.enable_advanced_features = False
-        times = pd.date_range("2026-01-01", periods=20, freq="5min")
-        series = pd.DataFrame({"time": times, "y": np.arange(20, dtype=float)})
-        custom = [{
-            "name": "pcs_plan",
-            "ts_col": "time",
-            "columns": ["pcs_plan"],
-            "categorical_columns": [],
-            "future_strategy": "explicit",
-            "availability": "forecast_origin",
-            "df": pd.DataFrame({"time": times, "pcs_plan": np.arange(20, dtype=float)}),
-        }]
-        _, predictors, targets, _ = FeatureEngineer(cfg, "[test]", False).create_features(
-            df_series=series,
-            df_date_history=None,
-            df_date_future=None,
-            df_weather_history=None,
-            df_weather_future=None,
-            df_custom_history=custom,
-            endogenous_features_with_target=["y"],
-            target_feature="y",
-            horizon=12,
-        )
-        self.assertEqual(targets, [f"y_shift_{h}" for h in range(1, 5)])
-        self.assertIn("pcs_plan_h4", predictors)
-        self.assertNotIn("pcs_plan_h5", predictors)
 
 
 if __name__ == "__main__":

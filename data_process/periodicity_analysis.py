@@ -77,7 +77,7 @@ class PeriodicitySpec:
 # ---------------------------------------------------------------------------
 # 核心检测算法
 # ---------------------------------------------------------------------------
-def _fft_dominant_period(y: np.ndarray) -> dict:
+def fft_dominant_period(y: np.ndarray) -> dict:
     """FFT 幅度谱主导频率 -> 主导周期（样本数）。
 
     fftfreq 以采样间隔为单位，返回频率为「每周期的样本数」的倒数。
@@ -102,7 +102,7 @@ def _fft_dominant_period(y: np.ndarray) -> dict:
     }
 
 
-def _acf_periods(y: np.ndarray, max_lags: int, top_n: int, min_acf: float = DEFAULT_MIN_ACF) -> list:
+def acf_periods(y: np.ndarray, max_lags: int, top_n: int, min_acf: float = DEFAULT_MIN_ACF) -> list:
     """ACF 峰值间距 -> 周期候选列表。
 
     从 lag=1 起找局部极大值（避免 lag=0 的自相关=1 干扰），
@@ -169,7 +169,7 @@ def detect_periodicity(
     }
 
     # 1. FFT 主导周期（在去趋势序列上）
-    fft_info = _fft_dominant_period(y_detrended)
+    fft_info = fft_dominant_period(y_detrended)
     report["fft_dominant_period_samples"] = fft_info["dominant_period_samples"]
     report["fft_dominant_amplitude"] = fft_info["dominant_amplitude"]
     if fft_info["dominant_period_samples"] and diff_seconds:
@@ -177,16 +177,16 @@ def detect_periodicity(
         report["fft_dominant_period_days"] = fft_info["dominant_period_samples"] * diff_seconds / 86400.0
 
     # 2. ACF 周期候选（在去趋势序列上）
-    acf_periods = _acf_periods(y_detrended, max_lags, top_n_periods, min_acf)
+    acf_result = acf_periods(y_detrended, max_lags, top_n_periods, min_acf)
     report["acf_periods"] = [
-        {"lag": lag, "acf": value} for lag, value in acf_periods
+        {"lag": lag, "acf": value} for lag, value in acf_result
     ]
-    report["acf_dominant_period_samples"] = acf_periods[0][0] if acf_periods else None
-    if acf_periods and diff_seconds:
-        report["acf_dominant_period_days"] = acf_periods[0][0] * diff_seconds / 86400.0
+    report["acf_dominant_period_samples"] = acf_result[0][0] if acf_result else None
+    if acf_result and diff_seconds:
+        report["acf_dominant_period_days"] = acf_result[0][0] * diff_seconds / 86400.0
 
     # 3. STL 季节性成分（可选）
-    period = seasonal_period if seasonal_period is not None else (acf_periods[0][0] if acf_periods else None)
+    period = seasonal_period if seasonal_period is not None else (acf_result[0][0] if acf_result else None)
     seasonal = _stl_seasonal_component(y, period)
     report["stl_seasonal_period_used"] = period if seasonal is not None else None
     report["stl_has_seasonal_component"] = seasonal is not None

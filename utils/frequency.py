@@ -114,22 +114,3 @@ def compute_time_decay_weights(
     if mean_w > 0:
         weights = weights / mean_w  # 归一化到均值1,保持学习率量级
     return weights
-
-
-
-
-# 测试代码 main 函数
-def main():
-    res = resolve_freq_step_minutes(freq="1min")
-    print(res)
-    res = resolve_freq_step_minutes(freq="5min")
-    print(res)
-    res = resolve_freq_step_minutes(freq="10min")
-    print(res)
-    res = resolve_freq_step_minutes(freq="1h")
-    print(res)
-    res = resolve_freq_step_minutes(freq="1d")
-    print(res)
-
-if __name__ == "__main__":
-    main()

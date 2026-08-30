@@ -5,7 +5,7 @@ import unittest
 
 import numpy as np
 
-from probabilistic.metrics import crossing_metrics, interval_metrics, pinball_loss
+from model_evaluation.metrics import crossing_metrics, interval_metrics, pinball_loss
 
 
 class ProbabilisticMetricsTest(unittest.TestCase):

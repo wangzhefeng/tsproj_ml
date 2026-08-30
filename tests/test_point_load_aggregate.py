@@ -150,8 +150,33 @@ class PointLoadAggregateTest(unittest.TestCase):
             combined_a = pd.read_csv(
                 output_dir / "route_A" / "a1_a2_a3_route_a_hvac_main_load_5min_20251001_20251001.csv"
             )
-            self.assertEqual(list(combined_a.columns), ["time", "h1a", "h2a", "h3a", "value"])
-            self.assertEqual(combined_a["value"].tolist(), [112.0, 220.0, 333.0])
+            self.assertEqual(
+                list(combined_a.columns),
+                ["time", "a1_value", "a2_value", "a3_value", "value"],
+            )
+            np.testing.assert_allclose(combined_a["a1_value"], [2.0, np.nan, 3.0], equal_nan=True)
+            np.testing.assert_allclose(combined_a["a2_value"], [10.0, 20.0, 30.0])
+            np.testing.assert_allclose(combined_a["a3_value"], [100.0, 200.0, 300.0])
+            np.testing.assert_allclose(combined_a["value"], [112.0, 220.0, 333.0])
+
+            combined_b = pd.read_csv(
+                output_dir / "route_B" / "a1_a2_a3_route_b_hvac_main_load_5min_20251001_20251001.csv"
+            )
+            self.assertTrue(combined_b["a3_value"].isna().all())
+            np.testing.assert_allclose(combined_b["value"], [44.0, 55.0, 66.0])
+
+            combined_a_audit = next(
+                item
+                for item in audit["outputs"]
+                if item["name"] == "A1+A2+A3 A路暖通电力总负荷-主要设备"
+            )
+            self.assertEqual(combined_a_audit["value_completeness_policy"], "available_buildings")
+            self.assertEqual(
+                combined_a_audit["building_value_columns"],
+                ["a1_value", "a2_value", "a3_value"],
+            )
+            self.assertNotIn("partial_value_suppressed_count", combined_a_audit)
+            self.assertEqual(combined_a_audit["value_non_missing_count"], 3)
 
             a1_a_ups = pd.read_csv(
                 output_dir / "route_A" / "a1_route_a_ups_load_5min_20251001_20251001.csv"

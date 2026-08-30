@@ -7,9 +7,8 @@
 # * Date        : 2026-02-11
 # * Version     : 1.0.021110
 # * Description : 生产环境模型工厂
-# * Link        : link
-# * Requirement : lightgbm, xgboost, catboost, scikit-learn, pandas, numpy
 # ***************************************************
+
 
 # python libraries
 import copy
@@ -60,7 +59,6 @@ LOGGING_LABEL = Path(__file__).name[:-3]
 
 # 各模型 fit 接口统一的早停轮数默认值（调用方通常显式传 patience，此值仅为兜底）
 DEFAULT_EARLY_STOPPING_ROUNDS = 50
-
 
 # ##############################
 # 定义模型基类
@@ -145,7 +143,6 @@ class BaseModel(ABC):
 
         return importance
 
-
 def _filter_valid_params(params: Dict[str, Any], estimator_cls) -> Dict[str, Any]:
     """
     按估计器 ``__init__`` 签名过滤模型参数，仅保留该估计器显式声明的合法参数。
@@ -162,7 +159,6 @@ def _filter_valid_params(params: Dict[str, Any], estimator_cls) -> Dict[str, Any
     valid.discard("self")
     return {k: v for k, v in params.items() if k in valid}
 
-
 def _filter_fit_params(model, fit_params: Dict[str, Any]) -> Dict[str, Any]:
     """
     按底层估计器 ``fit`` 签名过滤训练参数，兼容不同版本 sklearn API 的参数差异
@@ -170,7 +166,6 @@ def _filter_fit_params(model, fit_params: Dict[str, Any]) -> Dict[str, Any]:
     """
     supported = set(inspect.signature(model.fit).parameters.keys())
     return {k: v for k, v in fit_params.items() if k in supported}
-
 
 def _warn_unrecognized_lgbm_params(params: Dict[str, Any], log_prefix: str) -> None:
     """
@@ -192,7 +187,6 @@ def _warn_unrecognized_lgbm_params(params: Dict[str, Any], log_prefix: str) -> N
             f"{log_prefix} 以下 LightGBM 参数无法识别（可能存在拼写错误），"
             f"将原样透传给原生 booster: {unknown}"
         )
-
 
 # ##############################
 # 具体模型实现
@@ -289,7 +283,6 @@ class LightGBMModel(BaseModel):
 
         return self.model.predict(X)
 
-
 class XGBoostModel(BaseModel):
     """
     XGBoost模型封装
@@ -376,7 +369,6 @@ class XGBoostModel(BaseModel):
             raise ValueError(f"{self.log_prefix} 模型尚未训练(Model not fitted yet).")
 
         return self.model.predict(X)
-
 
 class CatBoostModel(BaseModel):
     """
@@ -478,7 +470,6 @@ class CatBoostModel(BaseModel):
 
         return self.model.predict(X)
 
-
 class RandomForestModel(BaseModel):
     """
     Random Forest 模型封装
@@ -538,7 +529,6 @@ class RandomForestModel(BaseModel):
             raise ValueError(f"{self.log_prefix} 模型尚未训练(Model not fitted yet).")
 
         return self.model.predict(X)
-
 
 class HistGBModel(BaseModel):
     """
@@ -624,7 +614,6 @@ class HistGBModel(BaseModel):
 
         return self.model.predict(X)
 
-
 class _LinearModelBase(BaseModel):
     """
     线性模型封装基类（Ridge / ElasticNet / LASSO / QuantileRegressor）
@@ -699,7 +688,6 @@ class _LinearModelBase(BaseModel):
 
         return self.model.predict(X)
 
-
 class RidgeModel(_LinearModelBase):
     """Ridge 岭回归（L2 正则线性基线）"""
 
@@ -709,7 +697,6 @@ class RidgeModel(_LinearModelBase):
         "fit_intercept": True,
         "random_state": 42,
     }
-
 
 class ElasticNetModel(_LinearModelBase):
     """ElasticNet 回归（L1 + L2 混合正则线性基线）"""
@@ -722,7 +709,6 @@ class ElasticNetModel(_LinearModelBase):
         "random_state": 42,
     }
 
-
 class LassoModel(_LinearModelBase):
     """LASSO 回归（L1 正则线性基线，带特征选择效果）"""
 
@@ -732,7 +718,6 @@ class LassoModel(_LinearModelBase):
         "max_iter": 2000,
         "random_state": 42,
     }
-
 
 class QuantileRegressorModel(_LinearModelBase):
     """
@@ -751,7 +736,6 @@ class QuantileRegressorModel(_LinearModelBase):
         "alpha": 1e-3,
         "solver": "highs",
     }
-
 
 class SeasonalTemplateModel(BaseModel):
     """
@@ -906,7 +890,6 @@ class SeasonalTemplateModel(BaseModel):
 
         return self.weights_
 
-
 # ##############################
 # 模型工厂
 # ##############################
@@ -1004,13 +987,3 @@ class ModelFactory:
         列出所有支持的模型类型
         """
         return list(ModelFactory._models.keys())
-
-
-
-
-# 测试代码 main 函数
-def main():
-    pass
-
-if __name__ == "__main__":
-    main()

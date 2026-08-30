@@ -17,7 +17,7 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-from data_process.periodicity_analysis import _acf_periods, _fft_dominant_period
+from data_process.periodicity_analysis import acf_periods, fft_dominant_period
 
 
 @dataclass
@@ -61,10 +61,10 @@ def diagnose_window_residual(
     if n < 8:
         return row
 
-    fft_result = _fft_dominant_period(residual)
+    fft_result = fft_dominant_period(residual)
     row.fft_dominant_period_samples = fft_result["dominant_period_samples"]
     row.fft_dominant_amplitude = fft_result["dominant_amplitude"]
-    row.acf_top_periods = _acf_periods(residual, max_lags=max_lags, top_n=top_n)
+    row.acf_top_periods = acf_periods(residual, max_lags=max_lags, top_n=top_n)
     return row
 
 

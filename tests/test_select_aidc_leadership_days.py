@@ -23,6 +23,7 @@ from select_aidc_leadership_days import (  # noqa: E402
     REPORT_PLOT_META,
     REPORT_METRICS_COLUMNS,
     SCENARIOS,
+    _read_daily_scores,
     build_report_package,
     build_candidate_pool,
     export_report_metrics_summary,
@@ -62,12 +63,13 @@ class SelectAidcLeadershipDaysTest(unittest.TestCase):
 
         return [
             {
+                "series_id": "__local__",
                 "time": ts.strftime("%Y-%m-%d %H:%M:%S"),
-                "Y_trues": yt,
-                "Y_preds": yp,
-                "mape_valid": True,
-                "Y_trues_plot": yt,
-                "Y_preds_plot": yp,
+                "target": "power",
+                "actual_value": yt,
+                "predict_value": yp,
+                "window": 1,
+                "plot_valid": True,
             }
             for ts, yt, yp in zip(times, true_values, pred_values)
         ]
@@ -384,16 +386,31 @@ class SelectAidcLeadershipDaysTest(unittest.TestCase):
         self.assertEqual(selection["selection_reason"], "lower_tail_error_than_metric_best")
 
     def test_load_day_curve_returns_full_288_point_day(self):
-        day_curve = load_day_curve(
-            DEFAULT_RESULTS_ROOT,
-            "A1_01a",
-            "lightgbm-df_power-usmd-15",
-            "2026-05-31",
-        )
+        with tempfile.TemporaryDirectory() as tmpdir:
+            self._write_model_result(
+                tmpdir,
+                "A1_01a",
+                "lightgbm-df_power-usmd-15",
+                [
+                    {
+                        "time_range": "2026-05-31 00:00:00~2026-05-31 23:55:00",
+                        "MAPE": 0.01,
+                        "MAE": 1.0,
+                        "RMSE": 1.0,
+                    }
+                ],
+                self._make_day_curve("2026-05-31", 4000.0),
+            )
+            day_curve = load_day_curve(
+                Path(tmpdir),
+                "A1_01a",
+                "lightgbm-df_power-usmd-15",
+                "2026-05-31",
+            )
 
-        self.assertEqual(len(day_curve), 288)
-        self.assertEqual(str(day_curve.iloc[0]["time"]), "2026-05-31 00:00:00")
-        self.assertEqual(str(day_curve.iloc[-1]["time"]), "2026-05-31 23:55:00")
+            self.assertEqual(len(day_curve), 288)
+            self.assertEqual(str(day_curve.iloc[0]["time"]), "2026-05-31 00:00:00")
+            self.assertEqual(str(day_curve.iloc[-1]["time"]), "2026-05-31 23:55:00")
 
     def test_load_day_curve_rejects_incomplete_day(self):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -411,12 +428,13 @@ class SelectAidcLeadershipDaysTest(unittest.TestCase):
                 ],
                 [
                     {
+                        "series_id": "__local__",
                         "time": "2026-06-01 00:00:00",
-                        "Y_trues": 1.0,
-                        "Y_preds": 1.0,
-                        "mape_valid": True,
-                        "Y_trues_plot": 1.0,
-                        "Y_preds_plot": 1.0,
+                        "target": "power",
+                        "actual_value": 1.0,
+                        "predict_value": 1.0,
+                        "window": 1,
+                        "plot_valid": True,
                     }
                 ],
             )
@@ -428,6 +446,57 @@ class SelectAidcLeadershipDaysTest(unittest.TestCase):
                     "lightgbm-df_power-usmd-15",
                     "2026-06-01",
                 )
+
+    def test_canonical_scores_and_curve_are_normalized_for_selection(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            model_dir = root / "A1_01a" / "canonical"
+            model_dir.mkdir(parents=True)
+            times = pd.date_range("2026-06-01", periods=288, freq="5min")
+            pd.DataFrame(
+                {
+                    "series_id": "__local__",
+                    "time": times,
+                    "target": "power",
+                    "actual_value": 1000.0,
+                    "predict_value": 1001.0,
+                    "window": 1,
+                    "plot_valid": True,
+                }
+            ).to_csv(model_dir / "cv_plot_df.csv", index=False)
+            pd.DataFrame(
+                [
+                    {
+                        "window": 1,
+                        "scope": "target",
+                        "target": "power",
+                        "MAE": 1.0,
+                        "RMSE": 1.0,
+                        "MAPE": 0.001,
+                        "Accuracy": 0.999,
+                        "Valid Points": 288,
+                        "n_points": 288,
+                    },
+                    {
+                        "window": 1,
+                        "scope": "aggregate",
+                        "target": "__aggregate__",
+                        "MAE": 1.0,
+                        "RMSE": 1.0,
+                        "MAPE": 0.001,
+                        "Accuracy": 0.999,
+                        "Valid Points": 288,
+                        "n_points": 288,
+                    },
+                ]
+            ).to_csv(model_dir / "test_scores_df.csv", index=False)
+
+            scores = _read_daily_scores(root, "A1_01a", "canonical")
+            curve = load_day_curve(root, "A1_01a", "canonical", "2026-06-01")
+
+            self.assertEqual(scores.loc[0, "time_range"], "2026-06-01 00:00:00~2026-06-01 23:55:00")
+            self.assertEqual(scores.loc[0, "MAPE Accuracy"], 0.999)
+            self.assertEqual(list(curve.columns)[3:5], ["actual_value", "predict_value"])
 
     def test_run_selection_writes_final_candidates_and_archive_outputs(self):
         with tempfile.TemporaryDirectory() as tmpdir:

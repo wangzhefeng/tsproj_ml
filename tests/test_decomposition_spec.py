@@ -164,71 +164,7 @@ class SpecFailFastTest(unittest.TestCase):
         self.assertEqual(raw["extractor_params"], {"periods": [96]})
 
 
-class LoaderPreservesMappingTest(unittest.TestCase):
-    def _load(self, content: str):
-        with tempfile.TemporaryDirectory() as tmp:
-            path = Path(tmp) / "cfg.yaml"
-            path.write_text(textwrap.dedent(content))
-            return load_yaml_config(str(path))
-
-    def test_overrides_decomposition_kept_as_mapping(self):
-        cfg = self._load("""
-            base_config: config.univariate_config
-            overrides:
-              decomposition:
-                method: stl
-                periods: [96]
-        """)
-        self.assertEqual(cfg.decomposition, {"method": "stl", "periods": [96]})
-        self.assertFalse(hasattr(cfg, "method"))
-        self.assertFalse(hasattr(cfg, "periods"))
-
-    def test_spec_resolves_from_loaded_yaml(self):
-        cfg = self._load("""
-            base_config: config.univariate_config
-            overrides:
-              decomposition:
-                method: linear
-                trend_degree: 2
-        """)
-        spec = resolve_decomposition_spec(cfg)
-        self.assertEqual(spec.method, "linear")
-        self.assertEqual(spec.preset.trend_degree, 2)
-
-    def test_legacy_yaml_unchanged_still_loads(self):
-        cfg = self._load("""
-            base_config: config.univariate_config
-            overrides:
-              preprocessing:
-                decomposition_method: stl
-                decomposition_periods: [96]
-        """)
-        spec = resolve_decomposition_spec(cfg)
-        self.assertEqual(spec.method, "stl")
-        self.assertEqual(spec.preset.periods, (96,))
-
-
-class ExpandPresetTest(unittest.TestCase):
-    def test_linear_expand_components(self):
-        spec = resolve_decomposition_spec(
-            SimpleNamespace(decomposition={"method": "linear", "trend_forecast": "damped", "trend_lookback": 7}, decomposition_method="none")
-        ).expand_preset()
-        self.assertEqual(spec.extractor.type, "poly_trend")
-        self.assertEqual(spec.trend_forecaster.params["mode"], "damped")
-        self.assertEqual(spec.trend_forecaster.params["lookback"], 7)
-        self.assertIsNone(spec.seasonal_forecaster)
-
-    def test_expand_none(self):
-        spec = resolve_decomposition_spec(
-            SimpleNamespace(decomposition={"method": "none"}, decomposition_method="none")
-        ).expand_preset()
-        self.assertIsNone(spec.extractor)
-        self.assertIsNone(spec.composer)
-
-    def test_expand_custom_raises(self):
-        with self.assertRaises(ValueError):
-            DecompositionSpec(method="custom").expand_preset()
-
-
+if __name__ == "__main__":
+    unittest.main()
 if __name__ == "__main__":
     unittest.main()

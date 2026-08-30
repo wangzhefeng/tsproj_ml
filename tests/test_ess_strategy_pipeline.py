@@ -371,23 +371,29 @@ class EssStrategyPipelineTest(unittest.TestCase):
             for filename in filenames:
                 path = root / f"route_{route}/add_strategy_features/{filename}"
                 loaded = yaml.safe_load(path.read_text(encoding="utf-8"))
-                overrides = loaded["overrides"]
-                self.assertTrue(overrides["runtime"]["is_testing"])
-                self.assertFalse(overrides["runtime"]["is_forecasting"])
-                self.assertEqual(overrides["model_strategy"]["predict_type"], "quantile")
-                self.assertTrue(overrides["model_strategy"]["enable_conformal_calibration"])
-                self.assertEqual(overrides["preprocessing"]["decomposition_method"], "none")
-                columns = overrides["exogenous_features"]["custom_features"][0][
-                    "columns"
-                ]
+                self.assertEqual(loaded["probabilistic"]["mode"], "quantile")
+                self.assertEqual(loaded["probabilistic"]["conformal"]["method"], "cqr")
+                self.assertNotIn("target_transform", loaded["features"]["transformations"])
+                strategy_source = next(
+                    source
+                    for source in loaded["data"]["sources"]
+                    if source["name"] == "strategy_features_v2_c5_joint"
+                )
+                columns = [column["name"] for column in strategy_source["columns"]]
                 self.assertEqual(
                     columns[-len(JOINT_CLUSTER_FEATURE_COLUMNS) :],
                     JOINT_CLUSTER_FEATURE_COLUMNS,
                 )
                 if "usmdp" in filename:
-                    self.assertTrue(overrides["time_lag_features"]["enable_lags_features"])
-                    self.assertTrue(overrides["model_strategy"]["align_direct_features_to_target"])
-                    self.assertEqual(overrides["time_lag_features"]["lags"], ESS_SAFE_LAGS)
+                    target = loaded["problem"]["targets"][0]
+                    self.assertEqual(
+                        loaded["features"]["target_lags"][target],
+                        ESS_SAFE_LAGS,
+                    )
+                    self.assertEqual(
+                        loaded["features"]["transformations"]["direct_layout"],
+                        "single_model_horizon",
+                    )
 
     def test_validate_only_writes_nothing_and_overwrite_requires_force(self):
         output_dir = self.data_root / "forecasting_data" / "strategy_features"

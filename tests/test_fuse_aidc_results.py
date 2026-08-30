@@ -28,12 +28,13 @@ class FuseAidcResultsTest(unittest.TestCase):
         pred_values = [v + pred_offset for v in true_values]
         curve_df = pd.DataFrame(
             {
+                "series_id": ["__local__"] * 288,
                 "time": times,
-                "Y_trues": true_values,
-                "Y_preds": pred_values,
-                "mape_valid": [True] * 288,
-                "Y_trues_plot": true_values,
-                "Y_preds_plot": pred_values,
+                "target": ["power"] * 288,
+                "actual_value": true_values,
+                "predict_value": pred_values,
+                "window": [1] * 288,
+                "plot_valid": [True] * 288,
             }
         )
         score_df = pd.DataFrame(
@@ -78,17 +79,41 @@ class FuseAidcResultsTest(unittest.TestCase):
         extra_times = pd.date_range("2026-06-02 00:00:00", periods=288, freq="5min")
         extra_curve_df = pd.DataFrame(
             {
+                "series_id": ["__local__"] * 288,
                 "time": extra_times,
-                "Y_trues": [2000.0 + i for i in range(288)],
-                "Y_preds": [2001.0 + i for i in range(288)],
-                "mape_valid": [True] * 288,
-                "Y_trues_plot": [2000.0 + i for i in range(288)],
-                "Y_preds_plot": [2001.0 + i for i in range(288)],
+                "target": ["power"] * 288,
+                "actual_value": [2000.0 + i for i in range(288)],
+                "predict_value": [2001.0 + i for i in range(288)],
+                "window": [1] * 288,
+                "plot_valid": [True] * 288,
             }
         )
         pd.concat([curve_df, extra_curve_df], axis=0).to_csv(
             model_dir.joinpath("cv_plot_df.csv"), index=False
         )
+
+    def _write_canonical_model_result(
+        self,
+        root: Path,
+        scenario: str,
+        model_name: str,
+        pred_offset: float,
+    ):
+        model_dir = root.joinpath(scenario, model_name)
+        model_dir.mkdir(parents=True, exist_ok=True)
+        times = pd.date_range("2026-06-01 00:00:00", periods=288, freq="5min")
+        actual = pd.Series([1000.0 + i for i in range(288)])
+        pd.DataFrame(
+            {
+                "series_id": "__local__",
+                "time": times,
+                "target": "power",
+                "actual_value": actual,
+                "predict_value": actual + pred_offset,
+                "window": 1,
+                "plot_valid": True,
+            }
+        ).to_csv(model_dir / "cv_plot_df.csv", index=False)
 
     def test_fuse_scenario_results_writes_average_outputs_and_plot(self):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -108,12 +133,12 @@ class FuseAidcResultsTest(unittest.TestCase):
             self.assertTrue(fused_dir.joinpath("train_outlier_report.csv").exists())
 
             fused_curve_df = pd.read_csv(fused_dir.joinpath("cv_plot_df.csv"))
-            self.assertEqual(fused_curve_df.loc[0, "Y_preds"], 1002.0)
-            self.assertEqual(fused_curve_df.loc[10, "Y_preds"], 1012.0)
+            self.assertEqual(fused_curve_df.loc[0, "predict_value"], 1002.0)
+            self.assertEqual(fused_curve_df.loc[10, "predict_value"], 1012.0)
 
             fused_scores_df = pd.read_csv(fused_dir.joinpath("test_scores_df.csv"))
             self.assertEqual(len(fused_scores_df), 2)
-            self.assertEqual(fused_scores_df.loc[1, "time_range"], "中位数")
+            self.assertEqual(fused_scores_df["scope"].tolist(), ["target", "aggregate"])
             self.assertAlmostEqual(fused_scores_df.loc[0, "MAE"], 2.0)
 
     def test_fuse_scenario_results_uses_intersection_when_source_lengths_differ(self):
@@ -132,9 +157,36 @@ class FuseAidcResultsTest(unittest.TestCase):
             fused_scores_df = pd.read_csv(fused_dir.joinpath("test_scores_df.csv"))
             self.assertEqual(len(fused_curve_df), 288)
             self.assertEqual(len(fused_scores_df), 2)
+
+    def test_fuse_scenario_results_reads_mixed_legacy_and_canonical_sources(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            scenario = "AIDC/route_A"
+            model_a = "legacy"
+            model_b = "canonical"
+            self._write_model_result(root, scenario, model_a, pred_offset=6.0)
+            self._write_canonical_model_result(
+                root,
+                scenario,
+                model_b,
+                pred_offset=-2.0,
+            )
+
+            fused_dir = fuse_scenario_results(root, scenario, model_a, model_b)
+
+            fused_curve_df = pd.read_csv(fused_dir / "cv_plot_df.csv")
+            self.assertEqual(fused_curve_df.loc[0, "predict_value"], 1002.0)
             self.assertEqual(
-                fused_scores_df.loc[0, "time_range"],
-                "2026-06-01 00:00:00~2026-06-01 23:55:00",
+                list(fused_curve_df.columns),
+                [
+                    "series_id",
+                    "time",
+                    "target",
+                    "window",
+                    "actual_value",
+                    "predict_value",
+                    "plot_valid",
+                ],
             )
 
 

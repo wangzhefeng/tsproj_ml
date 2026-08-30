@@ -2,17 +2,16 @@
 """Quantile objective capability mapping tests。"""
 
 import unittest
-import tempfile
 from pathlib import Path
 
 from config.config_loader import load_yaml_config
-from main import Model
+from model_forecasting.specs import EstimatorSpec, ForecastConfigSpec
 from probabilistic.objectives import (
     inject_quantile_objective,
     supports_quantile_objective,
     validate_quantile_model_support,
 )
-from probabilistic.spec import ProbabilisticSpec
+from probabilistic.spec import ProbabilisticSpec, resolve_probabilistic_spec
 
 
 class QuantileObjectiveMappingTest(unittest.TestCase):
@@ -75,37 +74,48 @@ class QuantileObjectiveMappingTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "does not support native quantile"):
             validate_quantile_model_support("ridge", quantile_spec)
 
-    def test_model_constructor_uses_new_spec_for_capability_and_setting(self):
+    def test_canonical_config_uses_new_spec_for_capability_and_identity(self):
         root = Path(__file__).resolve().parent.parent
         config_path = (
             root
             / "config/aidc_power_month/route_A/freq_1month/window_length_9/"
             / "ridge_usmd_mean.yaml"
         )
-        cfg = load_yaml_config(config_path)
-        cfg.probabilistic = {
+        base = load_yaml_config(config_path)
+        probabilistic = {
             "mode": "quantile",
             "quantiles": [0.1, 0.5, 0.9],
             "point_quantile": 0.5,
         }
 
-        with tempfile.TemporaryDirectory() as temp_dir:
-            cfg.checkpoints_dir = Path(temp_dir) / "models"
-            cfg.test_results_dir = Path(temp_dir) / "test"
-            cfg.pred_results_dir = Path(temp_dir) / "forecast"
-            with self.assertRaisesRegex(ValueError, "does not support native quantile"):
-                Model(cfg)
+        def build(model_type):
+            return ForecastConfigSpec(
+                problem=base.problem,
+                data=base.data,
+                features=base.features,
+                strategy=base.strategy,
+                estimator=EstimatorSpec(
+                    model_type=model_type,
+                    target_adapter=base.estimator.target_adapter,
+                    params=base.estimator.params,
+                ),
+                probabilistic=probabilistic,
+                validation=base.validation,
+                output=base.output,
+            )
 
-        cfg.model_type = "lightgbm"
-        with tempfile.TemporaryDirectory() as temp_dir:
-            cfg.checkpoints_dir = Path(temp_dir) / "models"
-            cfg.test_results_dir = Path(temp_dir) / "test"
-            cfg.pred_results_dir = Path(temp_dir) / "forecast"
-            model = Model(cfg)
+        ridge = build("ridge")
+        ridge_spec = resolve_probabilistic_spec(ridge)
+        with self.assertRaisesRegex(ValueError, "does not support native quantile"):
+            validate_quantile_model_support(ridge.estimator.model_type, ridge_spec)
 
-        self.assertEqual(model.probabilistic_spec.mode, "quantile")
-        self.assertEqual(cfg.predict_type, "quantile")
-        self.assertTrue(model.setting.endswith("-quantile"))
+        lightgbm = build("lightgbm")
+        lightgbm_spec = resolve_probabilistic_spec(lightgbm)
+        validate_quantile_model_support(lightgbm.estimator.model_type, lightgbm_spec)
+
+        self.assertEqual(lightgbm_spec.mode, "quantile")
+        self.assertEqual(lightgbm.probabilistic["mode"], "quantile")
+        self.assertNotEqual(base.fingerprint(), lightgbm.fingerprint())
 
 
 if __name__ == "__main__":

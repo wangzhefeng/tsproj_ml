@@ -6,17 +6,33 @@ import tempfile
 import unittest
 import datetime
 import importlib.util
+import pickle
 from dataclasses import fields, is_dataclass
 from pathlib import Path
 from types import SimpleNamespace
 
+import numpy as np
 import pandas as pd
 import yaml
+from sklearn.linear_model import Ridge
 
-from main import Model
-from config.config_loader import load_model_config, load_yaml_config
-from data_provider.data_loader import DataLoader
-from features.FeatureEngineering import FeatureEngineer
+from model_training.estimators.capabilities import EstimatorCapabilities
+from model_forecasting.runtime import run_canonical_config
+from model_forecasting.specs import (
+    ColumnSpec,
+    DataSourceSpec,
+    DataSpec,
+    EstimatorSpec,
+    FeatureSpec,
+    ForecastConfigSpec,
+    ForecastProblemSpec,
+    ForecastStrategySpec,
+)
+from main import CanonicalModel
+from config.config_loader import load_yaml_config
+from models.ModelSaveLoad import ModelDeployPkl
+from model_forecasting.forecaster import CanonicalForecaster
+from model_training.trainer import CanonicalTrainer
 
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -33,33 +49,55 @@ def load_config_checker():
 
 
 class ConfigEntrypointTest(unittest.TestCase):
-    def test_model_config_exposes_flat_target_decomposition_fields(self):
-        cfg = load_model_config(instantiate=True)
-
-        self.assertEqual(cfg.decomposition_method, "none")
-        self.assertFalse(hasattr(cfg, "detrend_target"))
-        self.assertEqual(cfg.decomposition_periods, [])
-        self.assertEqual(cfg.decomposition_trend_degree, 1)
-        self.assertEqual(cfg.decomposition_trend_forecast, "polynomial")
-        self.assertAlmostEqual(cfg.decomposition_damping, 0.98)
-        self.assertEqual(cfg.decomposition_seasonal_cycles, 4)
+    @staticmethod
+    def _source(cfg, name):
+        return next(source for source in cfg.data.sources if source.name == name)
 
     def test_config_checker_rejects_invalid_mstl_periods(self):
         checker = load_config_checker()
         with tempfile.TemporaryDirectory() as tmp_dir:
             config_path = Path(tmp_dir) / "invalid_mstl.yaml"
             config_path.write_text(
-                """base_config: config.univariate_config
-overrides:
-  runtime:
-    history_length: 60
-    predict_steps: 96
-    window_length: 30
-  target_series:
-    freq: 15min
-  preprocessing:
-    decomposition_method: mstl
-    decomposition_periods: [96]
+                """schema_version: 2
+problem:
+  time_col: time
+  freq: 15min
+  horizon: 96
+  targets: [load]
+  information_mode: forecast
+  training_scope: local
+  series_id_cols: []
+data:
+  sources:
+    - name: target_history
+      source_type: file
+      columns:
+        - {name: load, role: target, categorical: false}
+      history_path: dataset/load.csv
+      time_col: time
+      series_id_cols: []
+      availability: source_time
+features:
+  target_lags: {load: [96]}
+  observed_past_lags: {}
+  datetime_features: []
+  transformations:
+    target_transform:
+      calendar_normalization: none
+      decomposition:
+        method: mstl
+        periods: [96]
+      target_scaling: none
+strategy: {name: direct}
+estimator:
+  model_type: lightgbm
+  target_adapter: independent
+  params: {}
+probabilistic: {mode: point}
+validation:
+  history_length: 60
+  window_length: 30
+output: {}
 """,
                 encoding="utf-8",
             )
@@ -72,19 +110,45 @@ overrides:
         with tempfile.TemporaryDirectory() as tmp_dir:
             config_path = Path(tmp_dir) / "stl_two_cycles.yaml"
             config_path.write_text(
-                """base_config: config.univariate_config
-overrides:
-  runtime:
-    history_length: 12
-    predict_steps: 2
-    window_length: 10
-  target_series:
-    freq: 1D
-  preprocessing:
-    decomposition_method: stl
-    decomposition_periods: [4]
-  model_strategy:
-    pred_method: univariate-single-multistep-direct-pointwise
+                """schema_version: 2
+problem:
+  time_col: time
+  freq: 1D
+  horizon: 2
+  targets: [load]
+  information_mode: forecast
+  training_scope: local
+  series_id_cols: []
+data:
+  sources:
+    - name: target_history
+      source_type: file
+      columns:
+        - {name: load, role: target, categorical: false}
+      history_path: dataset/load.csv
+      time_col: time
+      series_id_cols: []
+      availability: source_time
+features:
+  target_lags: {load: [2]}
+  observed_past_lags: {}
+  datetime_features: []
+  transformations:
+    direct_layout: independent_models
+    target_transform:
+      calendar_normalization: none
+      decomposition: stl
+      target_scaling: none
+strategy: {name: direct}
+estimator:
+  model_type: lightgbm
+  target_adapter: independent
+  params: {}
+probabilistic: {mode: point}
+validation:
+  history_length: 12
+  window_length: 10
+output: {}
 """,
                 encoding="utf-8",
             )
@@ -97,26 +161,41 @@ overrides:
         with tempfile.TemporaryDirectory() as tmp_dir:
             rolllag_path = Path(tmp_dir) / "usmdp_safe_rolllag.yaml"
             rolllag_path.write_text(
-                """base_config: config.univariate_config
-overrides:
-  runtime:
-    history_length: 60
-    predict_steps: 288
-    window_length: 30
-  target_series:
-    freq: 5min
-  time_lag_features:
-    enable_lags_features: true
-    lags: [288, 576]
-    align_direct_features_to_target: true
-  advanced_features:
-    enable_advanced_features: true
-    enable_rolling_features: true
-    rolling_columns: [y_lag_288]
-    rolling_windows: [288]
-    rolling_stats: [mean]
-  model_strategy:
-    pred_method: univariate-single-multistep-direct-pointwise
+                """schema_version: 2
+problem:
+  time_col: time
+  freq: 5min
+  horizon: 288
+  targets: [load]
+  information_mode: forecast
+  training_scope: local
+  series_id_cols: []
+data:
+  sources:
+    - name: target_history
+      source_type: file
+      columns:
+        - {name: load, role: target, categorical: false}
+      history_path: dataset/load.csv
+      time_col: time
+      series_id_cols: []
+      availability: source_time
+features:
+  target_lags: {load: [288, 576]}
+  observed_past_lags: {}
+  datetime_features: []
+  transformations:
+    direct_layout: independent_models
+strategy: {name: direct}
+estimator:
+  model_type: lightgbm
+  target_adapter: independent
+  params: {}
+probabilistic: {mode: point}
+validation:
+  history_length: 60
+  window_length: 30
+output: {}
 """,
                 encoding="utf-8",
             )
@@ -127,20 +206,46 @@ overrides:
         with tempfile.TemporaryDirectory() as tmp_dir:
             config_path = Path(tmp_dir) / "usmdp_target_advanced.yaml"
             config_path.write_text(
-                """base_config: config.univariate_config
-overrides:
-  runtime:
-    history_length: 60
-    predict_steps: 288
-    window_length: 30
-  advanced_features:
-    enable_advanced_features: true
-    enable_rolling_features: true
-    rolling_columns: [y]
-    rolling_windows: [288]
-    rolling_stats: [mean]
-  model_strategy:
-    pred_method: univariate-single-multistep-direct-pointwise
+                """schema_version: 2
+problem:
+  time_col: time
+  freq: 5min
+  horizon: 288
+  targets: [load]
+  information_mode: forecast
+  training_scope: local
+  series_id_cols: []
+data:
+  sources:
+    - name: target_history
+      source_type: file
+      columns:
+        - {name: load, role: target, categorical: false}
+      history_path: dataset/load.csv
+      time_col: time
+      series_id_cols: []
+      availability: source_time
+features:
+  target_lags: {load: [288]}
+  observed_past_lags: {}
+  datetime_features: []
+  transformations:
+    direct_layout: independent_models
+    advanced:
+      rolling:
+        columns: [load]
+        windows: [288]
+        stats: [mean]
+strategy: {name: direct}
+estimator:
+  model_type: lightgbm
+  target_adapter: independent
+  params: {}
+probabilistic: {mode: point}
+validation:
+  history_length: 60
+  window_length: 30
+output: {}
 """,
                 encoding="utf-8",
             )
@@ -152,25 +257,49 @@ overrides:
         with tempfile.TemporaryDirectory() as tmp_dir:
             config_path = Path(tmp_dir) / "usmd_long_context.yaml"
             config_path.write_text(
-                """base_config: config.univariate_config
-overrides:
-  runtime:
-    history_length: 60
-    predict_steps: 288
-    window_length: 30
-  time_lag_features:
-    lags: [288, 2016]
-  advanced_features:
-    enable_advanced_features: true
-    enable_rolling_features: true
-    rolling_columns: [y]
-    rolling_windows: [2016, 4032, 8064]
-    rolling_stats: [mean]
-    enable_diff_features: true
-    diff_columns: [y]
-    diff_periods: [288, 2016, 8064]
-  model_strategy:
-    pred_method: univariate-single-multistep-direct
+                """schema_version: 2
+problem:
+  time_col: time
+  freq: 5min
+  horizon: 288
+  targets: [load]
+  information_mode: forecast
+  training_scope: local
+  series_id_cols: []
+data:
+  sources:
+    - name: target_history
+      source_type: file
+      columns:
+        - {name: load, role: target, categorical: false}
+      history_path: dataset/load.csv
+      time_col: time
+      series_id_cols: []
+      availability: source_time
+features:
+  target_lags: {load: [288, 2016]}
+  observed_past_lags: {}
+  datetime_features: []
+  transformations:
+    direct_layout: independent_models
+    advanced:
+      rolling:
+        columns: [load]
+        windows: [2016, 4032, 8064]
+        stats: [mean]
+      difference:
+        columns: [load]
+        periods: [288, 2016, 8064]
+strategy: {name: direct}
+estimator:
+  model_type: lightgbm
+  target_adapter: independent
+  params: {}
+probabilistic: {mode: point}
+validation:
+  history_length: 60
+  window_length: 30
+output: {}
 """,
                 encoding="utf-8",
             )
@@ -194,27 +323,25 @@ overrides:
             root / "A3_01e" / "lgbm_msmr.yaml",
             root / "A3_01e" / "lgbm_msmdr.yaml",
         ]
-        expected_methods = {
-            "lgbm_msmd.yaml": "multivariate-single-multistep-direct",
-            "lgbm_msmr.yaml": "multivariate-single-multistep-recursive",
-            "lgbm_msmdr.yaml": "multivariate-single-multistep-direct-recursive",
-        }
-
         for config_path in expected_paths:
             self.assertTrue(config_path.exists(), config_path)
             loaded = yaml.safe_load(config_path.read_text(encoding="utf-8"))
-            self.assertEqual(loaded["base_config"], "config.multivariate_config", config_path.name)
+            self.assertEqual(loaded["schema_version"], 2, config_path.name)
 
             cfg = load_yaml_config(config_path)
-            self.assertEqual(cfg.data_path, "df_selected.csv", config_path.name)
-            self.assertEqual(cfg.target_ts_feat, "count_data_time", config_path.name)
-            self.assertEqual(cfg.target, "h_total_use", config_path.name)
-            self.assertEqual(cfg.model_type, "lightgbm", config_path.name)
-            self.assertEqual(cfg.pred_method, expected_methods[config_path.name], config_path.name)
-            self.assertFalse(cfg.enable_feature_selection, config_path.name)
-            self.assertTrue(cfg.target_series_numeric_features, config_path.name)
-            self.assertNotIn("count_data_time", cfg.target_series_numeric_features, config_path.name)
-            self.assertNotIn("h_total_use", cfg.target_series_numeric_features, config_path.name)
+            target_source = self._source(cfg, "target_history")
+            observed_columns = [
+                column.name
+                for column in target_source.columns
+                if column.role.value == "observed_past"
+            ]
+            self.assertEqual(Path(target_source.history_path).name, "df_selected.csv", config_path.name)
+            self.assertEqual(cfg.problem.time_col, "count_data_time", config_path.name)
+            self.assertEqual(cfg.problem.targets, ("h_total_use",), config_path.name)
+            self.assertEqual(cfg.estimator.model_type, "lightgbm", config_path.name)
+            self.assertTrue(observed_columns, config_path.name)
+            self.assertNotIn("count_data_time", observed_columns, config_path.name)
+            self.assertNotIn("h_total_use", observed_columns, config_path.name)
 
     def _run_python(self, code):
         return subprocess.run(
@@ -228,7 +355,7 @@ overrides:
     def test_importing_main_does_not_parse_run_cli_arguments(self):
         code = (
             "import sys; "
-            "sys.argv=['run.py','--config-yaml','config/ETT-small/ETTm1/lgbm_usmd.yaml',"
+            "sys.argv=['run.py','--config-yaml','config/aidc_load_month/route_B/lgbm_usmd_prob_mean.yaml',"
             "'--config-class','ModelConfig','--model-type','lightgbm']; "
             "import main; "
             "print('imported')"
@@ -250,413 +377,546 @@ overrides:
         result = self._run_python(code)
 
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn("True", result.stdout)
+        self.assertIn("False", result.stdout)
 
-    def test_load_yaml_config_applies_grouped_overrides(self):
-        config_path = ROOT / "config/ETT-small/ETTm1/lgbm_msmd.yaml"
+    def test_load_yaml_config_loads_canonical_groups(self):
+        config_path = ROOT / "config/aidc_load_15min_daily/route_A/add_exogenous_weather_date/enet_usmd_mean.yaml"
         loaded = yaml.safe_load(config_path.read_text(encoding="utf-8"))
 
-        self.assertNotIn("config_class", loaded)
-        self.assertEqual(loaded["base_config"], "config.multivariate_config")
-        self.assertIn("model_strategy", loaded["overrides"])
+        self.assertEqual(loaded["schema_version"], 2)
+        self.assertEqual(
+            set(loaded),
+            {
+                "schema_version",
+                "problem",
+                "data",
+                "features",
+                "strategy",
+                "estimator",
+                "probabilistic",
+                "validation",
+                "output",
+            },
+        )
 
         cfg = load_yaml_config(config_path)
-
-        self.assertEqual(cfg.data_path, "ETTm1.csv")
-        self.assertEqual(cfg.model_type, "lightgbm")
-        self.assertEqual(cfg.pred_method, "multivariate-single-multistep-direct")
-        self.assertEqual(cfg.now_time, datetime.datetime(2018, 6, 26, 19, 45, 0))
-        self.assertEqual(cfg.date_history_path, "ETTm1_exogenous/df_date.csv")
-        self.assertEqual(cfg.weather_history_path, "ETTm1_exogenous/df_weather.csv")
+        target_source = self._source(cfg, "target_history")
+        date_source = self._source(cfg, "date_type")
+        weather_source = self._source(cfg, "weather")
         self.assertEqual(
-            cfg.target_series_numeric_features,
-            ["HUFL", "HULL", "MUFL", "MULL", "LUFL", "LULL"],
+            Path(target_source.history_path).name,
+            "A_Loads_15min_mean_20251001_20260731.csv",
         )
-        self.assertFalse(hasattr(cfg, "node_id"))
-        self.assertFalse(hasattr(cfg, "out_system_id"))
-        self.assertFalse(hasattr(cfg, "model_cfgs"))
-
-    def test_ettm1_yaml_configs_pick_base_config_by_method(self):
-        for config_path in sorted((ROOT / "config/ETT-small/ETTm1").glob("*.yaml")):
-            loaded = yaml.safe_load(config_path.read_text(encoding="utf-8"))
-            self.assertIn("model_strategy", loaded["overrides"], config_path.name)
-            expected_base = (
-                "config.multivariate_config"
-                if "_ms" in config_path.stem
-                else "config.univariate_config"
-            )
-            self.assertEqual(loaded["base_config"], expected_base, config_path.name)
-
-    def test_load_yaml_config_keeps_flat_override_compatibility(self):
-        content = (
-            "base_config: config.univariate_config\n"
-            "overrides:\n"
-            "  data_path: ETTm1.csv\n"
-            "  now_time: '2018-06-26T19:45:00'\n"
+        self.assertEqual(cfg.estimator.model_type, "enet")
+        self.assertEqual(cfg.validation["forecast_origin"], "2026-07-31T23:45:00")
+        self.assertEqual(Path(date_source.history_path).name, "df_date.csv")
+        self.assertEqual(Path(weather_source.history_path).name, "weather_15min_20250101_20260731.csv")
+        self.assertEqual(
+            [column.name for column in target_source.columns if column.role.value == "observed_past"],
+            [],
         )
-        with tempfile.NamedTemporaryFile("w", suffix=".yaml", encoding="utf-8") as handle:
-            handle.write(content)
-            handle.flush()
 
-            cfg = load_yaml_config(handle.name)
-
-        self.assertEqual(cfg.data_path, "ETTm1.csv")
-        self.assertEqual(cfg.now_time, datetime.datetime(2018, 6, 26, 19, 45, 0))
-
-    def test_load_yaml_config_ignores_deprecated_time_window_overrides(self):
-        content = (
-            "base_config: config.univariate_config\n"
-            "overrides:\n"
-            "  start_time: '2018-06-01T00:00:00'\n"
-            "  future_time: '2018-06-02T00:00:00'\n"
-            "  data_path: ETTm1.csv\n"
-        )
-        with tempfile.NamedTemporaryFile("w", suffix=".yaml", encoding="utf-8") as handle:
-            handle.write(content)
-            handle.flush()
-
-            cfg = load_yaml_config(handle.name)
-
-        self.assertEqual(cfg.data_path, "ETTm1.csv")
-        self.assertFalse(hasattr(cfg, "start_time"))
-        self.assertFalse(hasattr(cfg, "future_time"))
-
-    def test_load_yaml_config_rejects_unknown_grouped_override(self):
-        content = (
-            "base_config: config.univariate_config\n"
-            "overrides:\n"
-            "  data:\n"
-            "    typo_field: 1\n"
-        )
-        with tempfile.NamedTemporaryFile("w", suffix=".yaml", encoding="utf-8") as handle:
-            handle.write(content)
-            handle.flush()
-
-            with self.assertRaisesRegex(AttributeError, "typo_field"):
-                load_yaml_config(handle.name)
-
-    def test_run_cli_overrides_yaml_values(self):
+    def test_canonical_output_overrides_write_nested_directories(self):
         import run
+        from model_forecasting.specs import parse_model_config
 
-        old_argv = sys.argv[:]
-        try:
-            sys.argv = [
-                "run.py",
-                "--config-yaml",
-                "config/ETT-small/ETTm1/lgbm_usmd.yaml",
-                "--model-type",
-                "xgboost",
-                "--is-testing",
-                "1",
-            ]
-            args = run.args_parse()
-        finally:
-            sys.argv = old_argv
-
-        cfg = run._load_config(args.config_yaml)
-        cfg = run._apply_overrides(cfg, args)
-
-        self.assertEqual(cfg.model_type, "xgboost")
-        self.assertTrue(cfg.is_testing)
-        self.assertEqual(cfg.data_path, "ETTm1.csv")
-
-    def test_standard_configs_keep_flat_dataclass_interface(self):
-        from config.config_sections import BaseModelConfig, PRED_METHOD_CODE
-
-        expected_fields = {
-            "data_path",
-            "target",
-            "pred_method",
-            "lags",
-            "model_type",
-            "date_history_path",
-            "weather_history_path",
-            "pred_results_dir",
-            "enable_train_outlier_handling",
+        payload = {
+            "schema_version": 2,
+            "problem": {
+                "time_col": "time",
+                "freq": "1h",
+                "horizon": 2,
+                "targets": ["load"],
+                "information_mode": "forecast",
+                "training_scope": "local",
+                "series_id_cols": [],
+            },
+            "data": {
+                "sources": [
+                    {
+                        "name": "target",
+                        "source_type": "file",
+                        "columns": [{"name": "load", "role": "target", "categorical": False}],
+                        "history_path": "load.csv",
+                        "time_col": "time",
+                        "availability": "source_time",
+                    }
+                ]
+            },
+            "features": {
+                "target_lags": {"load": [2]},
+                "observed_past_lags": {},
+                "datetime_features": [],
+                "transformations": {},
+            },
+            "strategy": {"name": "direct"},
+            "estimator": {"model_type": "ridge", "target_adapter": "independent"},
+            "probabilistic": {},
+            "validation": {},
+            "output": {
+                "identity": {"scenario_subpath": "new/path", "setting_suffix": ""},
+                "directories": {
+                    "checkpoints": "models",
+                    "tests": "tests",
+                    "forecast": "forecast",
+                },
+            },
         }
-
-        for module_name in ["config.univariate_config", "config.multivariate_config"]:
-            cfg = load_model_config(module_name, "ModelConfig", instantiate=True)
-            field_names = {field.name for field in fields(cfg)}
-
-            self.assertIsInstance(cfg, BaseModelConfig)
-            self.assertTrue(is_dataclass(cfg))
-            self.assertTrue(expected_fields.issubset(field_names))
-            self.assertIsInstance(cfg.pred_method, str)
-            self.assertIn(cfg.pred_method, PRED_METHOD_CODE)
-            self.assertTrue(hasattr(cfg, "pred_results_dir"))
-
-    def test_generate_configs_builds_grouped_yaml_overrides(self):
-        result = self._run_python(
-            "import config.generate_configs as g; "
-            "params={"
-            "'history_length':31,'predict_steps':96,'window_length':15,"
-            "'now_time_iso':'2018-06-26T19:45:00',"
-            "'data_dir':'./dataset/example/','data_path':'df_power.csv','freq':'5min',"
-            "'target_ts_feat':'count_data_time','target':'h_total_use',"
-            "'target_series_numeric_features':[],'target_series_categorical_features':[],"
-            "'target_series_drop_features':[],"
-            "'enable_date_features':False,'enable_weather_features':False,"
-            "'enable_datetime_features':True,'enable_lags_features':True,"
-            "'model_type':'lightgbm','pred_method':'univariate-single-multistep-direct',"
-            "'base_config':'config.univariate_config'"
-            "}; "
-            "cfg=g.build_yaml_config(params); "
-            "print(cfg['base_config']); "
-            "print(sorted(cfg['overrides'].keys())); "
-            "print(cfg['overrides']['model_strategy']['pred_method']); "
-            "print(cfg['overrides']['time_lag_features']['lags'])"
-        )
-
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn("config.univariate_config", result.stdout)
-        self.assertIn("model_strategy", result.stdout)
-        self.assertIn("univariate-single-multistep-direct", result.stdout)
-        # 滞后步数由 config_sections.default_lags_for_freq 按频率生成（5min → 288 起步）
-        self.assertIn("[288, 576", result.stdout)
-
-    def test_model_lag_validation_message_reports_strict_minimum_window_days(self):
-        cfg = load_yaml_config(
-            ROOT / "config/aidc_electricity_computility/electricity/2026-06-11/A1_01a/lgbm_usmr.yaml"
-        )
-        # 当前配置 max(lags)=864、predict_steps=288（5min）：window_length=4 时
-        # 滑窗训练行数 = 4*288-288 = 864 <= 864 触发校验，最小 window_length = (864+288)//288+1 = 5
-        cfg.window_length = 4
-
-        with self.assertRaisesRegex(ValueError, r"need window_length >= 5\."):
-            Model(cfg)
-
-
-class ConfigRuntimeSemanticsTest(unittest.TestCase):
-    def _feature_args(self, **overrides):
+        config = parse_model_config(payload, source="entrypoint.yaml")
         args = SimpleNamespace(
-            freq="5min",
-            pred_method="univariate-single-multistep-direct",
-            enable_date_features=False,
-            date_ts_feat=None,
-            datetype_features=[],
-            datetype_categorical_features=[],
-            enable_weather_features=False,
-            weather_ts_feat=None,
-            weather_features=[],
-            weather_categorical_features=[],
-            enable_datetime_features=True,
-            datetime_features=["hour", "weekday"],
-            datetime_categorical_features=[],
-            enable_lags_features=True,
-            lags=[1, 2],
-            enable_advanced_features=False,
-            use_horizon_exogenous_for_direct=False,
-            enable_global_training=False,
-            series_id_feature="series_id",
+            checkpoints_dir="override-models",
+            test_results_dir="override-tests",
+            pred_results_dir="override-forecast",
         )
-        for key, value in overrides.items():
-            setattr(args, key, value)
-        return args
 
-    def test_datetime_switch_disables_datetime_features(self):
-        args = self._feature_args(enable_datetime_features=False)
-        df = pd.DataFrame(
+        overridden = run._apply_canonical_overrides(config, args)
+
+        self.assertEqual(
+            overridden.output["directories"],
             {
-                "time": pd.date_range("2026-06-01 00:00:00", periods=4, freq="5min"),
-                "y": [1.0, 2.0, 3.0, 4.0],
-            }
+                "checkpoints": "override-models",
+                "tests": "override-tests",
+                "forecast": "override-forecast",
+            },
         )
-        engineer = FeatureEngineer(args, log_prefix="[test]", verbose=False)
+        self.assertNotIn("checkpoints_dir", overridden.output)
+        self.assertEqual(CanonicalModel(overridden).scenario_subpath, "new/path")
 
-        featured, exogenous_features, categorical_features = engineer.create_exogenouse_features(
-            df=df,
-            df_date_history=None,
-            df_date_future=None,
-            df_weather_history=None,
-            df_weather_future=None,
-        )
+class Task27ExecutionMatrixTest(unittest.TestCase):
+    STRATEGIES = (
+        ("recursive", None),
+        ("direct", None),
+        ("mimo", None),
+        ("recmo", 2),
+        ("dirrec", None),
+        ("dirmo", 2),
+        ("dirrecmo", 2),
+    )
+    EXPECTED_MATRIX_CASES = 46
 
-        self.assertEqual(exogenous_features, [])
-        self.assertEqual(categorical_features, [])
-        self.assertNotIn("dt_hour", featured.columns)
-        self.assertNotIn("dt_weekday", featured.columns)
-
-    def test_lags_switch_disables_lag_features(self):
-        args = self._feature_args(enable_lags_features=False)
-        df = pd.DataFrame(
+    @staticmethod
+    def _write_local_data(path):
+        times = pd.date_range("2026-01-01", periods=72, freq="1h")
+        step = np.arange(len(times), dtype=float)
+        pd.DataFrame(
             {
-                "time": pd.date_range("2026-06-01 00:00:00", periods=4, freq="5min"),
-                "y": [1.0, 2.0, 3.0, 4.0],
+                "time": times,
+                "load": 100.0 + step * 0.5 + np.sin(step / 4.0),
+                "power": 20.0 + step * 0.2 + np.cos(step / 5.0),
             }
-        )
-        engineer = FeatureEngineer(args, log_prefix="[test]", verbose=False)
+        ).to_csv(path, index=False)
 
-        featured, endogenous_features, target_output_features = engineer.create_endogenous_basic_features(
-            df_series=df,
-            endogenous_features_with_target=["y"],
-            target_feature="y",
-            horizon=2,
-        )
-
-        self.assertEqual(endogenous_features, [])
-        self.assertNotIn("y_lag_1", featured.columns)
-        self.assertNotIn("y_lag_2", featured.columns)
-        self.assertEqual(target_output_features, ["y_shift_1", "y_shift_2"])
-
-    def test_target_series_numeric_features_is_explicit_whitelist_when_set(self):
-        args = SimpleNamespace(
-            freq="5min",
-            pred_method="multivariate-single-multistep-direct",
-            target_ts_feat="time",
-            target="target",
-            target_series_numeric_features=["feat_keep"],
-            target_series_categorical_features=[],
-            target_series_drop_features=[],
-            enable_global_training=False,
-            series_id_feature="series_id",
-            date_ts_feat=None,
-            weather_ts_feat=None,
-        )
-        loader = DataLoader(
-            args=args,
-            train_start_time=datetime.datetime(2026, 6, 1, 0, 0),
-            train_end_time=datetime.datetime(2026, 6, 1, 0, 15),
-            forecast_start_time=datetime.datetime(2026, 6, 1, 0, 15),
-            forecast_end_time=datetime.datetime(2026, 6, 1, 0, 30),
-            log_prefix="[test]",
-        )
-        df_series = pd.DataFrame(
-            {
-                "time": pd.date_range("2026-06-01 00:00:00", periods=3, freq="5min"),
-                "target": [10.0, 11.0, 12.0],
-                "feat_keep": [1.0, 2.0, 3.0],
-                "feat_extra": [4.0, 5.0, 6.0],
-            }
-        )
-
-        (
-            df_history,
-            _df_date_history,
-            _df_weather_history,
-            endogenous_features_with_target,
-            target_feature,
-            _df_custom_history,
-        ) = loader.process_history_data(
-            {
-                "target_series": df_series,
-                "date_history": None,
-                "weather_history": None,
-                "custom_history": None,
-            }
-        )
-
-        self.assertEqual(target_feature, "y")
-        self.assertEqual(endogenous_features_with_target, ["feat_keep", "y"])
-        self.assertIn("feat_keep", df_history.columns)
-        self.assertNotIn("feat_extra", df_history.columns)
-
-    def test_load_data_merges_deduplicates_and_slices_exogenous_frames(self):
-        with tempfile.TemporaryDirectory() as tmpdir:
-            data_dir = Path(tmpdir)
-            pd.DataFrame(
+    @staticmethod
+    def _write_global_data(path):
+        times = pd.date_range("2026-01-01", periods=72, freq="1h")
+        rows = []
+        for series_index, series_id in enumerate(("A", "B")):
+            step = np.arange(len(times), dtype=float)
+            rows.extend(
                 {
-                    "time": pd.date_range("2026-06-01 00:00:00", periods=3, freq="5min"),
-                    "target": [10.0, 11.0, 12.0],
+                    "series_id": series_id,
+                    "time": timestamp,
+                    "load": 100.0 + series_index * 50.0 + step_value * 0.5,
+                    "power": 20.0 + series_index * 10.0 + step_value * 0.2,
                 }
-            ).to_csv(data_dir / "target.csv", index=False)
-            pd.DataFrame(
-                {
-                    "date": ["2026-06-01", "2026-06-02", "2026-06-03"],
-                    "date_type": [1, 1, 1],
-                }
-            ).to_csv(data_dir / "df_date.csv", index=False)
-            pd.DataFrame(
-                {
-                    "date": ["2026-06-03", "2026-06-04", "2026-06-05"],
-                    "date_type": [9, 2, 2],
-                }
-            ).to_csv(data_dir / "df_date_future.csv", index=False)
-            pd.DataFrame(
-                {
-                    "ts": [
-                        "2026-06-01 00:00:00",
-                        "2026-06-02 00:00:00",
-                        "2026-06-03 00:00:00",
-                    ],
-                    "rt_ssr": [10.0, 20.0, 30.0],
-                }
-            ).to_csv(data_dir / "df_weather.csv", index=False)
-            pd.DataFrame(
-                {
-                    "ts": [
-                        "2026-06-03 00:00:00",
-                        "2026-06-04 00:00:00",
-                        "2026-06-05 00:00:00",
-                    ],
-                    "rt_ssr": [99.0, 40.0, 50.0],
-                }
-            ).to_csv(data_dir / "df_weather_future.csv", index=False)
-
-            args = SimpleNamespace(
-                data_dir=data_dir,
-                data_path="target.csv",
-                date_history_path="df_date.csv",
-                date_future_path="df_date_future.csv",
-                date_ts_feat="date",
-                weather_history_path="df_weather.csv",
-                weather_future_path="df_weather_future.csv",
-                weather_ts_feat="ts",
+                for timestamp, step_value in zip(times, step)
             )
-            loader = DataLoader(
-                args=args,
-                train_start_time=datetime.datetime(2026, 6, 1, 0, 0),
-                train_end_time=datetime.datetime(2026, 6, 3, 0, 0),
-                forecast_start_time=datetime.datetime(2026, 6, 3, 0, 0),
-                forecast_end_time=datetime.datetime(2026, 6, 5, 0, 0),
-                log_prefix="[test]",
+        pd.DataFrame(rows).to_csv(path, index=False)
+
+    @staticmethod
+    def _target_lags(strategy):
+        if strategy in {"recursive", "recmo", "dirrec", "dirrecmo"}:
+            return (1, 2, 3)
+        return (4, 5, 6)
+
+    def _config(
+        self,
+        data_path,
+        *,
+        strategy,
+        chunk_length,
+        targets,
+        training_scope,
+        adapter,
+        mode,
+    ):
+        is_global = training_scope == "global"
+        target_lags = self._target_lags(strategy)
+        if adapter == "native":
+            model_type = "rf"
+            params = {"n_estimators": 4, "max_depth": 3, "random_state": 0, "n_jobs": 1}
+        elif mode == "quantile":
+            model_type = "qr"
+            params = {"alpha": 0.0, "solver": "highs"}
+        else:
+            model_type = "ridge"
+            params = {"alpha": 1e-6}
+        columns = [
+            ColumnSpec("series_id", "key", categorical=True)
+        ] if is_global else []
+        columns.extend(ColumnSpec(target, "target") for target in targets)
+        return ForecastConfigSpec(
+            problem=ForecastProblemSpec(
+                time_col="time",
+                freq="1h",
+                horizon=4,
+                targets=targets,
+                information_mode="forecast",
+                training_scope=training_scope,
+                series_id_cols=("series_id",) if is_global else (),
+            ),
+            data=DataSpec(
+                (
+                    DataSourceSpec(
+                        name="target_history",
+                        source_type="file",
+                        columns=tuple(columns),
+                        history_path=str(data_path),
+                        time_col="time",
+                        series_id_cols=("series_id",) if is_global else (),
+                        availability="source_time",
+                    ),
+                )
+            ),
+            features=FeatureSpec(
+                target_lags={target: target_lags for target in targets},
+                observed_past_lags={},
+                datetime_features=("hour",),
+                transformations=(
+                    {
+                        "feature_scaling": {
+                            "method": "none",
+                            "grouped": False,
+                            "encode_categorical": True,
+                        }
+                    }
+                    if is_global
+                    else {}
+                ),
+            ),
+            strategy=ForecastStrategySpec(
+                strategy,
+                output_chunk_length=chunk_length,
+            ),
+            estimator=EstimatorSpec(
+                model_type=model_type,
+                target_adapter=adapter,
+                params=params,
+            ),
+            probabilistic=(
+                {"mode": "point"}
+                if mode == "point"
+                else {
+                    "mode": "quantile",
+                    "quantiles": [0.1, 0.5, 0.9],
+                    "point_quantile": 0.5,
+                }
+            ),
+            validation={
+                "forecast_origin": "2026-01-03T23:00:00",
+                "training_scope": {
+                    "series_order": ["A", "B"] if is_global else [],
+                    "incomplete_series_policy": "raise",
+                    "unknown_series_policy": "raise",
+                },
+            },
+            output={"scenario_subpath": "task27"},
+        )
+
+    def _ensemble_doc_for_task27(self, data_path, method):
+        """Build a reference-based ensemble YAML doc for the TASK27 matrix."""
+        import copy
+
+        config = self._config(
+            data_path,
+            strategy="direct",
+            chunk_length=None,
+            targets=("load",),
+            training_scope="local",
+            adapter="independent",
+            mode="point",
+        )
+        payload = config.canonical_payload()
+        doc = {
+            "schema_version": 2,
+            "problem": payload["problem"],
+            "data": payload["data"],
+            "probabilistic": payload["probabilistic"],
+            "ensemble": {
+                "members": [
+                    {"name": "m_direct", "config_ref": "member_direct.yaml"},
+                    {"name": "m_recursive", "config_ref": "member_recursive.yaml"},
+                ],
+                "oof": {"train_window_length": 6, "fold_count": 2, "stride": 1},
+                "method": {"name": method},
+            },
+            "validation": payload["validation"],
+            "output": payload["output"],
+        }
+        member_doc = copy.deepcopy(payload)
+        member_doc["strategy"] = {"name": "direct"}
+        (Path(data_path).parent / "member_direct.yaml").write_text(
+            yaml.safe_dump(member_doc), encoding="utf-8"
+        )
+        member_doc = copy.deepcopy(payload)
+        member_doc["strategy"] = {"name": "recursive"}
+        (Path(data_path).parent / "member_recursive.yaml").write_text(
+            yaml.safe_dump(member_doc), encoding="utf-8"
+        )
+        return doc
+
+    def _assert_runtime_case(self, config, output_root):
+        result = run_canonical_config(config, output_root=output_root)
+        prediction = pd.read_csv(result.forecast_dir / "prediction.csv")
+        expected_rows = (
+            (2 if config.problem.training_scope == "global" else 1)
+            * config.problem.horizon
+            * len(config.problem.targets)
+        )
+        self.assertEqual(len(prediction), expected_rows)
+        self.assertEqual(result.bundle.schema_version, 2)
+        if config.probabilistic.get("mode") == "quantile":
+            self.assertEqual(
+                [column for column in prediction if column.startswith("predict_q")],
+                ["predict_q10", "predict_q50", "predict_q90"],
             )
 
-            input_data = loader.load_data()
+    def _assert_chain_case(self, config, data_path):
+        frame = pd.read_csv(data_path)
+        targets = list(config.problem.targets)
+        values = frame[targets].to_numpy(dtype=float)
+        horizon = config.problem.horizon
+        n_rows = len(values) - horizon
+        base_design = np.column_stack(
+            (
+                np.arange(n_rows, dtype=float),
+                values[:n_rows],
+            )
+        )
+        target_values = np.stack(
+            [values[step : step + n_rows] for step in range(1, horizon + 1)],
+            axis=1,
+        )
+        resolved = config.strategy.resolve(horizon)
+        designs = tuple(
+            np.column_stack(
+                (base_design, np.full(n_rows, float(call_index)))
+            )
+            for call_index in range(resolved.n_calls)
+        )
+        capabilities = EstimatorCapabilities(
+            scalar_target=True,
+            scalar_quantile=False,
+            native_multi_target_point=False,
+            native_multi_target_quantile=False,
+            sample_weight=True,
+            categorical=False,
+            nan_support=False,
+        )
+        feature_schema = tuple(
+            ["row_index"]
+            + [f"current_{target}" for target in targets]
+            + ["call_index"]
+        )
+        artifact = CanonicalTrainer(
+            config,
+            estimator_factory=lambda: Ridge(alpha=1e-6),
+            capabilities=capabilities,
+            feature_schema=feature_schema,
+        ).train(designs, target_values, n_series=1)
+        predict_base = np.column_stack(
+            (
+                [float(n_rows)],
+                values[n_rows : n_rows + 1],
+            )
+        )
+        predict_designs = tuple(
+            np.column_stack(
+                (predict_base, np.full(1, float(call_index)))
+            )
+            for call_index in range(resolved.n_calls)
+        )
+        prediction = CanonicalForecaster(config, artifact).predict(
+            predict_designs[0],
+            series_ids=("__local__",),
+            forecast_times=pd.date_range("2026-01-04", periods=horizon, freq="1h"),
+            feature_provider=lambda call_index, *_: predict_designs[call_index],
+        )
 
-        self.assertNotEqual(
-            input_data["date_history"]["date"].tolist(),
-            input_data["date_future"]["date"].tolist(),
+        self.assertEqual(prediction.shape, (1, horizon, len(targets)))
+        self.assertEqual(artifact.estimator_coupling, "regressor_chain")
+
+    def test_task27_full_execution_matrix_reports_exact_counts(self):
+        case_count = 0
+        passed_count = 0
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            local_path = root / "local.csv"
+            local_k1_path = root / "local_k1.csv"
+            global_path = root / "global.csv"
+            self._write_local_data(local_path)
+            pd.read_csv(local_path)[["time", "load"]].to_csv(local_k1_path, index=False)
+            self._write_global_data(global_path)
+
+            for strategy, chunk_length in self.STRATEGIES:
+                case_count += 1
+                with self.subTest(group="local-k1-point", strategy=strategy):
+                    config = self._config(
+                        local_k1_path,
+                        strategy=strategy,
+                        chunk_length=chunk_length,
+                        targets=("load",),
+                        training_scope="local",
+                        adapter="independent",
+                        mode="point",
+                    )
+                    self._assert_runtime_case(
+                        config,
+                        root / "runs" / f"local-k1-{strategy}",
+                    )
+                    passed_count += 1
+
+            for strategy, chunk_length in self.STRATEGIES:
+                for adapter in ("independent", "regressor_chain", "native"):
+                    case_count += 1
+                    with self.subTest(
+                        group="local-k2-point",
+                        strategy=strategy,
+                        adapter=adapter,
+                    ):
+                        config = self._config(
+                            local_path,
+                            strategy=strategy,
+                            chunk_length=chunk_length,
+                            targets=("load", "power"),
+                            training_scope="local",
+                            adapter=adapter,
+                            mode="point",
+                        )
+                        if adapter == "regressor_chain":
+                            self._assert_chain_case(config, local_path)
+                        else:
+                            self._assert_runtime_case(
+                                config,
+                                root / "runs" / f"local-k2-{strategy}-{adapter}",
+                            )
+                        passed_count += 1
+
+            for strategy, chunk_length in self.STRATEGIES:
+                case_count += 1
+                with self.subTest(group="local-k2-quantile", strategy=strategy):
+                    config = self._config(
+                        local_path,
+                        strategy=strategy,
+                        chunk_length=chunk_length,
+                        targets=("load", "power"),
+                        training_scope="local",
+                        adapter="independent",
+                        mode="quantile",
+                    )
+                    self._assert_runtime_case(
+                        config,
+                        root / "runs" / f"local-k2-quantile-{strategy}",
+                    )
+                    passed_count += 1
+
+            for strategy, chunk_length in self.STRATEGIES:
+                case_count += 1
+                with self.subTest(group="global-n2-k2-point", strategy=strategy):
+                    config = self._config(
+                        global_path,
+                        strategy=strategy,
+                        chunk_length=chunk_length,
+                        targets=("load", "power"),
+                        training_scope="global",
+                        adapter="independent",
+                        mode="point",
+                    )
+                    self._assert_runtime_case(
+                        config,
+                        root / "runs" / f"global-{strategy}",
+                    )
+                    passed_count += 1
+
+            for method in ("averaging", "linear_blending"):
+                case_count += 1
+                with self.subTest(group="ensemble", method=method):
+                    # v4: reference-based ensemble via the new ensemble runtime
+                    from model_ensemble.loader import load_ensemble_config
+                    from model_ensemble.runtime import run_ensemble_config
+
+                    doc = self._ensemble_doc_for_task27(
+                        local_k1_path, method
+                    )
+                    ens_path = root / f"ens_{method}.yaml"
+                    ens_path.write_text(
+                        yaml.safe_dump(doc), encoding="utf-8"
+                    )
+                    config = load_ensemble_config(ens_path)
+                    result = run_ensemble_config(
+                        config,
+                        output_root=root / "runs" / f"ensemble-{method}",
+                        base_dir=root,
+                    )
+                    combined = result["combined_values"]
+                    self.assertTrue(np.isfinite(combined).all())
+                    passed_count += 1
+
+            case_count += 1
+            with self.subTest(group="non-canonical", kind="config"):
+                legacy_path = root / "legacy.yaml"
+                legacy_path.write_text(
+                    """base_config: config.univariate_config\noverrides:\n  runtime:\n    predict_steps: 4\n  model_strategy:\n    pred_method: univariate-single-multistep-direct\n""",
+                    encoding="utf-8",
+                )
+                before = legacy_path.read_bytes()
+                with self.assertRaises(ValueError):
+                    load_yaml_config(legacy_path)
+                self.assertEqual(legacy_path.read_bytes(), before)
+                passed_count += 1
+
+            case_count += 1
+            with self.subTest(group="non-canonical", kind="artifact"):
+                artifact_path = root / "legacy.pkl"
+                legacy_artifact = {
+                    "bundle_type": "blend_direct_recursive",
+                    "direct": "direct-model",
+                    "recursive": "recursive-model",
+                }
+                artifact_path.write_bytes(pickle.dumps(legacy_artifact, protocol=2))
+                loaded = ModelDeployPkl(artifact_path).load_model()
+                self.assertEqual(loaded, legacy_artifact)
+                passed_count += 1
+
+        print(
+            f"TASK27_MATRIX cases={case_count} passed={passed_count}",
+            flush=True,
         )
-        self.assertEqual(
-            input_data["date_history"]["date"].tolist(),
-            [
-                pd.Timestamp("2026-06-01"),
-                pd.Timestamp("2026-06-02"),
-                pd.Timestamp("2026-06-03"),
-            ],
-        )
-        self.assertEqual(
-            input_data["date_future"]["date"].tolist(),
-            [
-                pd.Timestamp("2026-06-03"),
-                pd.Timestamp("2026-06-04"),
-                pd.Timestamp("2026-06-05"),
-            ],
-        )
-        self.assertEqual(
-            input_data["weather_history"]["ts"].tolist(),
-            [
-                pd.Timestamp("2026-06-01 00:00:00"),
-                pd.Timestamp("2026-06-02 00:00:00"),
-                pd.Timestamp("2026-06-03 00:00:00"),
-            ],
-        )
-        self.assertEqual(
-            input_data["weather_future"]["ts"].tolist(),
-            [
-                pd.Timestamp("2026-06-03 00:00:00"),
-                pd.Timestamp("2026-06-04 00:00:00"),
-                pd.Timestamp("2026-06-05 00:00:00"),
-            ],
-        )
-        self.assertEqual(
-            input_data["weather_future"].loc[
-                input_data["weather_future"]["ts"] == pd.Timestamp("2026-06-03 00:00:00"),
-                "rt_ssr",
-            ].iloc[0],
-            99.0,
-        )
+        self.assertEqual(case_count, self.EXPECTED_MATRIX_CASES)
+        self.assertEqual(passed_count, self.EXPECTED_MATRIX_CASES)
+
+    def test_task27_checker_validates_all_model_configs_read_only(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            log_path = Path(temp_dir) / "check_model_configs.log"
+            error_path = Path(temp_dir) / "check_model_configs.err"
+            with log_path.open("w", encoding="utf-8") as stdout, error_path.open(
+                "w", encoding="utf-8"
+            ) as stderr:
+                result = subprocess.run(
+                    [sys.executable, str(CHECKER_PATH)],
+                    cwd=ROOT,
+                    stdout=stdout,
+                    stderr=stderr,
+                    text=True,
+                    check=False,
+                    timeout=120,
+                )
+            output = log_path.read_text(encoding="utf-8")
+            errors = error_path.read_text(encoding="utf-8")
+
+        self.assertEqual(result.returncode, 0, errors or output[-4000:])
+        self.assertIn("checked=848 passed=848 hard_failures=0", output)
+        self.assertNotIn("硬校验失败", output)
 
 
 if __name__ == "__main__":

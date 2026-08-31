@@ -1,16 +1,9 @@
-# data_loading 模块说明
+# data_loading
 
-`data_loading/` 是**数据构造与组织层**（流水线第 1 阶段）：canonical 主链的唯一数据通路。2026-08-30 自 `model_forecasting/data/` 迁为顶层包。
+`data_loading/` 是 canonical 唯一数据读取与信息集构造层。
 
-## 文件职责
+- `registry.py`：文件读取、schema 校验、path version、严格 as-of、缓存。
+- `information_set.py`：请求、物化信息集、lineage、行位置缓存。
+- `providers.py`：observed-past 显式 future provider。
 
-| 文件 | 职责 |
-|---|---|
-| `registry.py` | `SourceRegistry`：文件读取 + schema 校验 + 严格 as-of vintage（`available_at <= forecast_origin`，缺失即 RAISE）；验证帧缓存 |
-| `information_set.py` | `InformationSetRequest` / `MaterializedInformationSet`：信息集物化与行定位（含 `row_position_lookup` O(1) 缓存） |
-| `providers.py` | observed_past 显式 provider / known_future trajectory / static / endogenous future 等数据提供者 |
-
-## 边界
-
-- 只依赖 `model_forecasting.specs`（配置合同）与 `utils`，不依赖任何下游阶段包；
-- 离线数据准备（填补/清洗/事件检测）在 `data_process/`，发生在「进模型之前」，见流水线数据契约（AGENTS.md）。
+只依赖 `forecasting_core.specs` 与基础库。缺失、重复、时间越界和可得性违规直接 RAISE；离线填补和清洗属于 `data_process/`。

@@ -34,9 +34,9 @@
 | add_exogenous_weather_date_plan_strategy | 4 | USMD、USMDP、USMDR、USMR；无分解 |
 | add_strategy_features | 5 | USMD、USMD-horizon、USMDP、USMDR、USMR；baseline + C5；quantile+CQR；无分解 |
 
-USBR/MSBR 是 Direct+Recursive 多步策略，不是 `ModelEnsemble`；本场景所有配置均关闭模型融合。USBR 不进入外生组：其 Direct/Recursive 子模型共享一套 X，不能同时表达 Direct 的 horizon-aware 外生轨迹与 Recursive 的逐步外生量。USMD/USMDR 外生配置启用 `use_horizon_exogenous_for_direct`，每个输出模型只消费对应目标 horizon 的外生列；USMDR 使用 `block_size: 96`，288步预测真实执行3个block。USMR 逐步传入 future weather/custom；USMDP 统一使用 self-lag safe-lag：`enable_lags_features=true`、`align_direct_features_to_target=true`、`min(lags)>=horizon`。
+route_A/route_B 的 `baseline/lgbm_usbr_prob_mean.yaml` 是引用式 Quantile Ensemble：分别引用一个 Direct 基模型和 `ensemble_members/` 下的 Recursive 基模型，以 `linear_blending` 融合；它不是第八种预测策略。其余单模型仍只使用七种标准 strategy，Direct/Recursive 的外生时点和回填语义由各自 canonical feature/data 合同独立表达。
 
-所有配置统一为仅测试模式：`is_testing: true`、`is_forecasting: false`。当前 `history_length=34`、`window_length=30`、`predict_steps=288`，形成5个滑窗；每窗总长30天，其中训练29天、测试1天。相同 testing-only 契约同时适用于 `aidc_load_15min_daily`、`aidc_load_15min_rolling`、`aidc_load_15min_short` 和 `aidc_power_month` 的全部模型YAML。
+现役 canonical 配置的测试几何统一由 `validation.history_steps/train_window_steps/fold_count/stride_steps` 表达，全部以监督 origin steps 计；正式预测仍由同一配置的 `forecast_origin`、`schedule_mode` 和 `problem.horizon` 驱动。具体折数与训练窗以各 YAML 为准，不再使用 `is_testing/is_forecasting/history_length/window_length` legacy 字段。
 
 `add_endogenous_actual_strategy` 的输出路径与配置目录同名。auxiliary未来PCS轨迹只适用于需要逐步回填的 MSMR/MSMDR；MSMD一次性Direct输出、MSBR双分支共享输入，当前不支持只靠 `endogenous_backfill_strategy=auxiliary` 接入，配置中不伪造该能力。
 

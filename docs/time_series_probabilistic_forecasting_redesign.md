@@ -1,12 +1,13 @@
 # 时间序列概率预测模块重构设计方案
 
-> 文档状态：Draft / 审批状态：未评审  
+> 文档状态：**Historical reference（2026-08-31）**
+> 本文保留 2026-08-24 专项审计与设计背景，不再描述当前代码路径、配置数量或生产能力。当前事实以 [`multistep_forecasting_redesign.md`](./multistep_forecasting_redesign.md) 为准；canonical 当前只支持 point 与边际 quantile，不执行 CQR。
 > 创建日期：2026-08-24  
 > 最近修订：2026-08-24——根据方案评审补齐 quantile/interval 分离、目标变换逆序、标签可得性与实施顺序  
-> 文档性质：当前实现审计 + 专项重构设计 + 实施进度跟踪  
+> 文档性质：历史专项设计与决策溯源
 > 调研依据：[Kaggle 时间序列预测调研](./kaggle_time_series_forecasting_research.md)  
 > 参考结构：[时间序列分解模块重构设计方案](./time_series_decomposition_redesign.md)  
-> 本文不构成实施授权；实施时按 §15 的状态机和证据要求推进。
+> 本文不构成实施授权，也不再作为实施状态机。
 
 ## 1. 背景与目标
 

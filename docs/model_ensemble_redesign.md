@@ -1,5 +1,7 @@
 # 模型融合模块重设计 Implementation Plan
 
+> **文档状态：Historical reference（2026-08-31）**。本文保留 Ensemble v4 的设计决策与实施溯源，不再描述当前代码路径、配置计数或验收状态。当前事实以 [`multistep_forecasting_redesign.md`](./multistep_forecasting_redesign.md) 和 [`architecture_convergence_plan.md`](./architecture_convergence_plan.md) 为准。
+
 > **v4（2026-08-29）**：基于 v3 的程序化评审修订，整体替换 v3。基线事实全部复核属实（824 YAML / 24 ensemble / 485 tests / 848 计数、Direct 可引用、Recursive 需新增，均经独立脚本验证）。v4 主要修正：
 > 1. **parity 分级**（B1）：核实当前 stacking 的 NNLS 权重按 outer 滑窗逐窗重训（`forecasting/runtime.py:1583-1595`，final 用末窗 indices 再学一次 `:1731-1737`），不存在可供复现的"当前固定权重"。stacking→linear_blending 的端到端"逐值一致"声明不可实现，降级为函数级 fixture；weighted→averaging 保持端到端逐值一致。
 > 2. **calendar_month OOF 边界**（B2）：power_month 2 个 ensemble 为 `freq: 1D + horizon_mode: calendar_month`，变长 horizon 下固定 fold 几何语义未定义。首版 OOF 对 calendar_month 只允许 `fold_count=1`，`fold_count>1` 显式 RAISE。

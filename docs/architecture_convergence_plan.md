@@ -1,14 +1,14 @@
-# 项目架构收敛设计与重构实施方案
+# 项目架构收敛设计、Coder Review 与整改方案
 
-> 文档状态：**v3 执行完成（2026-08-30）**——P0–P4 五片全部落地；执行期新增两项超范围工作（折合同配置修复 618 YAML、信息集性能修复）经 wangzf 追加裁决后完成，见 §10 执行记录与偏差；测试基线 562 tests OK / check_model_configs 848 passed / audit_ensemble 零失败。**任何片均不自动 commit**（review-then-commit），全部改动待 review。
-> 创建日期：2026-08-29（v1）／ v2：纳入 ensemble v4 现状 ／ v3：新增时序预测流水线第一性原理逐项审计（§2.7–2.8，决策 D12–D15）
+> 文档状态：**v4 整改已 `closed`（2026-08-31）**。§1–§10 和 §11 的旧基线保留为历史证据，不得当作当前验收结果；目标架构与实施要求见 §12–§16，二轮 fresh 证据见 §17.5。C1–C6 实现与当前态文档、H16 short + H31 calendar-month 两个 quantile linear-blending 代表配置以及 C7 代码/配置/资产门禁均已通过。**任何整改片均不自动 commit**（review-then-commit）。
+> 创建日期：2026-08-29（v1）／ v2：纳入 ensemble v4 现状 ／ v3：新增流水线第一性原理审计并完成原收敛切片 ／ v4：重构后 coder review 与整改方案
 > 作者：Machine-C（MC）
-> 定位：本文是 `docs/multistep_forecasting_redesign.md`（预测架构权威文档）的**包间边界补充 + 流水线完整性审计**，不改动 canonical 内部设计与 v4 引用式融合的已验收行为。诊断基于 2026-08-29 对**当前工作区**的逐文件核查，全部结论附 `path:line` 证据。
+> 定位：本文记录架构收敛的历史决策、重构后真实状态审查，以及下一轮修正方案。`docs/` 下实验性 Python/ipynb 按 review 范围明确排除；生产代码、配置、Markdown 文档、测试和运行产物合同均纳入核查。
 
 > **版本变更链**：
 > **v1 → v2**：工作区相继完成 canonical legacy 收口与 ensemble v4 两次大重构，撤销 D5（pickle 垫片，存量 pkl 已清空）、改 D2 为整包删除（契约字段词汇在现役 848 YAML 零出现）、缩小 D3 范围（E1 已抽 `forecasting/validation.py`）、新增 §2.5 ensemble 专项分析。
-> **v2 → v3**：应用户要求，从「时序预测 训练/测试/预测 第一性原理」对全部 13 个主题逐项审计（§2.7），新增发现 F1–F8 与决策 D12–D15：评估掩码 `eval_mask` 语义在 canonical 迁移中被静默丢弃（F6，14 个 YAML + 审计白名单活着、运行时死了）、在线缺失/异常处理默认无声明（F1/F2）、decomposition 双链死代码（F7）、GridSearchCV 死导入（F5）、§3.1 分层图与依赖方向勘误（F8）。
-> **v3 裁决（2026-08-29，wangzf）**：D13=rewire、D12=只立契约、D7/D14/D15 死代码全部删除、D9=文档声明差异为有意、P1 消环先行——执行按裁决推进，详见 §9。
+> **v2 → v3**：应用户要求，从「时序预测 训练/测试/预测 第一性原理」对全部 13 个主题逐项审计（§2.7），新增发现 F1–F8 与决策 D12–D15；按 2026-08-29 裁决执行，记录见 §9–§10。
+> **v3 → v4**：不采信历史 pass 计数，重新运行全量 unittest、配置审计、compileall、包间 AST 门禁，并对现役 YAML→FeatureCompiler、Quantile Linear Blending、月频 seasonal-naive、Ensemble 顶层合同、CLI override 和 source 文件逐项做可执行探测。结果表明 v3 完成的是原定结构切片，不等于现役生产合同闭环；新增 RF1–RF12 与 C0–C7 整改切片。
 
 ## 1. 目的与范围
 
@@ -401,4 +401,605 @@ env -u PYTHONPATH UV_CACHE_DIR=.uv_cache uv run python scripts/audit_ensemble_co
 | 4 | `validation` 段无类型 Mapping（§2.7 审计项 11 注记） | 记录在案，未来轮次 |
 | 5 | recursive 类策略的 16-call teacher-forced 编译形状（性能修复只做了缓存，编译量本身未减） | 记录在案：若后续仍嫌慢可评估「单模型策略只编译消费 call」 |
 
-**方案关闭**：v3 范围内工作全部完成或显式撤销（D14 误诊）；新增工作（折合同、性能）已并入本文档记录。commit 待 wangzf 指示。
+**v3 原方案关闭**：§1–§10 记录的原定结构切片已完成或显式撤销；其“终态完成”结论已被 v4 fresh review 取代。后续实施以 §11–§16 为准，未经明确指示不 commit、不 push。
+
+---
+
+## 11. v4 Coder Review 结果（2026-08-30）
+
+### 11.1 Provenance 与审查边界
+
+| 项 | 内容 |
+|---|---|
+| Agent | Machine-C（MC） |
+| 审查对象 | 当前 `dev` 工作区生产代码、848 个 schema-2 模型 YAML、Markdown 文档、测试、配置审计器和运行产物合同 |
+| 明确排除 | `docs/` 下未接入生产的 Python/ipynb 实验脚本 |
+| 方法 | 逐文件阅读 + AST import/消费者审计 + 全量命令实跑 + 配置字段/数据路径程序化统计 + 关键路径最小复现 |
+| 纪律 | 只做 review 与计划记录；未修改生产代码、配置和测试，未运行真实批量实验 |
+
+### 11.2 Fresh 基线
+
+| 验证 | 命令/方法 | 结果 |
+|---|---|---|
+| 工作区 | `git status --short --branch` | `dev...origin/dev`，review 开始时 clean |
+| 全量测试 | `env -u PYTHONPATH UV_CACHE_DIR=.uv_cache uv run --no-sync python -m unittest discover -s tests -p "test_*.py"` | **600 tests / 84.626s / OK** |
+| 分层门禁 | `python -m unittest tests.test_package_layering -v` | **12 tests / OK** |
+| 语法与 diff | `python -m compileall -q ... && git diff --check` | exit 0 |
+| 配置 checker | `python scripts/check_model_configs.py` | `checked=848 passed=848 hard_failures=0 warnings=0` |
+| Ensemble 审计 | `python scripts/audit_ensemble_configs.py` | 800 单模型 + 24 Ensemble + 24 成员；零失败 |
+| YAML→运行时合同探测 | 对 824 个带 `features` 的基模型/成员 YAML 比对 `FeatureCompiler` 实际允许字段 | **624 不兼容，200 兼容** |
+| 数据资产探测 | 对所有 source 的 history/backtest/future path 做存在性核对 | 14 个唯一缺失文件，影响 **396/848** 配置 |
+
+> **判定原则**：`600 tests OK` 和 `848 passed` 是现有门禁的真实结果，但不是“848 个配置均可运行”的证据。配置 checker 与生产 runtime 使用不同合同，是本轮最大的系统性问题。
+
+### 11.3 总体成熟度结论
+
+| 维度 | 结论 | 说明 |
+|---|---|---|
+| 架构方向 | **B** | 显式列角色、as-of、七策略、统一张量、能力门禁和独立评估方向正确 |
+| 单模型运行正确性 | **D** | 624 个基模型 YAML 在 FeatureCompiler 合同处不兼容；时间几何语义未闭环 |
+| Ensemble 生产能力 | **D** | 10 个 quantile linear_blending 配置存在维度错误；运行时不持久化 bundle/result |
+| 测试可信度 | **C** | 覆盖面广，但大量测试只验证 parser/checker/合成 fixture，未覆盖现役配置→生产 runtime |
+| 文档一致性 | **D** | 多份文档继续描述已删除模块、旧 schema、历史测试计数和未接线能力 |
+| 当前可交付性 | **不通过** | 不得以现有全绿门禁宣称重构完成或全部配置可运行 |
+
+### 11.4 Review findings（RF1–RF12）
+
+#### RF1 — P0：624/824 个基模型 YAML 与 FeatureCompiler 的 canonical schema 不一致
+
+- 运行时只接受 `direct/advanced/feature_scaling/target/datetime_categorical/interactions`（`feature_engineering/compiler.py:95-104,569-572`）。
+- checker 同时放行旧 `direct_layout/target_transform/rolling_windows/diff_periods/pct_change_periods`（`scripts/check_model_configs.py:44-66`）。
+- 现役例：`config/aidc_power_month/route_A/freq_1month/window_length_10/lgbm_usmd_prob_mean.yaml:67-72`。
+- 最小复现：`ValueError: unsupported feature transformations: ['direct_layout', 'target_transform']`。
+
+**影响**：配置可加载、checker 全绿，但进入生产编译即失败；`848 passed` 为假绿。
+
+**结论**：只保留 compiler 当前新嵌套 schema，一次性迁移 624 YAML；不得新增双 schema 兼容层。
+
+#### RF2 — P0：10 个 quantile + linear_blending Ensemble 维度合同错误
+
+- 当前分布：point averaging=12、point linear_blending=2、quantile linear_blending=10。
+- 现役例：`config/aidc_power_month/route_A/freq_1day/baseline/lgbm_usbr_prob_mean_conformal.yaml:23-48`。
+- `fit_linear_blending()` 把 `(fold,H,K,Q)` 展开为 `fold×H×Q` 行，却用 `(fold,H,K)` actual 的 `fold×H` 行拟合 NNLS（`model_ensemble/methods/linear_blending.py:28-42`）。
+- 最小复现：`ValueError: Incompatible dimensions`。
+
+**影响**：10 个现役 Ensemble 配置无法完成融合器训练。
+
+**结论**：quantile 融合必须使用明确的 proper objective。推荐按 target 在 simplex 约束下最小化跨 level 的 pooled pinball loss；同一 target 的全部 quantile level 共享一组权重。不得通过简单重复 actual 后继续 MSE 伪装修复。
+
+#### RF3 — P0：Ensemble lifecycle 在内存结果处终止，无生产产物
+
+- `model_ensemble/runtime.py:101-124` 只返回 artifact/oof/member values/combined values/audit。
+- 没有写 `prediction.csv`、`model.pkl`、`resolved_model.json`、`resolved_config.json`，也没有自包含成员 bundle。
+- `tests/test_canonical_ensemble_runtime.py:127-131` 反而把 bundleless 结果固化为“complete”。
+- `run.py:267-270` 正常调用传 `output_root=None`；`model_ensemble/runtime.py:107-110` 又仅在 output_root 非空时保存 OOF cache。
+
+**影响**：24 个 Ensemble 不能作为可部署模型运行；CLI 的“run complete”与外部状态不符。
+
+**结论**：补齐 outer/backtest、final member bundles、Ensemble ForecastModelBundle、long prediction、resolved metadata 和 OOF reference；正常默认 results_root 必须真实保存缓存。
+
+#### RF4 — P1：固定步长训练窗口单位错位，618 个子日配置受影响
+
+- runtime 把 `history_length/window_length` 直接当监督 origin 数（`model_forecasting/runtime.py:695-723`）。
+- 文档与旧 checker 口径把 `window_length` 当天数并乘 `samples_per_day`。
+- 典型形状：15min/H=96/window=30，运行时每窗只取 30 个监督样本；按“30 天”原意应约为 `30×96−96=2784`。
+- final fit 又使用全部 `X_all/Y_all`（`model_forecasting/runtime.py:1287-1302`），与回测训练窗不一致。
+
+**影响**：回测训练规模远小于配置名义值，且不能代表最终模型；618 个配置虽通过几何门禁，指标语义仍不可信。
+
+**结论**：废止无单位的 `history_length/window_length` 运行解释；固定步长明确使用 step-based typed geometry，calendar-month 使用独立 month/day geometry。迁移值必须依据原业务意图重算，不能原数照搬。
+
+#### RF5 — P1：126 个 calendar_month 配置未进入生产 runtime
+
+- 单模型 runtime 不读取 `horizon_mode/schedule_mode/train_window_length`。
+- 自然月折只存在 checker 私有 helper（`scripts/check_model_configs.py:509-592`），生产消费者为 0。
+- `tests/test_calendar_month_horizon.py:9,35-55` 测的是 checker helper，不是 `run_canonical_config()`。
+
+**影响**：最终 2026-08 的 31 步预测只是 YAML 写死 H=31 的偶然匹配；历史回测不会按 28/29/30/31 天完整自然月切分。
+
+**结论**：自然月 geometry 下沉 `model_testing.validation`，生产 runtime、checker 和 Ensemble OOF 共享同一 typed contract。
+
+#### RF6 — P1：月频 seasonal-naive 不支持 MonthEnd/MonthBegin
+
+- `model_testing/backtest.py:42-45` 对 `builder.offset` 调用 `pd.Timedelta()`。
+- `1ME` 实测报 `ValueError: ... not MonthEnd`。
+- 约 56 个月频基模型配置受影响。
+
+**结论**：按频率类型显式定义 naive lag；月频默认/配置必须是月步数（如 1 或 12），不得通过一天除 offset 推导。
+
+#### RF7 — P1：Ensemble 顶层共享合同和 cache 内容寻址不完整
+
+- `validate_member_sources()` 定义于 `model_ensemble/loader.py:201-289`，生产调用为 0。
+- `resolve_members()` 只比较成员之间，不比较顶层 `ensemble.problem`；实测顶层 horizon=99、成员 horizon=2 仍被接受。
+- 顶层 `validation.forecast_origin` 未成为权威，成员自己的 origin 继续生效。
+- source hash 只按 `source.name` 保存且只 hash `history_path`；同名成员 source 会覆盖，OOF 实际读取的 `backtest_path` 未进入 fingerprint（实际读取见 `data_loading/registry.py:467-479`）。
+
+**结论**：顶层 problem/data/probabilistic/validation 为唯一权威；runner factory 必须用顶层 origin；cache manifest 按 `(member, source, path_role)` hash 所有实际读取文件。
+
+#### RF8 — P1：396/848 配置引用不存在的数据资产
+
+- 138 个唯一 source path 中 14 个不存在，共 792 次引用，影响 396 个配置。
+- 主要为各场景 `ETTm1_exogenous/df_date.csv` 与 `df_date_future.csv`。
+- `dataset/README.md:113-121` 自身也要求启用外生时文件必须存在。
+
+**结论**：把配置审计拆为 schema audit 与 runtime asset audit；活动配置必须满足文件、列、时间范围、future horizon、available_at 合同。可再生数据需有已实跑的唯一生成命令，否则配置降为非现役或删除。
+
+#### RF9 — P1：所谓 strict loader 仍接受未知 validation/output 字段
+
+- `ForecastConfigSpec.probabilistic/validation/output` 仍是无类型 Mapping（`model_forecasting/specs/config.py:178-188`）。
+- parser 只检查“是 mapping”（`:458-461`）。
+- 实测 `validation.totally_unknown_field` 和 `output.totally_unknown_field` 均被接受。
+
+**结论**：新增 `RuntimeValidationSpec`、`OutputSpec`，直接复用/收敛 `ProbabilisticSpec`；删除 checker 的第二套 nested whitelist。未知字段必须在 `load_yaml_config()` 返回前 RAISE。
+
+#### RF10 — P2：包级依赖仍非 DAG，延迟 import 被门禁白名单合法化
+
+- `model_training/trainer.py:28-29` import probabilistic；`probabilistic/training.py:102` 函数内反向 import `CanonicalTrainer`。
+- `model_forecasting` 同时承载低层 specs/tensors 与高层 runtime/forecaster，形成 `model_forecasting ↔ data_loading/feature_engineering/model_training/model_evaluation/probabilistic` 包级双向边。
+- `tests/test_package_layering.py:48-53,64-71` 显式允许这些方向，门禁证明的是“符合白名单”，不是“无循环”。
+- `model_forecasting/runtime.py` 1650 行，其中 `_RegistryDesignBuilder` 405 行、`CanonicalBaseModelRunner` 566 行；`transforms.py` 1203 行。
+
+**结论**：把稳定合同下沉独立 `forecasting_core/`；高层 runtime 只向下编排；probabilistic 通过 Protocol/工厂消费训练和点预测能力，不反向 import 具体实现。
+
+#### RF11 — P2：测试套件存在假绿、重复和测试专用 legacy 链
+
+- 全量 600 tests 真实通过，但未覆盖 RF1/RF2/RF3/RF5/RF6。
+- `test_calendar_month_horizon.py` 测死 helper；`test_canonical_ensemble_runtime.py` 固化 bundleless；quantile Ensemble 仅测 averaging。
+- `test_canonical_ensemble.py` 的 averaging/strategy/NNLS 断言已被其他测试重复覆盖。
+- `probabilistic/evaluation.py` 约 774 行，生产零消费者，仅由 `test_probabilistic_evaluation.py`、`test_probabilistic_prequential.py` 消费。
+- `data_process/outlier_handling.py` 的清洗算法只被测试消费，生产场景脚本只使用空报告 schema。
+
+**结论**：新增现役配置→运行时门禁后，再合并/删除重复与 tests-only legacy 链；不得用删测试提高通过率。
+
+#### RF12 — P2/P3：文档、CLI、依赖与死代码仍残留 legacy
+
+- 根 README、config/scripts/probabilistic/utils/tests 等 README 继续引用已删除包、旧 schema、旧测试计数和未接线能力。
+- `run.py:216-242` 暴露大量 canonical 不支持参数，部分如 `augmentation_ratio` 被静默忽略；Ensemble 的 `--data-dir` 等 override 同样静默忽略。
+- `requirements.txt` 缺 `openpyxl/statsmodels`，却仍含已从 pyproject 删除的 `pypmml/sklearn2pmml` 及其传递依赖。
+- `models/learning_rate.py` 当前零消费者；`models/losses.py` 需在删除前再做一次全仓符号级消费者审计。
+
+**结论**：CLI 收缩为 config/seed/output-root；依赖统一 `pyproject.toml + uv.lock`；当前态文档只保留当前实现，历史交给 git。
+
+## 12. v4 修正后的目标架构
+
+### 12.1 分层目标
+
+```text
+L5  入口与配置分派
+    main.py / run.py / config/config_loader.py
+                  │
+                  ├───────────────┐
+                  ▼               ▼
+L4  单模型生命周期编排        Ensemble 生命周期编排
+    model_forecasting/        model_ensemble/
+                  │               │（仅依赖 Protocol；runner factory 由入口注入）
+                  └───────┬───────┘
+                          ▼
+L3  能力层
+    probabilistic/（quantile 训练/后处理）
+                          ▼
+L2  流水线阶段
+    data_loading → feature_engineering → model_training
+                         ├→ model_testing
+                         └→ model_evaluation
+                          ▼
+L1  稳定合同与基础设施
+    forecasting_core/{specs,tensors,artifacts,protocols}
+    models/  decomposition/  data_process/
+                          ▼
+L0  utils/
+```
+
+### 12.2 关键边界
+
+1. `forecasting_core/` 不 import 任何流水线/能力/编排包；承载 problem/data/feature/strategy/estimator/runtime/output specs、point/quantile tensor、bundle artifact 基础类型与 runner Protocol。
+2. `model_training/` 不 import `probabilistic/`；概率模式作为 core spec/枚举输入，quantile estimator factory 由上层注入。
+3. `probabilistic/` 可依赖 core 与 model_training，但不得 import `model_forecasting.runtime/forecaster/results`；点预测执行能力通过 Protocol 注入。
+4. `model_ensemble/` 不 import `CanonicalBaseModelRunner` 实现；入口注入 `BaseModelRunnerFactory`，从而消除 L4 同层反向依赖。
+5. `model_forecasting/` 只做单模型生命周期、推理执行、结果写出；`runtime.py` 拆为 design、fit、backtest lifecycle、persistence 四个窄模块。
+6. config parser、checker、runtime 不得各自维护字段白名单；typed spec 是唯一 schema 事实源。
+
+### 12.3 修正后的数据与产物流
+
+```text
+YAML
+ → strict typed specs
+ → runtime asset validation
+ → SourceRegistry / InformationSet
+ → FeatureCompiler（唯一 transformation schema）
+ → supervised design（显式 step/month geometry）
+ → per-fold transform + train
+ → backtest + point/quantile evaluation
+ → final fit（与回测训练窗策略同合同）
+ → forecast
+ → atomic result directory
+    ├── pretrained_models/model.pkl
+    ├── pretrained_models/resolved_model.json
+    ├── results_test/{cv_plot_df,test_scores_df[,probabilistic_scores],metadata}
+    └── results_forecast/{prediction.csv,resolved_config.json}
+
+Ensemble：成员 OOF → proper fusion objective → 成员 final bundles → Ensemble bundle → 同一结果布局
+```
+
+## 13. 整改决策（RD1–RD10）
+
+| # | 决策 | v4 推荐方案 | 不采用方案及原因 |
+|---|---|---|---|
+| RD1 | transformation schema | 以 compiler 当前 `direct/target/advanced.*` 嵌套结构为唯一 canonical，迁移 624 YAML | 运行时长期兼容旧键：恢复双轨，继续制造 fingerprint/行为歧义 |
+| RD2 | validation/output | 新建强类型 spec，loader 直接严格解析 | checker 后置白名单：生产入口可绕过 checker，无法保证严格 |
+| RD3 | 固定步长单位 | 所有时间几何字段显式 `*_steps`；迁移 manifest 记录旧值、目标值、公式 | 继续用无单位 length；或在 runtime 隐式乘 n_per_day：两者都不可审计 |
+| RD4 | 自然月 | 独立 calendar-month geometry，按目标月动态 H；生产/checker/OOF 同源 | YAML 写死 31：跨月份立即失真 |
+| RD5 | quantile blending | simplex 约束下最小 pooled pinball，每 target 一组权重共享 Q | 重复 actual 后 NNLS/MSE：不是 proper quantile objective |
+| RD6 | Ensemble 产物 | 自包含成员 bundle + method artifact + OOF reference，写 canonical long 结果 | bundleless 内存结果：不可部署、不可复载、不可审计 |
+| RD7 | 包间 DAG | 建 `forecasting_core` + Protocol 注入，消除所有函数内反向 import | 扩大白名单：掩盖循环而非修复 |
+| RD8 | 活动配置资产 | 文件不存在即 runtime-asset audit hard fail；可再生文件必须有已验证生成命令 | checker 只看 schema：继续产生假绿 |
+| RD9 | legacy 测试/模块 | 先迁移唯一活消费者，再整链删除 tests-only legacy 实现 | 保留“以后也许用”：与 canonical-only/YAGNI 冲突 |
+| RD10 | 文档 | 当前态文档只写当前实现；历史设计/计数由 git 溯源 | 在同一文档累加全部历史：事实源继续漂移 |
+
+## 14. 实施切片 C0–C7
+
+依赖链：
+
+```text
+C0 锁失败证据
+  → C1 配置合同统一
+    → C2 时间几何修复
+      → C3 Ensemble 闭环
+        → C4 包级 DAG 收敛
+          → C5 测试/依赖/死代码清理
+            → C6 当前态文档收口
+              → C7 全量与真实运行验收
+```
+
+> 已知 bug 修复前不录制“全链逐值 golden”。C0 只锁定应失败的合同与正确预期；C1–C3 修正后再建立新的正确 golden，避免把错误行为固化为规范。
+
+### C0 — 建立 RED 门禁与审计清单
+
+**Files**：
+
+- Create: `tests/test_active_config_runtime_contract.py`
+- Create: `tests/test_calendar_month_runtime.py`
+- Create: `tests/test_ensemble_quantile_blending.py`
+- Create: `tests/test_ensemble_persistence.py`
+- Create: `tests/test_cli_override_contract.py`
+- Create: `scripts/audit_runtime_assets.py`
+
+**工作**：
+
+1. 用现役 YAML 建参数化测试，证明旧 transformation 键在 runtime 不可执行；预期先 RED。
+2. 用 `1D + calendar_month` 合成数据直接跑生产 runtime，锁 28/29/30/31 动态 H；预期先 RED。
+3. 用 `(N=1,H=2,K=1,Q=3)` 和 `(N=2,H=2,K=2,Q=3)` 锁 quantile blending；预期先 RED。
+4. 要求 Ensemble 生成完整 result/bundle；预期先 RED。
+5. 所有 CLI 非空 override 必须“生效或 RAISE”，禁止 silent ignore。
+6. 生成缺失 source manifest（配置、source、path role、文件、生成入口、owner），不自动造数据。
+
+**HARD 验收**：失败原因必须精确命中 RF1/RF2/RF3/RF5/RF6，不得出现无关 collection/import 错误；manifest count 与 fresh 统计一致。
+
+### C1 — Canonical 配置单一事实源
+
+**Files**：
+
+- Modify: `model_forecasting/specs/config.py`
+- Modify: `model_forecasting/specs/feature.py`
+- Modify: `probabilistic/spec.py`
+- Modify: `config/config_loader.py`
+- Modify: `feature_engineering/compiler.py`
+- Modify: `scripts/check_model_configs.py`
+- Modify: 624 个受影响 YAML
+- Test: `tests/test_active_config_runtime_contract.py`
+- Test: `tests/test_check_model_configs.py`
+- Test: `tests/test_config_entrypoints.py`
+
+**工作**：
+
+1. 新增 typed `RuntimeValidationSpec/OutputSpec`；把概率配置收敛到唯一 `ProbabilisticSpec`。
+2. transformation 只接受 `direct/target/advanced.*`；字段和值在 spec/Compiler 构造期完成校验。
+3. 程序化迁移旧键：`direct_layout → direct.layout`、`target_transform → target`、旧 advanced 列表转为带 columns/windows/periods/stats 的明确 mapping；无法无歧义迁移的配置 hard fail 并列清单，不猜列集合。
+4. checker 只调用生产 parser/constructors，不再维护 `_CANONICAL_NESTED_FIELDS` 第二事实源。
+5. 校验迁移前后 intended semantic manifest；行为变化项单列，不用 fingerprint 相等掩盖 schema 变更。
+
+**HARD 验收**：824/824 基模型/成员通过完整 spec + compiler + transform constructibility；旧键全仓活动 YAML 为 0；任意未知 validation/output/probabilistic 字段在 loader 阶段 RAISE；848 配置审计通过。
+
+### C2 — 时间几何与回测/最终训练同合同
+
+**Files**：
+
+- Modify: `model_testing/validation.py`
+- Modify: `model_testing/backtest.py`
+- Modify: `model_forecasting/runtime.py`
+- Modify: `model_ensemble/oof.py`
+- Modify: `scripts/check_model_configs.py`
+- Modify: 全部 validation geometry YAML 字段
+- Test: `tests/test_calendar_month_runtime.py`
+- Test: `tests/test_calendar_month_horizon.py`（替换 checker-helper 测试，不保留旧形态）
+- Test: `tests/test_canonical_base_model_runner.py`
+- Test: `tests/test_ensemble_oof.py`
+
+**工作**：
+
+1. 固定步长建立 `FixedStepBacktestSpec(history_steps, train_window_steps, fold_count, stride_steps)`。
+2. 自然月建立 `CalendarMonthBacktestSpec(train_window_days, fold_count, stride_months)`；每 fold 的 H 由目标月决定。
+3. 从 618 配置原始业务意图重算训练 steps，输出迁移 manifest；不得把当前 15/30 原样解释为 step。
+4. 明确 final fit 策略：默认与回测训练窗同样使用最近 `train_window_steps`；如要 full-history，必须是显式枚举并在结果 metadata 中记录，不能隐式不同。
+5. seasonal-naive 按 fixed/day/month 类型解析 lag；月频增加真实回测。
+
+**HARD 验收**：618 个子日配置的实际 training_sample_count 与迁移 manifest 一致；126 个 calendar_month 配置按真实月份动态 H；56 个 1ME 配置不再在 naive 基线失败；训练标签严格不跨 holdout；final fit policy 可从 resolved_config/model 复算。
+
+### C3 — Ensemble 正确性、缓存与生产产物闭环
+
+**Files**：
+
+- Modify: `model_ensemble/loader.py`
+- Modify: `model_ensemble/specs.py`
+- Modify: `model_ensemble/oof.py`
+- Modify: `model_ensemble/cache.py`
+- Modify: `model_ensemble/methods/linear_blending.py`
+- Modify: `model_ensemble/methods/weighted.py`
+- Modify: `model_ensemble/artifacts.py`
+- Modify: `model_ensemble/trainer.py`
+- Modify: `model_ensemble/predictor.py`
+- Modify: `model_ensemble/runtime.py`
+- Modify: `run.py`
+- Test: `tests/test_ensemble_loader.py`
+- Test: `tests/test_ensemble_oof.py`
+- Test: `tests/test_ensemble_methods.py`
+- Test: `tests/test_ensemble_quantile_blending.py`
+- Test: `tests/test_ensemble_persistence.py`
+
+**工作**：
+
+1. runtime 强制调用共享 problem/data/probabilistic/origin/source 合同验证。
+2. quantile linear blending 实现 per-target simplex pinball 优化；保存目标、level、样本数、优化状态和 fallback reason。
+3. cache fingerprint 包含 `(member,source,path_role,file_sha256)`；损坏 RAISE，内容变更必失效。
+4. final 每个成员保存完整 schema-2 base bundle；Ensemble bundle 保存 method artifact、成员顺序、OOF fingerprint/folds、source lineage、config fingerprint。
+5. 写与单模型同布局的 long result；默认 `results_root` 同时用于 OOF cache 与正式产物。
+6. outer holdout/OOF/final 三层 origin 和标签边界写入审计 metadata。
+
+**HARD 验收**：24/24 Ensemble 可构造；10 个 quantile linear_blending 端到端通过；point/quantile、K1/K2 均保持 axes；默认 CLI 真实写全套产物；pickle reload 后在不读取 YAML/OOF cache 的条件下预测一致；任一 top/member 合同不一致立即 RAISE。
+
+### C4 — 包级 DAG 与大模块拆分
+
+**Files**：
+
+- Create: `forecasting_core/`
+- Move/Adapt: `model_forecasting/specs/` → `forecasting_core/specs/`
+- Move/Adapt: `model_forecasting/tensors.py` → `forecasting_core/tensors.py`
+- Create: `forecasting_core/artifacts.py`
+- Create: `forecasting_core/protocols.py`
+- Split: `model_forecasting/runtime.py` → `design.py`、`fit_service.py`、`backtest_runtime.py`、`persistence.py`、窄 `runtime.py`
+- Split: `model_forecasting/transforms.py` → feature/target transform 窄模块（公开入口保持一个）
+- Modify: `model_training/trainer.py`
+- Modify: `probabilistic/training.py`
+- Modify: `probabilistic/pipeline.py`
+- Modify: `model_ensemble/contracts.py`
+- Modify: `main.py`、`run.py`、`config/config_loader.py`
+- Modify: `tests/test_package_layering.py`
+
+**工作**：
+
+1. core 只放不可变合同/类型/Protocol，无 pandas 文件 IO、训练或编排副作用。
+2. `model_training` 去除 probabilistic import；quantile factory/模式由上层注入。
+3. `probabilistic` 去除对具体 forecaster/trainer 的反向 import。
+4. Ensemble runner factory 由入口注入，`model_ensemble` 不 import 单模型 runner 实现。
+5. 分层门禁改为包级 DAG + 子模块白名单；删除 orchestrator 全放行和互相允许的循环白名单。
+
+**HARD 验收**：AST 全仓（含函数内 import）无反向边、无 SCC>1；`forecasting_core` 无项目高层 import；删除所有为绕环而存在的函数内 project import；全量测试和 C1–C3 golden 不变。
+
+### C5 — 测试、CLI、依赖与死代码清理
+
+**Files**：
+
+- Merge/Delete: `tests/test_canonical_ensemble.py`、`tests/test_canonical_ensemble_runtime.py` 中重复断言并入 `test_ensemble_*`
+- Replace: `tests/test_calendar_month_horizon.py`
+- Review/Delete chain: `probabilistic/evaluation.py`、`tests/test_probabilistic_evaluation.py`、`tests/test_probabilistic_prequential.py`
+- Adapt/Delete chain: `data_process/outlier_handling.py`、`tests/test_outlier_handling.py`
+- Review/Delete: `models/learning_rate.py`、`models/losses.py`
+- Modify: `run.py`
+- Regenerate or remove: `requirements.txt`
+
+**工作**：
+
+1. 先做全仓符号级消费者审计；测试消费、包 re-export、场景脚本消费分别列清。
+2. CQR 保留纯数学 `calibration.py`；删除未接 canonical 的旧宽表评估编排，除非先把它升级成生产通路。
+3. 把算力融合脚本需要的空报告 schema 移到实际消费者/通用结果 schema，再删除 legacy 窗口清洗算法。
+4. 合并重复 Ensemble fixture，保留 specs/methods/cache/runtime/persistence 各层最少但完整的测试。
+5. CLI 只保留 `--config-yaml`、`--seed` 和明确的 `--output-root`；其他 override 删除，不留 silent no-op。
+6. 依赖以 `pyproject.toml + uv.lock` 为唯一事实源；若生产必须用 requirements，则从当前 pyproject 重生并加一致性门禁。
+
+**HARD 验收**：删除项零生产/脚本消费者；无 tests-only production module（明确保留的离线 CLI 除外）；CLI 非声明参数 argparse 直接拒绝；依赖集合一致；全量测试不通过删断言来降数。
+
+### C6 — 当前态文档收口
+
+**Files**：
+
+- Rewrite: `README.md`
+- Rewrite: `config/README.md`
+- Rewrite: `dataset/README.md`
+- Rewrite: `tests/README.md`
+- Rewrite: `scripts/README.md`
+- Rewrite: 各活动包 README
+- Rewrite: `docs/multistep_forecasting_redesign.md` 为当前设计说明
+- Rewrite: `docs/production_sync.md` 为当前同步矩阵
+- Retire after explicit approval: `docs/model_ensemble_redesign.md`、`docs/time_series_probabilistic_forecasting_redesign.md`
+- Condense after implementation: 本文 §1–§10 历史正文（Git 保留）
+
+**工作**：
+
+1. 当前态文档只写当前路径、能力、限制和已实跑命令。
+2. 所有历史测试数、迁移方法表、已删除模块和旧输出布局从当前态文档移除；历史交给 git。
+3. 测试/配置数字只在一个权威验证快照维护，其余文档用链接引用。
+4. `docs/` 内 Python/ipynb 实验资料不处理，仅不再被当前架构文档当生产能力引用。
+
+**HARD 验收**：活动 Markdown 无已删除路径、旧 schema、旧计数和未接线能力声明；所有链接存在；README 快速开始命令实跑 exit 0。
+
+### C7 — 最终全量与真实运行验收
+
+**HARD 命令**：
+
+```bash
+# 全量单测
+env -u PYTHONPATH UV_CACHE_DIR=.uv_cache uv run --no-sync \
+  python -m unittest discover -s tests -p "test_*.py"
+
+# 语法与分层
+env -u PYTHONPATH UV_CACHE_DIR=.uv_cache uv run --no-sync \
+  python -m compileall -q forecasting_core data_loading feature_engineering \
+  model_training model_testing model_evaluation model_forecasting \
+  probabilistic model_ensemble models decomposition data_process utils \
+  config scripts tests main.py run.py
+
+# 现役配置与数据资产
+env -u PYTHONPATH UV_CACHE_DIR=.uv_cache uv run --no-sync \
+  python scripts/check_model_configs.py
+env -u PYTHONPATH UV_CACHE_DIR=.uv_cache uv run --no-sync \
+  python scripts/audit_runtime_assets.py
+env -u PYTHONPATH UV_CACHE_DIR=.uv_cache uv run --no-sync \
+  python scripts/audit_ensemble_configs.py
+
+git diff --check
+```
+
+**真实运行矩阵（不得用 mock 代替）**：
+
+| # | 配置类型 | 必验内容 |
+|---|---|---|
+| 1 | fixed-step point 单模型 | 回测训练样本数、final policy、prediction/model/resolved metadata |
+| 2 | fixed-step quantile 单模型 | `(N,H,K,Q)`、crossing、概率评分文件 |
+| 3 | calendar-month quantile 单模型 | 历史月动态 H + final 目标月完整边界 |
+| 4 | `1ME` 月频单模型 | seasonal-naive、月步时间轴、产物复载 |
+| 5 | point Ensemble | OOF 防泄漏、cache 复用、bundle/long result |
+| 6 | quantile linear_blending Ensemble | pinball 融合、同权重跨 Q、bundle reload |
+| 7 | Global N2K2 | series/target 隔离、aggregate 口径、axes 一致 |
+
+**完成定义**：
+
+1. 848 个模型 YAML 全部满足唯一 schema；824 个基模型/成员均通过 runtime constructibility。
+2. 活动配置 source 资产零缺失，或配置被明确移出活动集合。
+3. fixed-step、calendar-month、monthly 三套时间几何由生产代码同源执行。
+4. 24 个 Ensemble 均生成可复载自包含 bundle 与 canonical long result。
+5. 包级依赖是 DAG，无延迟 import 绕环。
+6. 全量测试、三项配置/资产审计、compileall、diff check 全绿。
+7. 七组真实运行产物逐项核对通过；未实跑的能力不得写“完成”。
+
+## 15. 风险、行为变化与控制
+
+| 风险 | 真实影响 | 控制 |
+|---|---|---|
+| 624 YAML schema 迁移 | fingerprint/identity 变化，旧结果失效 | 生成迁移 manifest；旧键不兼容层；受影响结果统一重跑 |
+| 618 配置训练窗重算 | 回测分数和训练成本显著变化 | 先单配置 smoke，再 A/B 各 31 同窗；记录实际 sample count 与耗时 |
+| calendar-month 接入 | 旧固定 31 步历史结果不可比 | 按目标月完整折重跑；metadata 写实际 H/month |
+| quantile blending 改 proper objective | 10 个配置权重/结果改变 | averaging 作为硬基线；learned 方法必须优于 best single 和 averaging 才推广 |
+| Ensemble bundle 落地 | 新产物 schema，部署读取方需同步 | schema version + reload parity + 不依赖 YAML/OOF 的部署测试 |
+| forecasting_core 拆包 | import 面大，易漏场景脚本 | AST 全仓门禁 + compileall + 每片全量测试；不留 shim 双轨 |
+| 数据文件补齐 | 错误生成可能造成信息泄漏 | 每个生成入口审计 available_at 与目标期覆盖；禁止用真实未来补代理 |
+| 删除 tests-only legacy | 仓外消费者未知 | 删除前全仓/场景脚本消费者清单；仓外需求由 wangzf 明确裁决 |
+| 文档历史清理 | 丢失迁移背景 | git 保留；当前态文档仅保留必要“为什么”而非执行流水账 |
+
+## 16. v4 状态机与执行纪律
+
+| 状态 | 含义 | 进入条件 |
+|---|---|---|
+| `reviewed` | 问题和方案已写入本文 | 本节完成并通过文档检查 |
+| `approved` | wangzf 批准 C0–C7 或指定切片 | 明确开工指令 |
+| `in_progress` | 当前只有一个切片执行 | RED 证据已建立，前置切片 HARD gate 全过 |
+| `blocked` | 外部数据/裁决阻断 | 写清阻断、影响配置和替代方案，不伪造结果 |
+| `completed` | 单切片完成 | 该片全部 HARD gate 有 fresh 命令证据 |
+| `closed` | v4 整改关闭 | C7 七组真实运行 + 全量门禁 + 当前态文档全部通过 |
+
+执行规则：
+
+1. C0–C7 未获明确开工指令前只停留在 `reviewed`；本文更新不等于批准生产改动。
+2. 每片先写失败测试，再做最小实现；已知 bug 修复前不录错误 golden。
+3. 每片只动当前目标必要文件；不捆绑真实模型效果消融。
+4. 配置语义变化使旧结果失效时，先报告受影响 identity，再按用户指示清理/重跑；删除 results 仍需单独确认。
+5. 每片完成汇报“改动、fresh 验证、行为变化、剩余风险”；未经明确指示不 commit、不 push。
+6. 任何历史文档中的“completed/全绿”都不能覆盖 v4 fresh 失败证据；当前状态以本节状态机和 C7 验收为准。
+
+## 17. v4 整改执行记录（2026-08-31）
+
+| Slice | 状态 | 已落地事实 | Fresh 证据 |
+|---|---|---|---|
+| C0 | completed | RED/fresh 基线、生产 parser/constructor、活动资产投影视图门禁已建立 | 既有 600-test 与 845-config 证据保留；后续切片新增 RED 按垂直 TDD 执行 |
+| C1 | completed | 单模型/Ensemble 共用 strict typed `probabilistic/validation/output`；未知嵌套字段在 loader 前 RAISE | parser/spec/fingerprint 定向测试与 845-config checker 通过 |
+| C2 | completed | 方案 A 已落地：`FixedStepBacktestSpec` / `CalendarMonthBacktestSpec`、845 YAML 迁移和语义 manifest | 615 个子日单模型真实 training origin count mismatch=0；TASK27 46/46；geometry 定向总集 97 tests OK |
+| C3 | completed | bundle-only point/quantile 部署、优化状态/样本量/fallback 审计和可读 `resolved_model` 已落地 | 76 Ensemble tests + 18 分层/依赖 tests OK；用户批准的 H16 short + H31 calendar-month 两个活动配置均 exit 0 且完整产物核验通过 |
+| C4 | completed | 稳定概率合同唯一位于 `forecasting_core/{probabilistic_spec,artifacts}.py`；重复 `probabilistic/spec.py` / `types.py` 已删除 | 概率合同/管线 49 tests OK；删除后生产/测试 import 残留 0 |
+| C5 | completed | 三项活动审计改为 typed 双分支/成员类型校验；CLI/checker 不再访问不可达 `.ensemble`；零消费者 grammar 常量删除 | catalog=845（821 single/member + 24 ensemble）；checker 845/845；资产缺失=0；Ensemble 48 refs、failures=[] |
+| C6 | completed | README、config/package README、权威设计、AGENTS 和本节已同步 typed geometry 与 deployment 边界 | AGENTS 当前规则旧 geometry 探针命中 0；活动 Markdown 27 份、broken links=0 |
+| C7 | completed | fresh unittest、配置/资产/Ensemble/catalog、compileall、diff、Markdown 和两个代表运行均已通过 | 二轮完整证据见 §17.5；v4 关闭 |
+
+### 17.1 已修根因
+
+1. `SourceRegistry._validate_frame()` 增加 path-role 合同后，Global series discovery 漏传 `path_version="history"`；已补齐并由 Global N2K2 执行矩阵覆盖。
+2. information-set visibility 与 advanced rolling/difference 最小历史长度统一由生产 runtime 执行，避免 checker 可过而 runtime 不可构造。
+3. `model_ensemble` 通过 `EnsembleRuntimeServices` 获取 runner factory 和 bundle persistence，消除对单模型 runtime 实现的反向 import。
+4. 单模型 runtime 的 design、fit、calendar-month backtest、persistence 已拆为独立模块；`runtime.py` 只保留 runner 与生命周期编排。
+5. `align_to_target=false` 现在真实控制 Direct 历史 lag 原点冻结；默认/target-aligned Direct 仍严格拒绝未来 target lag，known-future 继续按目标时点读取。
+6. 原点冻结最大 lag 的最小历史行数修正为 `max_lag+1`；`_supervised_arrays()` 在特征编译前按 typed `validation.history_steps` 截取最近监督 origins，避免先编译全历史再丢弃。
+7. Ensemble 现在把融合 OOF actual/prediction 写为 canonical `cv_plot_df.csv`，与点评分和概率评分共同构成完整 test 产物。
+8. `DataSourceSpec.columns` 已裁决为入模投影视图：声明列缺失继续 RAISE，未声明物理列在 registry 边界丢弃且绝不隐式入模；新增回归测试锁定投影行为。
+9. legacy runtime 的 `cal_rh` 现场派生已迁到离线数据入口：23 个 CSV/27,180 行按同一 Magnus–Tetens 公式计算并沿用线性/双向填充；逐文件验证去除新列后的原始单元格 SHA 不变。
+10. 3 个 `add_training_inference_pod` 配置因声明列与资产列族错配，经批准按字节原样迁至 `docs/archived_configs/`；活动模型基线调整为 845，不放松 SourceRegistry 缺列校验。
+11. C2 方案 A 将 fixed-step 与 calendar-month 分成两种 typed geometry，并迁移全部 845 YAML；迁移 manifest 记录新旧字段/fingerprint，615 个子日单模型的实际 final training origin count 与 manifest 全部一致。
+12. Ensemble bundle 新增无需成员 YAML/OOF cache 的 point/quantile 部署入口；调用方只提供按 bundle input schema 编译的特征和必要的 feature provider，scaler、selection、策略 artifact、target 逆变换与融合权重均来自 bundle。
+13. Quantile linear blending 产物保存每 target 的 quantile grid、有效样本数、optimizer success/status/message 与 fallback reason；同一审计同时写入 pickle artifact 和可读 `resolved_model.json`。
+14. `audit_forecast_configs.py` 改为生产 parser 的 `ForecastConfigSpec | EnsembleConfigSpec` 双分支 catalog；`main.py`/checker 的不可达 `.ensemble` 读取和单模型 parser 内两个零消费者 ensemble grammar 常量已删除。
+15. 重复概率合同 `probabilistic/spec.py` / `types.py` 经全仓消费者审计后删除；稳定合同唯一位于 `forecasting_core/probabilistic_spec.py` 与 `forecasting_core/artifacts.py`，负空间测试禁止恢复双轨。
+
+### 17.2 首轮 C7 历史证据（已撤回关闭效力）
+
+| Gate | 命令摘要 | Fresh 结果 |
+|---|---|---|
+| 全量 unittest | `python -m unittest discover -s tests -p "test_*.py"` | **600 tests / 197.432s / OK** |
+| 语法与 diff | `python -m compileall -q ... && git diff --check` | exit 0 |
+| 配置 | `python scripts/check_model_configs.py` | `checked=845 passed=845 hard_failures=0 warnings=0` |
+| 路径资产 | `python scripts/audit_runtime_assets.py` | `model_configs=845 unique_paths=124 missing_unique=0 missing_refs=0 affected_configs=0 missing_column_refs=0 column_affected_configs=0` |
+| Ensemble | `python scripts/audit_ensemble_configs.py` | 797 single + 24 ensemble + 24 member；48 refs；failures=[] |
+| Source header | 活动 YAML 非 ignored 声明列 vs CSV header | missing refs/configs/files=`0/0/0` |
+| 分层/依赖 | `python -m unittest tests.test_package_layering tests.test_dependency_contract -v` | 18 tests / OK |
+| 活动 Markdown | README/AGENTS/权威文档链接与旧路径探针 | 25 份；broken links=0；AGENTS.md 当前合同已同步 |
+
+### 17.3 七类最小运行矩阵
+
+统一临时根：`/tmp/tsproj_ml_c7.oy7vws`。每类均核对 model.pkl、resolved_model、test score、cv long、prediction、resolved_config、bundle reload、fingerprint 和唯一键。
+
+| 类别 | 配置/来源 | Fresh 产物证据 |
+|---|---|---|
+| fixed-step point | `config/aidc_load_month/route_A/lgbm_usmr_mean.yaml` | `(1,34,1)`；prediction=34；cv=170/5 windows |
+| fixed-step quantile | `config/aidc_load_month/route_A/lgbm_usmr_prob_mean.yaml` | `(1,34,1)`；q10/q50/q90；probabilistic scores；cv=170/5 windows |
+| calendar-month quantile | `config/aidc_power_month/route_B/freq_1day/baseline/lgbm_usmr_prob_mean_conformal.yaml` | 2026-08-01..31；prediction=31；cv=181/6 windows |
+| `1ME` point | `config/aidc_power_month/route_B/freq_1month/window_length_8/st_usmd_mean.yaml` | `(1,1,1)`；forecast=2026-08-31；cv=3/3 windows |
+| point Ensemble | `config/aidc_load_15min_short/route_B/add_endogenous_cross_route_weather_date/lgbm_usbr_mean.yaml` | averaging；2 self-contained members；prediction/cv=16；OOF `2eed336d...` |
+| quantile linear blending | `config/aidc_power_month/route_B/freq_1day/baseline/lgbm_usbr_prob_mean_conformal.yaml` | pooled-pinball；2 members；prediction/cv=31；OOF `94173aec...` |
+| Global N2K2 | 活动 YAML 数量为 0；经批准使用独立 target-history fixture 作能力验收 | recursive ridge；`(2,4,2)`；prediction=16；cv=32/2 windows；series A/B、targets load/power |
+
+### 17.4 保留边界与审计备注
+
+1. 活动 YAML 中仍没有生产 Global N2K2 配置；用户已明确接受完整 fixture 作为能力验收，文档不得把该 fixture 表述为现役生产配置。
+2. 23 个迁移后的天气 CSV 位于 gitignored `dataset/`，真实数据已落盘且 SHA/formula 校验通过；可复现脚本和测试进入工作树，代码 review 不会展示数据文件本体。
+3. 旧 quantile Ensemble 临时根的 OOF cache 在复用时正确 RAISE hash mismatch；最终证据改用独立新根生成，未删除旧临时 cache。
+
+以上证据是 2026-08-31 首轮整改的历史快照；经同日复核，因 C1/C2/C3/C5/C6 HARD gate 尚有缺口，不能据此关闭 v4。当前状态以 §17 表格为准，待新增切片全部 fresh 验收后再记录最终关闭结论。
+
+### 17.5 二轮整改 fresh 证据与剩余阻塞
+
+| Gate | Fresh 结果 |
+|---|---|
+| 全量 unittest | `615 tests / 305.814s / OK`；TASK27 `46/46` |
+| 配置 checker | `checked=845 passed=845 hard_failures=0 warnings=0`；Ensemble semantic problem 现在进入 hard failure |
+| Typed catalog | 845 行：821 single/member + 24 Ensemble；845 unique paths；64 位 fingerprint 异常 0 |
+| 运行资产 | `model_configs=845 unique_paths=124 missing_unique=0 missing_refs=0 missing_column_refs=0` |
+| Ensemble refs | 797 single + 24 Ensemble + 24 member；48 refs 逐项解析为 `ForecastConfigSpec`；`failures=[]` |
+| 分层/依赖 | 18 tests / OK；包 DAG 无环 |
+| 语法/diff/文档 | compileall exit 0；`git diff --check` exit 0；活动 Markdown 27 份、broken links=0 |
+
+用户裁决原计划的 10 个 quantile linear-blending 全跑不是本轮代码正确性的必要门槛，改为两个代表配置。统一临时根：`/var/folders/h1/zznyfyrx5qjc4x410n2xpjc00000gn/T/tsproj_ml_quantile_blending_representative_q91i4y9v`。
+
+| 代表 | 正式运行与产物核验 |
+|---|---|
+| H16 short | `run.py` exit 0；OOF `189dad161c9a...`；prediction/cv=16/16；point/probabilistic score rows=2/18；q10/q50/q90；2 个内嵌成员；optimizer success=true；fallback=null |
+| H31 calendar-month | `run.py` exit 0；OOF `d239c3ae1182...`；prediction/cv=31/31；point/probabilistic score rows=2/18；q10/q50/q90；2 个内嵌成员；optimizer success=true；fallback=null |
+
+首次自动 verifier 在 `/tmp` 反序列化 bundle 时未把仓库根加入 `sys.path`，把两个 exit-0 运行误记为 `ModuleNotFoundError`；随后修正 `sys.path`，并按 canonical long schema 使用 `predict_value` 而非错误假定的 `predict` 列，直接对原产物重验为 2/2 passed。最终 manifest 保留 `initial_verifier_error` 与纠正标记，不隐藏验收工具偏差。
+
+项目根 `AGENTS.md` 已经用户审批同步为 typed geometry，旧几何字段探针命中 0；C6/C7 的最后阻塞解除，v4 二轮整改关闭。

@@ -7,7 +7,7 @@ The general coding guidelines (Karpathy: think before coding, simplicity, surgic
 ## Project Conventions
 
 ### 配置系统
-- **现役模型配置统一为 canonical schema**：仓库内 848 个模型 YAML 均以 `schema_version: 2` 声明（800 单模型 + 24 引用式 ensemble + 24 个 `ensemble_members/` 独立基模型，另有 41 个数据工具 YAML 不计模型数）；`load_yaml_config()` 按互斥字段集合分派返回 `ForecastConfigSpec | EnsembleConfigSpec`，未知字段、重复 YAML key、角色冲突和非法 strategy/chunk 均 RAISE。
+- **现役模型配置统一为 canonical schema**：仓库内 845 个活动模型 YAML 均以 `schema_version: 2` 声明（797 单模型 + 24 引用式 ensemble + 24 个 `ensemble_members/` 独立基模型，另有 41 个数据工具 YAML 不计模型数）；3 个数据列族错配配置已于 2026-08-31 经批准原样迁至 `docs/archived_configs/`，不计入活动集。`load_yaml_config()` 按互斥字段集合分派返回 `ForecastConfigSpec | EnsembleConfigSpec`，未知字段、重复 YAML key、角色冲突和非法 strategy/chunk 均 RAISE。
 - legacy 配置体系（`base_config + overrides`、扁平 dataclass 模板、九方法名）已于 2026-08-29 彻底删除：config/ 下只存在 `schema_version: 2` canonical YAML 与数据工具 YAML，`load_yaml_config()` 只解析 canonical schema，其余一律 RAISE。
 - canonical fingerprint 只取语义 payload；并行度、日志和输出目录相关字段不进入 fingerprint。结果目录使用可读 identity + 12 位 fingerprint，语义相同的配置别名可共享 identity，这不是 hash 碰撞。
 
@@ -15,17 +15,17 @@ The general coding guidelines (Karpathy: think before coding, simplicity, surgic
 - `now_time` 配置值 = 最后一个已知数据点（如 `2026-06-11T23:55:00`）
 - **`schedule_mode`**（`RuntimeConfig`，默认 `daily`）：`daily` = 日界对齐（`floor("1D") + 1day` → 次日 00:00，预测下一完整自然日）；`intraday` = 保留调度时刻（从 `now_time` 起 `predict_steps` 步）。日志/文件名的时间戳仍按 `now_time` 原值
 - 内部分界点 = `schedule_mode=daily` 时 `floor("1D") + 1day` = 次日 00:00:00；`intraday` 时 = `now_time` 本身
-- `start_time = now_time - history_length`，`future_time = now_time + predict_steps × freq 步长`
+- fixed-step 的 `validation.history_steps/train_window_steps/fold_count/stride_steps` 统一以监督 origin steps 计。calendar-month 使用独立的 `train_window_days/fold_count/stride_months`；其中训练窗按原始日数计、折间距按自然月计。
 - **`predict_steps` 以 `freq` 为单位计步**（取代旧 `predict_days`）：15min 下 1 天 = 96、4 小时 = 16；5min 下 1 天 = 288；日频下 = 天数。`horizon = predict_steps`，不再经 `n_per_day` 换算
 - `pd.date_range` 使用 `inclusive="left"`，end 为排除边界——所以终日 23:55 是最后一个被包含的点
 
 ### Canonical 预测架构
 - **权威状态**：`docs/multistep_forecasting_redesign.md` 是当前预测架构唯一权威文档与实施完成记录（历史分立设计文档已并入本文）。现役 canonical 配置由 `main.py::CanonicalModel` 调用 `model_forecasting.runtime.run_canonical_config()`，生产主链不再按九个 US/MS 名称分派。
-- **七种标准策略**：`recursive/direct/mimo/recmo/dirrec/dirmo/dirrecmo` 只在 `model_forecasting/specs/strategy.py` 定义，由 `model_training/strategies/` 的七 executor 执行。MO 策略严格要求 `1 < B < H` 且 `H % B == 0`；Pointwise/horizon-feature 是 Direct layout，Local/Global 是 training scope，不得再扩充为策略名。
-- **统一张量**：point 为 `(N,H,K)`，边际 quantile 为 `(N,H,K,Q)`；内部 flatten 固定 time-major。joint samples 仅保留 `(N,S,H,K)` 类型边界，生成器明确 unsupported，不得宣称联合概率能力。
-- **数据与特征**：`SourceRegistry + InformationSetRequest + FeatureCompiler` 是 canonical 唯一通路。每列必须显式归为 target/observed_past/known_future/static/key/ignored；所有动态 source 执行严格 as-of，observed-past 只能使用显式 provider，不得隐式 persistence。
-- **训练与产物**：`CanonicalTrainer/CanonicalForecaster` 支持 Local/Global、K1/K2、七策略、point/independent quantile；target transform 按 `(series_id,target)` 隔离并执行 calendar normalization → decomposition → scaling，恢复严格逆序。新模型只写 schema-2 `ForecastModelBundle`，新结果只写 long schema 和 canonical fingerprint。
-- **Ensemble（v4 引用式）**：顶层 `model_ensemble/` 包唯一承载融合（specs/loader/oof/cache/artifacts/trainer/predictor/runtime/methods）；`load_yaml_config()` 按互斥字段分派 `ForecastConfigSpec | EnsembleConfigSpec`；成员必须是现役单模型 YAML（Direct 复用现役、Recursive 独立 YAML 在 `ensemble_members/`），四方法 `averaging/weighted/linear_blending/stacking`，OOF 按文件内容 SHA-256 fingerprint 缓存于 `results/_ensemble_oof/`，calendar_month 仅 `fold_count=1`。ensemble bundle `model_type="ensemble"`、top-level strategy_spec/estimator_spec 均 None。旧 `forecasting/ensemble.py`、`models/ModelEnsemble.py` 已删除，不得恢复。
+- **七种标准策略**：`recursive/direct/mimo/recmo/dirrec/dirmo/dirrecmo` 只在 `forecasting_core/specs/strategy.py` 定义，由 `model_training/strategies/` 的七 executor 执行。MO 策略严格要求 `1 < B < H` 且 `H % B == 0`；Pointwise/horizon-feature 是 Direct layout，Local/Global 是 training scope，不得再扩充为策略名。
+- **统一张量**：合同位于 `forecasting_core/tensors.py`；point 为 `(N,H,K)`，边际 quantile 为 `(N,H,K,Q)`；内部 flatten 固定 time-major。joint samples 仅保留 `(N,S,H,K)` 类型边界，生成器明确 unsupported，不得宣称联合概率能力。
+- **数据与特征**：`SourceRegistry + InformationSetRequest + FeatureCompiler` 是 canonical 唯一通路。`DataSourceSpec.columns` 是进入模型的信息投影视图：每个声明列必须显式归为 target/observed_past/known_future/static/key/ignored，非 ignored 声明列在物理资产中缺失直接 RAISE；物理文件的其他列在 registry 边界丢弃，不会隐式入模。所有动态 source 执行严格 as-of，observed-past 只能使用显式 provider，不得隐式 persistence。
+- **训练与产物**：`CanonicalTrainer/CanonicalForecaster` 支持 Local/Global、K1/K2、七策略、point/independent quantile；target transform 按 `(series_id,target)` 隔离并执行 calendar normalization → decomposition → scaling，恢复严格逆序。回测与 final fit 使用同一配置训练窗口。新模型只写 schema-2 `ForecastModelBundle`，新结果只写 long schema 和 canonical fingerprint。
+- **Ensemble（引用式）**：顶层 `model_ensemble/` 包唯一承载融合；四方法为 `averaging/weighted/linear_blending/stacking`。Quantile linear blending 按 target 最小化 simplex pooled pinball；OOF cache 对 `(member,source,path_role,file_sha256)` 内容寻址。Ensemble bundle 自包含成员 bundle，部署不读取成员 YAML/OOF cache，并写与单模型相同的 canonical long 结果布局。
 - **CQR 边界**：canonical 当前只覆盖 point 与边际 quantile。迁移配置可保留 `probabilistic.conformal` 的历史意图，但 canonical runtime 不执行 CQR，也不输出 `predict_pi<coverage>_lower/upper`。
 - **历史迁移记录**：18 个旧 MDR 配置曾因 `H % B != 0` 映射为 `recursive`（14 个 `aidc_power_month`、4 个 `aidc_load_month`，2026-08-29 批准）；迁移溯源字段 `validation.legacy_origin` 已随 legacy 清理从全部 YAML 删除，批准记录仅存于 `docs/multistep_forecasting_redesign.md`。
 - **canonical 单运行时**：`main.py`、`run.py` 只接受 `ForecastConfigSpec`。旧 `Model/Trainer/Tester/Forecaster`、`models/multistep/`（含 executors 与只读语义层）和 legacy config generator 已全部删除（2026-08-29 收口），门禁测试断言相关目录不存在。
@@ -33,7 +33,7 @@ The general coding guidelines (Karpathy: think before coding, simplicity, surgic
 
 ### 模型工厂（ModelFactory）
 - **支持的模型类型**：LightGBM（`lgb`/`lightgbm`）、XGBoost（`xgb`/`xgboost`）、CatBoost（`cat`/`catboost`）、RandomForest（`rf`/`randomforest`）、HistGradientBoosting（`histgb`/`histgradientboosting`）、Ridge（`ridge`）、ElasticNet（`enet`/`elasticnet`）、Lasso（`lasso`）、QuantileRegressor（`qr`/`quantileregressor`）、SeasonalTemplate（`st`/`seasonaltemplate`，工作日/周末分组建模板 + NNLS 学权重）
-- **融合训练数据一致性**：所有融合方法（averaging/weighted/blending/stacking）的基模型最终都在全量训练数据上重训，与单模型基线使用一致训练数据；`averaging` 此前只在 80% 数据上训练属于结构性缺陷，已修复
+- **融合训练数据一致性**：所有融合方法的成员 final fit 与对应单模型使用同一显式训练窗口；禁止某方法只训练部分历史或与回测窗口采用不同隐式策略。
 - **自定义外生特征注册表**（`custom_features`，`ExogenousFeatureConfig`）：多文件来源通路，每项 `{name, history_path, future_path, future_strategy, availability, ts_col, columns, categorical_columns}`。`future_strategy=freeze_last_observation + availability=end_of_period` 表示当期结束后可得的预测原点状态：Direct/DirRec 训练保留原点值且禁止 horizon shift；Recursive/Pointwise 训练按 1 个 freq 步向后对齐（行 t 使用上一期状态）；CV/final future 取 cutoff 前最后状态冻结到全 horizon。典型用途：完整日负荷状态；不得把目标日真实状态展开为 future 外生。
 - **测试可视化叠加**（`plot_overlay_path`/`plot_overlay_col`，`OutputConfig`）：在测试图（test_prediction.png / window_plots）上以次坐标轴叠加一条参考曲线（如 PCS 功率），量级差异大时不压扁主曲线
 
@@ -45,22 +45,22 @@ The general coding guidelines (Karpathy: think before coding, simplicity, surgic
 
 ### 低频（日/周/月）数据配置约定
 - **freq 必须写 `1D` 而非 `D`**：`default_lags_for_freq` 只认 `1D`，写 `D` 会落回 5min 基准 lags（`[288,576,...]`），与低频数据错配
-- **月频（`1ME`/`1MS`）已支持**（`utils/frequency.is_monthly_freq`）：`resolve_freq_step_minutes` 近似 30 天、`resolve_samples_per_day` 特判返回 1；`main.py` 月频分界点 = `(now_time.to_period("M")+1).to_timestamp()` 推到下月月初（月频下 `history_length` 语义变为月数、`future_time` 用 `DateOffset(months=horizon)`）；`data_aggregate._freq_to_timedelta` 月频用 31 天上界做 target≥source 校验
-- **月度/日度气象严格信息集**（aidc_power_month）：现役载体是 canonical 通用机制——`DataSpec` 列角色 + `SourceRegistry` as-of 校验（`available_at <= forecast_origin`，目标时间戳缺失直接 RAISE）；legacy 字段 `strict_weather_information_set`、`weather_backtest_path`、`weather_*_source` 已废弃且无运行时语义（2026-08-29 收敛方案核实：现役 848 YAML 零处使用）。语义要求不变：历史训练天气为 actual；滑窗测试必须消费独立 ex-ante forecast/proxy 文件 source；正式 future 只允许 forecast|proxy；禁止把测试月实测天气当未来天气。2026-08 日频 future 使用 2025-08 同日纯代理（31 天），不含 2026-08 实测；回测 2026-01~07 使用上一年同日代理（212 天）。
+- **月频（`1ME`/`1MS`）已支持**：频率解析位于 `utils/frequency.py`；月频 seasonal-naive 使用月步 offset，不得转换为固定 Timedelta。
+- **月度/日度气象严格信息集**（aidc_power_month）：现役载体是 canonical 通用机制——`DataSpec` 列角色 + `SourceRegistry` as-of 校验（`available_at <= forecast_origin`，目标时间戳缺失直接 RAISE）；legacy 字段 `strict_weather_information_set`、`weather_backtest_path`、`weather_*_source` 已废弃且无运行时语义（2026-08-29 收敛方案核实：现役 845 YAML 零处使用）。语义要求不变：历史训练天气为 actual；滑窗测试必须消费独立 ex-ante forecast/proxy 文件 source；正式 future 只允许 forecast|proxy；禁止把测试月实测天气当未来天气。2026-08 日频 future 使用 2025-08 同日纯代理（31 天），不含 2026-08 实测；回测 2026-01~07 使用上一年同日代理（212 天）。
 - **Direct 目标日外生对齐**：USMD/USMDR 天气配置启用 `use_horizon_exogenous_for_direct: true`，`col_h(h)=col(t+h)`；horizon-feature 训练 melt 按 h 从 `*_h{h}` 折叠回基础列名，lag/rolling/diff 保持预测原点值，推理端按未来日取外生。USBR 的 Direct/Recursive 共享 X 暂不支持两套外生时点，天气组保留为无天气 control。USMDP 默认不生成目标 lag；只有显式启用 safe-lag 且满足 `min(lags) >= horizon` 才生成。需要逐步消费自身预测时使用 USMR
-- **calendar_month 训练窗口**：`horizon_mode=calendar_month` 时实际训练天数由 `train_window_length` 决定，最终 horizon 自动取目标月 28/29/30/31 天；setting 编码真实 `train_window_length` 并追加 `-calendar-month`。`window_length`/`predict_steps` 是遗留兼容字段，不作为自然月训练长度/最终跨度解释。固定步长模式仍按 `window_length × n_per_day − horizon > max(lags)` 校验。
-- **history_length > window_length**：`main.py` 硬校验，否则 RAISE
+- **calendar_month 训练窗口**：`horizon_mode=calendar_month` 时训练原始日数由 `train_window_days` 决定，回测折数与自然月间距分别由 `fold_count/stride_months` 表达；每个历史月和最终目标月动态解析 28/29/30/31 步。生产折在 `model_testing/validation.py::calendar_month_folds`，不使用 checker 私有实现。
+- **回测/final 同合同**：fixed-step 与 calendar-month 的 final fit 使用各自配置训练窗口，不再隐式改成全部历史。
 - **datetime 派生剔除子日粒度**：低频下 `datetime_features` 去掉 `minute`/`hour`，`datetime_categorical_features` 同步去对应 `dt_*` 项
 
 ### Canonical 运行边界
-- canonical rolling backtest、final training 和 forecast 均由 `model_forecasting/runtime.py` 编排；不得重新接入已删除的 `ModelTesting` 或旧 executor。
+- canonical rolling backtest、final training 和 forecast 均由 `model_forecasting/runtime.py` 顶层编排，design/fit/calendar-backtest/persistence 分别委托给同包窄模块；不得重新接入已删除的 `ModelTesting` 或旧 executor。
 - estimator 并行能力必须由 `model_training/estimators/capabilities.py` 显式探测；不支持时 RAISE，不静默降级。
 
 ### 包间分层规则（2026-08-29 架构收敛 P0 立规，详见 docs/architecture_convergence_plan.md §3.1）
-- **分层结构（2026-08-30 流水线阶段重排）**：L4 入口（`main.py`/`run.py`/`config/config_loader.py`）→ L3 能力扩展（`probabilistic/`、`model_ensemble/`）→ L2 编排（`model_forecasting/runtime.py` 唯一编排器 + `forecaster.py` 推理执行 + 核心合同 `model_forecasting/{specs,tensors,transforms,results}`）→ 阶段顶层包 `data_loading/`（数据构造与组织）→ `feature_engineering/`（特征工程）→ `model_training/`（训练）→ `model_testing/`（测试/回测），`model_evaluation/`（独立评估模块，只做指标计算）→ L1 基础设施（`models/`、`decomposition/`、`data_process/`）→ L0 基础（`utils/`）。
+- **分层结构（2026-08-30 流水线阶段重排）**：L4 入口（`main.py`/`run.py`/`config/config_loader.py`）→ L3 能力扩展（`probabilistic/`、`model_ensemble/`）→ L2 编排（`model_forecasting/runtime.py` 顶层编排 + `design.py` 信息集设计 + `fit_service.py` 训练服务 + `backtest_runtime.py` 自然月回测 + `forecaster.py` 推理 + `persistence.py` 产物持久化 + `{transforms,results}` 运行服务）→ 稳定合同层 `forecasting_core/{specs,tensors,artifacts,probabilistic_spec}` → 阶段顶层包 `data_loading/`（数据构造与组织）→ `feature_engineering/`（特征工程）→ `model_training/`（训练）→ `model_testing/`（测试/回测），`model_evaluation/`（独立评估模块，只做指标计算）→ L1 基础设施（`models/`、`decomposition/`、`data_process/`）→ L0 基础（`utils/`）。
 - **依赖只允许从上往下**（高层 import 低层），同层禁止互依；唯一豁免：L3 内 `ensemble → probabilistic` 单向（数据合同 types + 评估实现 evaluation 复用，不得触及 pipeline/training 执行面）。低层不得反向 import 高层，**包括函数内延迟 import**。
 - 跨包复用的算法放 L1 并以**公开函数**暴露；**禁止下划线私有跨包导入**（ensemble 对 forecasting 的两处私有导入已随收敛 P3 修复为 `model_testing/backtest.py` 公开 API）。
-- 任何循环依赖视为架构缺陷，出现即修；不允许用函数内延迟 import 长期绕开。`models/ModelTraining.py`、`models/ModelForecasting.py` 兼容 shim 已于 2026-08-30 删除，Trainer/Forecaster 直接从 `model_training/trainer.py`、`model_forecasting/forecaster.py` 导入；分层边界由 `tests/test_package_layering.py` 门禁固化（白名单制 12 项全包扫描，函数内 import 同罪）。
+- 任何循环依赖视为架构缺陷，出现即修；不允许用函数内延迟 import 长期绕开。`models/ModelTraining.py`、`models/ModelForecasting.py` 兼容 shim 已于 2026-08-30 删除，Trainer/Forecaster 直接从 `model_training/trainer.py`、`model_forecasting/forecaster.py` 导入；分层边界由 `tests/test_package_layering.py` 门禁固化（白名单制 13 个项目包全扫描，函数内 import 同罪）。
 - 新增能力包一律按 ensemble 模式建：独立包 + Protocol 边界 + 单向依赖 + parity golden。ensemble 已知边界：`model_ensemble/loader.py` 直接操作 canonical YAML payload（成员身份锁定为现役单模型 YAML，属有意设计）。
 - **流水线数据契约**：进入模型的信息集默认「缺失/异常 = RAISE」（预测性维护数据前置）；填补与清洗只允许发生在离线数据准备阶段（`data_process/`，场景维度）或以 config 驱动的 compiler 前置步骤引入（须满足 as-of 可得性）；训练窗口内清洗（改数据）与评估掩码（只改评估口径）严格分离。
 
@@ -75,6 +75,7 @@ The general coding guidelines (Karpathy: think before coding, simplicity, surgic
 - `log_util.py` 在模块导入时执行，`LOG_NAME` 用 `os.environ.get('LOG_NAME', 'main')` 提供默认值
 - 在这台机器上如果 `uv` 触发 `~/.cache/uv` 权限问题，优先使用 `UV_CACHE_DIR=.uv_cache`
 - 算力房间数据：`df.csv`（215 列，全量合并）、`df_selected.csv`（多变量筛后建模数据）、`feature_selection_report.csv`（筛列报告）和稠密版 `df_filled.csv`（`config/aidc_electricity_computility/electricity/2026-06-11/scripts/fill_missing.py`：原始列补 0 + 重算派生）都在 `demand_load/<room>/` 下；算力预处理权威入口是 `config/aidc_electricity_computility/electricity/2026-06-11/scripts/computility_process.py`，特征分原始聚合、状态/结构、时序动态三层；单变量配置继续使用 `df_power.csv`，4 个房间场景的多变量 LGBM 配置使用 `df_selected.csv`
+- 算力天气 `cal_rh` 必须在离线数据准备阶段由 `rt_tt2`/`rt_dt` 按 Magnus–Tetens 公式计算并补齐，权威迁移入口为 `config/aidc_electricity_computility/derive_cal_rh.py`；canonical runtime 不恢复 legacy `FeatureEngineering` 的现场派生或插值。
 - **2026-08-10 算力场景**（A2_IT / A3_IT / liantong_IT / yancheng_IT，各 7 个 YAML）：`dataset/.../2026-08-10/` 下房间目录当前为空，YAML 的 `data_dir` 指向 2026-06-11 数据（复用上批数据做配置模板）
 
 ### 仓库维护注意

@@ -13,6 +13,13 @@ from typing import Any, Mapping
 import pandas as pd
 import yaml
 
+from forecasting_core.specs.config import (
+    parse_data_spec,
+    parse_output_spec,
+    parse_probabilistic_config_spec,
+    parse_problem_spec,
+    parse_runtime_validation_spec,
+)
 from model_ensemble.specs import (
     EnsembleConfigSpec,
     EnsembleSpecError,
@@ -61,11 +68,17 @@ def parse_ensemble_document(
     if raw["schema_version"] != 2:
         raise EnsembleSpecError("ensemble YAML schema_version must be 2")
 
-    problem = dict(raw.get("problem") or {})
-    calendar_month = (
-        str((raw.get("validation") or {}).get("horizon_mode", "fixed_steps"))
-        == "calendar_month"
+    source = source_path or "<ensemble>"
+    problem = parse_problem_spec(raw.get("problem"), source)
+    data = parse_data_spec(raw.get("data"), source)
+    probabilistic = parse_probabilistic_config_spec(
+        raw.get("probabilistic") or {}, source
     )
+    validation = parse_runtime_validation_spec(
+        raw.get("validation") or {}, source, require_geometry=False
+    )
+    output = parse_output_spec(raw.get("output") or {}, source)
+    calendar_month = str(validation.get("horizon_mode", "fixed_steps")) == "calendar_month"
     members, oof, method = parse_ensemble_section(
         raw["ensemble"], calendar_month=calendar_month
     )
@@ -75,10 +88,10 @@ def parse_ensemble_document(
         oof=oof,
         method=method,
         problem=problem,
-        data=dict(raw.get("data") or {}),
-        probabilistic=dict(raw.get("probabilistic") or {}),
-        validation=dict(raw.get("validation") or {}),
-        output=dict(raw.get("output") or {}),
+        data=data,
+        probabilistic=probabilistic,
+        validation=validation,
+        output=output,
     )
 
 
@@ -150,6 +163,12 @@ def resolve_members(
     Returns ``{member_name: raw_member_document}`` after validation.
     """
     root = Path(base_dir)
+    problem_payload = ensemble.problem.canonical_payload()
+    ensemble_problem = {
+        field: _normalized(problem_payload.get(field))
+        for field in _SHARED_PROBLEM_FIELDS
+    }
+    ensemble_quantiles = _quantile_grid(ensemble.probabilistic)
     reference_problem: dict[str, Any] | None = None
     reference_quantiles: tuple[Any, ...] | None = None
     resolved: dict[str, dict[str, Any]] = {}
@@ -164,6 +183,12 @@ def resolve_members(
             )
         member_raw = load_raw_yaml(member_path)
         member_problem = _member_problem(member_raw, ref)
+        for field in _SHARED_PROBLEM_FIELDS:
+            if _normalized(member_problem.get(field)) != ensemble_problem[field]:
+                raise EnsembleSpecError(
+                    f"member {ref.name!r} problem.{field} differs from the "
+                    "top-level ensemble problem"
+                )
         if reference_problem is None:
             reference_problem = {
                 field: _normalized(member_problem.get(field))
@@ -180,6 +205,11 @@ def resolve_members(
         quantiles = _quantile_grid(
             dict(member_raw.get("probabilistic") or {})
         )
+        if quantiles != ensemble_quantiles:
+            raise EnsembleSpecError(
+                f"member {ref.name!r} probabilistic quantile grid differs from "
+                "the top-level ensemble config"
+            )
         if reference_quantiles is None:
             reference_quantiles = quantiles
         elif quantiles != reference_quantiles:
@@ -207,9 +237,14 @@ def validate_member_sources(
     Target/key sources must match the ensemble definition exactly; every other
     member source must be defined identically inside the ensemble data section.
     """
+    data_payload = ensemble.data.canonical_payload()
+    raw_sources = data_payload["sources"]
+    if not isinstance(raw_sources, list):  # DataSpec canonical contract
+        raise TypeError("ensemble data.sources payload must be a list")
     ens_sources = {
-        str(source.get("name")): dict(source)
-        for source in (ensemble.data.get("sources") or [])
+        str(source["name"]): dict(source)
+        for source in raw_sources
+        if isinstance(source, Mapping)
     }
 
     def source_signature(source: Mapping[str, Any]) -> Any:

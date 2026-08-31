@@ -19,7 +19,7 @@ from data_loading import (
     SourceRegistry,
     create_endogenous_future_provider,
 )
-from model_forecasting.specs import (
+from forecasting_core.specs import (
     ColumnSpec,
     DataSourceSpec,
     DataSpec,
@@ -231,6 +231,110 @@ class SourceRegistryTest(unittest.TestCase):
         self.assertTrue(all(item.availability_policy in {"source_time", "column"} for item in result.lineage))
         self.assertTrue(all(not item.oracle for item in result.lineage))
 
+    def test_known_future_history_derives_availability_and_allows_optional_ignored_metadata(self):
+        self.write_csv(
+            "target.csv",
+            [
+                {"ts": "2026-08-01 21:00", "load": 10.0},
+                {"ts": "2026-08-01 22:00", "load": 11.0},
+            ],
+        )
+        self.write_csv(
+            "weather_actual.csv",
+            [
+                {
+                    "ts": "2026-07-31 23:00",
+                    "temperature": 24.0,
+                    "diagnostic": 1.0,
+                }
+            ],
+        )
+        self.write_csv(
+            "weather_backtest.csv",
+            [
+                {
+                    "ts": "2026-08-02 00:00",
+                    "issued_at": "2026-08-01 20:00",
+                    "temperature": 25.0,
+                    "diagnostic": 2.0,
+                    "source_label": "proxy",
+                },
+                {
+                    "ts": "2026-08-02 01:00",
+                    "issued_at": "2026-08-01 20:00",
+                    "temperature": 26.0,
+                    "diagnostic": 3.0,
+                    "source_label": "proxy",
+                },
+            ],
+        )
+        self.write_csv(
+            "weather_future.csv",
+            [
+                {
+                    "ts": "2026-08-02 00:00",
+                    "issued_at": "2026-08-01 22:00",
+                    "temperature": 27.0,
+                    "diagnostic": 4.0,
+                    "source_label": "forecast",
+                },
+                {
+                    "ts": "2026-08-02 01:00",
+                    "issued_at": "2026-08-01 22:00",
+                    "temperature": 28.0,
+                    "diagnostic": 5.0,
+                    "source_label": "forecast",
+                },
+            ],
+        )
+        spec = DataSpec(
+            (
+                target_source(),
+                known_future_source(
+                    history_path="weather_actual.csv",
+                    columns=(
+                        ColumnSpec("temperature", "known_future"),
+                        ColumnSpec("diagnostic", "ignored"),
+                        ColumnSpec("source_label", "ignored", categorical=True),
+                    ),
+                ),
+            )
+        )
+
+        result = SourceRegistry(spec, self.base_dir).materialize(self.request())
+
+        self.assertEqual(
+            result.known_future["weather"]["temperature"].tolist(),
+            [27.0, 28.0],
+        )
+
+    def test_file_source_projects_declared_columns_and_drops_physical_extras(self):
+        self.write_csv(
+            "target.csv",
+            [
+                {
+                    "ts": "2026-08-01 21:00",
+                    "load": 10.0,
+                    "raw_metadata": "not-a-model-input",
+                },
+                {
+                    "ts": "2026-08-01 22:00",
+                    "load": 11.0,
+                    "raw_metadata": "not-a-model-input",
+                },
+            ],
+        )
+
+        result = SourceRegistry(
+            DataSpec((target_source(),)),
+            self.base_dir,
+        ).materialize(self.request())
+
+        self.assertEqual(
+            result.target_history["target"].columns.tolist(),
+            ["ts", "load"],
+        )
+
     def test_global_n2_materializes_target_observed_known_future_and_static(self):
         target_rows = []
         observed_rows = []
@@ -423,11 +527,10 @@ class SourceRegistryTest(unittest.TestCase):
         isolated["target"].loc[:, "load"] = 888.0
         self.assertEqual(second.target_history["target"]["load"].tolist(), [1.0])
 
-    def test_validation_rejects_schema_duplicates_missing_nan_and_nonfinite(self):
+    def test_validation_rejects_missing_duplicates_nan_and_nonfinite(self):
         valid_target = [{"ts": "2026-08-01 22:00", "load": 1.0}]
         cases = {
             "missing": [{"ts": "2026-08-01 22:00"}],
-            "extra": [{"ts": "2026-08-01 22:00", "load": 1.0, "other": 2.0}],
             "duplicate": valid_target * 2,
             "nan": [{"ts": "2026-08-01 22:00", "load": np.nan}],
             "infinite": [{"ts": "2026-08-01 22:00", "load": np.inf}],

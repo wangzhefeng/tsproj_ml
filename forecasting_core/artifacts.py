@@ -12,11 +12,11 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-from model_forecasting.tensors import (
+from forecasting_core.tensors import (
     MarginalQuantileForecastTensor,
     PointForecastTensor,
 )
-from probabilistic.spec import (
+from forecasting_core.probabilistic_spec import (
     ProbabilisticSpec,
     validate_interval_quantiles,
     validate_quantile_grid,

@@ -12,7 +12,7 @@ import unittest
 
 import numpy as np
 
-from model_forecasting.tensors import PointForecastTensor
+from forecasting_core.tensors import PointForecastTensor
 from model_evaluation.point import _metric_values, evaluate_point_forecasts
 from model_evaluation.mask import build_eval_mask
 

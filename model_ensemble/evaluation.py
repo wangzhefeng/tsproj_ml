@@ -18,9 +18,9 @@ import pandas as pd
 from model_ensemble.artifacts import EnsembleArtifact, OOFPredictionArtifact
 from model_ensemble.predictor import combine_members
 from model_evaluation.point import evaluate_point_forecasts
-from model_forecasting.tensors import MarginalQuantileForecastTensor, PointForecastTensor
+from forecasting_core.tensors import MarginalQuantileForecastTensor, PointForecastTensor
 from model_evaluation.marginal import evaluate_marginal_distribution
-from probabilistic.types import MarginalForecastDistribution
+from forecasting_core.artifacts import MarginalForecastDistribution
 
 
 def evaluate_fused_oof(

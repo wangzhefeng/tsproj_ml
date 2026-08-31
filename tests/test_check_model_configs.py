@@ -1,32 +1,68 @@
 # -*- coding: utf-8 -*-
 """模型 YAML 与独立工具 YAML 的结构识别测试。"""
 
+import subprocess
+import sys
 import tempfile
 import unittest
-from datetime import datetime
 from pathlib import Path
-from types import SimpleNamespace
 
-from config.config_loader import load_yaml_config
-from scripts.check_model_configs import _resolve_runtime_shape, is_model_yaml
+import yaml
+
+from config.config_loader import is_model_yaml, load_yaml_config
+from forecasting_core.specs.config import parse_model_config
+
+
+ROOT = Path(__file__).resolve().parents[1]
 
 
 class ModelYamlDetectionTest(unittest.TestCase):
-    def test_calendar_month_intraday_schedule_is_a_hard_failure(self):
-        cfg = SimpleNamespace(
-            horizon_mode="calendar_month",
-            freq="1D",
-            schedule_mode="intraday",
-            train_window_length=60,
-            now_time=datetime(2026, 8, 31, 12, 0),
-            history_length=180,
+    def test_cli_counts_ensemble_semantic_problem_as_hard_failure(self):
+        source = (
+            ROOT
+            / "config/aidc_load_15min_short/route_A/baseline/"
+            / "lgbm_usbr_prob_mean_conformal.yaml"
         )
+        payload = yaml.safe_load(source.read_text(encoding="utf-8"))
+        payload["ensemble"]["method"] = {
+            "name": "stacking",
+            "params": {"alpha": 1.0, "fit_intercept": True},
+        }
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "bad-ensemble.yaml"
+            path.write_text(
+                yaml.safe_dump(payload, sort_keys=False),
+                encoding="utf-8",
+            )
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    str(ROOT / "scripts/check_model_configs.py"),
+                    str(path),
+                ],
+                cwd=ROOT,
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn("stacking 只支持 point 模式", result.stdout)
+
+    def test_calendar_month_intraday_schedule_is_a_hard_failure(self):
+        config_path = (
+            ROOT
+            / "config/aidc_power_month/route_A/freq_1day/add_decomposition/"
+            / "lgbm_usmd_mean_prob_horizon_decomp_linear.yaml"
+        )
+        payload = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+        payload["validation"]["schedule_mode"] = "intraday"
 
         with self.assertRaisesRegex(
             ValueError,
-            "horizon_mode=calendar_month requires schedule_mode=daily.",
+            "horizon_mode=calendar_month requires schedule_mode=daily",
         ):
-            _resolve_runtime_shape(cfg)
+            parse_model_config(payload, source=config_path)
 
     def test_legacy_override_schema_is_no_longer_a_model_yaml(self):
         with tempfile.TemporaryDirectory() as temp_dir:

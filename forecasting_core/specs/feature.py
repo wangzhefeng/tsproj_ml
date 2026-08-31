@@ -143,7 +143,7 @@ class FeatureSpec:
             "datetime_features": list(self.datetime_features),
             "transformations": _thaw_json_value(self.transformations),
         }
-        # 未配置 selection 时不进 payload —— 848 个存量配置 fingerprint 不变
+        # 未配置 selection 时不进 payload，保持存量配置 fingerprint 不变
         if self.selection is not None:
             payload["selection"] = _thaw_json_value(self.selection)
         return payload

@@ -35,6 +35,15 @@ data:
     - name: rt_ws10
       role: known_future
       categorical: false
+    - name: rt_dt
+      role: ignored
+      categorical: false
+    - name: weather_source
+      role: ignored
+      categorical: false
+    - name: source_ts
+      role: ignored
+      categorical: false
     history_path: dataset/aidc_load_15min_short/weather_15min_20250101_20260731T1345.csv
     backtest_path: dataset/aidc_load_15min_short/weather_15min_backtest_proxy_20260101_20260731.csv
     future_path: dataset/aidc_load_15min_short/weather_15min_future_proxy_20260731T1400_20260831.csv
@@ -68,7 +77,10 @@ features:
   - day_of_year
   - year
   transformations:
-    direct_layout: independent_models
+    direct:
+      layout: independent_models
+      use_horizon_exogenous: true
+      align_to_target: false
 strategy:
   name: direct
 estimator:
@@ -81,9 +93,10 @@ validation:
   forecast_origin: '2026-07-31T14:00:00'
   schedule_mode: intraday
   horizon_mode: fixed_steps
-  history_length: 33
-  window_length: 15
-  train_window_length: null
+  history_steps: 1536
+  train_window_steps: 1424
+  fold_count: 7
+  stride_steps: 16
 output:
   scenario_subpath: aidc_load_15min_short/route_B/add_endogenous_cross_route_weather_date
   setting_suffix: -intraday

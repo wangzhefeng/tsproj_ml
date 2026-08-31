@@ -23,9 +23,15 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+from model_ensemble.contracts import EnsembleRuntimeServices
 from model_ensemble.methods.linear_blending import fit_nonnegative_stacking_weights
-from model_forecasting.runtime import run_canonical_config
-from model_forecasting.specs import (
+from model_ensemble.runtime import run_ensemble_config
+from model_forecasting.runtime import (
+    CanonicalBaseModelRunner,
+    persist_model_bundle,
+    run_canonical_config,
+)
+from forecasting_core.specs import (
     ColumnSpec,
     DataSourceSpec,
     DataSpec,
@@ -48,7 +54,7 @@ GOLDEN_WINDOW1_ACTUAL = [55.0, 55.5]
 GOLDEN_WINDOW1_PREDICT = [54.99999999999561, 55.49999999999552]
 GOLDEN_WINDOW1_MAE = 4.437339384821826e-12
 GOLDEN_WINDOW1_RMSE = float("4.437579734041818e-12")
-GOLDEN_FINGERPRINT = "a8d1ae0a5c44"
+GOLDEN_FINGERPRINT = "1ecb00fe8808"
 GOLDEN_IDENTITY = "recursive-ridge-local-k1"
 
 # ---------------------------------------------------------------------------
@@ -64,6 +70,10 @@ GOLDEN_ENSEMBLE_QUANTILE_FP = "bf0677d2a169"
 # history_path enters the semantic fingerprint: golden values above are only
 # valid for this exact fixed path, so the fixture must not use tempdirs
 PARITY_ROOT = Path("/tmp/tsproj_parity_lock")
+RUNTIME_SERVICES = EnsembleRuntimeServices(
+    runner_factory=CanonicalBaseModelRunner,
+    persist_bundle=persist_model_bundle,
+)
 
 
 def _read_csv_round_trip(path: Path) -> pd.DataFrame:
@@ -129,7 +139,13 @@ def _single_model_config(data_path: Path) -> ForecastConfigSpec:
             params={"alpha": 1e-8},
         ),
         probabilistic={"mode": "point"},
-        validation={"forecast_origin": "2026-01-03T23:00:00"},
+        validation={
+            "forecast_origin": "2026-01-03T23:00:00",
+            "history_steps": 10_000,
+            "train_window_steps": 9_999,
+            "fold_count": 1,
+            "stride_steps": 2,
+        },
         output={"scenario_subpath": "parity-local-point"},
     )
 
@@ -164,7 +180,13 @@ def _weighted_ensemble_config(
         "strategy": {"name": "direct"},
         "estimator": estimator,
         "probabilistic": probabilistic,
-        "validation": {"forecast_origin": "2026-01-03T23:00:00"},
+        "validation": {
+            "forecast_origin": "2026-01-03T23:00:00",
+            "history_steps": 10_000,
+            "train_window_steps": 9_999,
+            "fold_count": 1,
+            "stride_steps": 2,
+        },
         "output": {"scenario_subpath": f"parity-weighted-{mode}"},
     }
     members_dir = PARITY_ROOT / "ensemble_members"
@@ -185,10 +207,16 @@ def _weighted_ensemble_config(
                 {"name": "direct", "config_ref": "ensemble_members/member_direct.yaml"},
                 {"name": "recursive", "config_ref": "ensemble_members/member_recursive.yaml"},
             ],
-            "oof": {"train_window_length": 6, "fold_count": 2, "stride": 1},
+            "oof": {"train_window_steps": 6, "fold_count": 2, "stride_steps": 1},
             "method": {"name": "averaging"},
         },
-        "validation": {"forecast_origin": "2026-01-03T23:00:00"},
+        "validation": {
+            "forecast_origin": "2026-01-03T23:00:00",
+            "history_steps": 10_000,
+            "train_window_steps": 9_999,
+            "fold_count": 1,
+            "stride_steps": 2,
+        },
         "output": {"scenario_subpath": f"parity-weighted-{mode}"},
     }
     ens_path = PARITY_ROOT / f"ens_weighted_{mode}.yaml"
@@ -206,10 +234,11 @@ def _run_config(config: ForecastConfigSpec):
 
 
 def _run_ensemble(config):
-    from model_ensemble.runtime import run_ensemble_config
-
     result = run_ensemble_config(
-        config, output_root=PARITY_ROOT / "out", base_dir=PARITY_ROOT
+        config,
+        output_root=PARITY_ROOT / "out",
+        base_dir=PARITY_ROOT,
+        services=RUNTIME_SERVICES,
     )
     return result, None, None, None
 
@@ -258,8 +287,6 @@ class WeightedEnsembleGoldenParityTest(unittest.TestCase):
     @staticmethod
     def _run(mode):
         data_path = _parity_data(PARITY_ROOT / "local.csv")
-        from model_ensemble.runtime import run_ensemble_config
-
         config = _weighted_ensemble_config(data_path, mode=mode)
         return _run_ensemble(config)
 

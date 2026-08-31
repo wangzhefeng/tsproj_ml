@@ -13,7 +13,7 @@ from data_loading.information_set import (
     SourceLineage,
 )
 from data_loading.providers import CompositeProvider
-from model_forecasting.specs.data import AvailabilityPolicy, ColumnRole, DataSourceSpec, DataSpec
+from forecasting_core.specs.data import AvailabilityPolicy, ColumnRole, DataSourceSpec, DataSpec
 
 
 FrameReader = Callable[[Path], pd.DataFrame]
@@ -172,6 +172,7 @@ class SourceRegistry:
                 source,
                 self._read_path(source.history_path),
                 generated=False,
+                path_version="history",
             )
             if source.time_col is None or frame.empty:
                 raise ValueError(f"target source {source.name!r} has no timestamps")
@@ -194,7 +195,12 @@ class SourceRegistry:
             generated = generator(source, request)
             if not isinstance(generated, pd.DataFrame):
                 raise TypeError(f"generator for source {source.name!r} must return a DataFrame")
-            frame = self._validate_frame(source, generated, generated=True)
+            frame = self._validate_frame(
+                source,
+                generated,
+                generated=True,
+                path_version=None,
+            )
             lineage = [self._lineage(source, "generated", None, request)]
         else:
             frames = []
@@ -220,22 +226,24 @@ class SourceRegistry:
                 cached = self._validated_cache.get(cache_key)
                 if cached is None:
                     raw = self._read_path(configured_path)
-                    cached = self._validate_frame(source, raw, generated=False)
+                    cached = self._validate_frame(
+                        source,
+                        raw,
+                        generated=False,
+                        path_version=version,
+                    )
                     self._validated_cache[cache_key] = cached
                 frames.append(cached)
                 lineage.append(self._lineage(source, version, configured_path, request))
             frame = pd.concat(frames, ignore_index=True)
 
         if source.availability in {AvailabilityPolicy.COLUMN, AvailabilityPolicy.GENERATOR_DEFINED}:
-            roles = {column.role for column in source.columns}
-            oracle_target = (
-                request.information_mode == "oracle" and ColumnRole.TARGET in roles
-            )
+            oracle_request = request.information_mode == "oracle"
             frame = self._select_as_of_vintage(
                 source,
                 frame,
                 request,
-                enforce_origin=not oracle_target,
+                enforce_origin=not oracle_request,
             )
         return frame, lineage
 
@@ -272,29 +280,50 @@ class SourceRegistry:
         frame: pd.DataFrame,
         *,
         generated: bool,
+        path_version: str | None,
     ) -> pd.DataFrame:
         validated = frame.copy(deep=True)
-        expected = {column.name for column in source.columns}
+        declared = {column.name for column in source.columns}
+        ignored = {
+            column.name
+            for column in source.columns
+            if column.role is ColumnRole.IGNORED
+        }
+        required = declared - ignored
+        permitted = set(declared)
         if source.time_col is not None:
-            expected.add(source.time_col)
-        if source.availability is AvailabilityPolicy.COLUMN:
-            expected.add(source.available_at_col or "")
+            required.add(source.time_col)
+            permitted.add(source.time_col)
+        available_at_col = self._available_at_col(source)
+        if available_at_col is not None:
+            permitted.add(available_at_col)
+            if path_version == "history" and available_at_col not in validated:
+                if source.time_col is None or source.time_col not in validated:
+                    raise ValueError(
+                        f"source {source.name!r} history cannot derive available_at without time_col"
+                    )
+                validated[available_at_col] = validated[source.time_col]
+            else:
+                required.add(available_at_col)
         if generated:
-            expected.add(_GENERATED_AVAILABLE_AT)
+            required.add(_GENERATED_AVAILABLE_AT)
+            permitted.add(_GENERATED_AVAILABLE_AT)
         actual = set(validated.columns)
-        if actual != expected:
-            missing = sorted(expected - actual)
-            extra = sorted(actual - expected)
+        if not required.issubset(actual):
+            missing = sorted(required - actual)
             raise ValueError(
-                f"source {source.name!r} columns do not match its spec; missing={missing}, extra={extra}"
+                f"source {source.name!r} columns do not match its spec; missing={missing}"
             )
+        projected_columns = [
+            column for column in validated.columns if column in permitted
+        ]
+        validated = validated.loc[:, projected_columns].copy()
 
         if source.time_col is not None:
             validated[source.time_col] = self._parse_datetime(
                 validated[source.time_col],
                 f"source {source.name!r} time_col",
             )
-        available_at_col = self._available_at_col(source)
         if available_at_col is not None:
             validated[available_at_col] = self._parse_datetime(
                 validated[available_at_col],
@@ -302,6 +331,12 @@ class SourceRegistry:
             )
 
         for column in source.columns:
+            if column.name not in validated:
+                if column.role is ColumnRole.IGNORED:
+                    continue
+                raise ValueError(
+                    f"source {source.name!r} required column {column.name!r} is missing"
+                )
             values = validated[column.name]
             if column.role is ColumnRole.IGNORED:
                 continue
@@ -477,6 +512,7 @@ class SourceRegistry:
                 source,
                 self._read_path(source.backtest_path),
                 generated=False,
+                path_version="backtest",
             )
             if source.availability in {
                 AvailabilityPolicy.COLUMN,

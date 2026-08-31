@@ -16,8 +16,9 @@ from typing import Any, Dict, Mapping
 
 import numpy as np
 import pandas as pd
+from pandas.tseries.offsets import MonthBegin, MonthEnd
 
-from model_forecasting.tensors import PointForecastTensor
+from forecasting_core.tensors import PointForecastTensor
 
 
 def positive_validation_int(
@@ -41,8 +42,18 @@ def seasonal_naive_tensor(
     validation = builder.config.validation
     configured = validation.get("seasonal_naive_lag")
     if configured is None:
-        step = pd.Timedelta(builder.offset)
-        configured = max(1, int(round(pd.Timedelta(days=1) / step)))
+        if isinstance(builder.offset, (MonthBegin, MonthEnd)):
+            configured = 1
+        else:
+            step = pd.Timedelta(builder.offset)
+            one_day_steps = max(
+                1,
+                int(round(pd.Timedelta(days=1) / step)),
+            )
+            configured = max(
+                one_day_steps,
+                int(builder.config.problem.horizon),
+            )
     lag = positive_validation_int(
         {"seasonal_naive_lag": configured},
         "seasonal_naive_lag",

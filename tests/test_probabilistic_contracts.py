@@ -4,7 +4,7 @@
 import unittest
 from types import SimpleNamespace
 
-from probabilistic.spec import (
+from forecasting_core.probabilistic_spec import (
     CalibrationSpec,
     IntervalSpec,
     ProbabilisticSpec,

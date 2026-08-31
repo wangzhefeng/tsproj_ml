@@ -7,7 +7,7 @@ from typing import List, Optional, Sequence, Tuple
 import numpy as np
 import pandas as pd
 
-from probabilistic.spec import validate_cqr_params
+from forecasting_core.probabilistic_spec import validate_cqr_params
 
 
 @dataclass(frozen=True)

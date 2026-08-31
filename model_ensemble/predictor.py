@@ -16,6 +16,8 @@ from model_ensemble.artifacts import (
     PerTargetMetaArtifact,
     PerTargetWeightsArtifact,
 )
+from model_ensemble.methods.stacking import combine_stacking
+from model_ensemble.methods.weighted import weight_matrix
 
 
 def combine_members(
@@ -29,21 +31,19 @@ def combine_members(
         )
     method_artifact = ens_artifact.method_artifact
     if isinstance(method_artifact, PerTargetWeightsArtifact):
-        from model_ensemble.methods.weighted import weight_matrix
-
         stacked = np.stack(
             [np.asarray(member_values[name], dtype=float) for name in member_values],
             axis=0,
         )
-        weight_matrix = weight_matrix(
+        weights = weight_matrix(
             method_artifact, stacked.shape[3], len(member_values)
         )
         if stacked.ndim == 4:
-            return np.einsum("km,mnhk->nhk", weight_matrix, stacked)
-        return np.einsum("km,mnhqk->nhqk", weight_matrix, stacked)
+            return np.einsum("km,mnhk->nhk", weights, stacked)
+        if stacked.ndim == 5:
+            return np.einsum("km,mnhkq->nhkq", weights, stacked)
+        raise ValueError("member predictions must have shape (N,H,K[,Q])")
     if isinstance(method_artifact, PerTargetMetaArtifact):
-        from model_ensemble.methods.stacking import combine_stacking
-
         return combine_stacking(method_artifact, member_values)
     # EqualWeightsArtifact
     stacked = np.stack(

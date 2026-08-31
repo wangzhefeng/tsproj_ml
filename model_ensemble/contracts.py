@@ -8,7 +8,9 @@ class implements.
 
 from __future__ import annotations
 
-from typing import Any, Mapping, Protocol, runtime_checkable
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any, Callable, Mapping, Protocol, runtime_checkable
 
 import pandas as pd
 
@@ -18,6 +20,8 @@ class BaseModelRunner(Protocol):
     """Narrow member interface — mirrors CanonicalBaseModelRunner."""
 
     config: Any
+    origin: pd.Timestamp
+    supervised_origins: tuple[pd.Timestamp, ...]
     series_ids: tuple[Any, ...]
     feature_schema: tuple[str, ...]
 
@@ -53,6 +57,34 @@ class BaseModelRunner(Protocol):
 
     def forecast_times(self, origin: pd.Timestamp) -> pd.DatetimeIndex:
         ...
+
+    def final_bundle_inputs(self) -> tuple[Any, Any, tuple[Any, ...], Any]:
+        ...
+
+    def fit_final(
+        self,
+        X_transformed: tuple[Any, ...],
+        Y_transformed: Any,
+    ) -> tuple[Any, Any, Any]:
+        ...
+
+    def build_final_bundle(
+        self,
+        feature_scaler: Any,
+        target_transform: Any,
+        trainer: Any,
+        artifact: Any,
+        capabilities: Any,
+    ) -> Any:
+        ...
+
+
+@dataclass(frozen=True, slots=True)
+class EnsembleRuntimeServices:
+    """Concrete single-model capabilities injected by the application entrypoint."""
+
+    runner_factory: Callable[[Any, Any, pd.Timestamp], Any]
+    persist_bundle: Callable[[Any, str | Path], Any]
 
 
 @runtime_checkable

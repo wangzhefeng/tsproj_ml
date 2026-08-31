@@ -69,6 +69,12 @@ class PerTargetWeightsArtifact:
     weights_by_target: dict[str, tuple[float, ...]]
     metric: str | None = None
     coefficients: bool = False  # True when learned as blend coefficients
+    quantile_levels: tuple[float, ...] | None = None
+    n_samples_by_target: dict[str, int] = field(default_factory=dict)
+    optimizer_success_by_target: dict[str, bool] = field(default_factory=dict)
+    optimizer_status_by_target: dict[str, int] = field(default_factory=dict)
+    optimizer_message_by_target: dict[str, str] = field(default_factory=dict)
+    fallback_reason_by_target: dict[str, str | None] = field(default_factory=dict)
 
 
 @dataclass(frozen=True, slots=True)
@@ -90,6 +96,43 @@ class PerTargetMetaArtifact:
 
 
 MethodArtifact = EqualWeightsArtifact | PerTargetWeightsArtifact | PerTargetMetaArtifact
+
+
+def method_artifact_audit_payload(artifact: MethodArtifact) -> dict[str, Any]:
+    """Return JSON-safe fusion state without serializing estimator objects."""
+    if isinstance(artifact, EqualWeightsArtifact):
+        return {"method_name": artifact.method_name}
+    if isinstance(artifact, PerTargetWeightsArtifact):
+        return {
+            "method_name": artifact.method_name,
+            "weights_by_target": {
+                target: list(weights)
+                for target, weights in artifact.weights_by_target.items()
+            },
+            "metric": artifact.metric,
+            "coefficients": artifact.coefficients,
+            "quantile_levels": (
+                list(artifact.quantile_levels)
+                if artifact.quantile_levels is not None
+                else None
+            ),
+            "n_samples_by_target": dict(artifact.n_samples_by_target),
+            "optimizer_success_by_target": dict(
+                artifact.optimizer_success_by_target
+            ),
+            "optimizer_status_by_target": dict(artifact.optimizer_status_by_target),
+            "optimizer_message_by_target": dict(
+                artifact.optimizer_message_by_target
+            ),
+            "fallback_reason_by_target": dict(artifact.fallback_reason_by_target),
+        }
+    return {
+        "method_name": artifact.method_name,
+        "member_order": list(artifact.member_order),
+        "alpha": artifact.alpha,
+        "fit_intercept": artifact.fit_intercept,
+        "targets": sorted(artifact.models_by_target),
+    }
 
 
 @dataclass(frozen=True, slots=True)

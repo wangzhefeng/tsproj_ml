@@ -14,7 +14,7 @@ import numpy as np
 import pandas as pd
 
 from model_evaluation.mask import build_eval_mask
-from model_forecasting.tensors import PointForecastTensor, require_matching_point_axes
+from forecasting_core.tensors import PointForecastTensor, require_matching_point_axes
 
 
 def resolve_aggregate_weighting(

@@ -7,8 +7,8 @@ from typing import Any, ClassVar
 import numpy as np
 import pandas as pd
 
-from model_forecasting.specs.strategy import ForecastStrategySpec, StrategyName
-from model_forecasting.tensors import PointForecastTensor
+from forecasting_core.specs.strategy import ForecastStrategySpec, StrategyName
+from forecasting_core.tensors import PointForecastTensor
 
 
 FeatureProvider = Callable[

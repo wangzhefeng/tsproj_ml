@@ -9,8 +9,16 @@ model YAML.
 
 from __future__ import annotations
 
+import hashlib
+import json
 from dataclasses import dataclass
 from typing import Any, Mapping
+
+from forecasting_core.specs.data import DataSpec
+from forecasting_core.specs.output import OutputSpec
+from forecasting_core.specs.problem import ForecastProblemSpec
+from forecasting_core.specs.probabilistic import ProbabilisticConfigSpec
+from forecasting_core.specs.validation import RuntimeValidationSpec
 
 ENSEMBLE_ALLOWED_TOP_LEVEL = frozenset(
     {
@@ -26,7 +34,7 @@ ENSEMBLE_ALLOWED_TOP_LEVEL = frozenset(
 ENSEMBLE_FORBIDDEN_TOP_LEVEL = frozenset({"features", "strategy", "estimator"})
 ENSEMBLE_ALLOWED_FIELDS = frozenset({"members", "oof", "method"})
 OOF_ALLOWED_FIELDS = frozenset(
-    {"train_window_length", "fold_count", "stride", "gap_steps"}
+    {"train_window_steps", "fold_count", "stride_steps", "gap_steps"}
 )
 METHOD_NAMES = frozenset(
     {"averaging", "weighted", "linear_blending", "stacking"}
@@ -76,16 +84,16 @@ class MemberRef:
 class OOFSpec:
     """Shared rolling-origin fold geometry for the fuser (v4 §7.1)."""
 
-    train_window_length: int
+    train_window_steps: int
     fold_count: int
-    stride: int
+    stride_steps: int
     gap_steps: int = 0
     calendar_month: bool = False
 
     def __post_init__(self) -> None:
-        _positive_int(self.train_window_length, "train_window_length")
+        _positive_int(self.train_window_steps, "train_window_steps")
         _positive_int(self.fold_count, "fold_count")
-        _positive_int(self.stride, "stride")
+        _positive_int(self.stride_steps, "stride_steps")
         _non_negative_int(self.gap_steps, "gap_steps")
         # v4 B2: variable-length calendar-month horizons only define the
         # single-holdout geometry; multi-fold is explicitly unsupported
@@ -98,9 +106,9 @@ class OOFSpec:
 
     def payload(self) -> dict[str, int | bool]:
         return {
-            "train_window_length": self.train_window_length,
+            "train_window_steps": self.train_window_steps,
             "fold_count": self.fold_count,
-            "stride": self.stride,
+            "stride_steps": self.stride_steps,
             "gap_steps": self.gap_steps,
             "calendar_month": self.calendar_month,
         }
@@ -135,16 +143,30 @@ class EnsembleConfigSpec:
     members: tuple[MemberRef, ...]
     oof: OOFSpec
     method: MethodSpec
-    problem: dict[str, Any]
-    data: dict[str, Any]
-    probabilistic: dict[str, Any]
-    validation: dict[str, Any]
-    output: dict[str, Any]
+    problem: ForecastProblemSpec
+    data: DataSpec
+    probabilistic: ProbabilisticConfigSpec
+    validation: RuntimeValidationSpec
+    output: OutputSpec
 
     def __post_init__(self) -> None:
         if self.schema_version != 2:
             raise EnsembleSpecError(
                 "ensemble config schema_version must be 2"
+            )
+        expected_types = (
+            ("problem", self.problem, ForecastProblemSpec),
+            ("data", self.data, DataSpec),
+            ("probabilistic", self.probabilistic, ProbabilisticConfigSpec),
+            ("validation", self.validation, RuntimeValidationSpec),
+            ("output", self.output, OutputSpec),
+        )
+        for field_name, value, expected_type in expected_types:
+            if not isinstance(value, expected_type):
+                raise TypeError(f"{field_name} must be {expected_type.__name__}")
+        if self.problem.targets != self.data.target_columns:
+            raise EnsembleSpecError(
+                "problem.targets must exactly match data.target_columns in the same order"
             )
         if not isinstance(self.members, tuple) or len(self.members) < 2:
             raise EnsembleSpecError("ensemble requires at least two members")
@@ -162,6 +184,49 @@ class EnsembleConfigSpec:
             "oof": self.oof.payload(),
             "method": self.method.payload(),
         }
+
+    def canonical_payload(self) -> dict[str, Any]:
+        return {
+            "schema_version": self.schema_version,
+            "problem": self.problem.canonical_payload(),
+            "data": self.data.canonical_payload(),
+            "probabilistic": self.probabilistic.canonical_payload(),
+            "ensemble": {
+                "members": [member.payload() for member in self.members],
+                "oof": self.oof.payload(),
+                "method": self.method.payload(),
+            },
+            "validation": self.validation.canonical_payload(),
+            "output": self.output.canonical_payload(),
+        }
+
+    def fingerprint(self) -> str:
+        payload = self.canonical_payload()
+        payload.pop("output", None)
+        encoded = json.dumps(
+            payload,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+        return hashlib.sha256(encoded).hexdigest()
+
+    def result_identity(self, hash_length: int = 12) -> str:
+        if isinstance(hash_length, bool) or not isinstance(hash_length, int):
+            raise TypeError("hash_length must be an integer")
+        if not 8 <= hash_length <= 64:
+            raise ValueError("hash_length must be between 8 and 64")
+        scope = self.problem.training_scope
+        target_count = len(self.problem.targets)
+        return "-".join(
+            (
+                "ensemble",
+                self.method.name,
+                scope,
+                f"k{target_count}",
+                self.fingerprint()[:hash_length],
+            )
+        )
 
 
 def parse_ensemble_member(payload: Any) -> MemberRef:
@@ -192,18 +257,18 @@ def parse_oof_spec(payload: Any, *, calendar_month: bool) -> OOFSpec:
             f"model_ensemble.oof has unknown fields: {sorted(unknown)}"
         )
     missing = {
-        "train_window_length",
+        "train_window_steps",
         "fold_count",
-        "stride",
+        "stride_steps",
     } - set(payload)
     if missing:
         raise EnsembleSpecError(
             f"model_ensemble.oof missing fields: {sorted(missing)}"
         )
     return OOFSpec(
-        train_window_length=payload["train_window_length"],
+        train_window_steps=payload["train_window_steps"],
         fold_count=payload["fold_count"],
-        stride=payload["stride"],
+        stride_steps=payload["stride_steps"],
         gap_steps=payload.get("gap_steps", 0),
         calendar_month=calendar_month,
     )

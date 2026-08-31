@@ -30,10 +30,10 @@ class RollingOriginFoldContractTest(unittest.TestCase):
         folds = validation.rolling_origin_folds(
             origins,
             _geometry(horizon=2),
-            history_length=None,
-            window_length=10,
-            max_windows=3,
-            stride=2,
+            history_steps=None,
+            train_window_steps=10,
+            fold_count=3,
+            stride_steps=2,
         )
         self.assertEqual(len(folds), 3)
         self.assertEqual(folds[-1].window, 3)
@@ -54,10 +54,10 @@ class RollingOriginFoldContractTest(unittest.TestCase):
         folds = validation.rolling_origin_folds(
             origins,
             _geometry(),
-            history_length=None,
-            window_length=5,
-            max_windows=4,
-            stride=3,
+            history_steps=None,
+            train_window_steps=5,
+            fold_count=4,
+            stride_steps=3,
         )
         origins_seq = [fold.origin for fold in folds]
         self.assertEqual(origins_seq, sorted(origins_seq))
@@ -70,10 +70,10 @@ class RollingOriginFoldContractTest(unittest.TestCase):
             validation.rolling_origin_folds(
                 origins,
                 _geometry(),
-                history_length=None,
-                window_length=10,
-                max_windows=1,
-                stride=1,
+                history_steps=None,
+                train_window_steps=10,
+                fold_count=1,
+                stride_steps=1,
             )
 
     def test_validate_no_overlap_rejects_overlap(self):
@@ -136,6 +136,42 @@ class CanonicalBaseModelRunnerTest(unittest.TestCase):
             float(prediction.values[0, 0, 0]), 54.99999999999561, places=9
         )
 
+    def test_final_bundle_inputs_use_configured_training_window(self):
+        from dataclasses import replace
+
+        runner = self._runner("recursive")
+        validation_payload = dict(runner.config.validation)
+        validation_payload["train_window_steps"] = 5
+        config = replace(runner.config, validation=validation_payload)
+        registry = SourceRegistry(config.data, self.root)
+        windowed = CanonicalBaseModelRunner(config, registry, runner.origin)
+
+        _scaler, _transform, X_by_call, Y = windowed.final_bundle_inputs()
+
+        self.assertTrue(X_by_call)
+        self.assertEqual(X_by_call[0].shape[0], 5 * len(windowed.series_ids))
+        self.assertEqual(Y.shape[0], 5 * len(windowed.series_ids))
+
+    def test_supervised_design_is_limited_to_configured_history_origins(self):
+        from dataclasses import replace
+
+        runner = self._runner("recursive")
+        validation_payload = {
+            **dict(runner.config.validation),
+            "history_steps": 8,
+            "train_window_steps": 5,
+            "fold_count": 1,
+            "stride_steps": 2,
+        }
+        config = replace(runner.config, validation=validation_payload)
+        limited = CanonicalBaseModelRunner(
+            config,
+            SourceRegistry(config.data, self.root),
+            runner.origin,
+        )
+
+        self.assertEqual(len(limited.supervised_origins), 8)
+
     def test_rejects_missing_strategy(self):
         from dataclasses import replace
 
@@ -151,7 +187,7 @@ class CanonicalBaseModelRunnerTest(unittest.TestCase):
 
 
 def _strategy(name: str):
-    from model_forecasting.specs.strategy import ForecastStrategySpec
+    from forecasting_core.specs.strategy import ForecastStrategySpec
 
     return ForecastStrategySpec(name)
 

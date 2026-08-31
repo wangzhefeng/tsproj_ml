@@ -5,13 +5,13 @@ import unittest
 from pathlib import Path
 
 from config.config_loader import load_yaml_config
-from model_forecasting.specs import EstimatorSpec, ForecastConfigSpec
+from forecasting_core.specs import EstimatorSpec, ForecastConfigSpec
 from probabilistic.objectives import (
     inject_quantile_objective,
     supports_quantile_objective,
     validate_quantile_model_support,
 )
-from probabilistic.spec import ProbabilisticSpec, resolve_probabilistic_spec
+from forecasting_core.probabilistic_spec import ProbabilisticSpec, resolve_probabilistic_spec
 
 
 class QuantileObjectiveMappingTest(unittest.TestCase):

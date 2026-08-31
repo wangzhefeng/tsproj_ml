@@ -20,17 +20,6 @@ data:
     time_col: time
     series_id_cols: []
     availability: source_time
-  - name: date_type
-    source_type: file
-    columns:
-    - name: date_type
-      role: known_future
-      categorical: true
-    history_path: dataset/aidc_load_15min_short/ETTm1_exogenous/df_date.csv
-    future_path: dataset/aidc_load_15min_short/ETTm1_exogenous/df_date_future.csv
-    time_col: date
-    series_id_cols: []
-    availability: forecast_origin
   - name: weather
     source_type: file
     columns:
@@ -79,23 +68,50 @@ features:
   - day_of_year
   - year
   transformations:
-    direct_layout: independent_models
+    direct:
+      layout: independent_models
+      use_horizon_exogenous: true
+      align_to_target: false
+    target:
+      calendar_normalization:
+        method: none
+      decomposition:
+        method: stl
+        periods:
+        - 96
+        robust: true
+        trend_degree: 1
+        trend_forecast: polynomial
+        damping: 0.98
+        trend_lookback: 28
+        seasonal_cycles: 4
+      scaling:
+        method: none
+        inverse: false
+    feature_scaling:
+      method: minmax
+      grouped: false
+      encode_categorical: false
     advanced:
-      rolling_windows:
-      - 16
-      - 96
-      - 672
-      diff_periods:
-      - 1
-      - 96
-      - 672
-      pct_change_periods:
-      - 1
-      - 7
-    target_transform:
-      calendar_normalization: none
-      decomposition: stl
-      target_scaling: none
+      rolling:
+        columns:
+        - value
+        windows:
+        - 16
+        - 96
+        - 672
+        stats:
+        - mean
+        - std
+        - min
+        - max
+      difference:
+        columns:
+        - value
+        periods:
+        - 1
+        - 96
+        - 672
 strategy:
   name: direct
 estimator:
@@ -108,9 +124,10 @@ validation:
   forecast_origin: '2026-07-31T14:00:00'
   schedule_mode: intraday
   horizon_mode: fixed_steps
-  history_length: 33
-  window_length: 15
-  train_window_length: null
+  history_steps: 1536
+  train_window_steps: 1424
+  fold_count: 7
+  stride_steps: 16
 output:
   scenario_subpath: aidc_load_15min_short/route_A/add_decomposition
   setting_suffix: -decomp-stl96

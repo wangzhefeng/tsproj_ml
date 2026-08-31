@@ -65,7 +65,10 @@ features:
   - day_of_year
   - year
   transformations:
-    direct_layout: independent_models
+    direct:
+      layout: independent_models
+      use_horizon_exogenous: true
+      align_to_target: false
 estimator:
   model_type: lightgbm
   target_adapter: independent
@@ -78,9 +81,10 @@ validation:
   forecast_origin: '2026-07-31T23:45:00'
   schedule_mode: daily
   horizon_mode: fixed_steps
-  history_length: 193
-  window_length: 30
-  train_window_length: null
+  history_steps: 3264
+  train_window_steps: 2784
+  fold_count: 5
+  stride_steps: 96
 output:
   scenario_subpath: aidc_load_15min_daily/route_A/add_endogenous_cross_route_weather_date/ensemble_members
   setting_suffix: -control-no-cross-route-recursive-member

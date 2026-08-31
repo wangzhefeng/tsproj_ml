@@ -6,7 +6,7 @@ import unittest
 import numpy as np
 import pandas as pd
 
-from probabilistic.types import (
+from forecasting_core.artifacts import (
     ForecastDistribution,
     PredictionIntervalForecast,
     QuantileGrid,

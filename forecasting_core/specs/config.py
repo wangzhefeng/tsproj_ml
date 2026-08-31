@@ -2,18 +2,22 @@
 
 import hashlib
 import json
-import math
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from types import MappingProxyType
 from typing import Any
 
-from model_forecasting.specs.data import ColumnRole, ColumnSpec, DataSourceSpec, DataSpec
-from model_forecasting.specs.estimator import EstimatorSpec
-from model_forecasting.specs.feature import FeatureSpec
-from model_forecasting.specs.problem import ForecastProblemSpec
-from model_forecasting.specs.strategy import ForecastStrategySpec
+from forecasting_core.specs.data import ColumnRole, ColumnSpec, DataSourceSpec, DataSpec
+from forecasting_core.specs.estimator import EstimatorSpec
+from forecasting_core.specs.feature import FeatureSpec
+from forecasting_core.specs.output import OutputSpec
+from forecasting_core.specs.problem import ForecastProblemSpec
+from forecasting_core.specs.probabilistic import ProbabilisticConfigSpec
+from forecasting_core.specs.strategy import ForecastStrategySpec
+from forecasting_core.specs.validation import (
+    CalendarMonthBacktestSpec,
+    RuntimeValidationSpec,
+)
 
 
 _TOP_LEVEL_FIELDS = frozenset(
@@ -69,42 +73,10 @@ _FEATURE_FIELDS = frozenset(
 # features.selection 为可选段（监督特征选择，2026-08-30 专项恢复）
 _FEATURE_OPTIONAL_FIELDS = frozenset({"selection"})
 _STRATEGY_FIELDS = frozenset({"name", "output_chunk_length"})
-_ENSEMBLE_FIELDS = frozenset({"members", "method", "weights"})
-_ENSEMBLE_MEMBER_FIELDS = frozenset({"name", "strategy"})
 _ESTIMATOR_FIELDS = frozenset({"model_type", "target_adapter", "params"})
 _FORBIDDEN_FIELD_NAMES = frozenset({"base_config", "overrides", "pred_method"})
 _NONSEMANTIC_FIELD_TOKENS = ("parallel", "worker", "thread", "n_jobs", "log")
 _NONSEMANTIC_VALIDATION_FIELDS: frozenset[str] = frozenset()
-
-
-def _freeze_json_value(value: Any, path: str) -> Any:
-    if value is None or isinstance(value, (str, bool, int)):
-        return value
-    if isinstance(value, float):
-        if not math.isfinite(value):
-            raise ValueError(f"{path} must contain only finite floats")
-        return value
-    if isinstance(value, list):
-        return tuple(
-            _freeze_json_value(item, f"{path}[{index}]")
-            for index, item in enumerate(value)
-        )
-    if isinstance(value, Mapping):
-        normalized: dict[str, Any] = {}
-        for key, item in value.items():
-            if not isinstance(key, str):
-                raise TypeError(f"{path} keys must be strings")
-            normalized[key] = _freeze_json_value(item, f"{path}.{key}")
-        return MappingProxyType(dict(sorted(normalized.items())))
-    raise TypeError(f"{path} must contain only JSON-like values")
-
-
-def _thaw_json_value(value: Any) -> Any:
-    if isinstance(value, tuple):
-        return [_thaw_json_value(item) for item in value]
-    if isinstance(value, Mapping):
-        return {key: _thaw_json_value(item) for key, item in value.items()}
-    return value
 
 
 def _semantic_mapping(value: Mapping[str, Any]) -> dict[str, Any]:
@@ -175,6 +147,32 @@ def _validate_feature_columns(data: DataSpec, features: FeatureSpec) -> None:
         )
 
 
+def _validate_time_geometry(
+    problem: ForecastProblemSpec,
+    validation: RuntimeValidationSpec,
+) -> None:
+    schedule_mode = str(validation.get("schedule_mode", "daily")).lower()
+    if schedule_mode not in {"daily", "intraday"}:
+        raise ValueError("validation.schedule_mode must be daily or intraday")
+    horizon_mode = str(validation.get("horizon_mode", "fixed_steps")).lower()
+    if horizon_mode not in {"fixed_steps", "calendar_month"}:
+        raise ValueError(
+            "validation.horizon_mode must be fixed_steps or calendar_month"
+        )
+    if horizon_mode != "calendar_month":
+        return
+    if problem.freq != "1D":
+        raise ValueError("horizon_mode=calendar_month requires problem.freq=1D")
+    if schedule_mode != "daily":
+        raise ValueError("horizon_mode=calendar_month requires schedule_mode=daily")
+    if validation.backtest is not None and not isinstance(
+        validation.backtest, CalendarMonthBacktestSpec
+    ):
+        raise TypeError(
+            "horizon_mode=calendar_month requires CalendarMonthBacktestSpec"
+        )
+
+
 @dataclass(frozen=True, slots=True, init=False)
 class ForecastConfigSpec:
     schema_version: int
@@ -183,9 +181,9 @@ class ForecastConfigSpec:
     features: FeatureSpec
     strategy: ForecastStrategySpec | None
     estimator: EstimatorSpec
-    probabilistic: Mapping[str, Any]
-    validation: Mapping[str, Any]
-    output: Mapping[str, Any]
+    probabilistic: ProbabilisticConfigSpec
+    validation: RuntimeValidationSpec
+    output: OutputSpec
 
     def __init__(
         self,
@@ -194,9 +192,9 @@ class ForecastConfigSpec:
         features: FeatureSpec,
         strategy: ForecastStrategySpec | None,
         estimator: EstimatorSpec,
-        probabilistic: Mapping[str, Any],
-        validation: Mapping[str, Any],
-        output: Mapping[str, Any],
+        probabilistic: Mapping[str, Any] | ProbabilisticConfigSpec,
+        validation: Mapping[str, Any] | RuntimeValidationSpec,
+        output: Mapping[str, Any] | OutputSpec,
         schema_version: int = 2,
     ) -> None:
         if strategy is None:
@@ -221,13 +219,9 @@ class ForecastConfigSpec:
                 raise TypeError(f"{field_name} must be {expected_type.__name__}")
         if not isinstance(strategy, ForecastStrategySpec):
             raise TypeError("strategy must be ForecastStrategySpec")
-        for field_name, value in (
-            ("probabilistic", probabilistic),
-            ("validation", validation),
-            ("output", output),
-        ):
-            if not isinstance(value, Mapping):
-                raise TypeError(f"{field_name} must be a mapping")
+        probabilistic_spec = ProbabilisticConfigSpec.from_mapping(probabilistic)
+        validation_spec = RuntimeValidationSpec.from_mapping(validation)
+        output_spec = OutputSpec.from_mapping(output)
 
         if problem.targets != data.target_columns:
             raise ValueError(
@@ -236,6 +230,7 @@ class ForecastConfigSpec:
         strategy.resolve(problem.horizon)
         _validate_global_source_keys(problem, data)
         _validate_feature_columns(data, features)
+        _validate_time_geometry(problem, validation_spec)
 
         object.__setattr__(self, "schema_version", 2)
         object.__setattr__(self, "problem", problem)
@@ -243,17 +238,9 @@ class ForecastConfigSpec:
         object.__setattr__(self, "features", features)
         object.__setattr__(self, "strategy", strategy)
         object.__setattr__(self, "estimator", estimator)
-        object.__setattr__(
-            self,
-            "probabilistic",
-            _freeze_json_value(probabilistic, "probabilistic"),
-        )
-        object.__setattr__(
-            self,
-            "validation",
-            _freeze_json_value(validation, "validation"),
-        )
-        object.__setattr__(self, "output", _freeze_json_value(output, "output"))
+        object.__setattr__(self, "probabilistic", probabilistic_spec)
+        object.__setattr__(self, "validation", validation_spec)
+        object.__setattr__(self, "output", output_spec)
 
     def canonical_payload(self) -> dict[str, object]:
         return {
@@ -263,16 +250,16 @@ class ForecastConfigSpec:
             "features": self.features.canonical_payload(),
             "strategy": self.strategy.canonical_payload(),
             "estimator": self.estimator.canonical_payload(),
-            "probabilistic": _thaw_json_value(self.probabilistic),
-            "validation": _thaw_json_value(self.validation),
-            "output": _thaw_json_value(self.output),
+            "probabilistic": self.probabilistic.canonical_payload(),
+            "validation": self.validation.canonical_payload(),
+            "output": self.output.canonical_payload(),
         }
 
     def semantic_payload(self) -> dict[str, object]:
         payload = self.canonical_payload()
         payload.pop("output")
         payload["validation"] = _semantic_mapping(
-            _thaw_json_value(self.validation)
+            self.validation.canonical_payload()
         )
         return payload
 
@@ -361,7 +348,7 @@ def _reject_forbidden_fields(value: Any, *, path: str, source: str | Path) -> No
             )
 
 
-def _parse_problem(value: Any, source: str | Path) -> ForecastProblemSpec:
+def parse_problem_spec(value: Any, source: str | Path) -> ForecastProblemSpec:
     payload = _mapping(
         value,
         path="problem",
@@ -401,7 +388,7 @@ def _parse_source(value: Any, source: str | Path, index: int) -> DataSourceSpec:
     return DataSourceSpec(**parsed)
 
 
-def _parse_data(value: Any, source: str | Path) -> DataSpec:
+def parse_data_spec(value: Any, source: str | Path) -> DataSpec:
     payload = _mapping(
         value,
         path="data",
@@ -455,10 +442,28 @@ def _parse_estimator(value: Any, source: str | Path) -> EstimatorSpec:
     return EstimatorSpec(**payload)
 
 
-def _parse_json_mapping(value: Any, field_name: str, source: str | Path) -> Mapping[str, Any]:
-    if not isinstance(value, Mapping):
-        raise TypeError(f"{field_name} must be a mapping in {_source_label(source)}")
-    return value
+def parse_probabilistic_config_spec(
+    value: Any,
+    source: str | Path,
+) -> ProbabilisticConfigSpec:
+    return ProbabilisticConfigSpec.from_mapping(value, source=_source_label(source))
+
+
+def parse_runtime_validation_spec(
+    value: Any,
+    source: str | Path,
+    *,
+    require_geometry: bool = True,
+) -> RuntimeValidationSpec:
+    return RuntimeValidationSpec.from_mapping(
+        value,
+        source=_source_label(source),
+        require_geometry=require_geometry,
+    )
+
+
+def parse_output_spec(value: Any, source: str | Path) -> OutputSpec:
+    return OutputSpec.from_mapping(value, source=_source_label(source))
 
 
 def parse_model_config(mapping: Mapping[str, Any], source: str | Path) -> ForecastConfigSpec:
@@ -491,15 +496,25 @@ def parse_model_config(mapping: Mapping[str, Any], source: str | Path) -> Foreca
 
     return ForecastConfigSpec(
         schema_version=2,
-        problem=_parse_problem(payload["problem"], source),
-        data=_parse_data(payload["data"], source),
+        problem=parse_problem_spec(payload["problem"], source),
+        data=parse_data_spec(payload["data"], source),
         features=_parse_features(payload["features"], source),
         strategy=_parse_strategy(payload["strategy"], source),
         estimator=_parse_estimator(payload["estimator"], source),
-        probabilistic=_parse_json_mapping(payload["probabilistic"], "probabilistic", source),
-        validation=_parse_json_mapping(payload["validation"], "validation", source),
-        output=_parse_json_mapping(payload["output"], "output", source),
+        probabilistic=parse_probabilistic_config_spec(
+            payload["probabilistic"], source
+        ),
+        validation=parse_runtime_validation_spec(payload["validation"], source),
+        output=parse_output_spec(payload["output"], source),
     )
 
 
-__all__ = ["ForecastConfigSpec", "parse_model_config"]
+__all__ = [
+    "ForecastConfigSpec",
+    "parse_data_spec",
+    "parse_model_config",
+    "parse_output_spec",
+    "parse_probabilistic_config_spec",
+    "parse_problem_spec",
+    "parse_runtime_validation_spec",
+]

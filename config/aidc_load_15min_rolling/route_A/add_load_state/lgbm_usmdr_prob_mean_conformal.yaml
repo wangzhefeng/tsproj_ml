@@ -219,9 +219,10 @@ validation:
   forecast_origin: '2026-07-31T14:00:00'
   schedule_mode: intraday
   horizon_mode: fixed_steps
-  history_length: 193
-  window_length: 30
-  train_window_length: null
+  history_steps: 3264
+  train_window_steps: 2784
+  fold_count: 5
+  stride_steps: 96
 output:
   scenario_subpath: aidc_load_15min_rolling/route_A/add_load_state
   setting_suffix: -conformal-intraday-load-state

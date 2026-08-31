@@ -8,7 +8,7 @@ import numpy as np
 import pandas as pd
 
 from feature_engineering import FeatureCompiler
-from model_forecasting.specs import (
+from forecasting_core.specs import (
     ColumnSpec,
     DataSourceSpec,
     DataSpec,
@@ -18,7 +18,7 @@ from model_forecasting.specs import (
     ForecastProblemSpec,
     ForecastStrategySpec,
 )
-from model_forecasting.tensors import MarginalQuantileForecastTensor, PointForecastTensor
+from forecasting_core.tensors import MarginalQuantileForecastTensor, PointForecastTensor
 from model_forecasting.transforms import CanonicalFeatureScaler, CanonicalTargetTransform
 
 

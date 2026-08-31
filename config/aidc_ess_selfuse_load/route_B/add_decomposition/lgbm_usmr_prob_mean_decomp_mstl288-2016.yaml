@@ -20,17 +20,6 @@ data:
     time_col: time
     series_id_cols: []
     availability: source_time
-  - name: date_type
-    source_type: file
-    columns:
-    - name: date_type
-      role: known_future
-      categorical: true
-    history_path: dataset/aidc_ess_selfuse_load/ETTm1_exogenous/df_date.csv
-    future_path: dataset/aidc_ess_selfuse_load/ETTm1_exogenous/df_date_future.csv
-    time_col: date
-    series_id_cols: []
-    availability: forecast_origin
 features:
   target_lags:
     value:
@@ -44,10 +33,23 @@ features:
   observed_past_lags: {}
   datetime_features: []
   transformations:
-    target_transform:
-      calendar_normalization: none
-      decomposition: mstl
-      target_scaling: none
+    target:
+      calendar_normalization:
+        method: none
+      decomposition:
+        method: mstl
+        periods:
+        - 288
+        - 2016
+        robust: true
+        trend_degree: 1
+        trend_forecast: polynomial
+        damping: 0.98
+        trend_lookback: 28
+        seasonal_cycles: 4
+      scaling:
+        method: none
+        inverse: false
 strategy:
   name: recursive
 estimator:
@@ -72,9 +74,10 @@ validation:
   forecast_origin: '2026-07-28T23:55:00'
   schedule_mode: daily
   horizon_mode: fixed_steps
-  history_length: 577
-  window_length: 30
-  train_window_length: null
+  history_steps: 9792
+  train_window_steps: 8352
+  fold_count: 5
+  stride_steps: 288
 output:
   scenario_subpath: aidc_ess_selfuse_load/route_B/add_decomposition
   setting_suffix: -decomp-mstl288-2016

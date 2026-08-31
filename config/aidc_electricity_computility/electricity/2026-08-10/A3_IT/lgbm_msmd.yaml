@@ -478,7 +478,10 @@ features:
   - day_of_year
   - year
   transformations:
-    direct_layout: independent_models
+    direct:
+      layout: independent_models
+      use_horizon_exogenous: false
+      align_to_target: false
 strategy:
   name: direct
 estimator:
@@ -491,9 +494,10 @@ validation:
   forecast_origin: '2026-06-11T23:55:00'
   schedule_mode: daily
   horizon_mode: fixed_steps
-  history_length: 577
-  window_length: 15
-  train_window_length: null
+  history_steps: 5472
+  train_window_steps: 4032
+  fold_count: 5
+  stride_steps: 288
 output:
   scenario_subpath: ''
   setting_suffix: ''

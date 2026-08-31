@@ -1,6 +1,6 @@
 """Canonical standard multi-step forecasting strategy executors."""
 
-from model_forecasting.specs.strategy import ForecastStrategySpec, StrategyName
+from forecasting_core.specs.strategy import ForecastStrategySpec, StrategyName
 from model_training.strategies.base import (
     AdapterPredictor,
     CanonicalStrategyArtifact,

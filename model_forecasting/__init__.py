@@ -1,4 +1,4 @@
-from model_forecasting.tensors import (
+from forecasting_core.tensors import (
     MarginalQuantileForecastTensor,
     PointForecastTensor,
     SampleForecastTensor,

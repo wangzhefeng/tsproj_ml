@@ -101,9 +101,10 @@ validation:
   forecast_origin: '2026-06-11T23:55:00'
   schedule_mode: daily
   horizon_mode: fixed_steps
-  history_length: 577
-  window_length: 8
-  train_window_length: null
+  history_steps: 8640
+  train_window_steps: 2016
+  fold_count: 23
+  stride_steps: 288
 output:
   scenario_subpath: ''
   setting_suffix: ''

@@ -9,16 +9,22 @@ import importlib.util
 import pickle
 from dataclasses import fields, is_dataclass
 from pathlib import Path
-from types import SimpleNamespace
 
 import numpy as np
 import pandas as pd
 import yaml
 from sklearn.linear_model import Ridge
 
+from model_ensemble.contracts import EnsembleRuntimeServices
+from model_ensemble.loader import load_ensemble_config
+from model_ensemble.runtime import run_ensemble_config
 from model_training.estimators.capabilities import EstimatorCapabilities
-from model_forecasting.runtime import run_canonical_config
-from model_forecasting.specs import (
+from model_forecasting.runtime import (
+    CanonicalBaseModelRunner,
+    persist_model_bundle,
+    run_canonical_config,
+)
+from forecasting_core.specs import (
     ColumnSpec,
     DataSourceSpec,
     DataSpec,
@@ -37,6 +43,10 @@ from model_training.trainer import CanonicalTrainer
 
 ROOT = Path(__file__).resolve().parent.parent
 CHECKER_PATH = ROOT / "scripts" / "check_model_configs.py"
+ENSEMBLE_RUNTIME_SERVICES = EnsembleRuntimeServices(
+    runner_factory=CanonicalBaseModelRunner,
+    persist_bundle=persist_model_bundle,
+)
 
 
 def load_config_checker():
@@ -82,12 +92,12 @@ features:
   observed_past_lags: {}
   datetime_features: []
   transformations:
-    target_transform:
-      calendar_normalization: none
+    target:
+      calendar_normalization: {method: none}
       decomposition:
         method: mstl
         periods: [96]
-      target_scaling: none
+      scaling: {method: none, inverse: false}
 strategy: {name: direct}
 estimator:
   model_type: lightgbm
@@ -95,8 +105,10 @@ estimator:
   params: {}
 probabilistic: {mode: point}
 validation:
-  history_length: 60
-  window_length: 30
+  history_steps: 60
+  train_window_steps: 30
+  fold_count: 1
+  stride_steps: 1
 output: {}
 """,
                 encoding="utf-8",
@@ -134,11 +146,12 @@ features:
   observed_past_lags: {}
   datetime_features: []
   transformations:
-    direct_layout: independent_models
-    target_transform:
-      calendar_normalization: none
-      decomposition: stl
-      target_scaling: none
+    direct:
+      layout: independent_models
+    target:
+      calendar_normalization: {method: none}
+      decomposition: {method: stl, periods: [2]}
+      scaling: {method: none, inverse: false}
 strategy: {name: direct}
 estimator:
   model_type: lightgbm
@@ -146,8 +159,10 @@ estimator:
   params: {}
 probabilistic: {mode: point}
 validation:
-  history_length: 12
-  window_length: 10
+  history_steps: 12
+  train_window_steps: 10
+  fold_count: 1
+  stride_steps: 1
 output: {}
 """,
                 encoding="utf-8",
@@ -185,7 +200,8 @@ features:
   observed_past_lags: {}
   datetime_features: []
   transformations:
-    direct_layout: independent_models
+    direct:
+      layout: independent_models
 strategy: {name: direct}
 estimator:
   model_type: lightgbm
@@ -193,8 +209,10 @@ estimator:
   params: {}
 probabilistic: {mode: point}
 validation:
-  history_length: 60
-  window_length: 30
+  history_steps: 60
+  train_window_steps: 30
+  fold_count: 1
+  stride_steps: 1
 output: {}
 """,
                 encoding="utf-8",
@@ -230,7 +248,8 @@ features:
   observed_past_lags: {}
   datetime_features: []
   transformations:
-    direct_layout: independent_models
+    direct:
+      layout: independent_models
     advanced:
       rolling:
         columns: [load]
@@ -243,14 +262,18 @@ estimator:
   params: {}
 probabilistic: {mode: point}
 validation:
-  history_length: 60
-  window_length: 30
+  history_steps: 60
+  train_window_steps: 30
+  fold_count: 1
+  stride_steps: 1
 output: {}
 """,
                 encoding="utf-8",
             )
             _, target_problems = checker.check_model_yaml(str(config_path))
-        self.assertTrue(any("不能依赖目标列 y" in problem for problem in target_problems))
+        self.assertFalse(
+            any("不能依赖目标列 y" in problem for problem in target_problems)
+        )
 
     def test_config_checker_allows_advanced_context_beyond_max_lag_when_history_covers_it(self):
         checker = load_config_checker()
@@ -281,7 +304,8 @@ features:
   observed_past_lags: {}
   datetime_features: []
   transformations:
-    direct_layout: independent_models
+    direct:
+      layout: independent_models
     advanced:
       rolling:
         columns: [load]
@@ -297,8 +321,10 @@ estimator:
   params: {}
 probabilistic: {mode: point}
 validation:
-  history_length: 60
-  window_length: 30
+  history_steps: 60
+  train_window_steps: 30
+  fold_count: 1
+  stride_steps: 1
 output: {}
 """,
                 encoding="utf-8",
@@ -400,8 +426,12 @@ output: {}
         )
 
         cfg = load_yaml_config(config_path)
+        self.assertIsInstance(cfg, ForecastConfigSpec)
+        self.assertEqual(
+            tuple(source.name for source in cfg.data.sources),
+            ("target_history", "weather"),
+        )
         target_source = self._source(cfg, "target_history")
-        date_source = self._source(cfg, "date_type")
         weather_source = self._source(cfg, "weather")
         self.assertEqual(
             Path(target_source.history_path).name,
@@ -409,78 +439,11 @@ output: {}
         )
         self.assertEqual(cfg.estimator.model_type, "enet")
         self.assertEqual(cfg.validation["forecast_origin"], "2026-07-31T23:45:00")
-        self.assertEqual(Path(date_source.history_path).name, "df_date.csv")
         self.assertEqual(Path(weather_source.history_path).name, "weather_15min_20250101_20260731.csv")
         self.assertEqual(
             [column.name for column in target_source.columns if column.role.value == "observed_past"],
             [],
         )
-
-    def test_canonical_output_overrides_write_nested_directories(self):
-        import run
-        from model_forecasting.specs import parse_model_config
-
-        payload = {
-            "schema_version": 2,
-            "problem": {
-                "time_col": "time",
-                "freq": "1h",
-                "horizon": 2,
-                "targets": ["load"],
-                "information_mode": "forecast",
-                "training_scope": "local",
-                "series_id_cols": [],
-            },
-            "data": {
-                "sources": [
-                    {
-                        "name": "target",
-                        "source_type": "file",
-                        "columns": [{"name": "load", "role": "target", "categorical": False}],
-                        "history_path": "load.csv",
-                        "time_col": "time",
-                        "availability": "source_time",
-                    }
-                ]
-            },
-            "features": {
-                "target_lags": {"load": [2]},
-                "observed_past_lags": {},
-                "datetime_features": [],
-                "transformations": {},
-            },
-            "strategy": {"name": "direct"},
-            "estimator": {"model_type": "ridge", "target_adapter": "independent"},
-            "probabilistic": {},
-            "validation": {},
-            "output": {
-                "identity": {"scenario_subpath": "new/path", "setting_suffix": ""},
-                "directories": {
-                    "checkpoints": "models",
-                    "tests": "tests",
-                    "forecast": "forecast",
-                },
-            },
-        }
-        config = parse_model_config(payload, source="entrypoint.yaml")
-        args = SimpleNamespace(
-            checkpoints_dir="override-models",
-            test_results_dir="override-tests",
-            pred_results_dir="override-forecast",
-        )
-
-        overridden = run._apply_canonical_overrides(config, args)
-
-        self.assertEqual(
-            overridden.output["directories"],
-            {
-                "checkpoints": "override-models",
-                "tests": "override-tests",
-                "forecast": "override-forecast",
-            },
-        )
-        self.assertNotIn("checkpoints_dir", overridden.output)
-        self.assertEqual(CanonicalModel(overridden).scenario_subpath, "new/path")
 
 class Task27ExecutionMatrixTest(unittest.TestCase):
     STRATEGIES = (
@@ -614,6 +577,10 @@ class Task27ExecutionMatrixTest(unittest.TestCase):
             ),
             validation={
                 "forecast_origin": "2026-01-03T23:00:00",
+                "history_steps": 10_000,
+                "train_window_steps": 9_999,
+                "fold_count": 1,
+                "stride_steps": 4,
                 "training_scope": {
                     "series_order": ["A", "B"] if is_global else [],
                     "incomplete_series_policy": "raise",
@@ -647,7 +614,7 @@ class Task27ExecutionMatrixTest(unittest.TestCase):
                     {"name": "m_direct", "config_ref": "member_direct.yaml"},
                     {"name": "m_recursive", "config_ref": "member_recursive.yaml"},
                 ],
-                "oof": {"train_window_length": 6, "fold_count": 2, "stride": 1},
+                "oof": {"train_window_steps": 6, "fold_count": 2, "stride_steps": 1},
                 "method": {"name": method},
             },
             "validation": payload["validation"],
@@ -841,10 +808,6 @@ class Task27ExecutionMatrixTest(unittest.TestCase):
             for method in ("averaging", "linear_blending"):
                 case_count += 1
                 with self.subTest(group="ensemble", method=method):
-                    # v4: reference-based ensemble via the new ensemble runtime
-                    from model_ensemble.loader import load_ensemble_config
-                    from model_ensemble.runtime import run_ensemble_config
-
                     doc = self._ensemble_doc_for_task27(
                         local_k1_path, method
                     )
@@ -857,6 +820,7 @@ class Task27ExecutionMatrixTest(unittest.TestCase):
                         config,
                         output_root=root / "runs" / f"ensemble-{method}",
                         base_dir=root,
+                        services=ENSEMBLE_RUNTIME_SERVICES,
                     )
                     combined = result["combined_values"]
                     self.assertTrue(np.isfinite(combined).all())
@@ -915,7 +879,7 @@ class Task27ExecutionMatrixTest(unittest.TestCase):
             errors = error_path.read_text(encoding="utf-8")
 
         self.assertEqual(result.returncode, 0, errors or output[-4000:])
-        self.assertIn("checked=848 passed=848 hard_failures=0", output)
+        self.assertIn("checked=845 passed=845 hard_failures=0", output)
         self.assertNotIn("硬校验失败", output)
 
 

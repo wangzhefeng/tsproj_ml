@@ -9,9 +9,9 @@ from dataclasses import FrozenInstanceError, fields
 from pathlib import Path
 from typing import Literal, get_type_hints
 
-import model_forecasting.specs as specs
-from model_forecasting.specs import ForecastProblemSpec
-from model_forecasting.specs.problem import Frequency
+import forecasting_core.specs as specs
+from forecasting_core.specs import ForecastProblemSpec
+from forecasting_core.specs.problem import Frequency
 
 
 class ForecastProblemSpecValidTest(unittest.TestCase):
@@ -220,7 +220,7 @@ class ForecastProblemSpecValidTest(unittest.TestCase):
         for name in ("model", "strategy", "covariates"):
             self.assertFalse(hasattr(ForecastProblemSpec, name))
 
-        source_path = Path(__file__).resolve().parents[1] / "model_forecasting/specs/problem.py"
+        source_path = Path(__file__).resolve().parents[1] / "forecasting_core/specs/problem.py"
         module = ast.parse(source_path.read_text(encoding="utf-8"))
         imported_modules = {
             node.module or ""

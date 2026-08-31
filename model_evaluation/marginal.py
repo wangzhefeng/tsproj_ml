@@ -14,8 +14,8 @@ import numpy as np
 import pandas as pd
 
 from model_evaluation.metrics import interval_metrics, pinball_loss
-from model_forecasting.tensors import PointForecastTensor
-from probabilistic.types import MarginalForecastDistribution
+from forecasting_core.tensors import PointForecastTensor
+from forecasting_core.artifacts import MarginalForecastDistribution
 
 
 def _central_interval_pairs(levels) -> List[Tuple[float, float]]:

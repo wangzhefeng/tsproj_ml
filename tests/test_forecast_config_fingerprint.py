@@ -4,7 +4,7 @@
 import copy
 import unittest
 
-from model_forecasting.specs import (
+from forecasting_core.specs import (
     ColumnSpec,
     DataSourceSpec,
     DataSpec,
@@ -69,17 +69,21 @@ class CanonicalConfigFingerprintTest(unittest.TestCase):
             estimator=estimator,
             probabilistic={"mode": "point"},
             validation=validation or {
-                "history_length": 48,
-                "window_length": 24,
-                "max_test_windows": 3,
-                "test_window_stride": 4,
+                "history_steps": 48,
+                "train_window_steps": 24,
+                "fold_count": 3,
+                "stride_steps": 4,
             },
             output=output or {},
         )
 
     def test_output_and_key_order_do_not_change_fingerprint(self):
-        first = self.config(output={"path": "results/a", "parallel_workers": 1})
-        second = self.config(output={"parallel_workers": 8, "path": "results/b"})
+        first = self.config(
+            output={"results_root": "results/a", "scenario_subpath": "case-a"}
+        )
+        second = self.config(
+            output={"scenario_subpath": "case-b", "results_root": "results/b"}
+        )
 
         self.assertEqual(first.fingerprint(), second.fingerprint())
         self.assertEqual(len(first.fingerprint()), 64)
@@ -93,10 +97,10 @@ class CanonicalConfigFingerprintTest(unittest.TestCase):
     def test_training_and_evaluation_identity_changes_fingerprint(self):
         baseline = self.config()
         for field, value in (
-            ("history_length", 49),
-            ("window_length", 25),
-            ("max_test_windows", 4),
-            ("test_window_stride", 5),
+            ("history_steps", 49),
+            ("train_window_steps", 25),
+            ("fold_count", 4),
+            ("stride_steps", 5),
         ):
             with self.subTest(field=field):
                 validation = dict(baseline.validation)
@@ -109,22 +113,26 @@ class CanonicalConfigFingerprintTest(unittest.TestCase):
     def test_only_nonsemantic_runtime_controls_are_excluded(self):
         first = self.config(
             validation={
-                "history_length": 48,
-                "window_length": 24,
-                "max_test_windows": 3,
-                "test_window_stride": 4,
-                "parallel_workers": 1,
-                "log_level": "INFO",
+                "history_steps": 48,
+                "train_window_steps": 24,
+                "fold_count": 3,
+                "stride_steps": 4,
+                "performance": {
+                    "window_parallel_workers": 1,
+                    "step_logging": True,
+                },
             }
         )
         second = self.config(
             validation={
-                "test_window_stride": 4,
-                "max_test_windows": 3,
-                "window_length": 24,
-                "history_length": 48,
-                "parallel_workers": 8,
-                "log_level": "DEBUG",
+                "stride_steps": 4,
+                "fold_count": 3,
+                "train_window_steps": 24,
+                "history_steps": 48,
+                "performance": {
+                    "step_logging": False,
+                    "window_parallel_workers": 8,
+                },
             }
         )
 
@@ -154,9 +162,11 @@ class CanonicalConfigFingerprintTest(unittest.TestCase):
         mutations.append(transform)
 
         sample_weight = baseline.canonical_payload()
-        sample_weight["validation"]["sample_weight"] = {
-            "method": "time_decay",
-            "half_life": 24,
+        sample_weight["validation"]["training"] = {
+            "sample_weight": {
+                "method": "time_decay",
+                "halflife_days": 24,
+            }
         }
         mutations.append(sample_weight)
 
@@ -199,7 +209,7 @@ class CanonicalConfigFingerprintTest(unittest.TestCase):
                     {"name": "direct", "config_ref": "direct.yaml"},
                     {"name": "recursive", "config_ref": "recursive.yaml"},
                 ],
-                "oof": {"train_window_length": 8, "fold_count": 2, "stride": 1},
+                "oof": {"train_window_steps": 8, "fold_count": 2, "stride_steps": 1},
                 "method": {"name": "averaging"},
             },
             "validation": {},

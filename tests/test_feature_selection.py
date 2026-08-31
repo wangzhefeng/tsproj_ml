@@ -23,7 +23,7 @@ from feature_engineering.selection import (
     selected_indices_for_artifact,
 )
 from model_forecasting.runtime import run_canonical_config
-from model_forecasting.specs.config import parse_model_config
+from forecasting_core.specs.config import parse_model_config
 
 
 class SelectionSpecParseTest(unittest.TestCase):
@@ -174,7 +174,13 @@ def _config_doc(data_path: Path, *, mode: str, selection: dict | None) -> dict:
                 "point_quantile": 0.5,
             }
         ),
-        "validation": {"forecast_origin": "2026-01-03T23:00:00"},
+        "validation": {
+            "forecast_origin": "2026-01-03T23:00:00",
+            "history_steps": 10_000,
+            "train_window_steps": 9_999,
+            "fold_count": 1,
+            "stride_steps": 2,
+        },
         "output": {"scenario_subpath": "feature-selection-test"},
     }
 

@@ -1,6 +1,6 @@
 """Canonical DirMO strategy executor."""
 
-from model_forecasting.specs.strategy import StrategyName
+from forecasting_core.specs.strategy import StrategyName
 from model_training.strategies.base import StandardStrategyExecutor
 
 

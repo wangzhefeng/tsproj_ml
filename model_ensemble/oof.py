@@ -13,7 +13,7 @@ from typing import Any, Mapping
 import numpy as np
 import pandas as pd
 
-from probabilistic.types import MarginalForecastDistribution
+from forecasting_core.artifacts import MarginalForecastDistribution
 
 from model_ensemble.artifacts import OOFPredictionArtifact
 from model_ensemble.contracts import BaseModelRunner
@@ -23,8 +23,8 @@ def oof_fold_origins(
     runner: BaseModelRunner,
     *,
     fold_count: int,
-    stride: int,
-    train_window_length: int,
+    stride_steps: int,
+    train_window_steps: int,
     gap_steps: int = 0,
     outer_cutoff_origin: pd.Timestamp | None = None,
 ):
@@ -55,7 +55,7 @@ def oof_fold_origins(
             candidate
             for candidate in range(0, index)
             if geometry.label_end(origins[candidate]) < holdout_label_start
-        )[-train_window_length:]
+        )[-train_window_steps:]
         if not train_indices:
             continue
         if outer_cutoff_origin is not None:
@@ -63,14 +63,14 @@ def oof_fold_origins(
             if geometry.label_end(holdout_origin) >= cutoff_label_start:
                 continue
         candidates.append((index, holdout_origin, train_indices))
-        if len(candidates) == fold_count * stride:
+        if len(candidates) == fold_count * stride_steps:
             break
     if not candidates:
         raise ValueError(
             "ensemble OOF requires at least one fold with non-overlapping "
             "training samples"
         )
-    chosen = list(reversed(candidates))[::stride][-fold_count:]
+    chosen = list(reversed(candidates))[::stride_steps][-fold_count:]
     folds = []
     for fold_number, (index, origin, train_indices) in enumerate(chosen, start=1):
         folds.append(
@@ -88,8 +88,8 @@ def generate_oof(
     runners: Mapping[str, BaseModelRunner],
     *,
     fold_count: int,
-    stride: int,
-    train_window_length: int,
+    stride_steps: int,
+    train_window_steps: int,
     gap_steps: int = 0,
     quantile_levels: tuple[float, ...] | None = None,
     outer_cutoff_origin: pd.Timestamp | None = None,
@@ -107,8 +107,8 @@ def generate_oof(
     folds = oof_fold_origins(
         first,
         fold_count=fold_count,
-        stride=stride,
-        train_window_length=train_window_length,
+        stride_steps=stride_steps,
+        train_window_steps=train_window_steps,
         gap_steps=gap_steps,
         outer_cutoff_origin=outer_cutoff_origin,
     )

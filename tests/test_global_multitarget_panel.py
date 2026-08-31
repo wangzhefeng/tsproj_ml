@@ -8,7 +8,7 @@ import pandas as pd
 from sklearn.linear_model import LinearRegression
 
 from model_training.estimators import EstimatorCapabilities
-from model_forecasting.specs import (
+from forecasting_core.specs import (
     ColumnSpec,
     DataSourceSpec,
     DataSpec,
@@ -18,7 +18,7 @@ from model_forecasting.specs import (
     ForecastProblemSpec,
     ForecastStrategySpec,
 )
-from model_forecasting.tensors import PointForecastTensor
+from forecasting_core.tensors import PointForecastTensor
 from model_forecasting.forecaster import CanonicalForecaster
 from model_training.trainer import CanonicalTrainer
 

@@ -20,17 +20,6 @@ data:
     time_col: time
     series_id_cols: []
     availability: source_time
-  - name: date_type
-    source_type: file
-    columns:
-    - name: date_type
-      role: known_future
-      categorical: true
-    history_path: dataset/aidc_power_month/freq_1month/ETTm1_exogenous/df_date.csv
-    future_path: dataset/aidc_power_month/freq_1month/ETTm1_exogenous/df_date_future.csv
-    time_col: date
-    series_id_cols: []
-    availability: forecast_origin
   - name: weather
     source_type: file
     columns:
@@ -46,6 +35,21 @@ data:
     - name: rt_ws10
       role: known_future
       categorical: false
+    - name: rt_tt2_max
+      role: ignored
+      categorical: false
+    - name: rt_tt2_min
+      role: ignored
+      categorical: false
+    - name: rt_dt
+      role: ignored
+      categorical: false
+    - name: weather_source
+      role: ignored
+      categorical: true
+    - name: source_ts
+      role: ignored
+      categorical: true
     history_path: dataset/aidc_power_month/freq_1month/weather_monthly_stats_202510_202607.csv
     backtest_path: dataset/aidc_power_month/freq_1month/weather_monthly_stats_backtest_proxy_202604_202607.csv
     future_path: dataset/aidc_power_month/freq_1month/weather_monthly_stats_future_202608.csv
@@ -65,10 +69,14 @@ features:
   - quarter
   - year
   transformations:
-    target_transform:
-      calendar_normalization: per_calendar_day
-      decomposition: none
-      target_scaling: none
+    target:
+      calendar_normalization:
+        method: per_calendar_day
+      decomposition:
+        method: none
+      scaling:
+        method: none
+        inverse: false
 strategy:
   name: recursive
 estimator:
@@ -94,9 +102,10 @@ validation:
   forecast_origin: '2026-07-31T00:00:00'
   schedule_mode: daily
   horizon_mode: fixed_steps
-  history_length: 10
-  window_length: 7
-  train_window_length: null
+  history_steps: 10
+  train_window_steps: 6
+  fold_count: 4
+  stride_steps: 1
 output:
   scenario_subpath: aidc_power_month/route_A/freq_1month/window_length_7
   setting_suffix: ''

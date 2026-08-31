@@ -13,6 +13,9 @@
 from pathlib import Path
 from typing import Any, Mapping
 
+from forecasting_core.specs.config import parse_model_config
+from model_ensemble.loader import parse_ensemble_document
+
 try:
     import yaml
 except ImportError:  # pragma: no cover - exercised only in incomplete envs
@@ -115,9 +118,6 @@ def load_yaml_config(config_yaml: str | Path):
     # v4 §5.2: route by mutually exclusive field sets. An `ensemble` mapping
     # marks a reference-based ensemble config; anything else must be a
     # single-model base config.
-    from model_ensemble.loader import parse_ensemble_document
-    from model_forecasting.specs.config import parse_model_config
-
     if isinstance(loaded.get("ensemble"), Mapping):
         return parse_ensemble_document(loaded, source_path=config_yaml)
     return parse_model_config(loaded, source=config_yaml)

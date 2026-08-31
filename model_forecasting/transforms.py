@@ -18,11 +18,11 @@ from sklearn.preprocessing import (
 from sklearn.base import clone
 
 from decomposition import DecompositionPipeline, resolve_decomposition_spec
-from model_forecasting.tensors import (
+from forecasting_core.tensors import (
     MarginalQuantileForecastTensor,
     PointForecastTensor,
 )
-from probabilistic.types import MarginalForecastDistribution
+from forecasting_core.artifacts import MarginalForecastDistribution
 
 
 _FEATURE_SCALING_METHODS = frozenset({"none", "minmax", "standard", "robust"})

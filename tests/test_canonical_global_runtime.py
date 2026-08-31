@@ -12,7 +12,7 @@ import numpy as np
 import pandas as pd
 
 from model_forecasting.runtime import run_canonical_config
-from model_forecasting.specs import (
+from forecasting_core.specs import (
     ColumnSpec,
     DataSourceSpec,
     DataSpec,
@@ -150,6 +150,10 @@ class CanonicalGlobalRuntimeTest(unittest.TestCase):
             ),
             validation={
                 "forecast_origin": "2026-01-04T19:00:00",
+                "history_steps": 10_000,
+                "train_window_steps": 9_999,
+                "fold_count": 1,
+                "stride_steps": 4,
                 "training_scope": {
                     **(
                         {"series_order": list(series_order)}
@@ -232,10 +236,10 @@ class CanonicalGlobalRuntimeTest(unittest.TestCase):
                             base.validation["training_scope"]["series_order"]
                         ),
                     },
-                    "history_length": 48,
-                    "window_length": 24,
-                    "max_test_windows": 2,
-                    "test_window_stride": 4,
+                    "history_steps": 48,
+                    "train_window_steps": 24,
+                    "fold_count": 2,
+                    "stride_steps": 4,
                 },
                 probabilistic={
                     "mode": "quantile",
@@ -344,6 +348,10 @@ class CanonicalGlobalRuntimeTest(unittest.TestCase):
             probabilistic=config.probabilistic,
             validation={
                 "forecast_origin": "2026-01-04T19:00:00",
+                "history_steps": 10_000,
+                "train_window_steps": 9_999,
+                "fold_count": 1,
+                "stride_steps": 4,
                 "training_scope": {
                     "series_order": [["east", "A"], ["west", "B"]],
                     "incomplete_series_policy": "raise",

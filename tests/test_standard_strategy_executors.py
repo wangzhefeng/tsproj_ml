@@ -6,7 +6,7 @@ import unittest
 import numpy as np
 import pandas as pd
 
-from model_forecasting.specs import ForecastStrategySpec
+from forecasting_core.specs import ForecastStrategySpec
 from model_training.strategies import (
     DirectExecutor,
     DirMOExecutor,
@@ -18,7 +18,7 @@ from model_training.strategies import (
     StrategyTargetPlan,
     TargetCoordinate,
 )
-from model_forecasting.tensors import PointForecastTensor
+from forecasting_core.tensors import PointForecastTensor
 
 
 class CalculableEstimator:

@@ -10,6 +10,13 @@ from pathlib import Path
 
 import yaml
 
+from forecasting_core.specs import (
+    DataSpec,
+    ForecastProblemSpec,
+    OutputSpec,
+    ProbabilisticConfigSpec,
+    RuntimeValidationSpec,
+)
 from model_ensemble.loader import (
     load_ensemble_config,
     parse_ensemble_document,
@@ -66,7 +73,7 @@ ENSEMBLE_DOC = {
             {"name": "direct", "config_ref": "direct.yaml"},
             {"name": "recursive", "config_ref": "recursive.yaml"},
         ],
-        "oof": {"train_window_length": 8, "fold_count": 2, "stride": 1},
+        "oof": {"train_window_steps": 8, "fold_count": 2, "stride_steps": 1},
         "method": {"name": "averaging"},
     },
     "validation": {"forecast_origin": "2026-01-03T23:00:00"},
@@ -100,6 +107,11 @@ class EnsembleLoaderTest(unittest.TestCase):
     def test_parse_and_resolve_ok(self):
         config = load_ensemble_config(self.root / "ens.yaml")
         self.assertEqual(config.method.name, "averaging")
+        self.assertIsInstance(config.problem, ForecastProblemSpec)
+        self.assertIsInstance(config.data, DataSpec)
+        self.assertIsInstance(config.probabilistic, ProbabilisticConfigSpec)
+        self.assertIsInstance(config.validation, RuntimeValidationSpec)
+        self.assertIsInstance(config.output, OutputSpec)
         self.assertEqual(
             [m.name for m in config.members], ["direct", "recursive"]
         )
@@ -158,6 +170,14 @@ class EnsembleLoaderTest(unittest.TestCase):
         with self.assertRaises(EnsembleSpecError):
             resolve_members(config, base_dir=self.root)
 
+    def test_top_level_problem_mismatch_raises(self):
+        doc = dict(ENSEMBLE_DOC)
+        doc["problem"] = dict(doc["problem"], horizon=99)
+        self._write("top_mismatch.yaml", doc)
+        config = load_ensemble_config(self.root / "top_mismatch.yaml")
+        with self.assertRaises(EnsembleSpecError):
+            resolve_members(config, base_dir=self.root)
+
     def test_cycle_self_reference_raises(self):
         doc = dict(ENSEMBLE_DOC)
         doc["ensemble"] = {
@@ -203,6 +223,30 @@ class EnsembleLoaderTest(unittest.TestCase):
         doc["unexpected"] = 1
         with self.assertRaises(EnsembleSpecError):
             parse_ensemble_document(doc)
+
+    def test_unknown_validation_field_raises_before_return(self):
+        import copy
+
+        doc = copy.deepcopy(ENSEMBLE_DOC)
+        doc["validation"]["totally_unknown_field"] = 1
+        with self.assertRaisesRegex(ValueError, "validation"):
+            parse_ensemble_document(doc, source_path="ensemble.yaml")
+
+    def test_unknown_probabilistic_field_raises_before_return(self):
+        import copy
+
+        doc = copy.deepcopy(ENSEMBLE_DOC)
+        doc["probabilistic"]["totally_unknown_field"] = 1
+        with self.assertRaisesRegex(ValueError, "probabilistic"):
+            parse_ensemble_document(doc, source_path="ensemble.yaml")
+
+    def test_unknown_output_field_raises_before_return(self):
+        import copy
+
+        doc = copy.deepcopy(ENSEMBLE_DOC)
+        doc["output"]["totally_unknown_field"] = 1
+        with self.assertRaisesRegex(ValueError, "output"):
+            parse_ensemble_document(doc, source_path="ensemble.yaml")
 
 
 if __name__ == "__main__":

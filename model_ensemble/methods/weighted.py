@@ -107,7 +107,9 @@ def combine_weighted(
     weights_2d = weight_matrix(method_artifact, stacked.shape[3], len(names))
     if stacked.ndim == 4:
         return np.einsum("km,mnhk->nhk", weights_2d, stacked)
-    return np.einsum("km,mnhqk->nhqk", weights_2d, stacked)
+    if stacked.ndim == 5:
+        return np.einsum("km,mnhkq->nhkq", weights_2d, stacked)
+    raise ValueError("member values must have shape (N,H,K[,Q])")
 
 
 __all__ = ["METHOD_NAME", "SUPPORTED_METRICS", "combine_weighted", "fit_weighted"]

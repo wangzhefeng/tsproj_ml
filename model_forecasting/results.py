@@ -11,8 +11,8 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-from model_forecasting.tensors import PointForecastTensor, require_matching_point_axes
-from probabilistic.types import MarginalForecastDistribution, QuantileGrid
+from forecasting_core.tensors import PointForecastTensor, require_matching_point_axes
+from forecasting_core.artifacts import MarginalForecastDistribution, QuantileGrid
 
 
 _CANONICAL_KEY_COLUMNS = ["series_id", "time", "target"]

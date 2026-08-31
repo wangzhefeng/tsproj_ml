@@ -35,19 +35,30 @@ features:
   observed_past_lags: {}
   datetime_features: []
   transformations:
-    direct_layout: independent_models
+    direct:
+      layout: independent_models
+      use_horizon_exogenous: false
+      align_to_target: false
     advanced:
-      rolling_windows:
-      - 7
-      - 14
-      - 28
-      diff_periods:
-      - 1
-      - 7
-      - 28
-      pct_change_periods:
-      - 1
-      - 7
+      rolling:
+        columns:
+        - value
+        windows:
+        - 7
+        - 14
+        - 28
+        stats:
+        - mean
+        - std
+        - min
+        - max
+      difference:
+        columns:
+        - value
+        periods:
+        - 1
+        - 7
+        - 28
 strategy:
   name: direct
 estimator:
@@ -72,9 +83,9 @@ validation:
   forecast_origin: '2026-07-31T00:00:00'
   schedule_mode: daily
   horizon_mode: calendar_month
-  history_length: 304
-  window_length: 150
-  train_window_length: 120
+  train_window_days: 120
+  fold_count: 6
+  stride_months: 1
 output:
   scenario_subpath: aidc_power_month/route_B/freq_1day/baseline
   setting_suffix: -conformal

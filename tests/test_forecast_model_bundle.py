@@ -8,8 +8,8 @@ import unittest
 from pathlib import Path
 
 from models.ModelSaveLoad import ModelDeployPkl
-from probabilistic.spec import ProbabilisticSpec
-from probabilistic.types import ForecastModelBundle
+from forecasting_core.probabilistic_spec import ProbabilisticSpec
+from forecasting_core.artifacts import ForecastModelBundle
 
 
 class ForecastModelBundleTest(unittest.TestCase):

@@ -6,7 +6,7 @@ Checks, over every ensemble YAML under config/:
 - the direct member reference is valid and the recursive member exists;
 - method distribution matches the migrated contract
   (averaging / linear_blending only);
-- exact model-YAML accounting: single + ensemble + ensemble_members == 848;
+- exact model-YAML accounting: single + ensemble + ensemble_members == 845;
 - reports orphan OOF cache directories under results/_ensemble_oof.
 
 Exit code 0 only when every check passes (orphan report is informational).
@@ -26,13 +26,19 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from model_ensemble.specs import EnsembleSpecError
 from config.config_loader import load_yaml_config
+from forecasting_core.specs import ForecastConfigSpec
 
-EXPECTED_TOTAL = 848
+EXPECTED_TOTAL = 845
 EXPECTED_METHODS = {"averaging", "linear_blending"}
 
 
 def _mapping(value):
     return isinstance(value, dict)
+
+
+def _is_single_model_config(path: str | Path) -> bool:
+    """Return whether a member reference resolves to the single-model typed spec."""
+    return isinstance(load_yaml_config(path), ForecastConfigSpec)
 
 
 def main() -> int:
@@ -67,7 +73,6 @@ def main() -> int:
     method_counter: dict[str, int] = {}
     referenced_refs: set[str] = set()
 
-    single_set = set(single_files)
     for path in ensemble_files:
         base_dir = Path(path).parent
         try:
@@ -92,10 +97,17 @@ def main() -> int:
                     "does not exist"
                 )
                 continue
-            if str(resolved) not in single_set and not resolved.exists():
+            try:
+                is_single_model = _is_single_model_config(resolved)
+            except Exception as exc:
+                failures.append(
+                    f"{path}: member {member.name!r} ref could not be parsed: {exc}"
+                )
+                continue
+            if not is_single_model:
                 failures.append(
                     f"{path}: member {member.name!r} ref is not a single-model "
-                    "config"
+                    "ForecastConfigSpec"
                 )
         names = [member.name for member in config.members]
         if names != ["direct", "recursive"]:

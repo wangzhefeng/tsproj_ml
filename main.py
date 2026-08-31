@@ -22,8 +22,10 @@ if ROOT not in sys.path:
     sys.path.append(ROOT)
 
 from config.config_loader import load_yaml_config
+from model_ensemble.specs import EnsembleConfigSpec
 from model_forecasting.runtime import run_canonical_config
-from model_forecasting.specs import ForecastConfigSpec
+from forecasting_core.specs import ForecastConfigSpec
+from utils.runtime_env import ensure_runtime_environment
 
 warnings.filterwarnings("ignore")
 
@@ -39,8 +41,6 @@ class CanonicalModel:
         if not isinstance(args, ForecastConfigSpec):
             raise TypeError("CanonicalModel requires ForecastConfigSpec")
         self.args = args
-        if args.strategy is None and args.ensemble is None:
-            raise ValueError("canonical config requires strategy or ensemble")
         output_identity = args.output.get("identity", {})
         if isinstance(output_identity, Mapping):
             self.scenario_subpath = str(
@@ -75,8 +75,6 @@ class CanonicalModel:
 
 def build_model(args: ForecastConfigSpec) -> CanonicalModel:
     """Build the only executable runtime; non-canonical configs are rejected."""
-    from model_ensemble.specs import EnsembleConfigSpec
-
     if isinstance(args, EnsembleConfigSpec):
         raise TypeError(
             "reference-based ensemble configs run through model_ensemble.runtime "
@@ -95,8 +93,6 @@ CONFIG_YAML = "config/aidc_load_15min_short/route_A/baseline/st_usmr_mean.yaml"
 
 def main() -> None:
     """Load one canonical schema YAML and execute the canonical runtime."""
-    from utils.runtime_env import ensure_runtime_environment
-
     ensure_runtime_environment()
     args = load_yaml_config(CONFIG_YAML)
     model = build_model(args)

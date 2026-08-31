@@ -12,8 +12,9 @@ import numpy as np
 import pandas as pd
 
 from data_loading import SourceRegistry
+from model_forecasting.design import minimum_history_rows
 from model_forecasting.runtime import _RegistryDesignBuilder, run_canonical_config
-from model_forecasting.specs import (
+from forecasting_core.specs import (
     ColumnSpec,
     DataSourceSpec,
     DataSpec,
@@ -29,10 +30,10 @@ from model_training.strategies import (
     StrategyModelGroupArtifact,
     StrategyTargetPlan,
 )
-from model_forecasting.tensors import PointForecastTensor
-from probabilistic.pipeline import CanonicalMarginalQuantileForecaster
+from forecasting_core.tensors import PointForecastTensor
+from model_forecasting.forecaster import CanonicalMarginalQuantileForecaster
 from probabilistic.training import CanonicalMarginalQuantileArtifact
-from probabilistic.types import ForecastModelBundle
+from forecasting_core.artifacts import ForecastModelBundle
 
 
 class _LagOffsetAdapter:
@@ -54,6 +55,7 @@ class CanonicalRuntimeSmokeTest(unittest.TestCase):
         strategy="recursive",
         horizon=2,
         output_chunk_length=None,
+        align_to_target=None,
     ):
         target_lags = (
             (1, 2, 3)
@@ -86,7 +88,16 @@ class CanonicalRuntimeSmokeTest(unittest.TestCase):
                 target_lags={"load": target_lags},
                 observed_past_lags={},
                 datetime_features=("hour",),
-                transformations={},
+                transformations=(
+                    {
+                        "direct": {
+                            "layout": "independent_models",
+                            "align_to_target": align_to_target,
+                        }
+                    }
+                    if align_to_target is not None
+                    else {}
+                ),
             ),
             strategy=ForecastStrategySpec(
                 strategy,
@@ -108,9 +119,34 @@ class CanonicalRuntimeSmokeTest(unittest.TestCase):
             ),
             validation={
                 "forecast_origin": "2026-01-02T23:00:00",
+                "history_steps": 10_000,
+                "train_window_steps": 9_999,
+                "fold_count": 1,
+                "stride_steps": horizon,
             },
             output={"scenario_subpath": "smoke", "setting_suffix": ""},
         )
+
+    def test_origin_frozen_direct_lags_require_origin_plus_history_rows(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            data_path = root / "load.csv"
+            pd.DataFrame(
+                {
+                    "time": pd.date_range("2026-01-01", periods=12, freq="1h"),
+                    "load": np.arange(12, dtype=float),
+                }
+            ).to_csv(data_path, index=False)
+            config = self.build_config(
+                data_path,
+                mode="point",
+                strategy="direct",
+                horizon=2,
+                align_to_target=False,
+            )
+            builder = _RegistryDesignBuilder(config, SourceRegistry(config.data, root))
+
+            self.assertEqual(minimum_history_rows(config), 5)
 
     def build_transformed_k2_config(self, data_path, *, mode):
         targets = ("load", "power")
@@ -168,7 +204,13 @@ class CanonicalRuntimeSmokeTest(unittest.TestCase):
                     "point_quantile": 0.5,
                 }
             ),
-            validation={"forecast_origin": "2026-01-04T11:00:00"},
+            validation={
+                "forecast_origin": "2026-01-04T11:00:00",
+                "history_steps": 10_000,
+                "train_window_steps": 9_999,
+                "fold_count": 1,
+                "stride_steps": 2,
+            },
             output={"scenario_subpath": f"transformed-{mode}"},
         )
 
@@ -248,10 +290,10 @@ class CanonicalRuntimeSmokeTest(unittest.TestCase):
                 probabilistic=base.probabilistic,
                 validation={
                     "forecast_origin": "2026-01-04T23:00:00",
-                    "history_length": 48,
-                    "window_length": 24,
-                    "max_test_windows": 3,
-                    "test_window_stride": 4,
+                    "history_steps": 48,
+                    "train_window_steps": 24,
+                    "fold_count": 3,
+                    "stride_steps": 4,
                 },
                 output=base.output,
             )
@@ -536,6 +578,10 @@ class CanonicalRuntimeSmokeTest(unittest.TestCase):
                 probabilistic={"mode": "point"},
                 validation={
                     "forecast_origin": origin.isoformat(),
+                    "history_steps": 10_000,
+                    "train_window_steps": 9_999,
+                    "fold_count": 1,
+                    "stride_steps": 2,
                 },
                 output={
                     "identity": {
@@ -845,6 +891,10 @@ class CanonicalRuntimeSmokeTest(unittest.TestCase):
                         probabilistic={"mode": "point"},
                         validation={
                             "forecast_origin": "2026-01-03T23:00:00",
+                            "history_steps": 10_000,
+                            "train_window_steps": 9_999,
+                            "fold_count": 1,
+                            "stride_steps": 4,
                         },
                         output={
                             "scenario_subpath": f"seven/{strategy}",

@@ -51,18 +51,19 @@ ensemble:
   - name: recursive
     config_ref: ensemble_members/lgbm_usbr_mean_control_no_cross_route_recursive.yaml
   oof:
-    train_window_length: 30
+    train_window_steps: 30
     fold_count: 1
-    stride: 1
+    stride_steps: 1
   method:
     name: averaging
 validation:
   forecast_origin: '2026-07-31T23:45:00'
   schedule_mode: daily
   horizon_mode: fixed_steps
-  history_length: 34
-  window_length: 30
-  train_window_length: null
+  history_steps: 3264
+  train_window_steps: 2784
+  fold_count: 5
+  stride_steps: 96
 output:
   scenario_subpath: aidc_load_15min_daily/route_A/add_endogenous_cross_route_weather_date
   setting_suffix: -control-no-cross-route

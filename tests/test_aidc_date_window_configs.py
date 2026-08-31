@@ -150,12 +150,12 @@ class AidcDateWindowModelConfigTest(unittest.TestCase):
                     date_type = self._source(cfg, "date_type")
                     weather = self._source(cfg, "weather")
                     self.assertEqual(cfg.estimator.model_type, "lightgbm")
-                    # 2026-08-30 折合同修复：history_length = 2*horizon + 1（原 32，
-                    # horizon=288 时非重叠合同要求 >= 289）
-                    self.assertEqual(cfg.validation["history_length"], 577)
-                    self.assertGreater(
-                        cfg.validation["history_length"], cfg.problem.horizon
-                    )
+                    # 固定步长几何统一按监督 origin steps 保存：32 天历史、
+                    # 15 天窗口扣除 H=288 后得到 4032 个训练 origins。
+                    self.assertEqual(cfg.validation["history_steps"], 32 * 288)
+                    self.assertEqual(cfg.validation["train_window_steps"], 15 * 288 - 288)
+                    self.assertEqual(cfg.validation["fold_count"], 18)
+                    self.assertEqual(cfg.validation["stride_steps"], 288)
                     self.assertEqual(Path(target.history_path).name, "df_power.csv")
                     self.assertEqual(cfg.problem.time_col, "time")
                     self.assertEqual(cfg.problem.targets, ("value",))
@@ -175,7 +175,11 @@ class AidcDateWindowModelConfigTest(unittest.TestCase):
 
         for config_path in config_paths:
             raw = yaml.safe_load(config_path.read_text(encoding="utf-8"))
-            self.assertEqual(raw["validation"]["window_length"], 15, config_path)
+            self.assertEqual(
+                raw["validation"]["train_window_steps"],
+                15 * 288 - 288,
+                config_path,
+            )
             sources = {source["name"]: source for source in raw["data"]["sources"]}
             self.assertEqual(
                 [column["name"] for column in sources["date_type"]["columns"]],

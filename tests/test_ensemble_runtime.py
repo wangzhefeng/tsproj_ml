@@ -16,11 +16,19 @@ import numpy as np
 import pandas as pd
 import yaml
 
+from model_ensemble.contracts import EnsembleRuntimeServices
 from model_ensemble.loader import load_ensemble_config
 from model_ensemble.runtime import run_ensemble_config
+from model_forecasting.runtime import CanonicalBaseModelRunner, persist_model_bundle
 
 from model_ensemble.methods.linear_blending import fit_nonnegative_stacking_weights
-from model_forecasting.specs.config import parse_model_config
+from forecasting_core.specs.config import parse_model_config
+
+
+RUNTIME_SERVICES = EnsembleRuntimeServices(
+    runner_factory=CanonicalBaseModelRunner,
+    persist_bundle=persist_model_bundle,
+)
 
 
 def _member_doc(
@@ -66,7 +74,13 @@ def _member_doc(
             "params": {"alpha": 1e-8} if estimator == "ridge" else {},
         },
         "probabilistic": {"mode": "point"},
-        "validation": {"forecast_origin": "2026-01-03T23:00:00"},
+        "validation": {
+            "forecast_origin": "2026-01-03T23:00:00",
+            "history_steps": 10_000,
+            "train_window_steps": 9_999,
+            "fold_count": 1,
+            "stride_steps": 2,
+        },
         "output": {"scenario_subpath": subpath},
     }
 
@@ -92,10 +106,16 @@ def _ensemble_doc(method: str, mode: str = "point") -> dict:
                 {"name": "m_direct", "config_ref": "member_direct.yaml"},
                 {"name": "m_recursive", "config_ref": "member_recursive.yaml"},
             ],
-            "oof": {"train_window_length": 6, "fold_count": 2, "stride": 1},
+            "oof": {"train_window_steps": 6, "fold_count": 2, "stride_steps": 1},
             "method": {"name": method},
         },
-        "validation": {"forecast_origin": "2026-01-03T23:00:00"},
+        "validation": {
+            "forecast_origin": "2026-01-03T23:00:00",
+            "history_steps": 10_000,
+            "train_window_steps": 9_999,
+            "fold_count": 1,
+            "stride_steps": 2,
+        },
         "output": {"scenario_subpath": f"ens-{method}-{mode}"},
     }
 
@@ -126,6 +146,7 @@ class EnsembleRuntimeTestBase(unittest.TestCase):
         path.write_text(yaml.safe_dump(doc), encoding="utf-8")
         config = load_ensemble_config(path)
         kwargs.setdefault("base_dir", self.root)
+        kwargs.setdefault("services", RUNTIME_SERVICES)
         return run_ensemble_config(config, output_root=self.root, **kwargs)
 
 
@@ -137,6 +158,23 @@ class EnsembleRuntimeMatrixTest(EnsembleRuntimeTestBase):
         members = result["member_final_values"]
         manual = (members["m_direct"] + members["m_recursive"]) / 2.0
         np.testing.assert_allclose(combined, manual)
+        cv_path = result["test_dir"] / "cv_plot_df.csv"
+        self.assertTrue(cv_path.exists())
+        cv = pd.read_csv(cv_path)
+        self.assertTrue(
+            {
+                "series_id",
+                "time",
+                "target",
+                "window",
+                "actual_value",
+                "predict_value",
+            }
+            .issubset(cv.columns)
+        )
+        self.assertFalse(
+            cv.duplicated(["series_id", "time", "target", "window"]).any()
+        )
 
     def test_learned_methods_end_to_end(self):
         for method in ("weighted", "linear_blending", "stacking"):

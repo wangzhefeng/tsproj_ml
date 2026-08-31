@@ -391,7 +391,7 @@ class EssStrategyPipelineTest(unittest.TestCase):
                         ESS_SAFE_LAGS,
                     )
                     self.assertEqual(
-                        loaded["features"]["transformations"]["direct_layout"],
+                        loaded["features"]["transformations"]["direct"]["layout"],
                         "single_model_horizon",
                     )
 

@@ -8,7 +8,7 @@ import math
 from collections.abc import Mapping
 from typing import Any, Callable
 
-from probabilistic.spec import ProbabilisticSpec
+from forecasting_core.probabilistic_spec import ProbabilisticSpec
 
 
 _MODEL_ALIASES = {

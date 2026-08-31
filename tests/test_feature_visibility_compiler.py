@@ -13,7 +13,7 @@ from data_loading import (
     SourceRegistry,
 )
 from feature_engineering import FeatureCompiler
-from model_forecasting.specs import (
+from forecasting_core.specs import (
     ColumnSpec,
     DataSourceSpec,
     DataSpec,
@@ -225,6 +225,40 @@ class FeatureVisibilityCompilerTest(unittest.TestCase):
                 request,
                 target_future_providers={(): provider},
             )
+
+    def test_direct_can_freeze_history_lags_at_forecast_origin(self):
+        """显式 align_to_target=false 时，Direct 各 horizon 共用原点历史。"""
+        self.write_fixture()
+        config = self.build_config(
+            target_lags={"load": (1,), "power": (1,)},
+            observed_lags={"humidity": (1,)},
+            transformations={
+                "direct": {
+                    "layout": "independent_models",
+                    "use_horizon_exogenous": True,
+                    "align_to_target": False,
+                }
+            },
+        )
+        request = self.request()
+
+        compiled = FeatureCompiler(config).compile(
+            self.materialize(config, request),
+            request,
+        )
+
+        self.assertEqual(compiled.frame["load__lag_1"].tolist(), [2.0, 2.0])
+        self.assertEqual(compiled.frame["power__lag_1"].tolist(), [20.0, 20.0])
+        self.assertEqual(compiled.frame["humidity__lag_1"].tolist(), [200.0, 200.0])
+        self.assertEqual(compiled.frame["temperature"].tolist(), [40.0, 50.0])
+        self.assertTrue(
+            all(
+                proof.source_time is not None
+                and proof.source_time <= request.forecast_origin
+                for proof in compiled.visibility_proof
+                if proof.role in {"target", "observed_past"}
+            )
+        )
 
     def test_recursive_requires_explicit_future_target_and_observed_providers(self):
         self.write_fixture()

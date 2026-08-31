@@ -30,11 +30,17 @@ class EssQuantileConfigMatrixTest(unittest.TestCase):
 
     @staticmethod
     def _target_transform(cfg):
-        return cfg.features.transformations.get("target_transform", {})
+        return cfg.features.transformations.get("target", {})
+
+    @classmethod
+    def _decomposition_method(cls, cfg):
+        return cls._target_transform(cfg).get("decomposition", {}).get(
+            "method", "none"
+        )
 
     def test_all_model_configs_use_nonoverlapping_backtest_contract(self):
-        # 2026-08-30 折合同修复：history_length 语义 = 折候选池大小，必须满足
-        # E1 非重叠合同 history_length > horizon（其余量级不限制窗口个数）。
+        # 2026-08-30 折合同修复：history_steps 语义 = 折候选池大小，必须满足
+        # E1 非重叠合同 history_steps > horizon（其余量级不限制窗口个数）。
         config_paths = sorted(
             path
             for path in CONFIG_ROOT.glob("route_*/**/*.yaml")
@@ -50,11 +56,11 @@ class EssQuantileConfigMatrixTest(unittest.TestCase):
                 continue
             self.assertEqual(cfg.problem.freq, "5min", path)
             n_per_day = 288
-            history_rows = int(cfg.validation["history_length"] * n_per_day)
-            window_rows = int(cfg.validation["window_length"] * n_per_day)
+            history_rows = int(cfg.validation["history_steps"] * n_per_day)
+            window_rows = int(cfg.validation["train_window_steps"] * n_per_day)
             self.assertGreater(history_rows, window_rows, path)
             self.assertGreater(
-                cfg.validation["history_length"],
+                cfg.validation["history_steps"],
                 cfg.problem.horizon / n_per_day,
                 path,
             )
@@ -89,9 +95,9 @@ class EssQuantileConfigMatrixTest(unittest.TestCase):
                 linear = load_yaml_config(str(folder / f"lgbm_{method}_prob_mean_decomp_linear.yaml"))
                 stl = load_yaml_config(str(folder / f"lgbm_{method}_prob_mean_decomp_stl288.yaml"))
                 mstl = load_yaml_config(str(folder / f"lgbm_{method}_prob_mean_decomp_mstl288-2016.yaml"))
-                self.assertEqual(self._target_transform(linear)["decomposition"], "linear")
-                self.assertEqual(self._target_transform(stl)["decomposition"], "stl")
-                self.assertEqual(self._target_transform(mstl)["decomposition"], "mstl")
+                self.assertEqual(self._decomposition_method(linear), "linear")
+                self.assertEqual(self._decomposition_method(stl), "stl")
+                self.assertEqual(self._decomposition_method(mstl), "mstl")
                 self.assertEqual(stl.output["setting_suffix"], "-decomp-stl288")
                 self.assertEqual(mstl.output["setting_suffix"], "-decomp-mstl288-2016")
                 self.assertEqual(linear.features.datetime_features, ())
@@ -119,7 +125,7 @@ class EssQuantileConfigMatrixTest(unittest.TestCase):
                     continue
                 self.assertEqual(cfg.features.datetime_features, (), path)
                 self.assertEqual(tuple(source.name for source in cfg.data.sources), ("target_history",), path)
-                self.assertEqual(self._target_transform(cfg).get("decomposition", "none"), "none", path)
+                self.assertEqual(self._decomposition_method(cfg), "none", path)
 
     def test_weather_date_uses_strict_native_weather_and_date_type(self):
         for route in ("A", "B"):
@@ -142,7 +148,7 @@ class EssQuantileConfigMatrixTest(unittest.TestCase):
                     self.assertEqual([column.name for column in weather.columns], WEATHER_COLS)
                     if group == "add_exogenous_weather_date":
                         self.assertEqual(tuple(source.name for source in cfg.data.sources), ("target_history", "date_type", "weather"))
-                    self.assertEqual(self._target_transform(cfg).get("decomposition", "none"), "none")
+                    self.assertEqual(self._decomposition_method(cfg), "none")
                     self.assertEqual(
                         cfg.output["scenario_subpath"],
                         f"aidc_ess_selfuse_load/route_{route}/{group}",
@@ -194,7 +200,7 @@ class EssQuantileConfigMatrixTest(unittest.TestCase):
                     )
                     continue
                 self.assertEqual(cfg.probabilistic["mode"], "point", path)
-                self.assertEqual(self._target_transform(cfg).get("decomposition", "none"), "none", path)
+                self.assertEqual(self._decomposition_method(cfg), "none", path)
                 self.assertEqual(
                     cfg.output["scenario_subpath"],
                     f"aidc_ess_selfuse_load/route_{route}/add_endogenous_actual_strategy",
@@ -215,12 +221,14 @@ class EssQuantileConfigMatrixTest(unittest.TestCase):
                 self.assertIsNotNone(cfg.strategy, path)
                 self.assertEqual(cfg.probabilistic["mode"], "quantile", path)
                 self.assertEqual(cfg.probabilistic["conformal"]["method"], "cqr", path)
-                self.assertEqual(self._target_transform(cfg).get("decomposition", "none"), "none", path)
+                self.assertEqual(self._decomposition_method(cfg), "none", path)
                 self.assertEqual(cfg.features.datetime_features, (), path)
                 self.assertEqual(len(cfg.data.sources), 2, path)
                 source = self._source(cfg, "strategy_features_v2_c5_joint")
                 self.assertEqual(len(source.columns), 50, path)
-                direct_layout = cfg.features.transformations.get("direct_layout")
+                direct_layout = cfg.features.transformations.get("direct", {}).get(
+                    "layout"
+                )
                 settings.add((path.name, direct_layout, cfg.output["setting_suffix"]))
                 if path.name == "lgbm_usmd_mean_prob_horizon_conformal.yaml":
                     self.assertEqual(direct_layout, "single_model_horizon", path)
@@ -242,7 +250,10 @@ class EssQuantileConfigMatrixTest(unittest.TestCase):
                 cfg = load_yaml_config(str(CONFIG_ROOT / f"route_{route}" / group / filename))
                 lags = cfg.features.target_lags["value"]
                 self.assertEqual(lags, tuple(USMDP_SAFE_LAGS))
-                self.assertEqual(cfg.features.transformations["direct_layout"], "single_model_horizon")
+                self.assertEqual(
+                    cfg.features.transformations["direct"]["layout"],
+                    "single_model_horizon",
+                )
                 self.assertGreaterEqual(min(lags), cfg.problem.horizon)
 
     def test_usmdr_uses_three_real_blocks(self):

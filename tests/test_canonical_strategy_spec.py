@@ -6,9 +6,9 @@ import unittest
 from dataclasses import FrozenInstanceError, fields
 from pathlib import Path
 
-import model_forecasting.specs as specs
-import model_forecasting.specs.strategy as strategy_module
-from model_forecasting.specs import ForecastStrategySpec, StrategyName
+import forecasting_core.specs as specs
+import forecasting_core.specs.strategy as strategy_module
+from forecasting_core.specs import ForecastStrategySpec, StrategyName
 
 
 class CanonicalStrategySpecValidTest(unittest.TestCase):
@@ -146,7 +146,7 @@ class CanonicalStrategySpecValidTest(unittest.TestCase):
         self.assertFalse(hasattr(specs, "ResolvedStrategyPlan"))
 
         with self.assertRaises(ImportError):
-            exec("from model_forecasting.specs.strategy import ResolvedStrategyPlan", {})
+            exec("from forecasting_core.specs.strategy import ResolvedStrategyPlan", {})
         with self.assertRaises(TypeError):
             strategy_module._ResolvedStrategyPlan()
         with self.assertRaises(TypeError):
@@ -165,7 +165,7 @@ class CanonicalStrategySpecValidTest(unittest.TestCase):
             self.assertIn(existing_export, specs.__all__)
             self.assertTrue(hasattr(specs, existing_export))
 
-        source_path = Path(__file__).resolve().parents[1] / "model_forecasting/specs/strategy.py"
+        source_path = Path(__file__).resolve().parents[1] / "forecasting_core/specs/strategy.py"
         module = ast.parse(source_path.read_text(encoding="utf-8"))
         imported_modules = {
             node.module or ""

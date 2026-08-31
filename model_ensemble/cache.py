@@ -18,6 +18,8 @@ from typing import Any, Mapping
 import numpy as np
 import pandas as pd
 
+from model_ensemble.artifacts import OOFPredictionArtifact
+
 OOF_SCHEMA_VERSION = 1
 
 OOF_PREDICTIONS_FILE = "oof_predictions.csv"
@@ -129,8 +131,6 @@ def load_oof_cache(
     Raises FileNotFoundError for a missing cache and ValueError for any
     corruption (missing files, incomplete columns, hash mismatch).
     """
-    from model_ensemble.artifacts import OOFPredictionArtifact
-
     directory = cache_dir(results_root, oof_fingerprint)
     for name in _REQUIRED_FILES:
         if not (directory / name).exists():

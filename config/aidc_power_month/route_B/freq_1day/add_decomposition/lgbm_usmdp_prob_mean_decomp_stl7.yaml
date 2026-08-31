@@ -20,17 +20,6 @@ data:
     time_col: time
     series_id_cols: []
     availability: source_time
-  - name: date_type
-    source_type: file
-    columns:
-    - name: date_type
-      role: known_future
-      categorical: true
-    history_path: dataset/aidc_power_month/freq_1day/ETTm1_exogenous/df_date.csv
-    future_path: dataset/aidc_power_month/freq_1day/ETTm1_exogenous/df_date_future.csv
-    time_col: date
-    series_id_cols: []
-    availability: forecast_origin
   - name: weather
     source_type: file
     columns:
@@ -77,11 +66,29 @@ features:
   - is_quarter_start
   - is_quarter_end
   transformations:
-    direct_layout: single_model_horizon
-    target_transform:
-      calendar_normalization: none
-      decomposition: stl
-      target_scaling: none
+    direct:
+      layout: single_model_horizon
+      use_horizon_exogenous: false
+      align_to_target: true
+      horizon_feature:
+        name: forecast_horizon_idx
+        cyclical: true
+    target:
+      calendar_normalization:
+        method: none
+      decomposition:
+        method: stl
+        periods:
+        - 7
+        robust: true
+        trend_degree: 1
+        trend_forecast: polynomial
+        damping: 0.98
+        trend_lookback: 28
+        seasonal_cycles: 4
+      scaling:
+        method: none
+        inverse: false
 strategy:
   name: direct
 estimator:
@@ -106,9 +113,9 @@ validation:
   forecast_origin: '2026-07-31T00:00:00'
   schedule_mode: daily
   horizon_mode: calendar_month
-  history_length: 304
-  window_length: 150
-  train_window_length: 120
+  train_window_days: 120
+  fold_count: 6
+  stride_months: 1
 output:
   scenario_subpath: aidc_power_month/route_B/freq_1day/add_decomposition
   setting_suffix: -decomp-stl7

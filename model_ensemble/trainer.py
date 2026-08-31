@@ -19,25 +19,17 @@ from model_ensemble.artifacts import (
 )
 from model_ensemble.contracts import BaseModelRunner
 from model_ensemble.evaluation import evaluate_fused_oof
+from model_ensemble.methods import averaging, linear_blending, stacking, weighted
 from model_ensemble.oof import actual_for_folds, generate_oof
 from model_ensemble.specs import EnsembleConfigSpec
-from probabilistic.types import MarginalForecastDistribution
+from forecasting_core.artifacts import ForecastModelBundle, MarginalForecastDistribution
 
-METHOD_IMPLEMENTATIONS: dict[str, Any] = {}
-
-
-def _implementations() -> dict[str, Any]:
-    global METHOD_IMPLEMENTATIONS
-    if not METHOD_IMPLEMENTATIONS:
-        from model_ensemble.methods import averaging, linear_blending, stacking, weighted
-
-        METHOD_IMPLEMENTATIONS = {
-            averaging.METHOD_NAME: averaging,
-            weighted.METHOD_NAME: weighted,
-            linear_blending.METHOD_NAME: linear_blending,
-            stacking.METHOD_NAME: stacking,
-        }
-    return METHOD_IMPLEMENTATIONS
+METHOD_IMPLEMENTATIONS: dict[str, Any] = {
+    averaging.METHOD_NAME: averaging,
+    weighted.METHOD_NAME: weighted,
+    linear_blending.METHOD_NAME: linear_blending,
+    stacking.METHOD_NAME: stacking,
+}
 
 
 @dataclass(frozen=True, slots=True)
@@ -83,14 +75,20 @@ def fit_ensemble(
     *,
     oof: OOFPredictionArtifact | None = None,
     outer_cutoff_origin: pd.Timestamp | None = None,
-) -> tuple[EnsembleArtifact, OOFPredictionArtifact, np.ndarray, dict[str, Any]]:
+) -> tuple[
+    EnsembleArtifact,
+    OOFPredictionArtifact,
+    dict[str, np.ndarray],
+    dict[str, ForecastModelBundle],
+    dict[str, Any],
+]:
     """Generate (or reuse) OOF, fit the fuser, refit members on full history.
 
     Returns ``(EnsembleArtifact, oof, final_member_predictions_by_name,
     audit_payload)`` where final member predictions are produced at the
     ensemble forecast origin with full-history fits.
     """
-    impls = _implementations()
+    impls = METHOD_IMPLEMENTATIONS
     method_name = config.method.name
     impl = impls[method_name]
     names = tuple(runners)
@@ -114,8 +112,8 @@ def fit_ensemble(
         oof = generate_oof(
             runners,
             fold_count=config.oof.fold_count,
-            stride=config.oof.stride,
-            train_window_length=config.oof.train_window_length,
+            stride_steps=config.oof.stride_steps,
+            train_window_steps=config.oof.train_window_steps,
             gap_steps=config.oof.gap_steps,
             quantile_levels=quantile_levels,
             outer_cutoff_origin=outer_cutoff_origin,
@@ -145,7 +143,11 @@ def fit_ensemble(
             metric=str(config.method.params.get("metric", "rmse")),
         )
     elif method_name == "linear_blending":
-        method_artifact = impl.fit_linear_blending(oof_values, actual)
+        method_artifact = impl.fit_linear_blending(
+            oof_values,
+            actual,
+            quantile_levels=quantile_levels,
+        )
     elif method_name == "stacking":
         method_artifact = impl.fit_stacking(oof_values, actual)
     else:  # defensive; specs already restrict names
@@ -156,17 +158,24 @@ def fit_ensemble(
     origin = first.origin
     times = first.forecast_times(origin)
     final_values: dict[str, np.ndarray] = {}
+    member_bundles: dict[str, ForecastModelBundle] = {}
     for name in names:
         runner = runners[name]
-        scaler, transform, _X, _Y, artifact = runner.fit(
-            tuple(range(len(runner.supervised_origins)))
-        )
+        scaler, transform, X_all, Y_all = runner.final_bundle_inputs()
+        trainer, artifact, capabilities = runner.fit_final(X_all, Y_all)
         designs, provider = runner.forecast_designs(origin, scaler, transform)
         prediction = runner.predict(artifact, designs, provider, times, transform)
         if isinstance(prediction, MarginalForecastDistribution):
             final_values[name] = prediction.quantiles.values
         else:
             final_values[name] = prediction.values
+        member_bundles[name] = runner.build_final_bundle(
+            scaler,
+            transform,
+            trainer,
+            artifact,
+            capabilities,
+        )
 
     member_scores = _member_oof_scores(oof, actual)
 
@@ -195,7 +204,7 @@ def fit_ensemble(
         "fold_count": len(folds),
     }
 
-    return ens_artifact, oof, final_values, audit
+    return ens_artifact, oof, final_values, member_bundles, audit
 
 
 __all__ = ["fit_ensemble", "MemberAuditScores"]

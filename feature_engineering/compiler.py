@@ -15,14 +15,14 @@ from data_loading import (
     MaterializedInformationSet,
     SourceLineage,
 )
-from model_forecasting.specs import (
+from forecasting_core.specs import (
     AvailabilityPolicy,
     ColumnRole,
     DataSourceSpec,
     ForecastConfigSpec,
     StrategyName,
 )
-from model_forecasting.transforms import (
+from feature_engineering.transform_specs import (
     normalize_feature_scaling,
     normalize_target_transformations,
 )
@@ -130,6 +130,7 @@ class FeatureCompiler:
         target_future_providers: Mapping[Any, EndogenousFutureProvider] | None = None,
         observed_future_providers: Mapping[Any, EndogenousFutureProvider] | None = None,
         horizon_steps: Sequence[int] | None = None,
+        visibility_cutoff: pd.Timestamp | None = None,
     ) -> CompiledFeatures:
         if not isinstance(information_set, MaterializedInformationSet):
             raise TypeError("information_set must be a MaterializedInformationSet")
@@ -154,6 +155,10 @@ class FeatureCompiler:
             for step_index in selected_steps:
                 target_time = request.forecast_times[step_index]
                 target_timestamp = cast(pd.Timestamp, pd.Timestamp(target_time))
+                history_anchor_time = self._history_anchor_time(
+                    request,
+                    target_timestamp,
+                )
                 row = self._identity_payload(identity)
                 row["target_time"] = target_timestamp
                 row["horizon_step"] = step_index + 1
@@ -165,6 +170,7 @@ class FeatureCompiler:
                     lag_mapping=self.features.target_lags,
                     identity=identity,
                     target_time=target_timestamp,
+                    source_anchor_time=history_anchor_time,
                     step_index=step_index,
                     request=request,
                     information_set=information_set,
@@ -177,6 +183,7 @@ class FeatureCompiler:
                     lag_mapping=self.features.observed_past_lags,
                     identity=identity,
                     target_time=target_timestamp,
+                    source_anchor_time=history_anchor_time,
                     step_index=step_index,
                     request=request,
                     information_set=information_set,
@@ -236,7 +243,17 @@ class FeatureCompiler:
                 if f"dt_{name}" in feature_names
             ),
         )
-        self._validate_visibility_proofs(proofs, request.forecast_origin)
+        normalized_cutoff = pd.Timestamp(
+            request.forecast_origin
+            if visibility_cutoff is None
+            else visibility_cutoff
+        )
+        if normalized_cutoff is pd.NaT:
+            raise ValueError("visibility_cutoff must be a valid timestamp")
+        cutoff = cast(pd.Timestamp, normalized_cutoff)
+        if cutoff < request.forecast_origin:
+            raise ValueError("visibility_cutoff must be at or after forecast_origin")
+        self._validate_visibility_proofs(proofs, cutoff)
         return CompiledFeatures(
             frame=frame,
             schema=FeatureSchema(
@@ -267,6 +284,21 @@ class FeatureCompiler:
                 )
             normalized.append(name)
         return tuple(dict.fromkeys(normalized))
+
+    def _history_anchor_time(
+        self,
+        request: InformationSetRequest,
+        target_time: pd.Timestamp,
+    ) -> pd.Timestamp:
+        """Resolve whether non-recursive historical features move with horizon."""
+        direct = self.features.transformations.get("direct")
+        if (
+            not self.resolved_strategy.consumes_previous
+            and isinstance(direct, Mapping)
+            and direct.get("align_to_target") is False
+        ):
+            return cast(pd.Timestamp, pd.Timestamp(request.forecast_origin))
+        return target_time
 
     def _validate_runtime_transformations(self) -> None:
         normalize_feature_scaling(
@@ -354,6 +386,7 @@ class FeatureCompiler:
         lag_mapping: Mapping[str, tuple[int, ...]],
         identity: Any,
         target_time: pd.Timestamp,
+        source_anchor_time: pd.Timestamp,
         step_index: int,
         request: InformationSetRequest,
         information_set: MaterializedInformationSet,
@@ -362,7 +395,7 @@ class FeatureCompiler:
         for column_name, lags in lag_mapping.items():
             source = self._source_for_column(column_name, role)
             for lag in lags:
-                source_time = target_time - lag * pd.tseries.frequencies.to_offset(
+                source_time = source_anchor_time - lag * pd.tseries.frequencies.to_offset(
                     self.problem.freq
                 )
                 feature_name = f"{column_name}__lag_{lag}"

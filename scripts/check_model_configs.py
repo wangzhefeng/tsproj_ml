@@ -26,17 +26,16 @@ import glob
 import sys
 from collections.abc import Mapping, Sequence
 from pathlib import Path
-from typing import Any, cast
+from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-import pandas as pd  # noqa: E402
-
 from config.config_loader import is_model_yaml, load_yaml_config  # noqa: E402
-from model_forecasting.specs import ForecastConfigSpec  # noqa: E402
+from feature_engineering.compiler import FeatureCompiler  # noqa: E402
+from forecasting_core.specs import ForecastConfigSpec  # noqa: E402
+from model_ensemble.specs import EnsembleConfigSpec  # noqa: E402
 from probabilistic.objectives import validate_quantile_model_support  # noqa: E402
-from probabilistic.spec import resolve_probabilistic_spec  # noqa: E402
-from utils.frequency import resolve_samples_per_day  # noqa: E402
+from forecasting_core.probabilistic_spec import resolve_probabilistic_spec  # noqa: E402
 
 PROJ = Path(__file__).resolve().parent.parent
 
@@ -45,11 +44,10 @@ _CANONICAL_NESTED_FIELDS = {
     "features.transformations": {
         "advanced",
         "direct",
-        "direct_layout",
         "feature_scaling",
         "target",
-        "target_transform",
         "datetime_categorical",
+        "interactions",
     },
     "features.transformations.advanced": {
         "rolling",
@@ -60,9 +58,6 @@ _CANONICAL_NESTED_FIELDS = {
         "cyclical",
         "interaction",
         "polynomial",
-        "rolling_windows",
-        "diff_periods",
-        "pct_change_periods",
     },
     "features.transformations.advanced.rolling": {"columns", "windows", "stats"},
     "features.selection": {
@@ -113,14 +108,19 @@ _CANONICAL_NESTED_FIELDS = {
         "forecast_origin",
         "schedule_mode",
         "horizon_mode",
-        "history_length",
-        "window_length",
-        "train_window_length",
+        "history_steps",
+        "train_window_steps",
+        "fold_count",
+        "stride_steps",
+        "train_window_days",
+        "stride_months",
         "training_scope",
         "training",
         "train_outlier",
         "eval_mask",
         "performance",
+        "aggregate_weighting",
+        "seasonal_naive_lag",
     },
     "validation.training_scope": {
         "incomplete_series_policy",
@@ -166,8 +166,6 @@ _CANONICAL_NESTED_FIELDS = {
     "validation.eval_mask": {"mode", "percentile", "min_value", "max_value"},
     "validation.performance": {
         "window_parallel_workers",
-        "max_test_windows",
-        "test_window_stride",
         "multi_output_n_jobs",
         "quantile_parallel_workers",
         "ensemble_parallel_workers",
@@ -470,9 +468,8 @@ def _check_canonical_transform_values(cfg: ForecastConfigSpec) -> list[str]:
     problems = [
         *_check_direct_transform(transformations.get("direct")),
         *_check_advanced_transform(transformations.get("advanced")),
-        *_check_target_transform(transformations.get("target_transform")),
+        *_check_target_transform(transformations.get("target")),
     ]
-    problems.extend(_check_advanced_target_leakage(cfg))
     return problems
 
 
@@ -506,96 +503,8 @@ def _check_advanced_target_leakage(cfg: ForecastConfigSpec) -> list[str]:
     return problems
 
 
-def _build_calendar_month_folds(
-    df_history: pd.DataFrame,
-    train_window_len: int,
-) -> list[dict[str, Any]]:
-    """Build complete 1D calendar-month folds for legacy config checks."""
-    if train_window_len <= 0:
-        raise ValueError("train_window_len must be > 0 for calendar_month folds")
-    times = pd.DatetimeIndex(pd.to_datetime(df_history["time"]))
-    if len(times) < 2:
-        return []
-    if not times.is_monotonic_increasing or times.has_duplicates:
-        raise ValueError("calendar_month folds require ordered unique timestamps")
-    if any(diff != pd.Timedelta(days=1) for diff in times[1:] - times[:-1]):
-        raise ValueError("calendar_month folds require a complete regular 1D index")
-
-    last_time = pd.Timestamp(int(times.asi8[-1]))
-    current_end = cast(pd.Timestamp, last_time + pd.offsets.MonthBegin(1))
-    folds = []
-    while True:
-        test_end_time = cast(pd.Timestamp, pd.Timestamp(current_end))
-        test_start_time = cast(
-            pd.Timestamp,
-            (test_end_time - pd.offsets.MonthBegin(1)).normalize(),
-        )
-        test_start = int(times.asi8.searchsorted(test_start_time.value, side="left"))
-        test_end = int(times.asi8.searchsorted(test_end_time.value, side="left"))
-        expected_horizon = int(test_start_time.days_in_month)
-        if test_start >= len(times) or times[test_start] != test_start_time:
-            break
-        if test_end - test_start != expected_horizon:
-            raise ValueError(f"incomplete calendar_month fold: {test_start_time:%Y-%m}")
-        train_end = test_start
-        train_start = train_end - int(train_window_len)
-        if train_start < 0:
-            break
-        folds.append(
-            {
-                "train_start": train_start,
-                "train_end": train_end,
-                "test_start": test_start,
-                "test_end": test_end,
-                "horizon": expected_horizon,
-            }
-        )
-        current_end = test_start_time
-    return folds
-
-
-def _resolve_runtime_shape(cfg) -> tuple[str, int, int, int, int]:
-    """返回 horizon_mode、最终 horizon、训练行数、窗口数、有效训练天数。"""
-    horizon_mode = str(getattr(cfg, "horizon_mode", "fixed_steps") or "fixed_steps").lower()
-    n_per_day = resolve_samples_per_day(cfg.freq)
-    if horizon_mode == "calendar_month":
-        if str(cfg.freq) != "1D":
-            raise ValueError("horizon_mode=calendar_month currently requires freq=1D")
-        if str(getattr(cfg, "schedule_mode", "daily")).lower() != "daily":
-            raise ValueError("horizon_mode=calendar_month requires schedule_mode=daily.")
-        train_window_length = getattr(cfg, "train_window_length", None)
-        if train_window_length is None or int(train_window_length) <= 0:
-            raise ValueError("calendar_month requires train_window_length > 0")
-        now_time = cast(pd.Timestamp, pd.Timestamp(cfg.now_time))
-        forecast_start = now_time.normalize() + pd.Timedelta(days=1)
-        if forecast_start.day != 1:
-            raise ValueError("calendar_month requires forecast_start at month start")
-        horizon = int(forecast_start.days_in_month)
-        train_rows = int(train_window_length) * n_per_day
-        history_start = forecast_start - pd.Timedelta(days=int(cfg.history_length))
-        theoretical_history = pd.DataFrame(
-            {"time": pd.date_range(history_start, forecast_start, freq="1D", inclusive="left")}
-        )
-        n_windows = len(
-            _build_calendar_month_folds(
-                theoretical_history,
-                train_window_len=train_rows,
-            )
-        )
-        return horizon_mode, horizon, train_rows, n_windows, int(train_window_length)
-    if horizon_mode != "fixed_steps":
-        raise ValueError(f"unknown horizon_mode={horizon_mode}")
-    window_len = int(cfg.window_length) * n_per_day
-    horizon = int(cfg.predict_steps)
-    train_rows = window_len - horizon
-    n_windows = (int(cfg.history_length) * n_per_day - window_len) // horizon + 1
-    return horizon_mode, horizon, train_rows, n_windows, int(cfg.window_length)
-
-
 def check_model_yaml(f: str) -> tuple[Any, list[str]]:
     """加载单个模型 YAML，返回 (cfg, problems)。problems 空 = 通过。"""
-    from model_ensemble.specs import EnsembleConfigSpec
-
     cfg: Any = load_yaml_config(f)
     if isinstance(cfg, ForecastConfigSpec):
         return _check_canonical_config(cfg)
@@ -636,13 +545,14 @@ def _check_canonical_config(
     problems.extend(_check_feature_contract(cfg))
     problems.extend(_check_canonical_transform_values(cfg))
     try:
-        if cfg.strategy is not None:
-            cfg.strategy.resolve(cfg.problem.horizon)
-        else:
-            if cfg.ensemble is None:
-                raise ValueError("canonical config requires strategy or ensemble")
-            for member in cfg.ensemble.members:
-                member.strategy.resolve(cfg.problem.horizon)
+        FeatureCompiler(cfg)
+    except (TypeError, ValueError) as exc:
+        problems.append(f"FeatureCompiler 配置错误: {exc}")
+    try:
+        strategy = cfg.strategy
+        if strategy is None:
+            raise AssertionError("ForecastConfigSpec requires strategy")
+        strategy.resolve(cfg.problem.horizon)
     except ValueError as exc:
         problems.append(f"strategy 配置错误: {exc}")
 
@@ -680,8 +590,11 @@ def main() -> int:
     warnings: list[tuple[str, list[str]]] = []
     for f in files:
         cfg, problems = check_model_yaml(f)
+        print(f"{f}")
         if isinstance(cfg, ForecastConfigSpec):
-            identity = cfg.strategy.name.value
+            strategy = cfg.strategy
+            if strategy is None:
+                raise AssertionError("ForecastConfigSpec requires strategy")
             lags = sorted(
                 {
                     int(lag)
@@ -689,16 +602,25 @@ def main() -> int:
                     for lag in values
                 }
             )
-            print(f"{f}")
             print(
-                f"    schema=2 identity={identity} freq={cfg.problem.freq} "
-                f"horizon={cfg.problem.horizon} targets={list(cfg.problem.targets)} "
-                f"max_lag={max(lags or [0])} fingerprint={cfg.fingerprint()[:12]}"
+                f"    schema=2 kind=single identity={strategy.name.value} "
+                f"freq={cfg.problem.freq} horizon={cfg.problem.horizon} "
+                f"targets={list(cfg.problem.targets)} max_lag={max(lags or [0])} "
+                f"fingerprint={cfg.fingerprint()[:12]}"
             )
-            if problems:
-                hard_failures.append((f, problems))
+        elif isinstance(cfg, EnsembleConfigSpec):
+            print(
+                f"    schema=2 kind=ensemble method={cfg.method.name} "
+                f"freq={cfg.problem.freq} horizon={cfg.problem.horizon} "
+                f"targets={list(cfg.problem.targets)} members={len(cfg.members)} "
+                f"fingerprint={cfg.fingerprint()[:12]}"
+            )
+        else:
+            raise TypeError(f"unsupported config type: {type(cfg).__name__}")
+        if problems:
+            hard_failures.append((f, problems))
 
-            print("\n=== 汇总 ===")
+    print("\n=== 汇总 ===")
     if hard_failures:
         print(f"发现 {len(hard_failures)} 个硬校验失败:")
         for f, probs in hard_failures:

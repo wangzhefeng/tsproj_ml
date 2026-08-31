@@ -6,7 +6,7 @@ from pathlib import Path
 import pandas as pd
 
 from config.config_loader import load_yaml_config
-from scripts.check_model_configs import _build_calendar_month_folds
+from model_testing.validation import calendar_month_folds
 
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -25,7 +25,7 @@ class CalendarMonthHorizonTest(unittest.TestCase):
 
         self.assertEqual(cfg.validation["horizon_mode"], "calendar_month")
         self.assertEqual(cfg.problem.horizon, 31)
-        self.assertEqual(cfg.validation["train_window_length"], 120)
+        self.assertEqual(cfg.validation["train_window_days"], 120)
         forecast_start = pd.Timestamp(cfg.validation["forecast_origin"]).floor("1D") + pd.Timedelta(days=1)
         forecast_end = forecast_start + pd.offsets.MonthBegin(1)
         self.assertEqual(forecast_start, pd.Timestamp("2026-08-01"))
@@ -40,18 +40,20 @@ class CalendarMonthHorizonTest(unittest.TestCase):
             }
         )
 
-        folds = _build_calendar_month_folds(df_history, train_window_len=120)
+        folds = calendar_month_folds(
+            df_history["time"],
+            train_window_days=120,
+            fold_count=6,
+            stride_months=1,
+        )
 
         self.assertEqual(len(folds), 6)
-        self.assertEqual([fold["horizon"] for fold in folds], [31, 30, 31, 30, 31, 28])
+        self.assertEqual([fold.horizon for fold in folds], [28, 31, 30, 31, 30, 31])
         self.assertTrue(
-            all(fold["train_end"] - fold["train_start"] == 120 for fold in folds)
+            all(len(fold.train_indices) == 120 for fold in folds)
         )
         self.assertTrue(
-            all(
-                fold["test_end"] - fold["test_start"] == fold["horizon"]
-                for fold in folds
-            )
+            all(len(fold.forecast_times) == fold.horizon for fold in folds)
         )
 
 

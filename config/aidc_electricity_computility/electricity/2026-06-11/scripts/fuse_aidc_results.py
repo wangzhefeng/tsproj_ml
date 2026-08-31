@@ -7,13 +7,12 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from data_process.outlier_handling import empty_train_outlier_report
 from model_evaluation.point import evaluate_point_forecasts
 from model_forecasting.results import (
     CanonicalResultReader,
     write_backtest_results,
 )
-from model_forecasting.tensors import PointForecastTensor
+from forecasting_core.tensors import PointForecastTensor
 
 
 DEFAULT_RESULTS_ROOT = Path(
@@ -23,6 +22,20 @@ DEFAULT_SCENARIOS = ["AIDC/route_A", "AIDC/route_B"]
 MODEL_A_NAME = "lightgbm-df_power-usmd-15"
 MODEL_B_NAME = "lightgbm-df_power-usmdp-2"
 FUSED_MODEL_NAME = "lightgbm-df_power-usmd-15__lightgbm-df_power-usmdp-2__avg_0505"
+TRAIN_OUTLIER_REPORT_COLUMNS = [
+    "window",
+    "time",
+    "raw_y",
+    "clean_y",
+    "outlier_type",
+    "run_length",
+    "rule",
+]
+
+
+def empty_train_outlier_report() -> pd.DataFrame:
+    """Return the historical report schema required by the fused result layout."""
+    return pd.DataFrame(columns=TRAIN_OUTLIER_REPORT_COLUMNS)
 
 
 def _read_curve_df(results_root: Path, scenario: str, model_name: str) -> pd.DataFrame:

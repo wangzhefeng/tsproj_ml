@@ -62,7 +62,13 @@ features:
   - day_of_year
   - year
   transformations:
-    direct_layout: single_model_horizon
+    direct:
+      layout: single_model_horizon
+      use_horizon_exogenous: false
+      align_to_target: true
+      horizon_feature:
+        name: forecast_horizon_idx
+        cyclical: true
 strategy:
   name: direct
 estimator:
@@ -87,9 +93,10 @@ validation:
   forecast_origin: '2026-07-31T14:00:00'
   schedule_mode: intraday
   horizon_mode: fixed_steps
-  history_length: 33
-  window_length: 15
-  train_window_length: null
+  history_steps: 1536
+  train_window_steps: 1424
+  fold_count: 7
+  stride_steps: 16
 output:
   scenario_subpath: aidc_load_15min_short/route_B/add_exogenous_weather_date
   setting_suffix: -conformal-intraday

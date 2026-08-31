@@ -22,9 +22,9 @@ from model_training.estimators.multi_target import (
     NativeMultiTargetAdapter,
     RegressorChainMultiTargetAdapter,
 )
-from model_forecasting.specs import EstimatorSpec, TargetAdapter
+from forecasting_core.specs import EstimatorSpec, TargetAdapter
 from model_training.strategies import StrategyTargetPlan, TargetCoordinate
-from model_forecasting.specs import ForecastStrategySpec
+from forecasting_core.specs import ForecastStrategySpec
 from models.ModelFactory import ModelFactory
 
 
@@ -610,7 +610,7 @@ class MultiTargetAdapterTests(unittest.TestCase):
 class ImportBoundaryTests(unittest.TestCase):
     def test_new_core_does_not_import_legacy_models_package(self):
         for path in (
-            Path("model_forecasting/specs/estimator.py"),
+            Path("forecasting_core/specs/estimator.py"),
             Path("model_training/estimators/capabilities.py"),
             Path("model_training/estimators/multi_target.py"),
             Path("model_training/strategies/base.py"),

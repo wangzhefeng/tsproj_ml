@@ -1,19 +1,15 @@
 # -*- coding: utf-8 -*-
-"""包间分层规则门禁 v2（AGENTS.md「包间分层规则」；2026-08-30 流水线阶段重排）。
+"""包间分层 DAG 门禁（AGENTS.md「包间分层规则」）。
 
-层级（依赖只允许从上往下，ast.walk 全量扫描，函数内延迟 import 同罪）：
+扫描所有活动包的顶层与函数内 import，强制：
 
-    L4  入口      main.py / run.py / config/config_loader.py（不受本门禁约束）
-    L3  能力扩展  probabilistic/（概率执行面）、model_ensemble/（融合）
-    L2  编排      model_forecasting/runtime.py（唯一编排器，豁免文件）
-    L1.5 阶段包   evaluation / testing / training / feature_engineering /
-                  data_loading（按流水线阶段单向依赖）
-    L1  核心合同  model_forecasting/{specs,tensors,transforms,results}、models/、
-                  decomposition/、data_process/
-    L0  基础      utils/
+1. 每个包只能依赖显式白名单中的下游包；
+2. 包级依赖图不存在强连通分量；
+3. 不允许用函数内 project import 绕过循环；
+4. ``model_ensemble`` 只能通过 Protocol/注入获取单模型 runner，
+   对 ``model_forecasting`` 的依赖限于稳定结果写入接口。
 
-白名单制：每个包只允许 import ALLOWED 中列出的项目内包/子模块根；
-`model_forecasting/runtime.py` 是编排器，豁免阶段包规则（仍不得 import ensemble）。
+稳定合同位于 ``forecasting_core/``；``model_forecasting/`` 仅负责运行编排。
 """
 
 import ast
@@ -23,6 +19,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 PROJECT_PACKAGES = {
+    "forecasting_core",
     "model_forecasting",
     "model_ensemble",
     "probabilistic",
@@ -37,43 +34,57 @@ PROJECT_PACKAGES = {
     "model_evaluation",
 }
 
-# 包级允许的项目内依赖（自身包隐含允许）
+# 包级允许的项目内依赖（自身包隐含允许）。该表本身即目标 DAG。
 ALLOWED_PACKAGES = {
     "utils": set(),
-    "data_process": {"utils"},
-    "decomposition": {"utils", "data_process"},
+    "forecasting_core": set(),
+    "data_process": set(),
+    "decomposition": {"data_process"},
     "models": {"utils"},
-    "data_loading": {"utils", "model_forecasting"},
-    "feature_engineering": {"utils", "model_forecasting", "data_loading"},
-    "model_training": {"utils", "model_forecasting", "models", "probabilistic"},
-    "model_testing": {"utils", "model_forecasting"},
-    "model_evaluation": {"utils", "model_forecasting", "probabilistic"},
-    "model_forecasting": {"utils", "model_forecasting", "probabilistic", "decomposition"},
-    "probabilistic": {"utils", "model_forecasting", "probabilistic", "model_training", "model_evaluation"},
-    "model_ensemble": {"utils", "model_forecasting", "probabilistic", "model_ensemble", "model_testing", "data_loading", "model_evaluation"},
+    "data_loading": {"forecasting_core"},
+    "feature_engineering": {
+        "forecasting_core",
+        "data_loading",
+        "decomposition",
+    },
+    "model_training": {"forecasting_core"},
+    "model_testing": {"forecasting_core"},
+    "model_evaluation": {"forecasting_core"},
+    "model_forecasting": {
+        "data_loading",
+        "decomposition",
+        "feature_engineering",
+        "forecasting_core",
+        "model_evaluation",
+        "model_testing",
+        "model_training",
+        "models",
+        "probabilistic",
+        "utils",
+    },
+    "probabilistic": {"forecasting_core", "model_training"},
+    "model_ensemble": {
+        "data_loading",
+        "forecasting_core",
+        "model_evaluation",
+        "model_forecasting",
+        "model_testing",
+    },
 }
 
-# 子模块根级精化：ALLOWED_PACKAGES 放行包后，再按「允许的具体根」收敛；
-# 未列出的包不做根级限制
+# 只对具有架构意义的窄接口做根级约束。
 ALLOWED_ROOTS = {
-    # 数据层只读配置合同，不碰编排/张量
-    "data_loading": {"model_forecasting.specs", "utils"},
-    # 特征编译可读变换（特征缩放器）与数据层
-    "feature_engineering": {"model_forecasting.specs", "model_forecasting.transforms", "model_forecasting.tensors", "data_loading", "utils"},
-    # 训练可读模型工厂/序列化与概率合同（quantile 编排的既有交错，仅限 spec/types）
-    "model_training": {"model_forecasting.specs", "model_forecasting.tensors", "models", "probabilistic.spec", "probabilistic.types", "utils"},
-    "model_testing": {"model_forecasting.tensors", "utils"},
-    "model_evaluation": {"model_forecasting.tensors", "probabilistic.types", "utils"},
-    # forecasting 核心合同文件（runtime.py 豁免除外）不得触阶段包/model_ensemble/models；
-    # results.py 可读写概率类型合同
-    "model_forecasting": {"model_forecasting", "probabilistic.types", "decomposition", "utils"},
-    # probabilistic 不得触 forecasting 编排面（runtime/results/data/features）
-    "probabilistic": {"model_forecasting.specs", "model_forecasting.tensors", "model_forecasting.forecaster", "model_training", "model_evaluation", "probabilistic", "utils"},
+    "model_ensemble": {
+        "data_loading",
+        "forecasting_core.artifacts",
+        "forecasting_core.specs",
+        "forecasting_core.tensors",
+        "model_evaluation",
+        "model_forecasting.deployment",
+        "model_forecasting.results",
+        "model_testing.backtest",
+    },
 }
-
-# 编排器豁免：model_forecasting/runtime.py 可 import 全部阶段包 + models（L2 编排职责），
-# 但仍不得 import ensemble
-ORCHESTRATOR_FILES = {"model_forecasting/runtime.py", "model_forecasting/forecaster.py"}
 
 
 def _iter_imports(tree):
@@ -88,6 +99,74 @@ def _iter_imports(tree):
             yield module, node.lineno
 
 
+def _package_edges() -> dict[str, set[str]]:
+    edges = {package: set() for package in PROJECT_PACKAGES}
+    for package in PROJECT_PACKAGES:
+        package_dir = ROOT / package
+        if not package_dir.is_dir():
+            continue
+        for path in package_dir.rglob("*.py"):
+            tree = ast.parse(path.read_text(encoding="utf-8"))
+            for module, _ in _iter_imports(tree):
+                target = module.split(".")[0].lstrip(".")
+                if target in PROJECT_PACKAGES and target != package:
+                    edges[package].add(target)
+    return edges
+
+
+def _find_cycle(edges: dict[str, set[str]]) -> list[str]:
+    visiting: list[str] = []
+    visited: set[str] = set()
+
+    def visit(node: str) -> list[str]:
+        if node in visiting:
+            start = visiting.index(node)
+            return visiting[start:] + [node]
+        if node in visited:
+            return []
+        visiting.append(node)
+        for target in sorted(edges[node]):
+            cycle = visit(target)
+            if cycle:
+                return cycle
+        visiting.pop()
+        visited.add(node)
+        return []
+
+    for package in sorted(edges):
+        cycle = visit(package)
+        if cycle:
+            return cycle
+    return []
+
+
+def _function_local_project_imports() -> list[str]:
+    found: list[str] = []
+    for package in sorted(PROJECT_PACKAGES):
+        package_dir = ROOT / package
+        if not package_dir.is_dir():
+            continue
+        for path in sorted(package_dir.rglob("*.py")):
+            tree = ast.parse(path.read_text(encoding="utf-8"))
+            relative = path.relative_to(ROOT)
+            for function in ast.walk(tree):
+                if not isinstance(function, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                    continue
+                for node in ast.walk(function):
+                    modules: list[str] = []
+                    if isinstance(node, ast.Import):
+                        modules = [alias.name for alias in node.names]
+                    elif isinstance(node, ast.ImportFrom):
+                        modules = [node.module or ""]
+                    for module in modules:
+                        target = module.split(".")[0].lstrip(".")
+                        if target in PROJECT_PACKAGES:
+                            found.append(
+                                f"{relative}:{getattr(node, 'lineno', 0)} imports {module}"
+                            )
+    return sorted(set(found))
+
+
 class InterPackageLayeringTest(unittest.TestCase):
     def _violations(self, pkg: str) -> list[str]:
         pkg_dir = ROOT / pkg
@@ -100,8 +179,6 @@ class InterPackageLayeringTest(unittest.TestCase):
             for module, lineno in _iter_imports(tree):
                 top = module.split(".")[0].lstrip(".")
                 if top == pkg or top not in PROJECT_PACKAGES:
-                    continue
-                if rel in ORCHESTRATOR_FILES and top != "model_ensemble":
                     continue
                 if top not in ALLOWED_PACKAGES.get(pkg, set()):
                     found.append(f"{rel}:{lineno} imports {module} (package not allowed)")
@@ -118,6 +195,9 @@ class InterPackageLayeringTest(unittest.TestCase):
 
     def test_utils_has_no_project_imports(self):
         self.assertEqual(self._violations("utils"), [])
+
+    def test_forecasting_core_has_no_project_imports(self):
+        self.assertEqual(self._violations("forecasting_core"), [])
 
     def test_data_process_stays_infra(self):
         self.assertEqual(self._violations("data_process"), [])
@@ -143,7 +223,7 @@ class InterPackageLayeringTest(unittest.TestCase):
     def test_evaluation_stage(self):
         self.assertEqual(self._violations("model_evaluation"), [])
 
-    def test_forecasting_core_contracts(self):
+    def test_forecasting_orchestration(self):
         self.assertEqual(self._violations("model_forecasting"), [])
 
     def test_probabilistic_capability(self):
@@ -151,6 +231,47 @@ class InterPackageLayeringTest(unittest.TestCase):
 
     def test_ensemble_stays_clean(self):
         self.assertEqual(self._violations("model_ensemble"), [])
+
+    def test_package_graph_is_acyclic(self):
+        self.assertEqual(_find_cycle(_package_edges()), [])
+
+    def test_no_function_local_project_imports(self):
+        self.assertEqual(_function_local_project_imports(), [])
+
+    def test_ensemble_runner_is_injected(self):
+        runtime = ROOT / "model_ensemble/runtime.py"
+        tree = ast.parse(runtime.read_text(encoding="utf-8"))
+        imports = [module for module, _ in _iter_imports(tree)]
+        self.assertNotIn("model_forecasting.runtime", imports)
+
+    def test_forecasting_runtime_delegates_design_fit_and_calendar_backtest(self):
+        """C4：runtime 只编排，不再内嵌 design/fit/calendar-backtest 实现。"""
+        expected_modules = {
+            "design.py",
+            "fit_service.py",
+            "backtest_runtime.py",
+            "persistence.py",
+        }
+        self.assertTrue(
+            expected_modules.issubset(
+                {path.name for path in (ROOT / "model_forecasting").glob("*.py")}
+            )
+        )
+        runtime_tree = ast.parse(
+            (ROOT / "model_forecasting" / "runtime.py").read_text(encoding="utf-8")
+        )
+        owned = {
+            node.name
+            for node in runtime_tree.body
+            if isinstance(node, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef))
+        }
+        self.assertTrue(
+            {
+                "_RegistryDesignBuilder",
+                "_fit_runtime_transforms",
+                "_overwrite_calendar_month_backtest",
+            }.isdisjoint(owned)
+        )
 
 
 if __name__ == "__main__":

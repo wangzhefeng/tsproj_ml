@@ -33,20 +33,31 @@ features:
   observed_past_lags: {}
   datetime_features: []
   transformations:
-    direct_layout: independent_models
+    direct:
+      layout: independent_models
+      use_horizon_exogenous: false
+      align_to_target: false
     advanced:
-      rolling_windows:
-      - 96
-      - 192
-      - 384
-      - 672
-      diff_periods:
-      - 96
-      - 192
-      - 672
-      pct_change_periods:
-      - 1
-      - 7
+      rolling:
+        columns:
+        - value
+        windows:
+        - 96
+        - 192
+        - 384
+        - 672
+        stats:
+        - mean
+        - std
+        - min
+        - max
+      difference:
+        columns:
+        - value
+        periods:
+        - 96
+        - 192
+        - 672
 estimator:
   model_type: lightgbm
   target_adapter: independent
@@ -71,9 +82,10 @@ validation:
   forecast_origin: '2026-07-31T23:45:00'
   schedule_mode: daily
   horizon_mode: fixed_steps
-  history_length: 193
-  window_length: 30
-  train_window_length: null
+  history_steps: 3264
+  train_window_steps: 2784
+  fold_count: 5
+  stride_steps: 96
 output:
   scenario_subpath: aidc_load_15min_daily/route_B/baseline/ensemble_members
   setting_suffix: -conformal-recursive-member

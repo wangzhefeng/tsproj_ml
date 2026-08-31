@@ -7,7 +7,7 @@ import numpy as np
 import pandas as pd
 
 from model_training.estimators import EstimatorCapabilities
-from model_forecasting.specs import (
+from forecasting_core.specs import (
     ColumnSpec,
     DataSourceSpec,
     DataSpec,
@@ -17,17 +17,17 @@ from model_forecasting.specs import (
     ForecastProblemSpec,
     ForecastStrategySpec,
 )
-from model_forecasting.tensors import (
+from forecasting_core.tensors import (
     MarginalQuantileForecastTensor,
     PointForecastTensor,
 )
 from model_evaluation.marginal import evaluate_marginal_distribution
-from probabilistic.pipeline import (
+from model_forecasting.forecaster import (
     CanonicalMarginalQuantileForecaster,
     repair_marginal_quantile_crossing,
 )
 from probabilistic.training import CanonicalMarginalQuantileTrainer
-from probabilistic.types import (
+from forecasting_core.artifacts import (
     MarginalForecastDistribution,
     generate_joint_samples,
 )

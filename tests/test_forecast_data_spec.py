@@ -6,8 +6,8 @@ import unittest
 from dataclasses import FrozenInstanceError
 from pathlib import Path
 
-import model_forecasting.specs as specs
-from model_forecasting.specs import (
+import forecasting_core.specs as specs
+from forecasting_core.specs import (
     AvailabilityPolicy,
     ColumnRole,
     ColumnSpec,
@@ -205,7 +205,7 @@ class ForecastDataSpecValidTest(unittest.TestCase):
         )
 
     def test_data_module_has_no_legacy_runtime_imports(self):
-        source_path = Path(__file__).parents[1] / "model_forecasting" / "specs" / "data.py"
+        source_path = Path(__file__).parents[1] / "forecasting_core" / "specs" / "data.py"
         module = ast.parse(source_path.read_text(encoding="utf-8"))
         imported_modules = set()
         imported_symbols = set()

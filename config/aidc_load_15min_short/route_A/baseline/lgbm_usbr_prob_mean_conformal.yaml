@@ -41,18 +41,19 @@ ensemble:
   - name: recursive
     config_ref: ensemble_members/lgbm_usbr_prob_mean_conformal_recursive.yaml
   oof:
-    train_window_length: 15
+    train_window_steps: 15
     fold_count: 1
-    stride: 1
+    stride_steps: 1
   method:
     name: linear_blending
 validation:
   forecast_origin: '2026-07-31T14:00:00'
   schedule_mode: intraday
   horizon_mode: fixed_steps
-  history_length: 16
-  window_length: 15
-  train_window_length: null
+  history_steps: 1536
+  train_window_steps: 1424
+  fold_count: 7
+  stride_steps: 16
 output:
   scenario_subpath: aidc_load_15min_short/route_A/baseline
   setting_suffix: -conformal-intraday

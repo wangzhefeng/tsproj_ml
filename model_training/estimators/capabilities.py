@@ -12,7 +12,7 @@ import numpy as np
 import pandas as pd
 from sklearn.base import clone
 
-from model_forecasting.specs.estimator import EstimatorCapabilities
+from forecasting_core.specs.estimator import EstimatorCapabilities
 
 __all__ = ["EstimatorCapabilities"]  # 合同类型自 specs 再导出（向后兼容）
 

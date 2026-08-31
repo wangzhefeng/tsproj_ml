@@ -15,8 +15,8 @@ from decomposition.base import ComponentExtractor, to_datetime_index
 from decomposition.composers import AdditiveComposer
 from decomposition.extractors import MSTLExtractor, NoneExtractor, PolyTrendExtractor, STLExtractor
 from decomposition.forecasters import PhaseTemplateForecaster, PolyTrendForecastForecaster
-from decomposition.spec import ComponentSpec, DecompositionSpec
-from decomposition.types import TARGET_KEY
+from decomposition.spec import ComponentSpec, DecompositionSpec, resolve_decomposition_spec
+from decomposition.types import TARGET_KEY, ComponentForecast
 
 
 class DecompositionPipeline:
@@ -150,8 +150,6 @@ class DecompositionPipeline:
         return component
 
     def forecast_components(self, future_times: pd.DatetimeIndex):
-        from decomposition.types import ComponentForecast
-
         parts: dict[str, np.ndarray] = {}
         if self._trend_forecaster is not None:
             t = self._trend_forecaster.predict(future_times)
@@ -186,7 +184,5 @@ class DecompositionPipeline:
     @staticmethod
     def from_args(args: Any, log_prefix: str = "[DecompositionPipeline]", verbose: bool = False) -> "DecompositionPipeline":
         """从 cfg 构造 pipeline（主链入口，替代旧 TargetDecomposer(args)）。"""
-        from decomposition.spec import resolve_decomposition_spec
-
         spec = resolve_decomposition_spec(args)
         return DecompositionPipeline(spec)

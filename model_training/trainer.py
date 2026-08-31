@@ -16,7 +16,7 @@ from model_training.estimators import (
     NativeMultiTargetAdapter,
     RegressorChainMultiTargetAdapter,
 )
-from model_forecasting.specs import ForecastConfigSpec, TargetAdapter
+from forecasting_core.specs import ForecastConfigSpec, TargetAdapter
 from model_training.strategies import (
     AdapterPredictor,
     CanonicalStrategyArtifact,
@@ -24,9 +24,6 @@ from model_training.strategies import (
     StrategyTargetPlan,
     TargetCoordinate,
 )
-from models.ModelSaveLoad import ModelDeployPkl
-from probabilistic.spec import ProbabilisticSpec
-from probabilistic.types import ForecastModelBundle
 
 # global variable
 LOGGING_LABEL = Path(__file__).name[:-3]
@@ -360,88 +357,6 @@ class CanonicalTrainer:
             H=self.config.problem.horizon,
             K=len(self.config.problem.targets),
         )
-
-    def build_model_bundle(
-        self,
-        artifact: CanonicalStrategyArtifact,
-        *,
-        feature_scaler=None,
-        target_transform=None,
-        input_schema=None,
-        feature_lineage=(),
-        source_lineage=(),
-        series_ids=(),
-    ) -> ForecastModelBundle:
-        if not isinstance(artifact, CanonicalStrategyArtifact):
-            raise TypeError("artifact must be a CanonicalStrategyArtifact")
-        mode = str(self.config.probabilistic.get("mode", "point"))
-        if mode == "point":
-            probabilistic_spec = ProbabilisticSpec(
-                mode="point",
-                quantiles=(),
-                point_quantile=0.5,
-                recursive_propagation="median_path",
-                crossing_method="none",
-                crossing_report_raw=True,
-                intervals=(),
-                calibration=None,
-            )
-        elif mode == "quantile":
-            probabilistic_spec = ProbabilisticSpec(
-                mode="quantile",
-                quantiles=tuple(
-                    float(level)
-                    for level in self.config.probabilistic.get("quantiles", ())
-                ),
-                point_quantile=float(
-                    self.config.probabilistic.get("point_quantile", 0.5)
-                ),
-                recursive_propagation="median_path",
-                crossing_method="median_preserving_isotonic",
-                crossing_report_raw=True,
-                intervals=(),
-                calibration=None,
-            )
-        else:
-            raise ValueError(f"unsupported canonical probabilistic mode: {mode!r}")
-        estimator_payload = self.config.estimator.canonical_payload()
-        estimator_payload["capabilities"] = self.capabilities.canonical_payload()
-        assert self.config.strategy is not None
-        return ForecastModelBundle(
-            schema_version=2,
-            model=artifact,
-            feature_scaler=feature_scaler,
-            target_transform=target_transform,
-            selected_features=self.feature_schema,
-            input_schema=dict(input_schema or {"columns": list(self.feature_schema)}),
-            probabilistic_spec=probabilistic_spec,
-            model_type=self.config.estimator.model_type,
-            pred_method=None,
-            canonical_problem=self.config.problem.canonical_payload(),
-            strategy_spec=self.config.strategy.canonical_payload(),
-            estimator_spec=estimator_payload,
-            dimensions=(artifact.N, artifact.H, artifact.K),
-            series_ids=tuple(series_ids),
-            target_order=self.config.problem.targets,
-            feature_lineage=tuple(dict(item) for item in feature_lineage),
-            source_lineage=tuple(dict(item) for item in source_lineage),
-            training_scope=self.config.problem.training_scope,
-            result_schema_version=2,
-            config_fingerprint=self.config.fingerprint(),
-        )
-
-    def save_model_bundle(
-        self,
-        output_dir: str | Path,
-        artifact: CanonicalStrategyArtifact,
-        **metadata,
-    ) -> ForecastModelBundle:
-        output_path = Path(output_dir)
-        output_path.mkdir(parents=True, exist_ok=True)
-        bundle = self.build_model_bundle(artifact, **metadata)
-        ModelDeployPkl(output_path / "model.pkl").save_model(bundle)
-        bundle.write_schema_json(output_path / "resolved_model.json")
-        return bundle
 
     def _target_block(
         self,

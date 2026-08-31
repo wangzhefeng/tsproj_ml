@@ -17,11 +17,11 @@ from model_forecasting.results import (
     write_backtest_results,
     write_forecast_results,
 )
-from model_forecasting.tensors import (
+from forecasting_core.tensors import (
     MarginalQuantileForecastTensor,
     PointForecastTensor,
 )
-from probabilistic.types import MarginalForecastDistribution
+from forecasting_core.artifacts import MarginalForecastDistribution
 
 
 class ForecastResultSchemaTest(unittest.TestCase):

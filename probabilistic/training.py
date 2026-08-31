@@ -12,8 +12,9 @@ import numpy as np
 import pandas as pd
 
 from model_training.estimators import EstimatorCapabilities
-from model_forecasting.specs import ForecastConfigSpec
-from probabilistic.spec import ProbabilisticSpec
+from model_training.trainer import CanonicalTrainer
+from forecasting_core.specs import ForecastConfigSpec
+from forecasting_core.probabilistic_spec import ProbabilisticSpec
 
 
 @dataclass(frozen=True, slots=True)
@@ -99,8 +100,6 @@ class CanonicalMarginalQuantileTrainer:
         sample_weight: np.ndarray | None = None,
         n_series: int = 1,
     ) -> CanonicalMarginalQuantileArtifact:
-        from model_training.trainer import CanonicalTrainer
-
         artifacts = {}
         for level in self.levels:
             estimator_factory = self.estimator_factory_for_level(level)

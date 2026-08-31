@@ -54,6 +54,106 @@ class TimeGeometry:
 
 
 @dataclass(frozen=True, slots=True)
+class CalendarMonthFold:
+    """One complete calendar-month holdout with a fixed preceding day window."""
+
+    window: int
+    origin_index: int
+    origin: pd.Timestamp
+    train_indices: tuple[int, ...]
+    forecast_times: pd.DatetimeIndex
+    horizon: int
+    metadata: dict[str, Any]
+
+
+def calendar_month_folds(
+    timestamps: Iterable[pd.Timestamp],
+    *,
+    train_window_days: int,
+    fold_count: int,
+    stride_months: int,
+) -> tuple[CalendarMonthFold, ...]:
+    """Build complete month-aligned folds in chronological order.
+
+    Each fold predicts one whole month and trains on exactly the preceding
+    ``train_window_days`` daily rows. The newest complete month anchors the
+    sequence; preceding folds are spaced by ``stride_months`` calendar months.
+    """
+    if (
+        isinstance(train_window_days, bool)
+        or not isinstance(train_window_days, int)
+        or train_window_days <= 0
+    ):
+        raise ValueError("train_window_days must be a positive integer")
+    for field_name, value in (
+        ("fold_count", fold_count),
+        ("stride_months", stride_months),
+    ):
+        if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+            raise ValueError(f"{field_name} must be a positive integer")
+
+    times = pd.DatetimeIndex(pd.to_datetime(tuple(timestamps)))
+    if times.empty:
+        return ()
+    if times.has_duplicates or not times.is_monotonic_increasing:
+        raise ValueError("calendar-month folds require ordered unique timestamps")
+    normalized = times.normalize()
+    if not times.equals(normalized):
+        raise ValueError("calendar-month folds require normalized daily timestamps")
+    expected = pd.date_range(times[0], times[-1], freq="1D")
+    if not times.equals(expected):
+        raise ValueError("calendar-month folds require a complete regular 1D index")
+
+    candidates: list[tuple[pd.Timestamp, int, int]] = []
+    current = times[-1].to_period("M")
+    while len(candidates) < fold_count * stride_months:
+        month_start = current.to_timestamp()
+        month_end = (current + 1).to_timestamp()
+        test_start = int(times.searchsorted(month_start, side="left"))
+        test_end = int(times.searchsorted(month_end, side="left"))
+        horizon = int(month_start.days_in_month)
+        complete = (
+            test_start < len(times)
+            and times[test_start] == month_start
+            and test_end - test_start == horizon
+        )
+        if complete and test_start >= train_window_days:
+            candidates.append((month_start, test_start, test_end))
+        if month_start <= times[0]:
+            break
+        current -= 1
+
+    ordered = list(reversed(candidates[::stride_months][:fold_count]))
+    folds = []
+    for window, (month_start, test_start, test_end) in enumerate(
+        ordered, start=1
+    ):
+        train_indices = tuple(range(test_start - train_window_days, test_start))
+        forecast_times = times[test_start:test_end]
+        origin_index = test_start - 1
+        origin = pd.Timestamp(times[origin_index])
+        folds.append(
+            CalendarMonthFold(
+                window=window,
+                origin_index=origin_index,
+                origin=origin,
+                train_indices=train_indices,
+                forecast_times=forecast_times,
+                horizon=len(forecast_times),
+                metadata={
+                    "window": window,
+                    "origin": origin.isoformat(),
+                    "calendar_month": month_start.strftime("%Y-%m"),
+                    "label_start": forecast_times[0].isoformat(),
+                    "label_end": forecast_times[-1].isoformat(),
+                    "training_sample_count": len(train_indices),
+                },
+            )
+        )
+    return tuple(folds)
+
+
+@dataclass(frozen=True, slots=True)
 class RollingOriginFold:
     """One rolling-origin split: origins before ``origin`` train the holdout."""
 
@@ -75,26 +175,25 @@ def rolling_origin_folds(
     origins: tuple[pd.Timestamp, ...],
     geometry: TimeGeometry,
     *,
-    history_length: int | None,
-    window_length: int,
-    max_windows: int,
-    stride: int,
+    history_steps: int | None,
+    train_window_steps: int,
+    fold_count: int,
+    stride_steps: int,
 ) -> tuple[RollingOriginFold, ...]:
-    """Rolling-origin folds with the canonical non-overlap contract.
+    """Rolling-origin folds with an explicit supervised-origin-step contract.
 
-    Contract (identical to the pre-extraction `_rolling_backtest_windows`):
-    the candidate set is the last ``history_length`` origins; holdouts are the
-    last ``max_windows`` candidates spaced ``stride`` apart, chronologically
-    ordered; each holdout trains on the last ``window_length`` candidates whose
-    labels end strictly before the holdout label start.
+    The candidate set is the last ``history_steps`` origins; holdouts are the
+    last ``fold_count`` candidates spaced ``stride_steps`` apart, chronologically
+    ordered; each holdout trains on the last ``train_window_steps`` candidates
+    whose labels end strictly before the holdout label start.
     """
-    if history_length is None:
-        history_length = len(origins)
-    history_length = min(len(origins), history_length)
-    history_start = len(origins) - history_length
+    if history_steps is None:
+        history_steps = len(origins)
+    history_steps = min(len(origins), history_steps)
+    history_start = len(origins) - history_steps
     candidates = tuple(
-        range(len(origins) - 1, history_start - 1, -stride)
-    )[:max_windows]
+        range(len(origins) - 1, history_start - 1, -stride_steps)
+    )[:fold_count]
     folds = []
     for window, origin_index in enumerate(reversed(candidates), start=1):
         holdout_origin = origins[origin_index]
@@ -103,7 +202,7 @@ def rolling_origin_folds(
             index
             for index in range(history_start, origin_index)
             if geometry.label_end(origins[index]) < holdout_label_start
-        )[-window_length:]
+        )[-train_window_steps:]
         if not train_indices:
             raise ValueError(
                 "canonical rolling backtest requires at least one non-overlapping "

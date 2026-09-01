@@ -57,11 +57,6 @@ def _ensemble_output_paths(
     config: EnsembleConfigSpec,
     output_root: str | Path | None,
 ) -> tuple[Path, Path, Path, Path]:
-    root = Path(
-        output_root
-        if output_root is not None
-        else str(config.output.get("results_root", "results"))
-    )
     identity = config.output.get("identity", {})
     scenario = str(
         identity.get("scenario_subpath", "canonical")
@@ -71,6 +66,25 @@ def _ensemble_output_paths(
     if not scenario or scenario == "canonical":
         scenario = str(config.output.get("scenario_subpath", "canonical"))
     scenario = scenario.strip("/") or "canonical"
+    if output_root is not None:
+        run_dir = Path(output_root) / scenario / config.result_identity()
+        return (
+            run_dir,
+            run_dir / "pretrained_models",
+            run_dir / "results_test",
+            run_dir / "results_forecast",
+        )
+    directories = config.output.get("directories", {})
+    if isinstance(directories, Mapping) and {
+        "checkpoints",
+        "tests",
+        "forecast",
+    }.issubset(directories):
+        model_dir = Path(str(directories["checkpoints"])) / scenario / config.result_identity()
+        test_dir = Path(str(directories["tests"])) / scenario / config.result_identity()
+        forecast_dir = Path(str(directories["forecast"])) / scenario / config.result_identity()
+        return forecast_dir, model_dir, test_dir, forecast_dir
+    root = Path(str(config.output.get("results_root", "results")))
     run_dir = root / scenario / config.result_identity()
     return (
         run_dir,

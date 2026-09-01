@@ -13,6 +13,7 @@ from decomposition.residual_diagnostics import (
     summarize_window_residuals,
     write_residual_diagnostics,
 )
+from decomposition.periods import acf_periods, detect_periodicity, fft_dominant_period
 from decomposition.spec import (
     RESERVED_METHODS,
     ComponentSpec,
@@ -35,6 +36,9 @@ __all__ = [
     "build_pipeline_from_args",
     "resolve_decomposition_spec",
     "write_diagnostics_report",
+    "acf_periods",
+    "detect_periodicity",
+    "fft_dominant_period",
     "diagnose_window_residual",
     "summarize_window_residuals",
     "write_residual_diagnostics",

@@ -38,8 +38,8 @@ PROJECT_PACKAGES = {
 ALLOWED_PACKAGES = {
     "utils": set(),
     "forecasting_core": set(),
-    "data_process": set(),
-    "decomposition": {"data_process"},
+    "data_process": {"decomposition"},
+    "decomposition": set(),
     "models": {"utils"},
     "data_loading": {"forecasting_core"},
     "feature_engineering": {

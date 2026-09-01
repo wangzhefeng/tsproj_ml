@@ -5,7 +5,7 @@ import unittest
 import numpy as np
 import pandas as pd
 
-from data_process.periodicity_analysis import detect_periodicity
+from decomposition.periods import detect_periodicity
 
 
 class PeriodicityAnalysisTest(unittest.TestCase):

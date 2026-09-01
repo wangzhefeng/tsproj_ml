@@ -17,7 +17,7 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-from data_process.periodicity_analysis import acf_periods, fft_dominant_period
+from decomposition.periods import acf_periods, fft_dominant_period
 
 
 @dataclass

@@ -34,8 +34,7 @@ The general coding guidelines (Karpathy: think before coding, simplicity, surgic
 ### 模型工厂（ModelFactory）
 - **支持的模型类型**：LightGBM（`lgb`/`lightgbm`）、XGBoost（`xgb`/`xgboost`）、CatBoost（`cat`/`catboost`）、RandomForest（`rf`/`randomforest`）、HistGradientBoosting（`histgb`/`histgradientboosting`）、Ridge（`ridge`）、ElasticNet（`enet`/`elasticnet`）、Lasso（`lasso`）、QuantileRegressor（`qr`/`quantileregressor`）、SeasonalTemplate（`st`/`seasonaltemplate`，工作日/周末分组建模板 + NNLS 学权重）
 - **融合训练数据一致性**：所有融合方法的成员 final fit 与对应单模型使用同一显式训练窗口；禁止某方法只训练部分历史或与回测窗口采用不同隐式策略。
-- **自定义外生特征注册表**（`custom_features`，`ExogenousFeatureConfig`）：多文件来源通路，每项 `{name, history_path, future_path, future_strategy, availability, ts_col, columns, categorical_columns}`。`future_strategy=freeze_last_observation + availability=end_of_period` 表示当期结束后可得的预测原点状态：Direct/DirRec 训练保留原点值且禁止 horizon shift；Recursive/Pointwise 训练按 1 个 freq 步向后对齐（行 t 使用上一期状态）；CV/final future 取 cutoff 前最后状态冻结到全 horizon。典型用途：完整日负荷状态；不得把目标日真实状态展开为 future 外生。
-- **测试可视化叠加**（`plot_overlay_path`/`plot_overlay_col`，`OutputConfig`）：在测试图（test_prediction.png / window_plots）上以次坐标轴叠加一条参考曲线（如 PCS 功率），量级差异大时不压扁主曲线
+- **多文件外生来源**（2026-09-01 文档漂移清理：legacy `custom_features`/`ExogenousFeatureConfig` 与 `plot_overlay_path`/`plot_overlay_col` 已随 canonical 收口删除，canonical 代码与全部现役 YAML 零引用）：多文件外生一律走 `data.sources` 多 source 声明——历史有真值、预测期无值的列挂 `observed_past` 角色 + 显式 provider 三选一（`persistence`/`auxiliary`/`provided_scenario`，禁止隐式 persistence）；未来可知的列（天气预报/计划表）挂 `known_future` 角色并用 `history_path + backtest_path + future_path` 三段路径。测试图叠加参考曲线需求未迁移，如需恢复按 canonical OutputConfig 重新设计。
 
 ### AIDC 负荷事件标签工具链（2026-08 新增）
 - **共享检测核心** `data_process/load_event_detection.py`（有单测 `tests/test_load_event_detection.py`）：事件分类 shift_up/down（持久阶跃=集中上下架）、stress_up/down（1~21 天临时偏移=压测/临时操作）、burst_up/down（1.25h~24h 日内冲击）、spike_up/down（≤1h 功率突变）；三个探测器（自顶向下日级分段 + 短时偏移 + 15min 残差 MAD 突变）+ 边界伪影抑制 + 事件→逐点/逐日投影
@@ -44,6 +43,7 @@ The general coding guidelines (Karpathy: think before coding, simplicity, surgic
 - 注意 `dataset/aidc_load_month/` 目录名沿用场景名，文件实际是 **1day 粒度**
 
 ### 低频（日/周/月）数据配置约定
+- **中国节假日 builtin generator**（2026-09-01 新增，方案 A 默认 + B 审计兜底）：generator 名 `chinese_holiday`（chinese-calendar 后端，builtin 注册、无需 run_canonical_config 传参）。YAML 声明 `source_type: generated + generator: chinese_holiday + availability: generator_defined`（generated known_future 的 spec 层强约束），列 `is_holiday`（含调休连休）/`holiday_name`（categorical）/`next_holiday_days`（节前倒计时，日历日；超出已知年历取删失哨兵 400——次年年历通常年底发布，属有文档截断非编造值）。库覆盖 2004 起逐年扩展，覆盖外日期直接 RAISE 不静默降级；每年底国务院发布次年安排后需 `uv add chinese-calendar --upgrade`。审计兜底：`scripts/export_chinese_holiday_csv.py` 导出与在线逐点一致（有测试）。日频/日内频率适用；月频网格不适用（known_future 逐点精确匹配 RAISE）。现役 YAML 零处使用，场景启用属语义变更，按消融流程单独验证。
 - **freq 必须写 `1D` 而非 `D`**：`default_lags_for_freq` 只认 `1D`，写 `D` 会落回 5min 基准 lags（`[288,576,...]`），与低频数据错配
 - **月频（`1ME`/`1MS`）已支持**：频率解析位于 `utils/frequency.py`；月频 seasonal-naive 使用月步 offset，不得转换为固定 Timedelta。
 - **月度/日度气象严格信息集**（aidc_power_month）：现役载体是 canonical 通用机制——`DataSpec` 列角色 + `SourceRegistry` as-of 校验（`available_at <= forecast_origin`，目标时间戳缺失直接 RAISE）；legacy 字段 `strict_weather_information_set`、`weather_backtest_path`、`weather_*_source` 已废弃且无运行时语义（2026-08-29 收敛方案核实：现役 845 YAML 零处使用）。语义要求不变：历史训练天气为 actual；滑窗测试必须消费独立 ex-ante forecast/proxy 文件 source；正式 future 只允许 forecast|proxy；禁止把测试月实测天气当未来天气。2026-08 日频 future 使用 2025-08 同日纯代理（31 天），不含 2026-08 实测；回测 2026-01~07 使用上一年同日代理（212 天）。

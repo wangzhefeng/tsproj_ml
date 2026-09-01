@@ -498,3 +498,7 @@ output:
   scenario_subpath: ''
   setting_suffix: ''
   results_root: results
+  directories:
+    checkpoints: ./results/pretrained_models/
+    tests: ./results/results_test/
+    forecast: ./results/results_forecast/

@@ -104,3 +104,7 @@ output:
   scenario_subpath: aidc_power_month/route_A/freq_1day/add_decomposition
   setting_suffix: -decomp-stl7
   results_root: results
+  directories:
+    checkpoints: ./results/pretrained_models/
+    tests: ./results/results_test/
+    forecast: ./results/results_forecast/

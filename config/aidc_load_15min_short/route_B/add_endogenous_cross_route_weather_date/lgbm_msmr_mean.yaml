@@ -103,3 +103,7 @@ output:
   scenario_subpath: aidc_load_15min_short/route_B/add_endogenous_cross_route_weather_date
   setting_suffix: -intraday
   results_root: results
+  directories:
+    checkpoints: ./results/pretrained_models/
+    tests: ./results/results_test/
+    forecast: ./results/results_forecast/

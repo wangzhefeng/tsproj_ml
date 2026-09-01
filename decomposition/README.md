@@ -22,6 +22,7 @@ Extractor（拆分）→ Forecaster（分量外推）→ Composer（合成）→
 | `registry.py` | 从 spec 构造 pipeline；未实现方法在此层 fail-fast |
 | `diagnostics.py` | 分解诊断报告（`decomposition_diagnostics.csv`） |
 | `residual_diagnostics.py` | 残差 FFT/ACF 频谱诊断，为扩展方法提供量化证据 |
+| `periods.py` | 周期检测纯数值核心（FFT/ACF/STL 季节强度），跨包共用：`residual_diagnostics` 与 `data_process/periodicity_analysis` 的唯一事实源 |
 | `bundle.py` | 历史分解 bundle 的只读加载兼容；新产物只写 `ForecastModelBundle`，不再新建 sidecar |
 
 ## 边界

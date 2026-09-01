@@ -1,0 +1,502 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "tsproj_ml 分层架构（canonical 单运行时）",
+    "locale": "zh-CN",
+    "quality_profile": "showcase",
+    "viewBox": [
+      1360,
+      850
+    ]
+  },
+  "components": [
+    {
+      "id": "entry",
+      "type": "frontend",
+      "label": "main.py / run.py",
+      "sublabel": "canonical 入口（单模型 / 批量）",
+      "pos": [
+        140,
+        70
+      ],
+      "size": [
+        240,
+        64
+      ]
+    },
+    {
+      "id": "config-loader",
+      "type": "frontend",
+      "label": "config/config_loader.py",
+      "sublabel": "load_yaml_config() → schema-2",
+      "pos": [
+        480,
+        70
+      ],
+      "size": [
+        220,
+        64
+      ]
+    },
+    {
+      "id": "probabilistic",
+      "type": "cloud",
+      "label": "probabilistic/",
+      "sublabel": "边际 quantile 训练与校准",
+      "pos": [
+        60,
+        200
+      ],
+      "size": [
+        220,
+        64
+      ]
+    },
+    {
+      "id": "ensemble",
+      "type": "cloud",
+      "label": "model_ensemble/",
+      "sublabel": "引用式融合四方法 + OOF 证据",
+      "pos": [
+        700,
+        200
+      ],
+      "size": [
+        240,
+        64
+      ]
+    },
+    {
+      "id": "runtime",
+      "type": "backend",
+      "label": "model_forecasting/",
+      "sublabel": "运行时编排与产物持久化",
+      "pos": [
+        320,
+        330
+      ],
+      "size": [
+        360,
+        64
+      ]
+    },
+    {
+      "id": "data-loading",
+      "type": "backend",
+      "label": "data_loading/",
+      "sublabel": "SourceRegistry + as-of 校验",
+      "pos": [
+        160,
+        460
+      ],
+      "size": [
+        190,
+        64
+      ]
+    },
+    {
+      "id": "feature-engineering",
+      "type": "backend",
+      "label": "feature_engineering/",
+      "sublabel": "FeatureCompiler 特征编译",
+      "pos": [
+        420,
+        460
+      ],
+      "size": [
+        190,
+        64
+      ]
+    },
+    {
+      "id": "model-training",
+      "type": "backend",
+      "label": "model_training/",
+      "sublabel": "Trainer + 七策略执行器",
+      "pos": [
+        660,
+        460
+      ],
+      "size": [
+        190,
+        64
+      ]
+    },
+    {
+      "id": "model-evaluation",
+      "type": "backend",
+      "label": "model_evaluation/",
+      "sublabel": "point / marginal 指标",
+      "pos": [
+        900,
+        460
+      ],
+      "size": [
+        190,
+        64
+      ]
+    },
+    {
+      "id": "model-testing",
+      "type": "backend",
+      "label": "model_testing/",
+      "sublabel": "回测折构造与验证",
+      "pos": [
+        1140,
+        460
+      ],
+      "size": [
+        190,
+        64
+      ]
+    },
+    {
+      "id": "core",
+      "type": "messagebus",
+      "label": "forecasting_core/",
+      "sublabel": "specs / tensors / artifacts",
+      "pos": [
+        320,
+        590
+      ],
+      "size": [
+        360,
+        64
+      ]
+    },
+    {
+      "id": "models",
+      "type": "database",
+      "label": "models/",
+      "sublabel": "ModelFactory 十种回归器",
+      "pos": [
+        140,
+        720
+      ],
+      "size": [
+        200,
+        64
+      ]
+    },
+    {
+      "id": "decomposition",
+      "type": "database",
+      "label": "decomposition/",
+      "sublabel": "分解 + periods 周期核心",
+      "pos": [
+        400,
+        720
+      ],
+      "size": [
+        200,
+        64
+      ]
+    },
+    {
+      "id": "data-process",
+      "type": "database",
+      "label": "data_process/",
+      "sublabel": "离线数据准备工具库",
+      "pos": [
+        660,
+        720
+      ],
+      "size": [
+        200,
+        64
+      ]
+    },
+    {
+      "id": "utils",
+      "type": "database",
+      "label": "utils/",
+      "sublabel": "三个无领域语义工具",
+      "pos": [
+        900,
+        720
+      ],
+      "size": [
+        200,
+        64
+      ]
+    },
+    {
+      "id": "asset-config",
+      "type": "external",
+      "label": "config/*.yaml",
+      "sublabel": "845 活动 schema-2 配置",
+      "pos": [
+        940,
+        70
+      ],
+      "size": [
+        220,
+        64
+      ]
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "L4 入口层",
+      "wraps": [
+        "entry",
+        "config-loader"
+      ]
+    },
+    {
+      "kind": "region",
+      "label": "L3 能力扩展层",
+      "wraps": [
+        "ensemble",
+        "probabilistic"
+      ]
+    },
+    {
+      "kind": "region",
+      "label": "L2 运行编排层",
+      "wraps": [
+        "runtime"
+      ]
+    },
+    {
+      "kind": "region",
+      "label": "阶段顶层包",
+      "wraps": [
+        "data-loading",
+        "feature-engineering",
+        "model-training",
+        "model-testing",
+        "model-evaluation"
+      ]
+    },
+    {
+      "kind": "region",
+      "label": "稳定合同层",
+      "wraps": [
+        "core"
+      ]
+    },
+    {
+      "kind": "region",
+      "label": "L1 基础设施",
+      "wraps": [
+        "models",
+        "decomposition",
+        "data-process"
+      ]
+    },
+    {
+      "kind": "region",
+      "label": "L0 基础工具",
+      "wraps": [
+        "utils"
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "id": "entry-runtime",
+      "from": "entry",
+      "to": "runtime",
+      "variant": "emphasis",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "entry-loader",
+      "from": "entry",
+      "to": "config-loader",
+      "fromSide": "right",
+      "toSide": "left"
+    },
+    {
+      "id": "config-in",
+      "from": "asset-config",
+      "to": "config-loader",
+      "variant": "dashed",
+      "fromSide": "left",
+      "toSide": "right"
+    },
+    {
+      "id": "loader-ensemble",
+      "from": "config-loader",
+      "to": "ensemble",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "via": [
+        [
+          590,
+          167
+        ],
+        [
+          820,
+          167
+        ]
+      ]
+    },
+    {
+      "id": "runtime-prob",
+      "from": "runtime",
+      "to": "probabilistic",
+      "fromSide": "left",
+      "toSide": "bottom"
+    },
+    {
+      "id": "ensemble-runtime",
+      "from": "ensemble",
+      "to": "runtime",
+      "fromSide": "bottom",
+      "toSide": "right"
+    },
+    {
+      "id": "runtime-core",
+      "from": "runtime",
+      "to": "core",
+      "variant": "emphasis",
+      "fromSide": "left",
+      "toSide": "left",
+      "via": [
+        [
+          120,
+          362
+        ],
+        [
+          120,
+          622
+        ]
+      ]
+    },
+    {
+      "id": "runtime-loading",
+      "from": "runtime",
+      "to": "data-loading",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "runtime-features",
+      "from": "runtime",
+      "to": "feature-engineering",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "runtime-training",
+      "from": "runtime",
+      "to": "model-training",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "runtime-testing",
+      "from": "runtime",
+      "to": "model-testing",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "runtime-evaluation",
+      "from": "runtime",
+      "to": "model-evaluation",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "loading-core",
+      "from": "data-loading",
+      "to": "core",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "features-core",
+      "from": "feature-engineering",
+      "to": "core",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "training-core",
+      "from": "model-training",
+      "to": "core",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "testing-core",
+      "from": "model-testing",
+      "to": "core",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "evaluation-core",
+      "from": "model-evaluation",
+      "to": "core",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "features-loading",
+      "from": "feature-engineering",
+      "to": "data-loading",
+      "fromSide": "left",
+      "toSide": "right"
+    },
+    {
+      "id": "models-utils",
+      "from": "models",
+      "to": "utils",
+      "fromSide": "bottom",
+      "toSide": "bottom",
+      "via": [
+        [
+          240,
+          826
+        ],
+        [
+          1000,
+          826
+        ]
+      ]
+    },
+    {
+      "id": "dataprocess-decomposition",
+      "from": "data-process",
+      "to": "decomposition",
+      "fromSide": "left",
+      "toSide": "right"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "分层规则",
+      "items": [
+        "依赖只许从上往下，同层禁互依",
+        "循环依赖即缺陷；门禁白名单固化边界",
+        "唯一豁免：L3 ensemble → probabilistic"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "canonical 主链",
+      "items": [
+        "schema-2 YAML → run_canonical_config()",
+        "七策略 recursive … dirrecmo",
+        "变换链：归一化 → 分解 → 缩放，逆序恢复"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "关键边界与省略",
+      "items": [
+        "845 配置全 schema-2，无 legacy 层",
+        "仅 point + 边际 quantile，无 CQR",
+        "省略边与完整 DAG 见分层门禁白名单"
+      ]
+    }
+  ]
+}

@@ -33,7 +33,12 @@ def _requirement_names(lines: list[str]) -> set[str]:
 
 
 class DependencyContractTests(unittest.TestCase):
-    def test_lock_and_export_cover_all_direct_dependencies(self) -> None:
+    def test_lock_covers_all_direct_dependencies(self) -> None:
+        """pyproject 直接依赖必须全部被 uv.lock 锁定。
+
+        requirements.txt 已于 2026-09-01 移除（依赖唯一权威 = pyproject.toml +
+        uv.lock）；如需导出冻结清单，用 `uv export` 现场生成，不入库。
+        """
         with (ROOT / "pyproject.toml").open("rb") as stream:
             project = tomllib.load(stream)["project"]
         with (ROOT / "uv.lock").open("rb") as stream:
@@ -44,14 +49,8 @@ class DependencyContractTests(unittest.TestCase):
             _normalize_name(package["name"])
             for package in lock["package"]
         }
-        requirement_lines = (ROOT / "requirements.txt").read_text(
-            encoding="utf-8"
-        ).splitlines()
-        exported_names = _requirement_names(requirement_lines)
 
-        self.assertIn("uv export", "\n".join(requirement_lines[:3]))
         self.assertSetEqual(direct_names - locked_names, set())
-        self.assertSetEqual(direct_names - exported_names, set())
 
 
 if __name__ == "__main__":

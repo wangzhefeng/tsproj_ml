@@ -12,6 +12,7 @@ import pandas as pd
 
 from model_testing import validation
 from data_loading import (
+    BUILTIN_GENERATORS,
     EndogenousFutureProvider,
     InformationSetRequest,
     SourceRegistry,
@@ -985,7 +986,9 @@ def run_canonical_config(
         raise TypeError("config must be a ForecastConfigSpec")
     if config.strategy is None:
         raise ValueError("run_canonical_config requires a strategy or ensemble")
-    registry = SourceRegistry(config.data, Path.cwd(), generators=generators)
+    # builtin generators（chinese_holiday）默认可用；调用方同名注入时覆盖。
+    merged_generators: dict[str, Any] = {**BUILTIN_GENERATORS, **(generators or {})}
+    registry = SourceRegistry(config.data, Path.cwd(), generators=merged_generators)
     origin = _resolve_origin(registry, config.validation.get("forecast_origin"))
     runner = CanonicalBaseModelRunner(config, registry, origin)
     result = runner.run(output_root)

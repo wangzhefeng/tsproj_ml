@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, cast
+import warnings
 
 import numpy as np
 import pandas as pd
@@ -870,6 +871,15 @@ class FeatureCompiler:
             raise ValueError(f"unsupported history statistic: {stat!r}")
         result = getattr(values, stat)()
         if pd.isna(result):
+            # 理论上 minimum_history_rows 门禁已保证窗口足够，此处只是防御
+            # 回退（窗口 < window 时 pandas 返回 NaN）；分层约束下本包不可
+            # 依赖 utils.log_util，用标准库 warnings 显式告警避免静默。
+            warnings.warn(
+                f"history statistic {stat!r} produced NaN "
+                f"(sample size {len(values)}); falling back to 0.0",
+                RuntimeWarning,
+                stacklevel=2,
+            )
             result = 0.0
         return float(result)
 

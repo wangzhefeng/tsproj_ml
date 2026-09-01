@@ -49,7 +49,6 @@ features:
         inverse: false
     direct:
       layout: single_model_horizon
-      use_horizon_exogenous: false
       align_to_target: false
       horizon_feature:
         name: forecast_horizon_idx

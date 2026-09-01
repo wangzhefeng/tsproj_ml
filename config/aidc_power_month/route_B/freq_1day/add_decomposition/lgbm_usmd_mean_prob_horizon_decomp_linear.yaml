@@ -71,7 +71,6 @@ features:
   transformations:
     direct:
       layout: single_model_horizon
-      use_horizon_exogenous: true
       align_to_target: false
       horizon_feature:
         name: forecast_horizon_idx

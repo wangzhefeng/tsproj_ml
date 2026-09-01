@@ -37,7 +37,6 @@ features:
   transformations:
     direct:
       layout: independent_models
-      use_horizon_exogenous: false
       align_to_target: false
     advanced:
       rolling:

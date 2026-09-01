@@ -404,7 +404,6 @@ features:
         inverse: false
     direct:
       layout: independent_models
-      use_horizon_exogenous: false
       align_to_target: false
       horizon_feature:
         name: forecast_horizon_idx

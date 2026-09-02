@@ -1,13 +1,14 @@
 """Typed YAML-level probabilistic configuration contract.
 
-This type preserves the canonical YAML payload, including historical conformal
-intent that the current runtime does not execute.  The deployment artifact uses
+The deployment artifact uses
 ``forecasting_core.probabilistic_spec.ProbabilisticSpec`` instead.
+Legacy flat keys (``crossing_method``, ``conformal``) were swept from all
+active YAMLs on 2026-09-01 and are rejected here; crossing behaviour is
+declared via ``crossing:`` and CQR via ``calibration:``.
 """
 
 from __future__ import annotations
 
-import math
 from collections.abc import Mapping, Sequence
 from typing import Any
 
@@ -17,6 +18,7 @@ from forecasting_core.specs._mapping import (
     strict_mapping,
     validate_nested_mappings,
 )
+from forecasting_core.probabilistic_spec import validate_quantile_grid
 
 
 PROBABILISTIC_FIELDS = frozenset(
@@ -27,30 +29,17 @@ PROBABILISTIC_FIELDS = frozenset(
         "point_quantile",
         "recursive_propagation",
         "crossing",
-        "crossing_method",
         "intervals",
         "calibration",
-        "conformal",
     }
+)
+
+_CROSSING_METHODS = frozenset(
+    {"none", "rearrangement", "median_preserving_isotonic"}
 )
 
 _PROBABILISTIC_NESTED_FIELDS: dict[str, frozenset[str]] = {
     "probabilistic.crossing": frozenset({"method", "report_raw"}),
-    "probabilistic.conformal": frozenset(
-        {
-            "method",
-            "interval",
-            "target_coverage",
-            "alpha",
-            "calibration_windows",
-            "min_windows",
-            "min_scores",
-            "label_availability_delay_steps",
-            "allow_interval_shrink",
-            "grouping",
-            "coverage",
-        }
-    ),
     "probabilistic.calibration": frozenset(
         {
             "method",
@@ -91,13 +80,23 @@ class ProbabilisticConfigSpec(FrozenMappingSpec):
             source=source,
             schemas=_PROBABILISTIC_NESTED_FIELDS,
         )
-        if "crossing" in payload and "crossing_method" in payload:
-            raise ValueError(
-                "probabilistic.crossing and probabilistic.crossing_method are mutually exclusive"
-            )
+        _validate_crossing(payload.get("crossing"), source=source)
         _validate_intervals(payload.get("intervals"), source=source)
         _validate_probability_semantics(payload)
         return cls(freeze_json_value(payload, "probabilistic"))
+
+
+def _validate_crossing(value: Any, *, source: str) -> None:
+    if value is None:
+        return
+    if not isinstance(value, Mapping):
+        raise TypeError(f"probabilistic.crossing must be a mapping in {source}")
+    method = str(value.get("method", "median_preserving_isotonic")).lower()
+    if method not in _CROSSING_METHODS:
+        raise ValueError(
+            f"probabilistic.crossing.method must be one of "
+            f"{sorted(_CROSSING_METHODS)} in {source}; got {method!r}"
+        )
 
 
 def _validate_intervals(value: Any, *, source: str) -> None:
@@ -124,16 +123,11 @@ def _validate_probability_semantics(payload: Mapping[str, Any]) -> None:
     raw_levels = payload.get("quantiles")
     if isinstance(raw_levels, (str, bytes)) or not isinstance(raw_levels, Sequence):
         raise TypeError("probabilistic.quantiles must be a sequence in quantile mode")
-    levels = tuple(float(level) for level in raw_levels)
-    if not levels:
-        raise ValueError("probabilistic.quantiles must not be empty in quantile mode")
-    if any(not math.isfinite(level) or not 0.0 < level < 1.0 for level in levels):
-        raise ValueError("probabilistic.quantiles must be finite and inside (0, 1)")
-    if tuple(sorted(set(levels))) != levels:
-        raise ValueError("probabilistic.quantiles must be unique and strictly increasing")
-    point = float(payload.get("point_quantile", 0.5))
-    if point not in levels:
-        raise ValueError("probabilistic.point_quantile must be present in quantiles")
+    # 网格规则统一走合同层唯一实现（2026-09-01 去重）
+    validate_quantile_grid(
+        raw_levels,
+        point_quantile=float(payload.get("point_quantile", 0.5)),
+    )
 
 
 __all__ = ["ProbabilisticConfigSpec", "PROBABILISTIC_FIELDS"]

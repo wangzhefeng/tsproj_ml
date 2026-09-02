@@ -160,7 +160,7 @@ class ActiveConfigRuntimeContractTest(unittest.TestCase):
         nested_cases = (
             ("validation", "eval_mask"),
             ("output", "identity"),
-            ("probabilistic", "conformal"),
+            ("probabilistic", "calibration"),
         )
         for section, nested in nested_cases:
             with self.subTest(section=section, nested=nested):

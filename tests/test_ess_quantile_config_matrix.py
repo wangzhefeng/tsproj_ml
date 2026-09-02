@@ -85,7 +85,12 @@ class EssQuantileConfigMatrixTest(unittest.TestCase):
                     if isinstance(cfg, EnsembleConfigSpec):
                         continue
                     self.assertEqual(cfg.probabilistic["mode"], "quantile", path)
-                    self.assertEqual(cfg.probabilistic["crossing_method"], "isotonic", path)
+                    # 2026-09-01 legacy 键清扫：crossing_method→crossing.method
+                    self.assertEqual(
+                        cfg.probabilistic["crossing"]["method"],
+                        "median_preserving_isotonic",
+                        path,
+                    )
                     self.assertTrue(Path(self._source(cfg, "target_history").history_path).exists(), path)
 
     def test_decomposition_matrix_is_linear_stl288_and_mstl(self):
@@ -220,7 +225,10 @@ class EssQuantileConfigMatrixTest(unittest.TestCase):
                 cfg = load_yaml_config(str(path))
                 self.assertIsNotNone(cfg.strategy, path)
                 self.assertEqual(cfg.probabilistic["mode"], "quantile", path)
-                self.assertEqual(cfg.probabilistic["conformal"]["method"], "cqr", path)
+                # 2026-09-01 legacy 键清扫：conformal→calibration（CQR 已激活）
+                self.assertEqual(
+                    cfg.probabilistic["calibration"]["method"], "cqr", path
+                )
                 self.assertEqual(self._decomposition_method(cfg), "none", path)
                 self.assertEqual(cfg.features.datetime_features, (), path)
                 self.assertEqual(len(cfg.data.sources), 2, path)

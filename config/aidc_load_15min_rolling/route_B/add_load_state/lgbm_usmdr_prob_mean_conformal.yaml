@@ -209,12 +209,20 @@ probabilistic:
   - 0.9
   point_quantile: 0.5
   recursive_propagation: median_path
-  crossing_method: isotonic
-  conformal:
+  crossing:
+    method: median_preserving_isotonic
+    report_raw: true
+  intervals:
+  - name: q10_q90
+    lower_quantile: 0.1
+    upper_quantile: 0.9
+  calibration:
     method: cqr
-    coverage: 0.9
-    min_scores: 30
+    interval: q10_q90
+    target_coverage: 0.9
+    calibration_windows: 5
     min_windows: 3
+    min_scores: 30
 validation:
   forecast_origin: '2026-07-31T14:00:00'
   schedule_mode: intraday

@@ -191,23 +191,20 @@ _CANONICAL_NESTED_FIELDS = {
         "point_quantile",
         "recursive_propagation",
         "crossing",
-        "crossing_method",
         "intervals",
-        "conformal",
+        "calibration",
     },
     "probabilistic.crossing": {"method", "report_raw"},
-    "probabilistic.conformal": {
+    "probabilistic.calibration": {
         "method",
         "interval",
         "target_coverage",
-        "alpha",
         "calibration_windows",
         "min_windows",
         "min_scores",
         "label_availability_delay_steps",
         "allow_interval_shrink",
         "grouping",
-        "coverage",
     },
 }
 

@@ -75,8 +75,6 @@ estimator:
 probabilistic:
   mode: point
   schema_version: 1
-  conformal:
-    method: none
 validation:
   forecast_origin: '2026-01-14T00:00:00'
   schedule_mode: daily

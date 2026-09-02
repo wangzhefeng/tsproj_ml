@@ -372,7 +372,8 @@ class EssStrategyPipelineTest(unittest.TestCase):
                 path = root / f"route_{route}/add_strategy_features/{filename}"
                 loaded = yaml.safe_load(path.read_text(encoding="utf-8"))
                 self.assertEqual(loaded["probabilistic"]["mode"], "quantile")
-                self.assertEqual(loaded["probabilistic"]["conformal"]["method"], "cqr")
+                # 2026-09-01 legacy 键清扫：conformal→calibration（CQR 已激活）
+                self.assertEqual(loaded["probabilistic"]["calibration"]["method"], "cqr")
                 self.assertNotIn("target_transform", loaded["features"]["transformations"])
                 strategy_source = next(
                     source

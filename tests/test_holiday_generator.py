@@ -90,6 +90,31 @@ class ChineseHolidayGeneratorTest(unittest.TestCase):
         self.assertTrue(frame["available_at"].eq(request.forecast_origin).all())
         self.assertTrue((frame.loc[0:6, "is_holiday"] == 1).all())
 
+    def test_new_columns_prev_adjusted_solar(self):
+        """F2+F4：prev_holiday_days 节后恢复、is_adjusted_workday 调休班日、
+        solar_term 节令继承（值已于 2026-10 与 2026-08 实测核对）。"""
+        frame = chinese_holiday_frame("2026-10-08", "2026-10-12", freq="1D")
+        times = pd.to_datetime(frame["time"])
+        rows = frame.to_dict("records")
+        by_date = {
+            str(times.iloc[index].date()): rows[index] for index in range(len(rows))
+        }
+        # 节后恢复：10/8 距国庆假期尾（10/7）1 天；10/10 距 3 天。
+        self.assertEqual(by_date["2026-10-08"]["prev_holiday_days"], 1.0)
+        self.assertEqual(by_date["2026-10-10"]["prev_holiday_days"], 3.0)
+        # 调休班日：10/10 周六上班=1；10/11 周日补假=0（is_holiday=1）。
+        self.assertEqual(by_date["2026-10-10"]["is_adjusted_workday"], 1)
+        self.assertEqual(by_date["2026-10-11"]["is_adjusted_workday"], 0)
+        self.assertEqual(by_date["2026-10-11"]["is_holiday"], 1)
+        # 调休班日不携带节日名（holiday_name 非空 => is_holiday=1）。
+        self.assertEqual(by_date["2026-10-10"]["holiday_name"], "")
+        # 节令：10 月上旬处寒露；8 月上旬立秋前后。
+        self.assertEqual(by_date["2026-10-10"]["solar_term"], "寒露")
+        # end 排他：08-06..08-08 两行（08-06 大暑、08-07 立秋）。
+        august = chinese_holiday_frame("2026-08-06", "2026-08-08", freq="1D")
+        terms = august["solar_term"].tolist()
+        self.assertEqual(terms, ["大暑", "立秋"])
+
     def test_builtin_registration(self):
         self.assertIn(generator_name(), BUILTIN_GENERATORS)
         self.assertIs(BUILTIN_GENERATORS[generator_name()], chinese_holiday_generator)

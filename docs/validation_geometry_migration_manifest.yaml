@@ -3619,7 +3619,7 @@ entries:
     actual_available_supervised_origins: 8928
     actual_final_training_origin_count: 4032
   old_fingerprint: 30f9eb49051d1e8a77a0638a688660ba144cd9b9a6dcf12cb1c1bb92efbd3946
-  new_fingerprint: 94f0ad33e09f164acad224af71fdee206a4ea175623c2f80ee5dd71b244d7ca5
+  new_fingerprint: 19634b00666e99471c328dcc8d4e54c8a6aaa76ecafd175eef8e18877af92f7a
 - path: config/aidc_electricity_computility/electricity_computility/add_training_inference_pod/lgbm_usmdp_a.yaml
   kind: single
   freq: 5min
@@ -3642,7 +3642,7 @@ entries:
     actual_available_supervised_origins: 8928
     actual_final_training_origin_count: 4032
   old_fingerprint: f3eb0e1ed17dc1f0feb631f2c39317ae8686044bf2509a784246ea0beeccde05
-  new_fingerprint: c1a7d7a1282eaf6d405034cc8984f870c29d671e752a93c8bd5917e4770339a6
+  new_fingerprint: e9e4415a94cb82b9aff364d00ba7c8726c2438ec12e564417af7bb4861f4f56f
 - path: config/aidc_electricity_computility/electricity_computility/add_training_inference_pod/lgbm_usmdr_a.yaml
   kind: single
   freq: 5min
@@ -3665,7 +3665,7 @@ entries:
     actual_available_supervised_origins: 8928
     actual_final_training_origin_count: 4032
   old_fingerprint: 97883cf60c79d847b6819fd5583187f3088b3a15b335b4fdef795d2be01a329f
-  new_fingerprint: 7b4d19c75e9179643070dd27f8d204b6b8722d8ea1fac6274121c5963d5132c8
+  new_fingerprint: d531f3d51e2f6c5492c76b724ca9fa9c3c09141029e685b81cee63f0d5b50629
 - path: config/aidc_electricity_computility/electricity_computility/add_training_inference_pod/lgbm_usmr_a.yaml
   kind: single
   freq: 5min
@@ -3688,7 +3688,7 @@ entries:
     actual_available_supervised_origins: 8928
     actual_final_training_origin_count: 4032
   old_fingerprint: 2ded12982d01f8ef12a842f6f2a6111e2e0ccdaa136160260020bd38dfcd2647
-  new_fingerprint: e457d19ceaa093e730a108a43eecec9dbed17a3879278d051df4b28c7ff227f9
+  new_fingerprint: 6e32294b72484af5f3577ace9a4a729ab94f40835ee7476b63fc950fe8c88826
 - path: config/aidc_electricity_computility/electricity_computility/add_training_jobs/lgbm_msmd_a.yaml
   kind: single
   freq: 5min
@@ -3711,7 +3711,7 @@ entries:
     actual_available_supervised_origins: 8928
     actual_final_training_origin_count: 4032
   old_fingerprint: f5dc61a958d879174be2e441eb7bfb51e7ecd07fc760e2651c4a4ddb7248e6d8
-  new_fingerprint: dd4676d08acbfc47d0373f32ddf752f86ed80dc4cb264236e8904d1769a42df0
+  new_fingerprint: 65f0a3402bc28d796e96edd8cb80e350071447b50e7717c36b1fe6542814d6df
 - path: config/aidc_electricity_computility/electricity_computility/add_training_jobs/lgbm_msmdr_a.yaml
   kind: single
   freq: 5min
@@ -3734,7 +3734,7 @@ entries:
     actual_available_supervised_origins: 8928
     actual_final_training_origin_count: 4032
   old_fingerprint: f3ce7f051345786a9f31d6ef6dfea38fb046ed0acf64fea6dd1a317801092b4d
-  new_fingerprint: 948f13b243b9bb88776f5b8775c9353271ec1861c284549d1e38cdf2d60ea1cb
+  new_fingerprint: 1185cd5d4c035f9f4b31ad6f6b83a2a6988ea3f7cfd86eab2efc0a819fc6cd82
 - path: config/aidc_electricity_computility/electricity_computility/add_training_jobs/lgbm_msmr_a.yaml
   kind: single
   freq: 5min
@@ -3757,7 +3757,7 @@ entries:
     actual_available_supervised_origins: 8928
     actual_final_training_origin_count: 4032
   old_fingerprint: 2fea2a092f594a8a548acce4dc92e01ae7a710e0325aa6666ff6839861d3fc49
-  new_fingerprint: 9b16ea37399cec163543c7babb35ed5aabb37287cd18a76bb288772f8f18f61f
+  new_fingerprint: 0062d54d31970e6aad611142562d46d306252ed014d98f3141cbe2ed83653008
 - path: config/aidc_electricity_computility/electricity_computility/add_training_jobs/lgbm_usmd_a.yaml
   kind: single
   freq: 5min
@@ -3780,7 +3780,7 @@ entries:
     actual_available_supervised_origins: 8928
     actual_final_training_origin_count: 4032
   old_fingerprint: 379947965fa785159cdd2d040dd6ff32a9841ecedae5b1583241c901ebe7970d
-  new_fingerprint: db18b5b5e1720c38ac572d16122f18a46f7edd0289559f09c39080db59d4b726
+  new_fingerprint: affead17de2c4e55c7884a54a635dcd4be9a05cc081286b8d85ac4010981bbbd
 - path: config/aidc_electricity_computility/electricity_computility/add_training_jobs/lgbm_usmdp_a.yaml
   kind: single
   freq: 5min
@@ -3803,7 +3803,7 @@ entries:
     actual_available_supervised_origins: 8928
     actual_final_training_origin_count: 4032
   old_fingerprint: 938cfd35710cd6850e3bab092a870d4867c8dfd75a0855236583c27061afda35
-  new_fingerprint: fd5e62ff42e3e2198a89bf793737bac4b3c8cbde4c8c9de109b3c3960ce7acbb
+  new_fingerprint: 850b231fa2e48a5cbbd4e8a274ddde2ea7235ffe7986ca4d66f714258922447f
 - path: config/aidc_electricity_computility/electricity_computility/add_training_jobs/lgbm_usmdr_a.yaml
   kind: single
   freq: 5min
@@ -3826,7 +3826,7 @@ entries:
     actual_available_supervised_origins: 8928
     actual_final_training_origin_count: 4032
   old_fingerprint: f78bd9bb8813181f26fed11eba392e243cbcb3ab7f715eabfc4b9a6a2c77a691
-  new_fingerprint: 0cbc1748a5a8d83f3b1c0ba8cc8e4b037b7b29553e6a5da97744169984038217
+  new_fingerprint: 19973e2f25e6af3cec39fd3ad8aa00d3eb36bcd1c181d1f5a34d0983b6b7f220
 - path: config/aidc_electricity_computility/electricity_computility/add_training_jobs/lgbm_usmr_a.yaml
   kind: single
   freq: 5min
@@ -3849,7 +3849,7 @@ entries:
     actual_available_supervised_origins: 8928
     actual_final_training_origin_count: 4032
   old_fingerprint: 8606a519700db03dd5289ea69818d4e456c5279099e52df3892f2aada34a0f20
-  new_fingerprint: ea0ec0cff6f02d020f72cff771f07c1b54af6391d18517744241ae1d22693799
+  new_fingerprint: af86f8f395dbce85fd51ebeb7cfff9f524d12d530be2b414e34c35261b9d566f
 - path: config/aidc_ess_selfuse_load/route_A/add_decomposition/lgbm_usmd_prob_mean_decomp_linear.yaml
   kind: single
   freq: 5min
@@ -3872,7 +3872,7 @@ entries:
     actual_available_supervised_origins: 9792
     actual_final_training_origin_count: 8352
   old_fingerprint: 52546a1414b5962650466d3c36d9c4e89477641e4d1507cdb207cbd4ff52732d
-  new_fingerprint: a67ea72838dea31ce680837087be1bc7cd4db04379ce96ee0b591871e0f543c5
+  new_fingerprint: f259e9bd60caf0d67ea2ac04a518a648df92be02a62618741bdd608f34d38721
 - path: config/aidc_ess_selfuse_load/route_A/add_decomposition/lgbm_usmd_prob_mean_decomp_mstl288-2016.yaml
   kind: single
   freq: 5min
@@ -3895,7 +3895,7 @@ entries:
     actual_available_supervised_origins: 9792
     actual_final_training_origin_count: 8352
   old_fingerprint: 439fb3987dc5f55926baf7f92e9a34eb5399433820ef74ad867ac146c6cede98
-  new_fingerprint: 904024fcfdacace55ddf2772eef024d9517da7203cbc3302ea4fba5d86f87a69
+  new_fingerprint: f819b4a24820e853034a9833d37768283dd5f5261f92d5e6d18485959fbc1747
 - path: config/aidc_ess_selfuse_load/route_A/add_decomposition/lgbm_usmd_prob_mean_decomp_stl288.yaml
   kind: single
   freq: 5min
@@ -3918,7 +3918,7 @@ entries:
     actual_available_supervised_origins: 9792
     actual_final_training_origin_count: 8352
   old_fingerprint: 226c1d12f1b42ac2d9bf61cfe48a07bb6c6c9c4cc977b41538746cdeab195d08
-  new_fingerprint: d62480cb8026895a4e0730ce55d58241a853732015db7c8c2f280525dcb85992
+  new_fingerprint: 3a329908b5a8fa7e72d2b059cb513cbb002b4f8843049b60b430993ed8ad30c0
 - path: config/aidc_ess_selfuse_load/route_A/add_decomposition/lgbm_usmdp_prob_mean_decomp_linear.yaml
   kind: single
   freq: 5min
@@ -3941,7 +3941,7 @@ entries:
     actual_available_supervised_origins: 9792
     actual_final_training_origin_count: 8352
   old_fingerprint: cac6cfb6320fada2cb921ce9ef45bdd0dd7699f2172fa21cb1fdd2cefc73f6f9
-  new_fingerprint: 98b9d9755cda9e9ca20b28ef2a272d529a5e29d358e3d88343eec5ec9530771b
+  new_fingerprint: 01b057a0d8deb7eed694981bad91a7851d5e437519320e953fccdd138caadaad
 - path: config/aidc_ess_selfuse_load/route_A/add_decomposition/lgbm_usmdp_prob_mean_decomp_mstl288-2016.yaml
   kind: single
   freq: 5min
@@ -3964,7 +3964,7 @@ entries:
     actual_available_supervised_origins: 9792
     actual_final_training_origin_count: 8352
   old_fingerprint: f1a4628bd0dfd759b3af92e17d2eee24ad504f5d228831b105f0f604f02d3da7
-  new_fingerprint: 035137e707aa5914aaaa907d77f9c56e3f8fc4f829c18549119af8bdb753e5bb
+  new_fingerprint: 3112eb01fdfe039e64de0b7285147a3ab6132ef619ed02383c29dc004ebd1052
 - path: config/aidc_ess_selfuse_load/route_A/add_decomposition/lgbm_usmdp_prob_mean_decomp_stl288.yaml
   kind: single
   freq: 5min
@@ -3987,7 +3987,7 @@ entries:
     actual_available_supervised_origins: 9792
     actual_final_training_origin_count: 8352
   old_fingerprint: 98670a861298d784894a899235b125cbf28edff75bbd8edc3f2ff200f7462ef3
-  new_fingerprint: 90af059bd72016d664342585913897effe54b26cb25e489f0925d4be30c62c84
+  new_fingerprint: 73337373bc1d89bfff8c72a05247ad40d192c1aef0e259bf507216e33caa75df
 - path: config/aidc_ess_selfuse_load/route_A/add_decomposition/lgbm_usmdr_prob_mean_decomp_linear.yaml
   kind: single
   freq: 5min
@@ -4010,7 +4010,7 @@ entries:
     actual_available_supervised_origins: 9792
     actual_final_training_origin_count: 8352
   old_fingerprint: 84adfd42f337dcc28800eeab059f136ff2dc7314afd53d497fe37ac51f434bfd
-  new_fingerprint: 97637e972329922aa15bcaeec401c227c83d993fad415ec5ace15e45d82bb035
+  new_fingerprint: 555840ab4af728511d4f5d8e18f6ce33f9d65681a58419bfe1afda8bc7c0bf0f
 - path: config/aidc_ess_selfuse_load/route_A/add_decomposition/lgbm_usmdr_prob_mean_decomp_mstl288-2016.yaml
   kind: single
   freq: 5min
@@ -4033,7 +4033,7 @@ entries:
     actual_available_supervised_origins: 9792
     actual_final_training_origin_count: 8352
   old_fingerprint: abd9c6be5e4989f31d5512ef096730b8af6bfdf0ebc2e27d98668b871d05358a
-  new_fingerprint: 092f4de14a2b9a3b5bcc452803e36b5ef216b301d0ec85c576e696d002fe8bfa
+  new_fingerprint: a8144ab9b0f06e017f4a360e92d31693d389eeec0228af7818769547f67f3f89
 - path: config/aidc_ess_selfuse_load/route_A/add_decomposition/lgbm_usmdr_prob_mean_decomp_stl288.yaml
   kind: single
   freq: 5min
@@ -4056,7 +4056,7 @@ entries:
     actual_available_supervised_origins: 9792
     actual_final_training_origin_count: 8352
   old_fingerprint: 5e4bbb3f85dca6ba1cc9f96d6e22314d1df902627d6d6bed44da5347e8c8e4c9
-  new_fingerprint: 404568b7b63f7ddfc12eeb083c4696411c56ec9ddd85110a1dc073f1501a3506
+  new_fingerprint: 64183cb5cf83230b0005061883c2302d00ad8549c744dc4a5923ab778cbf3907
 - path: config/aidc_ess_selfuse_load/route_A/add_decomposition/lgbm_usmr_prob_mean_decomp_linear.yaml
   kind: single
   freq: 5min
@@ -4079,7 +4079,7 @@ entries:
     actual_available_supervised_origins: 9792
     actual_final_training_origin_count: 8352
   old_fingerprint: e8b93dd48f9f1e2ee6b10a17dd35048acd0893785ee1fc82f6b38302579cba0d
-  new_fingerprint: 78331802dd231f97b85782c8a6a6ff7e3908d4fb21ab288adf8becb187401f0c
+  new_fingerprint: 5e07d8399fe959d8138d8ae69faaa6a4932e18e3c4a5713ef9a1e6b64bc2af83
 - path: config/aidc_ess_selfuse_load/route_A/add_decomposition/lgbm_usmr_prob_mean_decomp_mstl288-2016.yaml
   kind: single
   freq: 5min
@@ -4102,7 +4102,7 @@ entries:
     actual_available_supervised_origins: 9792
     actual_final_training_origin_count: 8352
   old_fingerprint: abc9ae8fa2037d2050fbcf99b06d1e6dc5912838a6a7bfbf4fb528aff590a70d
-  new_fingerprint: fc6e0b6fd88665864b1cca874c00c735b5c843b35e49cb0d2b0f2b9b12ff3188
+  new_fingerprint: 0fa3eda75f65ccd5380edd1aebf8565dd487bf823e386c6ac764752c724772df
 - path: config/aidc_ess_selfuse_load/route_A/add_decomposition/lgbm_usmr_prob_mean_decomp_stl288.yaml
   kind: single
   freq: 5min
@@ -4125,7 +4125,7 @@ entries:
     actual_available_supervised_origins: 9792
     actual_final_training_origin_count: 8352
   old_fingerprint: 906c88657b14c3a0a38e6f5d4b3730aa350086c161c49b42afc4c1f630780156
-  new_fingerprint: 0072d844f34b44ccfef7daee36f11655f06cd24ba8f49d2ecede1d46dcef2c7b
+  new_fingerprint: 26ccaffffeed71f8267c325b9d26ec5582243c221ef01b92f5b0beeb543556bc
 - path: config/aidc_ess_selfuse_load/route_A/add_endogenous_actual_strategy/ensemble_members/lgbm_msbr_mean_pcs_recursive.yaml
   kind: single
   freq: 5min
@@ -4339,7 +4339,7 @@ entries:
     actual_available_supervised_origins: 9792
     actual_final_training_origin_count: 8352
   old_fingerprint: 975553008020d3f544048e3c95eaf9f9a8f582bc223b259af52c955582531762
-  new_fingerprint: 5c6863f560f774bcd826da2e9acd3cc0fce018253e17c6563a21fac5b49b2f42
+  new_fingerprint: 6dec3d20e92f3cb6c4e258806ed95b37b76f7dc240a05c888e760837cdeeabec
 - path: config/aidc_ess_selfuse_load/route_A/add_exogenous_plan_strategy/lgbm_usmdp_prob_mean_plan.yaml
   kind: single
   freq: 5min
@@ -4362,7 +4362,7 @@ entries:
     actual_available_supervised_origins: 9792
     actual_final_training_origin_count: 8352
   old_fingerprint: 18bc5ddfe126c38b32e7d1de073b00c6524e923a67fdc5d5fdfb1792848ddcb3
-  new_fingerprint: 5f0e5598a78ef5e683dd8b537ab581fbabc359b846b916b8d78e53ae36ade786
+  new_fingerprint: eeb1698fd71df2fc920cab35ff47d7c15dcf8ab89bbdb92485720e137b8a2423
 - path: config/aidc_ess_selfuse_load/route_A/add_exogenous_plan_strategy/lgbm_usmdr_prob_mean_plan.yaml
   kind: single
   freq: 5min
@@ -4385,7 +4385,7 @@ entries:
     actual_available_supervised_origins: 9792
     actual_final_training_origin_count: 8352
   old_fingerprint: 59b7baa3fc68f30ef7594c6f040684603bc6b1f5aacd17e3feeef410eecce836
-  new_fingerprint: fccaffc30664ee0ec3d7cef9b1531781063160985e9a497ab105bfa8bab3fa6f
+  new_fingerprint: d5ade4b56e1e18d8cf6de306a88b8335b0747e505b7c5021ac7cbb9e4ccfe191
 - path: config/aidc_ess_selfuse_load/route_A/add_exogenous_plan_strategy/lgbm_usmr_prob_mean_plan.yaml
   kind: single
   freq: 5min
@@ -4408,7 +4408,7 @@ entries:
     actual_available_supervised_origins: 9792
     actual_final_training_origin_count: 8352
   old_fingerprint: eb2e495faa5123bf4ea78e65087ea9b6b3dfb7fbdd329b865a9e945cc4a8fe75
-  new_fingerprint: c2f4914cb340688b6addbc95009b32d20c3b1c1b7b90d91022d6ee26a6c1ab35
+  new_fingerprint: ab53091aacfffaa8dd1bdd1d5643621bf547eeedde1fab7414bf2782fb6a2a9e
 - path: config/aidc_ess_selfuse_load/route_A/add_exogenous_weather_date/lgbm_usmd_prob_mean_weather_date.yaml
   kind: single
   freq: 5min
@@ -4431,7 +4431,7 @@ entries:
     actual_available_supervised_origins: 9792
     actual_final_training_origin_count: 8352
   old_fingerprint: 801adaa23b93dd80601e7a1ba7f582d5fd3c24f1ef3e83795ed2a8b48a4e6fcb
-  new_fingerprint: 0212cc6862012a7abdac533983969f57fe5b87f73eb2e3dc1956ba32365081b5
+  new_fingerprint: 0058d255c41854545f4a87b6b2978d50fd49fd686d521536f196f816522dd49b
 - path: config/aidc_ess_selfuse_load/route_A/add_exogenous_weather_date/lgbm_usmdp_prob_mean_weather_date.yaml
   kind: single
   freq: 5min
@@ -4454,7 +4454,7 @@ entries:
     actual_available_supervised_origins: 9792
     actual_final_training_origin_count: 8352
   old_fingerprint: 1f674ebe56946916e726c6f59eee73beda6646ffc0d63c35ef8e34fad43c241a
-  new_fingerprint: ae244b477d093689910df3363435719d661266bfb6d6b74cbda4083fb60c43dd
+  new_fingerprint: 5f677742e3a7a541d956f66a34cebeb87626bb0b4fb69cd089d5aef706fd339a
 - path: config/aidc_ess_selfuse_load/route_A/add_exogenous_weather_date/lgbm_usmdr_prob_mean_weather_date.yaml
   kind: single
   freq: 5min
@@ -4477,7 +4477,7 @@ entries:
     actual_available_supervised_origins: 9792
     actual_final_training_origin_count: 8352
   old_fingerprint: 26a62ab763ac488fcae906697cafd80b9615ebc15b7c06e549e289ba6997a12a
-  new_fingerprint: 6cee18039d6a5be3e2447523e10b61361958cfb2a2a6cfa2bd476a6927ec57ee
+  new_fingerprint: 6ca5a0e602e038681a5d66db0310f1b5d569f78b1ef7d7219191f45a2e0db009
 - path: config/aidc_ess_selfuse_load/route_A/add_exogenous_weather_date/lgbm_usmr_prob_mean_weather_date.yaml
   kind: single
   freq: 5min
@@ -4500,7 +4500,7 @@ entries:
     actual_available_supervised_origins: 9792
     actual_final_training_origin_count: 8352
   old_fingerprint: 771745857e2435111ff013c4fc66c54a529517a4b2ae11d859c3e9dd3a581a62
-  new_fingerprint: 5dd9250ebf704eadd5c918c7eb543e8963768dba9108ece562e62a505d5ee945
+  new_fingerprint: aa16cd56fa049544f91770b3d7e607d9a006646b46856069c62737617a8d0812
 - path: config/aidc_ess_selfuse_load/route_A/add_exogenous_weather_date_plan_strategy/lgbm_usmd_prob_mean_all.yaml
   kind: single
   freq: 5min
@@ -4523,7 +4523,7 @@ entries:
     actual_available_supervised_origins: 9792
     actual_final_training_origin_count: 8352
   old_fingerprint: 656de10d81c46ee8560f4e1364d2af658b062a137a7b27ea524afe0de7476e0f
-  new_fingerprint: 5feee6bfa4431c51fe22a36cf87f6d31f24ee82b444ef11f516588eb7348180a
+  new_fingerprint: ab7f8a3c3de3e51c87102c4a16d19bf070bbd742278600f371825c308c33e07e
 - path: config/aidc_ess_selfuse_load/route_A/add_exogenous_weather_date_plan_strategy/lgbm_usmdp_prob_mean_all.yaml
   kind: single
   freq: 5min
@@ -4546,7 +4546,7 @@ entries:
     actual_available_supervised_origins: 9792
     actual_final_training_origin_count: 8352
   old_fingerprint: 0d502c9409377ed80d3c2780483a1b0df94e57c2daffd7d40fa33509e141325f
-  new_fingerprint: eeaa95d653dff76bdfd17d2ad6e8eb28cebf90bfeae3a089233b3cd6b2f59199
+  new_fingerprint: 8a863fef8a85b09bdacc70ef40ac546f3880a0b4bab406632c06d907bf71331c
 - path: config/aidc_ess_selfuse_load/route_A/add_exogenous_weather_date_plan_strategy/lgbm_usmdr_prob_mean_all.yaml
   kind: single
   freq: 5min
@@ -4569,7 +4569,7 @@ entries:
     actual_available_supervised_origins: 9792
     actual_final_training_origin_count: 8352
   old_fingerprint: 12a53e1a8471e30f7726fb23cadff7625814753d446e32f8831c4a8362ce6550
-  new_fingerprint: 663ed1f4e8891ee9c1fe8c5aab6670985001b324e0ca92aea7bcf68e7373fce3
+  new_fingerprint: 81da4aded9b0af17dcdbd760d7a6af3d4b92072ef94e4c3af31fc559107e2cd5
 - path: config/aidc_ess_selfuse_load/route_A/add_exogenous_weather_date_plan_strategy/lgbm_usmr_prob_mean_all.yaml
   kind: single
   freq: 5min
@@ -4592,7 +4592,7 @@ entries:
     actual_available_supervised_origins: 9792
     actual_final_training_origin_count: 8352
   old_fingerprint: e2ea0fc90c73742b68eb2fc2684374b3467e8d0e8132fdda82100caf45a0615d
-  new_fingerprint: 1ae68d88a197eb397610ed7cbc2f3e060b6a8a3f4c67b9496756ab9286194f34
+  new_fingerprint: 45a39885d3c09c9b290da236c42865fec310c3a0d61ede9bb537b2a46389978f
 - path: config/aidc_ess_selfuse_load/route_A/add_strategy_features/lgbm_usmd_mean_prob_horizon_conformal.yaml
   kind: single
   freq: 5min
@@ -4615,7 +4615,7 @@ entries:
     actual_available_supervised_origins: 9792
     actual_final_training_origin_count: 8352
   old_fingerprint: d64bf56702876e63068b3fcf1e8716c22029da4d6faebbaa77973be92e419a27
-  new_fingerprint: 238dcb51250a1352aac84dfe7462afa672f9eb08ea3ab77d337a804b8ef3a33c
+  new_fingerprint: 747f44015a0f32359958eb6dd06392f884c4228cf3c6e10779ea210a20245193
 - path: config/aidc_ess_selfuse_load/route_A/add_strategy_features/lgbm_usmd_prob_mean_conformal.yaml
   kind: single
   freq: 5min
@@ -4638,7 +4638,7 @@ entries:
     actual_available_supervised_origins: 9792
     actual_final_training_origin_count: 8352
   old_fingerprint: 4e05b75de6b72be555eafa3f125689338f2feb457452b2786ef3f07318d6350d
-  new_fingerprint: d4529645d0b208925f60a729565825728a24531d45fa71d0c5e199e22bdcee01
+  new_fingerprint: 6caf58dc437a13bc4c26c0f615244c82fb710059380d890fed73f2829550c97a
 - path: config/aidc_ess_selfuse_load/route_A/add_strategy_features/lgbm_usmdp_prob_mean_conformal.yaml
   kind: single
   freq: 5min
@@ -4661,7 +4661,7 @@ entries:
     actual_available_supervised_origins: 9792
     actual_final_training_origin_count: 8352
   old_fingerprint: 6db696cb744a52b306adf1a775ed68a7d7b921285ab5c271273fa1d3c5932642
-  new_fingerprint: 1d9acfe110efc4f356eb9d0ca773a6a6320921fccb1f86dbd4c8673cf4c42339
+  new_fingerprint: fb20874a11b3392a161bf83669e7a02b0e68b8543a15b2b31b8c2da9a490a025
 - path: config/aidc_ess_selfuse_load/route_A/add_strategy_features/lgbm_usmdr_prob_mean_conformal.yaml
   kind: single
   freq: 5min
@@ -4684,7 +4684,7 @@ entries:
     actual_available_supervised_origins: 9792
     actual_final_training_origin_count: 8352
   old_fingerprint: b88e2364a1938287a82606bcfbeaf238d0d778c8cda56780cc02a1c3e858dba1
-  new_fingerprint: 597902eb34ef494d8233cb982cfa6cd82bec17f95b413aad86fd40add64d0a33
+  new_fingerprint: 49e600447d6fe5a02b57352621bc52fc0ee9a92562dd42da31b301dc18820de6
 - path: config/aidc_ess_selfuse_load/route_A/add_strategy_features/lgbm_usmr_prob_mean_conformal.yaml
   kind: single
   freq: 5min
@@ -4707,7 +4707,7 @@ entries:
     actual_available_supervised_origins: 9792
     actual_final_training_origin_count: 8352
   old_fingerprint: 1dd3a6ec3e9f899cbef1d25d1f26a84bf75692f36821911fcdfc598ed6ac7439
-  new_fingerprint: b840367b9b9312df1dc7c6eec7dfe3bcaa6e90ccd3b0a224aa3ccb048942fd81
+  new_fingerprint: a50b9fda51782b0e3dc3f395a532b5ff5fb8bf5f8eb2149d9d80dd23e25a8623
 - path: config/aidc_ess_selfuse_load/route_A/baseline/ensemble_members/lgbm_usbr_prob_mean_recursive.yaml
   kind: single
   freq: 5min
@@ -4730,7 +4730,7 @@ entries:
     actual_available_supervised_origins: 9792
     actual_final_training_origin_count: 8352
   old_fingerprint: 5fa062391d595caf5f6e6c936a5e940beb1002ab3c67894d92952ebbdf70ee32
-  new_fingerprint: dc29190796c3ec4753e4ce7f9e73b252eb550bc3a1fbfb10e7f8079d6312f8bd
+  new_fingerprint: 55a6d915861775212207d6ba448c5ee12188e6f371f95b065cc2b913dabc36b5
 - path: config/aidc_ess_selfuse_load/route_A/baseline/lgbm_usbr_prob_mean.yaml
   kind: ensemble
   freq: 5min
@@ -4752,7 +4752,7 @@ entries:
     configured_final_train_window: 8352
     actual_final_training_origin_count: null
   old_fingerprint: ecbe5d3071555360625a807a760ad5b4bb5f0fa0df5ef144a2abcdf37749b18e
-  new_fingerprint: 4c940e4ac5b774180e98eb436af6beee9962783ae950d7c5acad60d26fa59f76
+  new_fingerprint: 15914c0e818f26626ecd4c3a4623ec054f48902c093c5c67df4cb870b1002ef2
   old_oof_geometry:
     train_window_length: 30
     fold_count: 1
@@ -4783,7 +4783,7 @@ entries:
     actual_available_supervised_origins: 9792
     actual_final_training_origin_count: 8352
   old_fingerprint: e6b2c5702062d1d73c016f65439f58f32c79c799f3a703389acdf5a4eeacf6b5
-  new_fingerprint: 5fe819103f7cd84a583fab73455bf0181565300286685490d5d29648cb0e3212
+  new_fingerprint: 7b9a8583fd140b00c947bec48cd7aeb8bd29a31fda9f9f8a6dd3935812139f72
 - path: config/aidc_ess_selfuse_load/route_A/baseline/lgbm_usmdp_prob_mean.yaml
   kind: single
   freq: 5min
@@ -4806,7 +4806,7 @@ entries:
     actual_available_supervised_origins: 9792
     actual_final_training_origin_count: 8352
   old_fingerprint: 5d19ffa99ab5ee06acbe30313ddc62f7b85cb1296ee14222722f0cdcedace0ff
-  new_fingerprint: d23cfdb3335d291882d2f6da5a0acea3c954f6440445f40e700d88f783c3a154
+  new_fingerprint: 7ee19a1b95c30762b156cb918e2802b44f1562b27836b827ff6491c9e5f1733d
 - path: config/aidc_ess_selfuse_load/route_A/baseline/lgbm_usmdr_prob_mean.yaml
   kind: single
   freq: 5min
@@ -4829,7 +4829,7 @@ entries:
     actual_available_supervised_origins: 9792
     actual_final_training_origin_count: 8352
   old_fingerprint: 73b85214f3ee6762060e4175bbbeef7fb468ff0a740eed5e1291e7a18724b941
-  new_fingerprint: 035ab3caa3d9a1a6c19fe1f06ec9408abca317b990c4a273578467c4d9a14c64
+  new_fingerprint: f26beeb6d1ae5c7d799e552edccd876ccd9d20b721caaeafbc94d0de00ac22bc
 - path: config/aidc_ess_selfuse_load/route_A/baseline/lgbm_usmr_prob_mean.yaml
   kind: single
   freq: 5min
@@ -4852,7 +4852,7 @@ entries:
     actual_available_supervised_origins: 9792
     actual_final_training_origin_count: 8352
   old_fingerprint: c4ccaa80738240d727120688a7961601668da5f2a302f459fd3edde3edeada11
-  new_fingerprint: 535001a3a6833de72b3faf4ead112534dc41e7a7c2016177a01b03e26b1ca4af
+  new_fingerprint: e804d37c9fded3a711a987ec3c4b568145e0136aeca453d1a630f37994f593fb
 - path: config/aidc_ess_selfuse_load/route_B/add_decomposition/lgbm_usmd_prob_mean_decomp_linear.yaml
   kind: single
   freq: 5min
@@ -4875,7 +4875,7 @@ entries:
     actual_available_supervised_origins: 9792
     actual_final_training_origin_count: 8352
   old_fingerprint: 628c7b269b7121372bad82711484fb2522b8d72659c82f29beedc5764bf48039
-  new_fingerprint: fde675a92f343e1790f6374e65140dd17818ef3d0086e87f79567d6ea90bdd1b
+  new_fingerprint: 41fc16f7b2023d339b4265fd07b00cd35d278b61b27d3853780bf903b246e179
 - path: config/aidc_ess_selfuse_load/route_B/add_decomposition/lgbm_usmd_prob_mean_decomp_mstl288-2016.yaml
   kind: single
   freq: 5min
@@ -4898,7 +4898,7 @@ entries:
     actual_available_supervised_origins: 9792
     actual_final_training_origin_count: 8352
   old_fingerprint: ae1eefe18b440d0655e12a82ea1518122462fbfde0d2f07d4f5affe5c1480d6a
-  new_fingerprint: 9c9e49dfb66dfa9b0e117be99a954ff1ee60aaa88cb835c1f1beb410f874f461
+  new_fingerprint: fcd91e4cbd352810edc83205534a4ae0d0e3adef2ff414ed77ae1184e0b67f8f
 - path: config/aidc_ess_selfuse_load/route_B/add_decomposition/lgbm_usmd_prob_mean_decomp_stl288.yaml
   kind: single
   freq: 5min
@@ -4921,7 +4921,7 @@ entries:
     actual_available_supervised_origins: 9792
     actual_final_training_origin_count: 8352
   old_fingerprint: fa3e74fda2e6306d3d6d5caceea28d3c917985b3008e927c1e7ae02fa9f4fd9c
-  new_fingerprint: c87b0d51d06f39524ef110c43aba6250c576dcd22cd227d7cfbd7fb2626e47b6
+  new_fingerprint: c83d35976565ffba7a03f614088b5be6d854ac47fb791fa41e49cf056c05b66c
 - path: config/aidc_ess_selfuse_load/route_B/add_decomposition/lgbm_usmdp_prob_mean_decomp_linear.yaml
   kind: single
   freq: 5min
@@ -4944,7 +4944,7 @@ entries:
     actual_available_supervised_origins: 9792
     actual_final_training_origin_count: 8352
   old_fingerprint: 25f97d36ca2460c46e169dd4935e3a1032808f3634551452813f728703da2a11
-  new_fingerprint: ddb69dec04207ad3091ceed9ef6002e317307b706383594b41834002b4350ec0
+  new_fingerprint: c7f08602d581323bf1c9567935e4215418175fb6a3ab8a7653166a0fd2e44b47
 - path: config/aidc_ess_selfuse_load/route_B/add_decomposition/lgbm_usmdp_prob_mean_decomp_mstl288-2016.yaml
   kind: single
   freq: 5min
@@ -4967,7 +4967,7 @@ entries:
     actual_available_supervised_origins: 9792
     actual_final_training_origin_count: 8352
   old_fingerprint: ee5ab98e259672206419af31e8b4e977f6126ecd2a53bae416d70a06850b50c5
-  new_fingerprint: e9bf255e0c4dd5f20c3272e4e3cca0d322d87b4a9846788c410ae66aeb1fdbb7
+  new_fingerprint: fcd53676bcbe639cde35c1f199334c7f9d8ff25167db03cc9dd8e998906c15b6
 - path: config/aidc_ess_selfuse_load/route_B/add_decomposition/lgbm_usmdp_prob_mean_decomp_stl288.yaml
   kind: single
   freq: 5min
@@ -4990,7 +4990,7 @@ entries:
     actual_available_supervised_origins: 9792
     actual_final_training_origin_count: 8352
   old_fingerprint: 6a1e30aee2347f4f83dc40a745b310d1d41e53ee9a528baadeb3b6209ad20e5f
-  new_fingerprint: 684b0c2dfb40b07e8374feef05c7f4883956f264093f13f4146b02eab14e7120
+  new_fingerprint: 5401cbcf39df9fd7c39e1c305009ec2c3e8ec0d1ed90748488bae8b11b6262e8
 - path: config/aidc_ess_selfuse_load/route_B/add_decomposition/lgbm_usmdr_prob_mean_decomp_linear.yaml
   kind: single
   freq: 5min
@@ -5013,7 +5013,7 @@ entries:
     actual_available_supervised_origins: 9792
     actual_final_training_origin_count: 8352
   old_fingerprint: 74c385e9f2af54485f807f41ee13d41e47b2d207caf4ebc2a9bddfd8c11dcef7
-  new_fingerprint: 46a3f35ccb8cd82eae6aab3dd73282075879e1b2008a9909c18827134785d9d8
+  new_fingerprint: ea45e421e3ea3b858c42edf2e45ca3e5cbe27cbe756ea0fc9c6240ab9fb41b86
 - path: config/aidc_ess_selfuse_load/route_B/add_decomposition/lgbm_usmdr_prob_mean_decomp_mstl288-2016.yaml
   kind: single
   freq: 5min
@@ -5036,7 +5036,7 @@ entries:
     actual_available_supervised_origins: 9792
     actual_final_training_origin_count: 8352
   old_fingerprint: 5fbe138482d6fc338342790c44788139db5be2d3a416ce9a25ca41acee7de3dd
-  new_fingerprint: 06c3af6ed3bef3838050e7910c3c1586efaf910bfde4aae62f40cc2c6045f0f6
+  new_fingerprint: 2d580429bfc8a5b3e9eb1c93d63654ac73428824c68186413a5f0ed932343a14
 - path: config/aidc_ess_selfuse_load/route_B/add_decomposition/lgbm_usmdr_prob_mean_decomp_stl288.yaml
   kind: single
   freq: 5min
@@ -5059,7 +5059,7 @@ entries:
     actual_available_supervised_origins: 9792
     actual_final_training_origin_count: 8352
   old_fingerprint: 92f3197ab647cf9e79ea7f8298b5a7f9900a1287d365f239c06ab96cd374379a
-  new_fingerprint: bd31fdcce0b738a87d7373b29d4e584bacad996afe5219aeaeb96d8fd7c555bc
+  new_fingerprint: da9394020ad3a62c5dfc4ca25355200bd094147a47dc8cf800704871660be2f0
 - path: config/aidc_ess_selfuse_load/route_B/add_decomposition/lgbm_usmr_prob_mean_decomp_linear.yaml
   kind: single
   freq: 5min
@@ -5082,7 +5082,7 @@ entries:
     actual_available_supervised_origins: 9792
     actual_final_training_origin_count: 8352
   old_fingerprint: 27c29ceedbc361eaf641cc5a5fa08d9910c1cd409ee658654f6ffb9058e1e5a1
-  new_fingerprint: b5eb797813cc8d3c9e63a02f9e12e74b6b11decd0481e4a00fc30d69895def15
+  new_fingerprint: c1abd51ec452048d8ad34f3bb4186c125174fc01a8e68f7ad23a7ab2f9ccb39a
 - path: config/aidc_ess_selfuse_load/route_B/add_decomposition/lgbm_usmr_prob_mean_decomp_mstl288-2016.yaml
   kind: single
   freq: 5min
@@ -5105,7 +5105,7 @@ entries:
     actual_available_supervised_origins: 9792
     actual_final_training_origin_count: 8352
   old_fingerprint: ba64ad4ebd760ba49fe41afca33552b04481b49f88741f2576a49df2da89202e
-  new_fingerprint: 4f74b6fca86f5b2da220fcfcb3ab5409165d5c80a552caa0f96eabbb7ffa9519
+  new_fingerprint: 1061c8760bc76766ef4c311ae0fbee8fcbddfee8513565db3e64df459df22e26
 - path: config/aidc_ess_selfuse_load/route_B/add_decomposition/lgbm_usmr_prob_mean_decomp_stl288.yaml
   kind: single
   freq: 5min
@@ -5128,7 +5128,7 @@ entries:
     actual_available_supervised_origins: 9792
     actual_final_training_origin_count: 8352
   old_fingerprint: c894b55210233c317498e918a4ef8faf17f2c24268c4c4618a6bd65f87ec5221
-  new_fingerprint: acd15952d85bf98b3e787f9e95827aa0e988ecc0623ba7f74562173ce872d3de
+  new_fingerprint: a4748d20038ee604f5182ba24c5450b2bfc03708299e79025cc7c6d21d02d982
 - path: config/aidc_ess_selfuse_load/route_B/add_endogenous_actual_strategy/ensemble_members/lgbm_msbr_mean_pcs_recursive.yaml
   kind: single
   freq: 5min
@@ -5342,7 +5342,7 @@ entries:
     actual_available_supervised_origins: 9792
     actual_final_training_origin_count: 8352
   old_fingerprint: 5fe1bd1fb4a4697a568be39df17360ed796d1994a7f2ab262708b3321fe7ac29
-  new_fingerprint: b00105072c03783430358b5a52032fb5538e04547a128104167e3002ab6c4a37
+  new_fingerprint: d85c3532588f497b9ddddab9dbdfd540a7f89747910742ae0d99b215e68e4a8b
 - path: config/aidc_ess_selfuse_load/route_B/add_exogenous_plan_strategy/lgbm_usmdp_prob_mean_plan.yaml
   kind: single
   freq: 5min
@@ -5365,7 +5365,7 @@ entries:
     actual_available_supervised_origins: 9792
     actual_final_training_origin_count: 8352
   old_fingerprint: 2925aeefc7d8bc49859d1005ab7c1d8c4e92bfac0220d7114629416cab9184c3
-  new_fingerprint: 92c3c917dff4fe438ef5afccbd894de171fcc20ac483b729833767ef8dc1a30a
+  new_fingerprint: e4b7bcc58fae39ddc602d116836d4d41ba508bda881f784f4a897f96d54a6c29
 - path: config/aidc_ess_selfuse_load/route_B/add_exogenous_plan_strategy/lgbm_usmdr_prob_mean_plan.yaml
   kind: single
   freq: 5min
@@ -5388,7 +5388,7 @@ entries:
     actual_available_supervised_origins: 9792
     actual_final_training_origin_count: 8352
   old_fingerprint: b9402147ec57d3f1a5ad7f618bd049ba0bb7e280994c05188971a35985ab5ac3
-  new_fingerprint: 3bd47011412c34b92aaaf6a596513f61d8d31734757ab5193c59db80bfb764c6
+  new_fingerprint: a93f2fc97cf352f118807b2a5049bc4a8a2ab70ea8a56ec0328964637d0bfb6b
 - path: config/aidc_ess_selfuse_load/route_B/add_exogenous_plan_strategy/lgbm_usmr_prob_mean_plan.yaml
   kind: single
   freq: 5min
@@ -5411,7 +5411,7 @@ entries:
     actual_available_supervised_origins: 9792
     actual_final_training_origin_count: 8352
   old_fingerprint: 36bc495078f212d5da4ad692c3698806017bba62b765a335a625a10828180735
-  new_fingerprint: 5072487ff07a9653ddb913bfdde54d4851eca0bee302ba43eeb5ee0dd94b7cd6
+  new_fingerprint: 8c5d76a21534f26fe71e22d1af7ca4cab03c6c2c76ad7ded3934af94d5d78b58
 - path: config/aidc_ess_selfuse_load/route_B/add_exogenous_weather_date/lgbm_usmd_prob_mean_weather_date.yaml
   kind: single
   freq: 5min
@@ -5434,7 +5434,7 @@ entries:
     actual_available_supervised_origins: 9792
     actual_final_training_origin_count: 8352
   old_fingerprint: 5fb819839d470a568d47820809bf7854558722c586dd50f2273872906b6381e2
-  new_fingerprint: 9011b6284c336988fa058b2e9a21c80f36e3ee01653ced887627648b8dec3d49
+  new_fingerprint: 14485d8554466b9dccbd81eacb13019fe399cced1ea03737fa17b2151ff8ca6f
 - path: config/aidc_ess_selfuse_load/route_B/add_exogenous_weather_date/lgbm_usmdp_prob_mean_weather_date.yaml
   kind: single
   freq: 5min
@@ -5457,7 +5457,7 @@ entries:
     actual_available_supervised_origins: 9792
     actual_final_training_origin_count: 8352
   old_fingerprint: d46397f7e361ba54033a8d580056eb04227455a20572d86ad72e2273bfa6ed3d
-  new_fingerprint: 76c0a2c0c3831c61acf5d0b6a01bb0a44646043439dbe1310b2b76463600fe12
+  new_fingerprint: cbc7e428146bbbfeac7a9794dab78b377d452d8a506dac55b6e697585b4d7bf6
 - path: config/aidc_ess_selfuse_load/route_B/add_exogenous_weather_date/lgbm_usmdr_prob_mean_weather_date.yaml
   kind: single
   freq: 5min
@@ -5480,7 +5480,7 @@ entries:
     actual_available_supervised_origins: 9792
     actual_final_training_origin_count: 8352
   old_fingerprint: bc90305ed28624cff902b585d1044bee83ef9aa9813b5032fc97496c452d81ff
-  new_fingerprint: afdde10e822866521a56f522c2fc2f3e8e5e07609bcf3b9794a419bf092e7e77
+  new_fingerprint: b445cbb441355d410857f955b2d63699621e20ab58a8e3602ddf574996c3d29c
 - path: config/aidc_ess_selfuse_load/route_B/add_exogenous_weather_date/lgbm_usmr_prob_mean_weather_date.yaml
   kind: single
   freq: 5min
@@ -5503,7 +5503,7 @@ entries:
     actual_available_supervised_origins: 9792
     actual_final_training_origin_count: 8352
   old_fingerprint: 7aa81190d3cc539b33c554bf9b6f3ece67b0821040ca89ed74299919ca0ea27f
-  new_fingerprint: e47ad5cb405cad224511aca0a919254924b397fc77370f6d5bb0a01c287f87d1
+  new_fingerprint: 50aeb2659851da20a12ffb71f366f6bf5bf3dabe8ed14e114f2239bdcf6f33bf
 - path: config/aidc_ess_selfuse_load/route_B/add_exogenous_weather_date_plan_strategy/lgbm_usmd_prob_mean_all.yaml
   kind: single
   freq: 5min
@@ -5526,7 +5526,7 @@ entries:
     actual_available_supervised_origins: 9792
     actual_final_training_origin_count: 8352
   old_fingerprint: db2faab8cdbc7099563755aba30c02a35af0e7613414c04a8f7ffb66a7977f0f
-  new_fingerprint: 6d5233aae5af9cedbf1bbbebff5263b7e0b91bcd2305d1bcca036644a5a28ebf
+  new_fingerprint: 8515db543242e13cde083455dc0ea5471f5654af92daec5b48bb5776253590d7
 - path: config/aidc_ess_selfuse_load/route_B/add_exogenous_weather_date_plan_strategy/lgbm_usmdp_prob_mean_all.yaml
   kind: single
   freq: 5min
@@ -5549,7 +5549,7 @@ entries:
     actual_available_supervised_origins: 9792
     actual_final_training_origin_count: 8352
   old_fingerprint: 1aea82887af8d628f46abf709d3f72e68a8876084ad0ffe710733c9d31f03cc9
-  new_fingerprint: b97c2957e18d6b329b65dd8dae4acaa34b30bd3f3956b625f677c29d7236cf59
+  new_fingerprint: 58890b9df703fbad546abd1bb560ad7427ef686c6c84d927bd90be1ba17d2140
 - path: config/aidc_ess_selfuse_load/route_B/add_exogenous_weather_date_plan_strategy/lgbm_usmdr_prob_mean_all.yaml
   kind: single
   freq: 5min
@@ -5572,7 +5572,7 @@ entries:
     actual_available_supervised_origins: 9792
     actual_final_training_origin_count: 8352
   old_fingerprint: 5046338d16eed16463a920425f10ae30f27744efd2bcf4af87d3b5c7885e0ffa
-  new_fingerprint: 079dea3d5c065810eb1a7dca4a1f926584df9494c748782369a022f4441fae1a
+  new_fingerprint: 3c76b4550744166b8e0b886f5877509a9fa3af8e0c81b970151246ebec8a7b94
 - path: config/aidc_ess_selfuse_load/route_B/add_exogenous_weather_date_plan_strategy/lgbm_usmr_prob_mean_all.yaml
   kind: single
   freq: 5min
@@ -5595,7 +5595,7 @@ entries:
     actual_available_supervised_origins: 9792
     actual_final_training_origin_count: 8352
   old_fingerprint: d1b123466593344924d3448038bef37a5908f37d2fa597d12e94596cf7fca914
-  new_fingerprint: 762163bed9a991cc366d3f668e050ec598023b7de1fc15ca64b2f35031bbe7b3
+  new_fingerprint: 4361781689a775076b6fdd21693e9b2b4f89faf4ef983378741881c396855908
 - path: config/aidc_ess_selfuse_load/route_B/add_strategy_features/lgbm_usmd_mean_prob_horizon_conformal.yaml
   kind: single
   freq: 5min
@@ -5618,7 +5618,7 @@ entries:
     actual_available_supervised_origins: 9792
     actual_final_training_origin_count: 8352
   old_fingerprint: 5acd652f9444b7e108f8da55ded41ee0ad38467b418020da9d35d806e729a357
-  new_fingerprint: adb3a7786e37c69f3a45901ef370d7d419a51cbe9489cd4b8745839112c69978
+  new_fingerprint: 506fbf8cb8f3e4ac45ee17b55492ec658dc981fa77265a4ac5bd1133097d728f
 - path: config/aidc_ess_selfuse_load/route_B/add_strategy_features/lgbm_usmd_prob_mean_conformal.yaml
   kind: single
   freq: 5min
@@ -5641,7 +5641,7 @@ entries:
     actual_available_supervised_origins: 9792
     actual_final_training_origin_count: 8352
   old_fingerprint: 113b784f725861b821d5901a9a73ce86bd24ff0513f36f2dae41444f974e5744
-  new_fingerprint: bd4c8d11153abf7337a20b0426acd2c0c58c511df46916c2222150485e0354bf
+  new_fingerprint: 8d80eb9eb8879720b3027a94830e431fde928145bfb5c4b2e4bdc25531452116
 - path: config/aidc_ess_selfuse_load/route_B/add_strategy_features/lgbm_usmdp_prob_mean_conformal.yaml
   kind: single
   freq: 5min
@@ -5664,7 +5664,7 @@ entries:
     actual_available_supervised_origins: 9792
     actual_final_training_origin_count: 8352
   old_fingerprint: 13a192ff9b754c94892c71f61e16dda0a6f94a2948c91b7b0051022eb1e9eee3
-  new_fingerprint: ad1135797494e8a97e48f130acaa98cce7274fae4df8e1516d0e23f2e4886b8b
+  new_fingerprint: b260fd249077b64b13ccf2c1e150faedadc14b28db53fa4458b06f7391cefb4c
 - path: config/aidc_ess_selfuse_load/route_B/add_strategy_features/lgbm_usmdr_prob_mean_conformal.yaml
   kind: single
   freq: 5min
@@ -5687,7 +5687,7 @@ entries:
     actual_available_supervised_origins: 9792
     actual_final_training_origin_count: 8352
   old_fingerprint: 9dc9384d7ed57cef2c6a0704564c1d1ba856888ff7602b0ffe6dedf13ffbc0f7
-  new_fingerprint: 9ae9488c9c305ca9d16c37739151e57e0dea3160ca6c4c3a814b74a6ead5d604
+  new_fingerprint: db69093598a022333faae19b724e801ce962db3c1ec4406bdfba106d653f0d9e
 - path: config/aidc_ess_selfuse_load/route_B/add_strategy_features/lgbm_usmr_prob_mean_conformal.yaml
   kind: single
   freq: 5min
@@ -5710,7 +5710,7 @@ entries:
     actual_available_supervised_origins: 9792
     actual_final_training_origin_count: 8352
   old_fingerprint: b506c4956e75c0360fbcb2601a47d80aaeffc609104cbcffce066aba83aa2669
-  new_fingerprint: cb4a1e9764e6a448b000efa219623122a095dd146d2d47f20846b75004f43041
+  new_fingerprint: 791c69315b5ab1f48a6625db488d118a3be3acd24409a328b6f23ef3024035aa
 - path: config/aidc_ess_selfuse_load/route_B/baseline/ensemble_members/lgbm_usbr_prob_mean_recursive.yaml
   kind: single
   freq: 5min
@@ -5733,7 +5733,7 @@ entries:
     actual_available_supervised_origins: 9792
     actual_final_training_origin_count: 8352
   old_fingerprint: acd3a08540884b9feb213e0a0c0a4bb5c77d11b08390b0014abe6e2811c60012
-  new_fingerprint: c3cbe37f5754e54ce2bdca7c56593f5c750c9bfa4adb51a851139da967eccb74
+  new_fingerprint: 31dcd82585ecbd6a096d68288dc79bdded2ff9615bbd7a200e1eefb526cb7828
 - path: config/aidc_ess_selfuse_load/route_B/baseline/lgbm_usbr_prob_mean.yaml
   kind: ensemble
   freq: 5min
@@ -5755,7 +5755,7 @@ entries:
     configured_final_train_window: 8352
     actual_final_training_origin_count: null
   old_fingerprint: 4bd22a2132862fccac7a7ef8de5bfeeb2716c09aa3ff799e3832717f166ce403
-  new_fingerprint: a1074da413295fe61a5108aba8d32994c7345c043f99d33e19a3397465f615e5
+  new_fingerprint: fab80883e6c1f89014b31ab961ffe6498346c5981f9f5c16ae5853507fe5fae7
   old_oof_geometry:
     train_window_length: 30
     fold_count: 1
@@ -5786,7 +5786,7 @@ entries:
     actual_available_supervised_origins: 9792
     actual_final_training_origin_count: 8352
   old_fingerprint: 8cba4a6821b1a92b2f29e776ece41a3d7f07c1d9ef5dfed04ef9bb8bfcd31e5b
-  new_fingerprint: 3c0493e81df6265710b3fc62b7a1c7aad973984bbf57a14f02312e56e67ef646
+  new_fingerprint: e931279a024603949c6a4d607a6623937eacfc22708d188f64e9d0d36d83429a
 - path: config/aidc_ess_selfuse_load/route_B/baseline/lgbm_usmdp_prob_mean.yaml
   kind: single
   freq: 5min
@@ -5809,7 +5809,7 @@ entries:
     actual_available_supervised_origins: 9792
     actual_final_training_origin_count: 8352
   old_fingerprint: eb026f0fadff105c9f6b55a7ecefefa67298048416c205d00b6469b14e239185
-  new_fingerprint: 606169e25aee2f611995e707013ac06ff3133cbb7e42b57c8b5c9d5dd4c98d91
+  new_fingerprint: 86be19492b27d7488844b2b525e48c8f48df8005f4a28ff20c23c90e8760bc0b
 - path: config/aidc_ess_selfuse_load/route_B/baseline/lgbm_usmdr_prob_mean.yaml
   kind: single
   freq: 5min
@@ -5832,7 +5832,7 @@ entries:
     actual_available_supervised_origins: 9792
     actual_final_training_origin_count: 8352
   old_fingerprint: 77460d2bf07d52fa1504cffad4dc3e117fb07136457b2a847cae32d3f0115683
-  new_fingerprint: a81926fbe84c38ee9678ab4f2aa26dfd11ec3ad70080de5df238e82d4b655866
+  new_fingerprint: f47242dd5b3b783c66401b1171e42e20b12e51c56c1559dbae22ec9ffb3e84cc
 - path: config/aidc_ess_selfuse_load/route_B/baseline/lgbm_usmr_prob_mean.yaml
   kind: single
   freq: 5min
@@ -5855,7 +5855,7 @@ entries:
     actual_available_supervised_origins: 9792
     actual_final_training_origin_count: 8352
   old_fingerprint: 4ec437be9d8ee26d8e298817313ece40c09efb6fccdc5d997b3e35bf95c092e6
-  new_fingerprint: 7d67943495394bc9d864988b2bd5c361ad89856291e1f014156e16d64dd715b1
+  new_fingerprint: 07148294136f2e3ed3f9a272e8db23da1edb39c8dfeeeae33f517c8bfac682ef
 - path: config/aidc_load_15min_daily/route_A/add_decomposition/enet_usmd_mean_decomp_linear.yaml
   kind: single
   freq: 15min
@@ -6016,7 +6016,7 @@ entries:
     actual_available_supervised_origins: 3264
     actual_final_training_origin_count: 2784
   old_fingerprint: eb6e4c29dc36cad768e8ab4a46a02b27e5a1a050ddf8d2fd9075d935d45dac55
-  new_fingerprint: 3ad90fa030c45179c1d9a815c3cf5fafb2f56c4162581197fa7334600e18fd3f
+  new_fingerprint: bca6eb9868a424159b0158fafa7475afd6be9614808f44df98a63afb42189e41
 - path: config/aidc_load_15min_daily/route_A/add_decomposition/lgbm_usmd_mean_prob_horizon_decomp_mstl96-672.yaml
   kind: single
   freq: 15min
@@ -6039,7 +6039,7 @@ entries:
     actual_available_supervised_origins: 3264
     actual_final_training_origin_count: 2784
   old_fingerprint: d4f7677242926f72fb56671bce340f5c63fab3efbac6ac2e24158e31f22e1f8a
-  new_fingerprint: ef87a9684dc65faa7bb1fec997f9806719a84c429104e1a54eac0918bffd145f
+  new_fingerprint: 7b86f941d37947eca37feea17a3f926e19d2b7db4aae13a9566b34cf2c9cd690
 - path: config/aidc_load_15min_daily/route_A/add_decomposition/lgbm_usmd_mean_prob_horizon_decomp_stl96.yaml
   kind: single
   freq: 15min
@@ -6062,7 +6062,7 @@ entries:
     actual_available_supervised_origins: 3264
     actual_final_training_origin_count: 2784
   old_fingerprint: 793dcb169361cd310b2985da1555012acac1d7d52fcbcb33748984cb17d58ff1
-  new_fingerprint: 205b5f13dd8a27f4768f685999700e2a40bce2a4cbdb77cec4884ef0ccf65ef6
+  new_fingerprint: 172a7466eee8df7a870b05023cfd63cff23f04fba59d0ba7f91241a166e5e349
 - path: config/aidc_load_15min_daily/route_A/add_decomposition/lgbm_usmd_prob_mean_decomp_linear.yaml
   kind: single
   freq: 15min
@@ -6085,7 +6085,7 @@ entries:
     actual_available_supervised_origins: 3264
     actual_final_training_origin_count: 2784
   old_fingerprint: 8e15848a556c6d5992c2e4713567d73defa1bb6fd367eac4047dcefdafe47817
-  new_fingerprint: 75cc6060b82ce67a62b05e5d014be8f9d2f4cfd988a3e56fcf48c84d55e17806
+  new_fingerprint: ab07808727d334376fc2a8f013d4e5e6aa2c4784333a8a901a1b3686015bb1df
 - path: config/aidc_load_15min_daily/route_A/add_decomposition/lgbm_usmd_prob_mean_decomp_mstl96-672.yaml
   kind: single
   freq: 15min
@@ -6108,7 +6108,7 @@ entries:
     actual_available_supervised_origins: 3264
     actual_final_training_origin_count: 2784
   old_fingerprint: 7710e4160741f726d1d91bc545319931f553688f361b3f16580132921e20ff14
-  new_fingerprint: ea3ab52d2ddbe323d4589ccf6ee5c86a98eab4f22a9fdc89e2c5c9aa4678aeb8
+  new_fingerprint: 18e441c0e73639fb15b61a76b5c5c52b2e88779260ac4114acc104863243b4cc
 - path: config/aidc_load_15min_daily/route_A/add_decomposition/lgbm_usmd_prob_mean_decomp_stl96.yaml
   kind: single
   freq: 15min
@@ -6131,7 +6131,7 @@ entries:
     actual_available_supervised_origins: 3264
     actual_final_training_origin_count: 2784
   old_fingerprint: 117d0b2ab793b144c6c6cc6deb2aaf3599158dddf77b3b00d7ff5fc30b8ce37a
-  new_fingerprint: e1393fd9e42b19edfc3a037a0e1ad7ec310a073f7eb5bb815d1c50b785112932
+  new_fingerprint: 593995d5a96923260b9abbf34a35aa32f8a270b4ef059e651ff6e6e0d57b1bdc
 - path: config/aidc_load_15min_daily/route_A/add_decomposition/lgbm_usmdp_prob_mean_decomp_linear.yaml
   kind: single
   freq: 15min
@@ -6154,7 +6154,7 @@ entries:
     actual_available_supervised_origins: 3264
     actual_final_training_origin_count: 2784
   old_fingerprint: bf172176dc4221d81002f5f5202dc669036fc565c280c1a95ecfcb4191f73895
-  new_fingerprint: 39b7ccf7ee41629683697e4e0aec77ad100bfa03ebf49675f414935410d7f808
+  new_fingerprint: 3fb1a1b5d3a4bb943524dd83110ac21e867981be77a4c2feb11491503d412867
 - path: config/aidc_load_15min_daily/route_A/add_decomposition/lgbm_usmdp_prob_mean_decomp_mstl96-672.yaml
   kind: single
   freq: 15min
@@ -6177,7 +6177,7 @@ entries:
     actual_available_supervised_origins: 3264
     actual_final_training_origin_count: 2784
   old_fingerprint: 560c5018264e1e00a69731893a9544c614a1499491d10dcae264a54fc80b9a70
-  new_fingerprint: cfeeaa18e4f1e1fd3cea2f3d94ea054d06a33fe137e5fe2d5567eea4283f7e18
+  new_fingerprint: e7dfc5dcc0f5a67c719ac3c374f0a3dc8511959f3b6466ae28012c37fcbe86b7
 - path: config/aidc_load_15min_daily/route_A/add_decomposition/lgbm_usmdp_prob_mean_decomp_stl96.yaml
   kind: single
   freq: 15min
@@ -6200,7 +6200,7 @@ entries:
     actual_available_supervised_origins: 3264
     actual_final_training_origin_count: 2784
   old_fingerprint: 667b84e44d42b94f2f8c71fa1ac2d9f9ebca91b3ee29a4b55832591b278b53ae
-  new_fingerprint: 8b8984c3483fd65cfa576498b639368dd152ae1a57a91dae37a1402c54f0a28f
+  new_fingerprint: 479491cbe7f9fdde20d373bcdf90081b29a258a389ae47e97a14e9de72d410da
 - path: config/aidc_load_15min_daily/route_A/add_decomposition/lgbm_usmdr_prob_mean_decomp_linear.yaml
   kind: single
   freq: 15min
@@ -6223,7 +6223,7 @@ entries:
     actual_available_supervised_origins: 3264
     actual_final_training_origin_count: 2784
   old_fingerprint: 77431a56d571d77da31eb8194d183dd018847e1ab7756d46ccb1c5ea5542bf78
-  new_fingerprint: 729d33f76da9c84aca225ab6dca1b20633a84ccb7ec6b5d2d46bac8703635580
+  new_fingerprint: b9be13d5f3d88d2f6089e207335cb8d4ea008239994b0f1df1b87815d26803d0
 - path: config/aidc_load_15min_daily/route_A/add_decomposition/lgbm_usmdr_prob_mean_decomp_mstl96-672.yaml
   kind: single
   freq: 15min
@@ -6246,7 +6246,7 @@ entries:
     actual_available_supervised_origins: 3264
     actual_final_training_origin_count: 2784
   old_fingerprint: 6d4103ba7aff84ab9543034b1003b97d6bb3c31b1880186370e6f09862534e9b
-  new_fingerprint: 87cda7c85dafa2e12bf1b439e6f27e0329de95fe347ec3d6c3e14a3d24e067f2
+  new_fingerprint: d59af90158e812725290e2ebc740016a713d4e82bb21249b04395e6f2cac462a
 - path: config/aidc_load_15min_daily/route_A/add_decomposition/lgbm_usmdr_prob_mean_decomp_stl96.yaml
   kind: single
   freq: 15min
@@ -6269,7 +6269,7 @@ entries:
     actual_available_supervised_origins: 3264
     actual_final_training_origin_count: 2784
   old_fingerprint: a6f459121d584765a6ed6fa51f5f9beb1099be1b2ff9a075fc4a71ae45f218f8
-  new_fingerprint: bbe6cce40a9a052c783b5506d64f43f3797c546b19a062cd761c3e9d0e6dfd84
+  new_fingerprint: e1faa1a965f7aa6f5ad767757b6991391ca2a9d9483ac58432eb96e7de7047f6
 - path: config/aidc_load_15min_daily/route_A/add_decomposition/lgbm_usmr_prob_mean_decomp_linear.yaml
   kind: single
   freq: 15min
@@ -6292,7 +6292,7 @@ entries:
     actual_available_supervised_origins: 3264
     actual_final_training_origin_count: 2784
   old_fingerprint: f0fdb9672565bf4313372e406abfaf6f493723799ffcadae837ff7f6d4c06502
-  new_fingerprint: 4ce751871b36d16b034175f5d4e193e09b0c278529ab8871fdfda44b17771399
+  new_fingerprint: 30fdbaf37a9ef402ead74548c698096924cc80905034ecaf1798429b4c1bfd41
 - path: config/aidc_load_15min_daily/route_A/add_decomposition/lgbm_usmr_prob_mean_decomp_mstl96-672.yaml
   kind: single
   freq: 15min
@@ -6315,7 +6315,7 @@ entries:
     actual_available_supervised_origins: 3264
     actual_final_training_origin_count: 2784
   old_fingerprint: 44acfd894d795649b0302cbfb9e86869c721758e0df77f494d2ff4f4d6fd6cb1
-  new_fingerprint: 8088e0007e379b29d7aed3beb42d151e85dd5f808d2d12ba383635f28bbc25f2
+  new_fingerprint: 8ad17aaeb1cfb5e3813edd5cc7d80a66438d8ae0bc7a5309d5c6b403e74385cc
 - path: config/aidc_load_15min_daily/route_A/add_decomposition/lgbm_usmr_prob_mean_decomp_stl96.yaml
   kind: single
   freq: 15min
@@ -6338,7 +6338,7 @@ entries:
     actual_available_supervised_origins: 3264
     actual_final_training_origin_count: 2784
   old_fingerprint: 6496c50e73bb902d2680fd7190a533ebb91d513df378fc61854e8f9a57770a45
-  new_fingerprint: 58787a9acd450d533f2c2173a8ef2672f0a8ecd03e4c823e919b9832c50120b1
+  new_fingerprint: f75529f42156da86592dbf5bf63b11e8ba059f98891e5e940124be4d304b70d7
 - path: config/aidc_load_15min_daily/route_A/add_decomposition/ridge_usmd_mean_decomp_linear.yaml
   kind: single
   freq: 15min
@@ -6789,7 +6789,7 @@ entries:
     actual_available_supervised_origins: 3264
     actual_final_training_origin_count: 2784
   old_fingerprint: d2ee409740d549eafafc417c058d4c5cd779b07bc04ecf80a909ffc208b10b94
-  new_fingerprint: 092043ec9d17e61db7c2eeb32c647073dc2b51218082f5b1606f9179ec981105
+  new_fingerprint: 7a01404eb32d0b332d71fe75642afa1f40e95dbf19bcfb63e72e572de0bf7d2c
 - path: config/aidc_load_15min_daily/route_A/add_exogenous_weather_date/lgbm_usmd_prob_mean_conformal.yaml
   kind: single
   freq: 15min
@@ -6812,7 +6812,7 @@ entries:
     actual_available_supervised_origins: 3264
     actual_final_training_origin_count: 2784
   old_fingerprint: 8f92ccdcef6f19fb2473f0a47aa50830c90ae12de665646a31ede518827609a2
-  new_fingerprint: 244b970707b886c9f95d8b1128daf7cd6afb3ee076a93cc028017b569f8496a9
+  new_fingerprint: eebe9ab8522bc991c21acf363bfc2067ba941432a13b395b9b584049a9c616bc
 - path: config/aidc_load_15min_daily/route_A/add_exogenous_weather_date/lgbm_usmdp_prob_mean_conformal.yaml
   kind: single
   freq: 15min
@@ -6835,7 +6835,7 @@ entries:
     actual_available_supervised_origins: 3264
     actual_final_training_origin_count: 2784
   old_fingerprint: 10aa8950ea72cf6fb7c57fb10e1d3e6ac7f96f5be0644f8f9abaebb69029299a
-  new_fingerprint: 49b18d6a666f72d1ed6e66fc0c29128cdb4a00709a3aca4f8df3d3f8099ac112
+  new_fingerprint: 207255d1686921d1c705a00085a63d27c05f9c79a8872cf47fec93eae92b31b3
 - path: config/aidc_load_15min_daily/route_A/add_exogenous_weather_date/lgbm_usmdr_prob_mean_conformal.yaml
   kind: single
   freq: 15min
@@ -6858,7 +6858,7 @@ entries:
     actual_available_supervised_origins: 3264
     actual_final_training_origin_count: 2784
   old_fingerprint: 239fc5fac25078de868a18b28155beddad5a758261b37014b7e7c1e4f4f21ca4
-  new_fingerprint: e1fd54eb549f768c00448650c9c7cf514ff3141f8abc9f36f81868542d9a8177
+  new_fingerprint: fa54ce439b077cce94482ac04263029e2914e1f51ddaaee8e4f480aee4f952db
 - path: config/aidc_load_15min_daily/route_A/add_exogenous_weather_date/lgbm_usmr_prob_mean_conformal.yaml
   kind: single
   freq: 15min
@@ -6881,7 +6881,7 @@ entries:
     actual_available_supervised_origins: 3264
     actual_final_training_origin_count: 2784
   old_fingerprint: 518597d5ad6fa788338bd7ef1d7f3ace2ff3697f8af0d051357bf6b617ff7319
-  new_fingerprint: c5b6f3245f95f10248392676aea6f0c5e42c5034a4157f016ee6738df38215ef
+  new_fingerprint: 8da9986c370ee6ed624d6f278edf843c1a8c504b3cd1858add10f3e66f3b0c8e
 - path: config/aidc_load_15min_daily/route_A/add_exogenous_weather_date/ridge_usmd_mean.yaml
   kind: single
   freq: 15min
@@ -6973,7 +6973,7 @@ entries:
     actual_available_supervised_origins: 3264
     actual_final_training_origin_count: 2784
   old_fingerprint: 3459b5ca0230ed4753c89b67f69f352b3bbb24685423a3fdbe574051b0a3219b
-  new_fingerprint: ab2cb56cea0f98f01c57812271ef547dd098fc39e7826c4bc3c125fb959c92b4
+  new_fingerprint: eb0cafde9b70b4a223079603cb1b4dfe4674ec0412c8a0370e08df6986a195af
 - path: config/aidc_load_15min_daily/route_A/add_load_state/lgbm_usmd_prob_mean_conformal.yaml
   kind: single
   freq: 15min
@@ -6996,7 +6996,7 @@ entries:
     actual_available_supervised_origins: 3264
     actual_final_training_origin_count: 2784
   old_fingerprint: e2466d8f71f75a8342494d5c1024d3f84ca4a1f97ec218d70cdd0b349ab9ba42
-  new_fingerprint: 2bd003b77a10e40e198825d5b80882a25998a1721e878af6f70b312787d01329
+  new_fingerprint: 859e7aec172b30c4bc35cddd12fd12167b2698ad3e8d20be5020ede359560004
 - path: config/aidc_load_15min_daily/route_A/add_load_state/lgbm_usmdp_prob_mean_conformal.yaml
   kind: single
   freq: 15min
@@ -7019,7 +7019,7 @@ entries:
     actual_available_supervised_origins: 3264
     actual_final_training_origin_count: 2784
   old_fingerprint: 8f648e01289155cd0cbb6d4272669bb5a7de75cecb252dd3692be3ad69cdf71e
-  new_fingerprint: f415ceaf80d786b94815e3e8540b0019910c4c94e05409aed533452997c48d7f
+  new_fingerprint: 7e381b673d23a824e0efce6f2091d30c251f13ab4c19c0b12b56a64afa7c2043
 - path: config/aidc_load_15min_daily/route_A/add_load_state/lgbm_usmdr_prob_mean_conformal.yaml
   kind: single
   freq: 15min
@@ -7042,7 +7042,7 @@ entries:
     actual_available_supervised_origins: 3264
     actual_final_training_origin_count: 2784
   old_fingerprint: d64a02b90906787a37847905250a9e0be3fec51ff7733c88996ad8387fc948f0
-  new_fingerprint: 8179fad229de3b34364107e4cc9bc94a28d81b4e3354c8db42be4ef1204cd295
+  new_fingerprint: ed016d26128d0afd131f26f25cae3fe79ae8c1a438815c2d1e521f8310ed7f32
 - path: config/aidc_load_15min_daily/route_A/add_load_state/lgbm_usmr_prob_mean_conformal.yaml
   kind: single
   freq: 15min
@@ -7065,7 +7065,7 @@ entries:
     actual_available_supervised_origins: 3264
     actual_final_training_origin_count: 2784
   old_fingerprint: e2d7a704b6a3a574b6309f4555188d65df2f021d5964a740abe1488546765ef8
-  new_fingerprint: 63d22dca6fb40237a6e0952be553c99edf69cbda0fc1b76c7a451946dab3a7ff
+  new_fingerprint: 147671159c6ac3b12f5479b36f309c0529ca7c86f1517a6a545dbf48773bc894
 - path: config/aidc_load_15min_daily/route_A/add_load_state/ridge_usmd_mean.yaml
   kind: single
   freq: 15min
@@ -7134,7 +7134,7 @@ entries:
     actual_available_supervised_origins: 3264
     actual_final_training_origin_count: 2784
   old_fingerprint: 6e622663502fde84372e137b7b23e3a1ae7136606471759b5cd6300f888bf996
-  new_fingerprint: 5e5adf97f4869b9f1202d6774cde7f9c472bd61c0c3af414f64d541c0ad795b8
+  new_fingerprint: e9ff0bea3041f8c9572c9eab0ab630fe222d49fed6fecb0ad781f71754da9b95
 - path: config/aidc_load_15min_daily/route_A/baseline/lasso_usmd_mean.yaml
   kind: single
   freq: 15min
@@ -7179,7 +7179,7 @@ entries:
     configured_final_train_window: 2784
     actual_final_training_origin_count: null
   old_fingerprint: ddc551649823ffaedf6813da1f3ec8d9774a9e0aa3f0c315fe1fea856ddab9ca
-  new_fingerprint: 3fc8e97f64a3f1b4b24c87ef631de990a518b6a825c02c21853d28af0d33cb4c
+  new_fingerprint: 86b2e85624f01696ec6fcddc9804d5ee69a8d14ae7f11e3588ad42e403ccf97f
   old_oof_geometry:
     train_window_length: 30
     fold_count: 1
@@ -7210,7 +7210,7 @@ entries:
     actual_available_supervised_origins: 3264
     actual_final_training_origin_count: 2784
   old_fingerprint: 05f69aef04ce9af14ad9a16ea2c9bd31a2d907a7f0552693660f5c1e9559b363
-  new_fingerprint: 73d281b98b1afa36c32d6e20e9af29101376fa0f407ccdc4349cb25d540d5f00
+  new_fingerprint: 0bb94b055f08c885886eac07e3518d062fc184d174e7806e3bd6e25e3df7414a
 - path: config/aidc_load_15min_daily/route_A/baseline/lgbm_usmd_prob_mean_horizon_conformal.yaml
   kind: single
   freq: 15min
@@ -7233,7 +7233,7 @@ entries:
     actual_available_supervised_origins: 3264
     actual_final_training_origin_count: 2784
   old_fingerprint: 5c4b0e55661273be5735b6071def3133e30e6f0f29aa47f5e393fa48245658ae
-  new_fingerprint: 39c7156f0e928b8633fc7bd404580813a4b9a84895bfcbf24636f02e97737044
+  new_fingerprint: 23fded8576c832236ca6f8d7d95d3ffaac5d830374aecdd8999845fd2e20ab81
 - path: config/aidc_load_15min_daily/route_A/baseline/lgbm_usmdp_prob_mean_conformal.yaml
   kind: single
   freq: 15min
@@ -7256,7 +7256,7 @@ entries:
     actual_available_supervised_origins: 3264
     actual_final_training_origin_count: 2784
   old_fingerprint: 30bfe76e5545c3062dbeab3be9a79a23400e67e2d2065ae977222522f7f45efa
-  new_fingerprint: ddee60c289f947ab8784a4c41f13ed69b325305db66a40f31c53d6b801058367
+  new_fingerprint: 72daf6788075571df37ee083f492f450d44d27dd2ed23cce1ffc40cc760250c3
 - path: config/aidc_load_15min_daily/route_A/baseline/lgbm_usmdr_prob_mean_conformal.yaml
   kind: single
   freq: 15min
@@ -7279,7 +7279,7 @@ entries:
     actual_available_supervised_origins: 3264
     actual_final_training_origin_count: 2784
   old_fingerprint: 0c411aac39383c29e690165b86a122ebcc1b611ebe75f62216306eff19a5b2fc
-  new_fingerprint: fb4f7c76aaae7b336cd91316b5a196c43ce22a9976735858c4c9278ad4001075
+  new_fingerprint: 1df2f62fed59eed1de9298cfe0c57864c619fd27d57df7c42abf55015eb2c696
 - path: config/aidc_load_15min_daily/route_A/baseline/lgbm_usmr_prob_mean_conformal.yaml
   kind: single
   freq: 15min
@@ -7302,7 +7302,7 @@ entries:
     actual_available_supervised_origins: 3264
     actual_final_training_origin_count: 2784
   old_fingerprint: 112c442e003db5a4a3e63dbfcd87b8591aaf04856f66acecd3d000bbcf0889c2
-  new_fingerprint: ea60372094329356d8df8cde6adb55358c8f13e7ab5f82d11209ec2b863a6c56
+  new_fingerprint: 8c2294b00939499ca8d8a709a198acae3f1549949e6e1a5d9b31d0cf2c69912c
 - path: config/aidc_load_15min_daily/route_A/baseline/ridge_usmd_mean.yaml
   kind: single
   freq: 15min
@@ -7509,7 +7509,7 @@ entries:
     actual_available_supervised_origins: 3264
     actual_final_training_origin_count: 2784
   old_fingerprint: 010dbb85c7b0a4b9dc2e2a6ac28d6a08e1a2e81670c2a214e23a187c57490593
-  new_fingerprint: 2eba273f8af321fd50326b53596fd6b9423dc96124b934dc233f85edf0f13849
+  new_fingerprint: b46a37ba4c3c9ec11a86523d34faf14a3f04e453986dd376c6a57980ec5d0beb
 - path: config/aidc_load_15min_daily/route_B/add_decomposition/lgbm_usmd_mean_prob_horizon_decomp_mstl96-672.yaml
   kind: single
   freq: 15min
@@ -7532,7 +7532,7 @@ entries:
     actual_available_supervised_origins: 3264
     actual_final_training_origin_count: 2784
   old_fingerprint: 14944ca1d4afd7d9a4ef1e3d1e3ea90890696c0eac610326a61be2bbfb40be5d
-  new_fingerprint: d2db8cc47622e0c96dc973ad56221601cc2a8c1280d961261b04ce589f951f02
+  new_fingerprint: 0d9145ab6bb482c02934e68a268b4aeb30864708c9bc7db4e056cebe33531cf5
 - path: config/aidc_load_15min_daily/route_B/add_decomposition/lgbm_usmd_mean_prob_horizon_decomp_stl96.yaml
   kind: single
   freq: 15min
@@ -7555,7 +7555,7 @@ entries:
     actual_available_supervised_origins: 3264
     actual_final_training_origin_count: 2784
   old_fingerprint: 745f4c9a59cc84309451b2991ea9f88cc9b67a25c09a6bc88a71826a3df15b83
-  new_fingerprint: a63a7d7ee9b67b3e56f97815a42375820bb4c2fc85a758b46d28cfce9fa4d77e
+  new_fingerprint: f583c5b4534b5164d0520bcc7f14e73854a1095cb899063ec792c0773b6bcb10
 - path: config/aidc_load_15min_daily/route_B/add_decomposition/lgbm_usmd_prob_mean_decomp_linear.yaml
   kind: single
   freq: 15min
@@ -7578,7 +7578,7 @@ entries:
     actual_available_supervised_origins: 3264
     actual_final_training_origin_count: 2784
   old_fingerprint: 97fbb790892076d03af2dc79d428cd7e584846985e1b17880e89f7190365d6f9
-  new_fingerprint: a387ac102bfc5b4f2595eb2a180798ad99abb923f6c46f7147da6ea2089c7e7d
+  new_fingerprint: ee7a89f902702c89a0bc38c7e1663e628135f7e9ad98c7e0d8498754496d25d7
 - path: config/aidc_load_15min_daily/route_B/add_decomposition/lgbm_usmd_prob_mean_decomp_mstl96-672.yaml
   kind: single
   freq: 15min
@@ -7601,7 +7601,7 @@ entries:
     actual_available_supervised_origins: 3264
     actual_final_training_origin_count: 2784
   old_fingerprint: 8dbc124b5937e5a746a7fdf4748d5fad018d76c2d5cb3445f825d2344427930b
-  new_fingerprint: bd6b61bba20192de7b4e278ac949f10315417f616b8d1efa09be3c1455565c1e
+  new_fingerprint: eb5376960d2d80c49360ae021a14c719b118bbbcef8efbccde181b9bec933e92
 - path: config/aidc_load_15min_daily/route_B/add_decomposition/lgbm_usmd_prob_mean_decomp_stl96.yaml
   kind: single
   freq: 15min
@@ -7624,7 +7624,7 @@ entries:
     actual_available_supervised_origins: 3264
     actual_final_training_origin_count: 2784
   old_fingerprint: d56ef6870a89cfcd5231147009631a3efa71ad330d2f3a5cd77cdcc57dcd2e20
-  new_fingerprint: 0dbfa9e532f46ac1081662b9db5cf39020c2d77def8d2dfd2536912e53a3ffb0
+  new_fingerprint: 99b9e5a90eda43b979623547f521320a7683963b77c34689c52e3a31010c109a
 - path: config/aidc_load_15min_daily/route_B/add_decomposition/lgbm_usmdp_prob_mean_decomp_linear.yaml
   kind: single
   freq: 15min
@@ -7647,7 +7647,7 @@ entries:
     actual_available_supervised_origins: 3264
     actual_final_training_origin_count: 2784
   old_fingerprint: b7b9f3642e7e9184d41b6118206edd4153758a4fab6a8fbbd50bf0a1afcb1c7a
-  new_fingerprint: b9f4b8b4ecc34d2ba7bcf640785383a47e55c75972ccf903043906a5fd56d74f
+  new_fingerprint: 9020cf774bf169b6fe9b1f3df4274b76edcf5e3558d7d09a2f3d142287fbb2c2
 - path: config/aidc_load_15min_daily/route_B/add_decomposition/lgbm_usmdp_prob_mean_decomp_mstl96-672.yaml
   kind: single
   freq: 15min
@@ -7670,7 +7670,7 @@ entries:
     actual_available_supervised_origins: 3264
     actual_final_training_origin_count: 2784
   old_fingerprint: 34f6929055b05e4d1b4bc004718489617dfb170dd85bf6db4037e9fb4df7bb29
-  new_fingerprint: fdf44201486f81021bc881ec7742accb958e2e1c1e100ad5e46e40a5d4067e8e
+  new_fingerprint: 031f2eb4bf86476ba3f49e4bcf889971ba548b2ca0209af56978f01b73e4fdb5
 - path: config/aidc_load_15min_daily/route_B/add_decomposition/lgbm_usmdp_prob_mean_decomp_stl96.yaml
   kind: single
   freq: 15min
@@ -7693,7 +7693,7 @@ entries:
     actual_available_supervised_origins: 3264
     actual_final_training_origin_count: 2784
   old_fingerprint: 7384e9321b9be534af4f9236fa941534281a35a4a87b547f4542cd144f504053
-  new_fingerprint: 66fc7ed85466afd41be909e7f9dcf4b3422899fe0002415531d71ba50d627ddc
+  new_fingerprint: 473723ad4a09ad24b9e891de8a62cc885cea91c77975fe88de4cd45d3b19756b
 - path: config/aidc_load_15min_daily/route_B/add_decomposition/lgbm_usmdr_prob_mean_decomp_linear.yaml
   kind: single
   freq: 15min
@@ -7716,7 +7716,7 @@ entries:
     actual_available_supervised_origins: 3264
     actual_final_training_origin_count: 2784
   old_fingerprint: 9daa6f10fcbe348fc7f33511e216d6bae4d74041cdcdb6419107044f9e1918ff
-  new_fingerprint: 31739d323c10fa7874931b0043a0fe61d893497c52179fb2440a55b0342bac76
+  new_fingerprint: 03d6d0985321e97b94fc853369c31324467cffa021f9bacfa2891a5753b672aa
 - path: config/aidc_load_15min_daily/route_B/add_decomposition/lgbm_usmdr_prob_mean_decomp_mstl96-672.yaml
   kind: single
   freq: 15min
@@ -7739,7 +7739,7 @@ entries:
     actual_available_supervised_origins: 3264
     actual_final_training_origin_count: 2784
   old_fingerprint: dc4ca70c75db1625804ca64b4fa18373cf412f4430141a9c118b77cf6c116efe
-  new_fingerprint: dbee48c915cec8e2a382a1b8ca326c40cfa528c8fe7144e4c90b386c789e53e0
+  new_fingerprint: d9e9db709971b2c62505b0b115ed059d893a4ce67d1971079ecce1a6bd28d6c7
 - path: config/aidc_load_15min_daily/route_B/add_decomposition/lgbm_usmdr_prob_mean_decomp_stl96.yaml
   kind: single
   freq: 15min
@@ -7762,7 +7762,7 @@ entries:
     actual_available_supervised_origins: 3264
     actual_final_training_origin_count: 2784
   old_fingerprint: 11c2322d74ddbda754fd4108f4140c0de46162516e5a34db0a9055be2d409b38
-  new_fingerprint: 94afe08bb3584e09ffbeb47714f979136f87e46e470c258daeb2d13967380e34
+  new_fingerprint: f00bd16e82b26bd62a7826437ebce62d763fae1d6a4df6a9ba04b0897bb45474
 - path: config/aidc_load_15min_daily/route_B/add_decomposition/lgbm_usmr_prob_mean_decomp_linear.yaml
   kind: single
   freq: 15min
@@ -7785,7 +7785,7 @@ entries:
     actual_available_supervised_origins: 3264
     actual_final_training_origin_count: 2784
   old_fingerprint: fcfb94fb741a73c36c6dec07171c2ad69862ef99c89a5e44ef79e32fe1293c75
-  new_fingerprint: efcace2ec34deea134371a555a494eb50ace45aacdf82a8b5bc055e066097a1f
+  new_fingerprint: 7ac2b95e26693590ca5e17936d6c32c91eba13291cd812da215c230ca702c281
 - path: config/aidc_load_15min_daily/route_B/add_decomposition/lgbm_usmr_prob_mean_decomp_mstl96-672.yaml
   kind: single
   freq: 15min
@@ -7808,7 +7808,7 @@ entries:
     actual_available_supervised_origins: 3264
     actual_final_training_origin_count: 2784
   old_fingerprint: 031a5599a8f9fb81c91fea0908659da408114a09bca0b3bc60e97beb0d2dcc72
-  new_fingerprint: a1fe1c956654ac75e0ee44710005ab57e5448e5dabfa36370492549939a69078
+  new_fingerprint: 5d81a9ca039b75b6b9a1ca7e1e7da6598f8227efe4f4223f96d3fb736cf1a4b0
 - path: config/aidc_load_15min_daily/route_B/add_decomposition/lgbm_usmr_prob_mean_decomp_stl96.yaml
   kind: single
   freq: 15min
@@ -7831,7 +7831,7 @@ entries:
     actual_available_supervised_origins: 3264
     actual_final_training_origin_count: 2784
   old_fingerprint: 48bcfdbd1f1e5cae5cf395a7804934c59adc37e32739bd35d4b28263aa4944b1
-  new_fingerprint: a2d1340b7600a73d275136e099478cc6160173b826d30c33876ec021e08fedaa
+  new_fingerprint: b8825959054f29e98a5a8fd05bfe92227cb2df4a99a0c1567bd796d488508bbe
 - path: config/aidc_load_15min_daily/route_B/add_decomposition/ridge_usmd_mean_decomp_linear.yaml
   kind: single
   freq: 15min
@@ -8282,7 +8282,7 @@ entries:
     actual_available_supervised_origins: 3264
     actual_final_training_origin_count: 2784
   old_fingerprint: 2415e28c99e88bdf4124c86526d64e69a0f8ab606eb9e1f60b3fa85bff8d6ec9
-  new_fingerprint: 40adca00a09e8b9b07c2b2934ecc8fc4a27afcc4b0f60b17f2f8c28750aa0927
+  new_fingerprint: 22015ec24b4b1769f0110ecc9bd3dca66c8483cf5698d764e593b156f812f23d
 - path: config/aidc_load_15min_daily/route_B/add_exogenous_weather_date/lgbm_usmd_prob_mean_conformal.yaml
   kind: single
   freq: 15min
@@ -8305,7 +8305,7 @@ entries:
     actual_available_supervised_origins: 3264
     actual_final_training_origin_count: 2784
   old_fingerprint: b23698efa8bb0741f5cdb4a19bd85412d804995c8984cd2a6a7c5c24446676e3
-  new_fingerprint: 8ab9441d4e01cb14e1d8d1dc250cacd062344d2ca9afe5f12b93e06105c1d25c
+  new_fingerprint: 8a6340ab3b0d72bf8166a0b241c22907a01e1a23a615f8503b5161c21df1a60d
 - path: config/aidc_load_15min_daily/route_B/add_exogenous_weather_date/lgbm_usmdp_prob_mean_conformal.yaml
   kind: single
   freq: 15min
@@ -8328,7 +8328,7 @@ entries:
     actual_available_supervised_origins: 3264
     actual_final_training_origin_count: 2784
   old_fingerprint: 8bc9d1c7163ee78d88773825465c2444acbe441d3886db73908bd6f1a6d22de3
-  new_fingerprint: 64b7939f044fdf80ecfc3ee0029aa1688674f71861cd11f715e6e6003a3a9b0d
+  new_fingerprint: c94342e1d93803190f3f35536a691594122a579d70bd02378a7fab84aa2da9b8
 - path: config/aidc_load_15min_daily/route_B/add_exogenous_weather_date/lgbm_usmdr_prob_mean_conformal.yaml
   kind: single
   freq: 15min
@@ -8351,7 +8351,7 @@ entries:
     actual_available_supervised_origins: 3264
     actual_final_training_origin_count: 2784
   old_fingerprint: f1c367115ef371a69ae9077d783a14edb47fbddea80c67d79daea3950031ea04
-  new_fingerprint: 984553a5d8d8584f88bb9a745a78745a35a5db2555393a898476647450115c29
+  new_fingerprint: bdf8d875d347833b34d96002d885eb7934841e2e380d79792177c48d0f9f3366
 - path: config/aidc_load_15min_daily/route_B/add_exogenous_weather_date/lgbm_usmr_prob_mean_conformal.yaml
   kind: single
   freq: 15min
@@ -8374,7 +8374,7 @@ entries:
     actual_available_supervised_origins: 3264
     actual_final_training_origin_count: 2784
   old_fingerprint: 68ff6ebfc759c81f65420aa5bcb32a1238ca7eeaf83c98403495c430eec0a680
-  new_fingerprint: 7c693a8ec5b4353f992f8b241033c3001596ce4d375c487eeb29391bfd25a7a8
+  new_fingerprint: 5ff1aedb9c3a97be0c548340e120edde16f3d600abed054384d301317c250582
 - path: config/aidc_load_15min_daily/route_B/add_exogenous_weather_date/ridge_usmd_mean.yaml
   kind: single
   freq: 15min
@@ -8466,7 +8466,7 @@ entries:
     actual_available_supervised_origins: 3264
     actual_final_training_origin_count: 2784
   old_fingerprint: b3e5bb877069daa75a60bd72fc736e65513125c63d4feebc5dfb78c2b3abb67b
-  new_fingerprint: c34856832810f779dcef88a393a6314bf2d6120d24e7e0482a156daee1611502
+  new_fingerprint: 103e5f028f1f4e96d094b1075af064bbd629804cda347b4a46178fcf0f7f4610
 - path: config/aidc_load_15min_daily/route_B/add_load_state/lgbm_usmd_prob_mean_conformal.yaml
   kind: single
   freq: 15min
@@ -8489,7 +8489,7 @@ entries:
     actual_available_supervised_origins: 3264
     actual_final_training_origin_count: 2784
   old_fingerprint: 08ece25018730906c39e3823603b8b5380150b283ca11c2d4cbdd3735a76d73a
-  new_fingerprint: 96945766bdfae908339cca00fd7d98e4345df5a9d4aa313ded4e4df4ab174fb2
+  new_fingerprint: 1ec882544ad072f5241180f5c5bc721de8d78f391b508019fa3ef291c260806a
 - path: config/aidc_load_15min_daily/route_B/add_load_state/lgbm_usmdp_prob_mean_conformal.yaml
   kind: single
   freq: 15min
@@ -8512,7 +8512,7 @@ entries:
     actual_available_supervised_origins: 3264
     actual_final_training_origin_count: 2784
   old_fingerprint: 7906ade5a68713e76865b410ace5ccdbb8304b3c28f67f8c023cce6ff25d4d4e
-  new_fingerprint: 9174d442dcd6e7a1c7d0d0ff70366d6c36bcc9a78612fa602c6682f265bdf1ea
+  new_fingerprint: 769b1a14bdd24a346c4227629fb49fb2533d92ca967cf113f344dab19353f04a
 - path: config/aidc_load_15min_daily/route_B/add_load_state/lgbm_usmdr_prob_mean_conformal.yaml
   kind: single
   freq: 15min
@@ -8535,7 +8535,7 @@ entries:
     actual_available_supervised_origins: 3264
     actual_final_training_origin_count: 2784
   old_fingerprint: 5bfa1d1187d6ca6d6e6abd591c96e0cb1d5f904bcdb1d4bd33f86c703f434944
-  new_fingerprint: 8345276e7eb5fb9e53c5a9c742bcdb490b04abc4e8e814e413849dd03cafccac
+  new_fingerprint: 802ea5e87f20452fa22f41298937f86183976bc439c96f50a0c4fb60fc3afbc1
 - path: config/aidc_load_15min_daily/route_B/add_load_state/lgbm_usmr_prob_mean_conformal.yaml
   kind: single
   freq: 15min
@@ -8558,7 +8558,7 @@ entries:
     actual_available_supervised_origins: 3264
     actual_final_training_origin_count: 2784
   old_fingerprint: 7839c785b4c8615876cfaa863354b383dae31eb994e6b5f09b7c7f6f24106c95
-  new_fingerprint: d75be3633586babce9e776497b756cd1bd1eda8a8ad39c16beca4fc6aa3a509b
+  new_fingerprint: db6eaf18d2b813e0be60f0af51faac64f06674ad499404be4e82fba0bfd63d63
 - path: config/aidc_load_15min_daily/route_B/add_load_state/ridge_usmd_mean.yaml
   kind: single
   freq: 15min
@@ -8627,7 +8627,7 @@ entries:
     actual_available_supervised_origins: 3264
     actual_final_training_origin_count: 2784
   old_fingerprint: 48b22244cc26d886f2f16636bb685c87b02fb4634d89ee9ad937b732768a2d4e
-  new_fingerprint: 463f087f077aef973f97f6d85264ab0a90e294d29b3cdb2c3b467be9593606b8
+  new_fingerprint: 414fa95e4557282165f6972131fcebe36c88b50373c7e7c80feeb91e3aa2d1ef
 - path: config/aidc_load_15min_daily/route_B/baseline/lasso_usmd_mean.yaml
   kind: single
   freq: 15min
@@ -8672,7 +8672,7 @@ entries:
     configured_final_train_window: 2784
     actual_final_training_origin_count: null
   old_fingerprint: 937f73b1204d4d9912e3bea6065554d9c17b09dc646d5dfe696fc573c6fa9bbf
-  new_fingerprint: 3374114015394c988bb10bbbd228a830f301c1f40b705319f12e367206892a1f
+  new_fingerprint: 50d619eee661c23065d3a90f9c1f5c215c01cc2c7f49d10e4ef04477d7fad0d1
   old_oof_geometry:
     train_window_length: 30
     fold_count: 1
@@ -8703,7 +8703,7 @@ entries:
     actual_available_supervised_origins: 3264
     actual_final_training_origin_count: 2784
   old_fingerprint: 2dc5b96d34fcef448d12e4b15bc095f9bbe591548574c021230a8370658ec276
-  new_fingerprint: ab4c1edf08024cb79fafecfd6818d9dc062283509411863f7073e67dc03485ab
+  new_fingerprint: 81fbda2ccf33bd7948206516dd91185cfd23b123de45d794def6cd48dbc65e0c
 - path: config/aidc_load_15min_daily/route_B/baseline/lgbm_usmd_prob_mean_horizon_conformal.yaml
   kind: single
   freq: 15min
@@ -8726,7 +8726,7 @@ entries:
     actual_available_supervised_origins: 3264
     actual_final_training_origin_count: 2784
   old_fingerprint: de454397cb7e748f34ed8e9fde3b2fe5157427a4610b62e636636e6044b58cd2
-  new_fingerprint: 3f414f447f45bf5457031b18467f1811a9e0c68491b0d722bca50b608e0fe083
+  new_fingerprint: cf532f64d9f9cd305f4aec0d04fd2dff6e7f6d039ab22e6c38364b9db76dbef9
 - path: config/aidc_load_15min_daily/route_B/baseline/lgbm_usmdp_prob_mean_conformal.yaml
   kind: single
   freq: 15min
@@ -8749,7 +8749,7 @@ entries:
     actual_available_supervised_origins: 3264
     actual_final_training_origin_count: 2784
   old_fingerprint: a28e7dd63abdeae02d9a06d5c3842ab730c781c2e4c971ad05a7adda25b28c1a
-  new_fingerprint: 63c3508e926252a1b4be0ee23c227130d85cbdc532ec873d32952c3a3718cda4
+  new_fingerprint: 0ad3793ec1a7f4e80105772198baf7d65e1d3293a634d0f95f0049f42131b39d
 - path: config/aidc_load_15min_daily/route_B/baseline/lgbm_usmdr_prob_mean_conformal.yaml
   kind: single
   freq: 15min
@@ -8772,7 +8772,7 @@ entries:
     actual_available_supervised_origins: 3264
     actual_final_training_origin_count: 2784
   old_fingerprint: 49fa7684b26049dfbae52314e72eef2b082f569ffca922639102bc739acf5660
-  new_fingerprint: fc82a22c3f9776dc2f1ccad191b928b1d37ec5e848574d3e8294568b141ca9fc
+  new_fingerprint: 28453ff393defece9fc94613b01ef6c64d153b35350200f91d366bc4d2bea37f
 - path: config/aidc_load_15min_daily/route_B/baseline/lgbm_usmr_prob_mean_conformal.yaml
   kind: single
   freq: 15min
@@ -8795,7 +8795,7 @@ entries:
     actual_available_supervised_origins: 3264
     actual_final_training_origin_count: 2784
   old_fingerprint: e8100218c7c495a3fa98cfe2a0e60d35f78567e74faba8704897eba3f34acc48
-  new_fingerprint: 65ba42747cee0fdbf9d32ecfdba7bf22b07f1b66649929e1bdc9347d17affb82
+  new_fingerprint: 6b98d90ae7b4565aedc106cb62230084625714e9d2eb8d0f61b680894ec27707
 - path: config/aidc_load_15min_daily/route_B/baseline/ridge_usmd_mean.yaml
   kind: single
   freq: 15min
@@ -9002,7 +9002,7 @@ entries:
     actual_available_supervised_origins: 3264
     actual_final_training_origin_count: 2784
   old_fingerprint: 16a1a2b5d3d1b678b9cf541a39acd287af3e977438dcff304e7432d4ed596633
-  new_fingerprint: d8a762465dc66b6b50c54c84eaaae6ec95e605b68ce5dc638efe75fefaf6ea8e
+  new_fingerprint: fd3eb5d181c62fe545d231a78febfeece946d06283ab7882ab7632b9dd6f36c1
 - path: config/aidc_load_15min_rolling/route_A/add_decomposition/lgbm_usmd_mean_prob_horizon_decomp_mstl96-672.yaml
   kind: single
   freq: 15min
@@ -9025,7 +9025,7 @@ entries:
     actual_available_supervised_origins: 3264
     actual_final_training_origin_count: 2784
   old_fingerprint: 2673831e2b3aa4c1bc63309779d35ab4c265197a6bffd6f7fa7e199006630d97
-  new_fingerprint: a657b49753619a955ce8abb5a02ff5d1d5d86c2342bc892271a1bf09bc1e0a22
+  new_fingerprint: 6703bfa128167235891fd6f9b82f8e59b248800f7e8c06332f3f8f8977eb11cd
 - path: config/aidc_load_15min_rolling/route_A/add_decomposition/lgbm_usmd_mean_prob_horizon_decomp_stl96.yaml
   kind: single
   freq: 15min
@@ -9048,7 +9048,7 @@ entries:
     actual_available_supervised_origins: 3264
     actual_final_training_origin_count: 2784
   old_fingerprint: 780880683106d18b1955c91daaa1a8ef2b6e4e3e7b91d897ff4de1f81797c3e6
-  new_fingerprint: 23843c5c630ffe22552be2b42d9bac8777560eb0b11e7e88cc48268e10ee6dfc
+  new_fingerprint: fd3fc099205aa0bceb169609d1c8445ee9cde9e418e96d08987fae23d5f2bd9d
 - path: config/aidc_load_15min_rolling/route_A/add_decomposition/lgbm_usmd_prob_mean_decomp_linear.yaml
   kind: single
   freq: 15min
@@ -9071,7 +9071,7 @@ entries:
     actual_available_supervised_origins: 3264
     actual_final_training_origin_count: 2784
   old_fingerprint: 385920b54e6e91e895c0f4bdf46960be801b0e6fdde3026771eca71abb76dc94
-  new_fingerprint: 2a574cd64c28133b13d34c24d250fd520236e54105d192c8f0bd6b83c8c7637e
+  new_fingerprint: f40e304268d6864709dfce424e1c92589caf07366706924d790d88e8a6f053a7
 - path: config/aidc_load_15min_rolling/route_A/add_decomposition/lgbm_usmd_prob_mean_decomp_mstl96-672.yaml
   kind: single
   freq: 15min
@@ -9094,7 +9094,7 @@ entries:
     actual_available_supervised_origins: 3264
     actual_final_training_origin_count: 2784
   old_fingerprint: bdf7d09e9c2c9c032094400bdc6f6fd3060399862eb5d9bdc9d4124ae0d15d08
-  new_fingerprint: e577da0ebcf119c72c04f40ef4fe8e24225efc061df4d1f51f05fa0ecc80f09d
+  new_fingerprint: 3996485e51c4460bd88e72cb82ddabe6a7553f899f049d34fb23dc8bed50aa81
 - path: config/aidc_load_15min_rolling/route_A/add_decomposition/lgbm_usmd_prob_mean_decomp_stl96.yaml
   kind: single
   freq: 15min
@@ -9117,7 +9117,7 @@ entries:
     actual_available_supervised_origins: 3264
     actual_final_training_origin_count: 2784
   old_fingerprint: 46547c94190deb7dedce6401c210d46977bd78fbf77cbc6a32cc12a0a726faa6
-  new_fingerprint: bf943a39dca72bc0ca6259fcc0502972746d392d3a8c46a1b91b2839daf79cca
+  new_fingerprint: b9aad56435aacc47e78c1118c495b0181aa971894623e29ab93a08f87a72d3a7
 - path: config/aidc_load_15min_rolling/route_A/add_decomposition/lgbm_usmdp_prob_mean_decomp_linear.yaml
   kind: single
   freq: 15min
@@ -9140,7 +9140,7 @@ entries:
     actual_available_supervised_origins: 3264
     actual_final_training_origin_count: 2784
   old_fingerprint: 48cf5a5a8949f0062ade0a0b98fc2df0fb41744a69b267a84b5bbf127e71979e
-  new_fingerprint: d048dc61dc7bb44840fcb83c363d574baf16b8220d06d5659c0839ab098d38d2
+  new_fingerprint: ad32a7350a85c7c005d67859ed9c29d5c588e167bf53e10908605656c938a81f
 - path: config/aidc_load_15min_rolling/route_A/add_decomposition/lgbm_usmdp_prob_mean_decomp_mstl96-672.yaml
   kind: single
   freq: 15min
@@ -9163,7 +9163,7 @@ entries:
     actual_available_supervised_origins: 3264
     actual_final_training_origin_count: 2784
   old_fingerprint: fe3212172847c067a3771498c38a0347409e9805a0ce494f1f51d0f7246ec5e2
-  new_fingerprint: 9b0b881a0e66ed0b67f0a0802128ed9696106f247a40703166a77bd60e16e35a
+  new_fingerprint: 35d3870c47af14d78201db5e5b01f3101ea9ff267784a239bb35990240521164
 - path: config/aidc_load_15min_rolling/route_A/add_decomposition/lgbm_usmdp_prob_mean_decomp_stl96.yaml
   kind: single
   freq: 15min
@@ -9186,7 +9186,7 @@ entries:
     actual_available_supervised_origins: 3264
     actual_final_training_origin_count: 2784
   old_fingerprint: fd1e1a8ec6f667cc54a69e6093377c322c026e2e67ba3052baedee17a0ba2ce0
-  new_fingerprint: 12e2f9875bad825d2b741d086ac48397aaa428ad3063a7d1d991d2ca272bb15f
+  new_fingerprint: 6d2051f98dfd48d828f2062af5d4d19650b2bc3e80aaca5a2b59570f8e4a0291
 - path: config/aidc_load_15min_rolling/route_A/add_decomposition/lgbm_usmdr_prob_mean_decomp_linear.yaml
   kind: single
   freq: 15min
@@ -9209,7 +9209,7 @@ entries:
     actual_available_supervised_origins: 3264
     actual_final_training_origin_count: 2784
   old_fingerprint: fd4b56cc01006a7be0dc00b02c3e786a11eee3ea75f00e9dd00230f5327d5ecf
-  new_fingerprint: 19dad5e685f3236ab1afd9f83c4020f6e55b47b033994a5ca10f80571542fda6
+  new_fingerprint: 26673813ca1ea898084869e6b9bf4263d4eb1f679371d48dfec3aff6ede3cdae
 - path: config/aidc_load_15min_rolling/route_A/add_decomposition/lgbm_usmdr_prob_mean_decomp_mstl96-672.yaml
   kind: single
   freq: 15min
@@ -9232,7 +9232,7 @@ entries:
     actual_available_supervised_origins: 3264
     actual_final_training_origin_count: 2784
   old_fingerprint: 36678f88dc143722f87cb466f5d1c3a3138bbdb5ac38cd513a349f8dd3a2629c
-  new_fingerprint: ea13789f1a8d27f0361885fd3de08fa12932254c5a8f8d06f3e023c143996d16
+  new_fingerprint: 9f01c58d18a38149f6de1c5bd6e527359a2eba13217df91ff42e581a46807e74
 - path: config/aidc_load_15min_rolling/route_A/add_decomposition/lgbm_usmdr_prob_mean_decomp_stl96.yaml
   kind: single
   freq: 15min
@@ -9255,7 +9255,7 @@ entries:
     actual_available_supervised_origins: 3264
     actual_final_training_origin_count: 2784
   old_fingerprint: 23956ff81cbd4a01ff93fa604b8cb404a85ba702e72fd5b56f7aeb085f48aa6d
-  new_fingerprint: f8bf449ee1e2117d3875260d1a0008af0ee15e90608d3e721381599c6d5f8ec8
+  new_fingerprint: 34b1a1e876d1ac83bfebfcd639965d2a3b20becb2843b0bf36d1cf5ea34e44c2
 - path: config/aidc_load_15min_rolling/route_A/add_decomposition/lgbm_usmr_prob_mean_decomp_linear.yaml
   kind: single
   freq: 15min
@@ -9278,7 +9278,7 @@ entries:
     actual_available_supervised_origins: 3264
     actual_final_training_origin_count: 2784
   old_fingerprint: 33f84bdd7a8d90a6df85d4fb5fa11d438fcb7b8b904eb56205c31f73ce15d995
-  new_fingerprint: a79892c1a82aab20f57a5af67b410352190eee67b962524e9c907c6edb7bab54
+  new_fingerprint: 4bdf5c62e495cf9dee9feab31ce6c9cd599d4a0411325242ab1fed558282b900
 - path: config/aidc_load_15min_rolling/route_A/add_decomposition/lgbm_usmr_prob_mean_decomp_mstl96-672.yaml
   kind: single
   freq: 15min
@@ -9301,7 +9301,7 @@ entries:
     actual_available_supervised_origins: 3264
     actual_final_training_origin_count: 2784
   old_fingerprint: 6d2e25e9a06b9295acd8102a05aac51589873b938a79fac623ae4ee047852efc
-  new_fingerprint: 3692d29ee401835c4d01b81a89f814b344c111258e262ebc044afb044fc5ff52
+  new_fingerprint: 708d0068a63d13476b6440670dc6b72b0bd9d3402b563d272383f16f611472f5
 - path: config/aidc_load_15min_rolling/route_A/add_decomposition/lgbm_usmr_prob_mean_decomp_stl96.yaml
   kind: single
   freq: 15min
@@ -9324,7 +9324,7 @@ entries:
     actual_available_supervised_origins: 3264
     actual_final_training_origin_count: 2784
   old_fingerprint: 9a6695771a1b6a1d10b849ec8a9011d89e900761404ae76fadcb11f6f910abbc
-  new_fingerprint: 27475e075b35b631958d1c54e08f6e9851b606fc3f28bb9549e62b344d69fb41
+  new_fingerprint: 67a18985e7053f323a606867af02eae8995ce11c81ff1ff0b81b6bc703f6456c
 - path: config/aidc_load_15min_rolling/route_A/add_decomposition/ridge_usmd_mean_decomp_linear.yaml
   kind: single
   freq: 15min
@@ -9775,7 +9775,7 @@ entries:
     actual_available_supervised_origins: 3264
     actual_final_training_origin_count: 2784
   old_fingerprint: 29f0677b0e5fac0cd74af92c582d0b3442339b4ec04e723e2dc149a28c369799
-  new_fingerprint: a6155d8189f596b16a985049d36b9f43d9c29b265bb00761436088dd7862d669
+  new_fingerprint: 59c4c756031310c51e79e77b70a52fee0998c3ce1f167ae77c9c55a2539250d7
 - path: config/aidc_load_15min_rolling/route_A/add_exogenous_weather_date/lgbm_usmd_prob_mean_conformal.yaml
   kind: single
   freq: 15min
@@ -9798,7 +9798,7 @@ entries:
     actual_available_supervised_origins: 3264
     actual_final_training_origin_count: 2784
   old_fingerprint: 88cc6b10116e81b5aaa652c59f00fa98b167d3829fccb50b25e4104c1c6260b9
-  new_fingerprint: 651e42db92e94e3062579120135115703a725737cb70ca318655ce7e43d08e92
+  new_fingerprint: 2330fd49cedf7ba65570f977697b60edf55e81610a4d7f207bb0fa5b8dad14c9
 - path: config/aidc_load_15min_rolling/route_A/add_exogenous_weather_date/lgbm_usmdp_prob_mean_conformal.yaml
   kind: single
   freq: 15min
@@ -9821,7 +9821,7 @@ entries:
     actual_available_supervised_origins: 3264
     actual_final_training_origin_count: 2784
   old_fingerprint: 857cda8f321dc62d578611f0a879b4aec22b2fbfcaf894ee4fc0d76ff19606fe
-  new_fingerprint: 6d7913485a2302936478325196ec5b63d70bb311106afd90fc241ca46d10e779
+  new_fingerprint: 0be97abc084cf558314f0a1a266691cf45652418950e2caac29093d7b1ec4f07
 - path: config/aidc_load_15min_rolling/route_A/add_exogenous_weather_date/lgbm_usmdr_prob_mean_conformal.yaml
   kind: single
   freq: 15min
@@ -9844,7 +9844,7 @@ entries:
     actual_available_supervised_origins: 3264
     actual_final_training_origin_count: 2784
   old_fingerprint: ef4fb7535bea314c1fc51ff5b51a4dbe5f797410412d63bcd9f7264eafa1cfc7
-  new_fingerprint: 99968ff06c58d96e6b1555181076f3d66567f51a639924d55e2bad68ecb4de72
+  new_fingerprint: 9164dae43253d3290b96e3ac1521a20fd0f66f4bf840338871711c4e9c7b40bc
 - path: config/aidc_load_15min_rolling/route_A/add_exogenous_weather_date/lgbm_usmr_prob_mean_conformal.yaml
   kind: single
   freq: 15min
@@ -9867,7 +9867,7 @@ entries:
     actual_available_supervised_origins: 3264
     actual_final_training_origin_count: 2784
   old_fingerprint: 6cae23cfddd6d1c0e63d0bf026ffc16b5f1c1e9883fb91cd592c0c6d495c5d78
-  new_fingerprint: d5310eee233952347afafc52953b5eda4d25f2cb01834fd73c601aa9cfbe2f8d
+  new_fingerprint: 7d1e54d0cf606ef996d8e12986cac401071db8edb7e20777f7420560d20f3b5d
 - path: config/aidc_load_15min_rolling/route_A/add_exogenous_weather_date/ridge_usmd_mean.yaml
   kind: single
   freq: 15min
@@ -9959,7 +9959,7 @@ entries:
     actual_available_supervised_origins: 3264
     actual_final_training_origin_count: 2784
   old_fingerprint: ffa7db6469d02f20b05eaee908f5521cfc761fcf5f615d5487340f44d3d8e640
-  new_fingerprint: 03f8e21d9ca23daa14f445791c94faef19f54a095b662759956eb9745c09a1e0
+  new_fingerprint: aff98240da4ea4c24371891f23ad0387bc78c9c39acccd30d38abcc6afadf5e2
 - path: config/aidc_load_15min_rolling/route_A/add_load_state/lgbm_usmd_prob_mean_conformal.yaml
   kind: single
   freq: 15min
@@ -9982,7 +9982,7 @@ entries:
     actual_available_supervised_origins: 3264
     actual_final_training_origin_count: 2784
   old_fingerprint: cc591fe79f345931715cb2d56f287e44966b31c86cd0d4b9c5f475b97b7630bc
-  new_fingerprint: dd839f5b0462a8f59580790e475fa9bb3c13b7e21e29b507f6e3dc79bb7e6a93
+  new_fingerprint: fadc732229eaa4b2c5c526e8c4e2d4c6a4b34228d36fdd8a738e5b0064ba965e
 - path: config/aidc_load_15min_rolling/route_A/add_load_state/lgbm_usmdp_prob_mean_conformal.yaml
   kind: single
   freq: 15min
@@ -10005,7 +10005,7 @@ entries:
     actual_available_supervised_origins: 3264
     actual_final_training_origin_count: 2784
   old_fingerprint: 22784c4779844a62bb2c91241d91c11004b4ccda237bf4c4b36a462107a61622
-  new_fingerprint: 96e4a5d31d9111c8f39854f0480875dbef60fe94d75d39ddcbb884f417bfea59
+  new_fingerprint: 1abf29ad69855892c8a41cd305718789e6f425a8d650360731b62b7f7c453fa2
 - path: config/aidc_load_15min_rolling/route_A/add_load_state/lgbm_usmdr_prob_mean_conformal.yaml
   kind: single
   freq: 15min
@@ -10028,7 +10028,7 @@ entries:
     actual_available_supervised_origins: 3264
     actual_final_training_origin_count: 2784
   old_fingerprint: 71a21450af7e9313ed1500a3103f37855e1e19a30f530fef3842ca73449c0928
-  new_fingerprint: 0c8a98fd4b553bba73f6038a48225027dd2cc10f5c1ad7ae759c4060041cb7fa
+  new_fingerprint: 13bdadf9ea76cf71cff250b64cc2c1b56cdff399fb71c92277ed829bc8f0b0bc
 - path: config/aidc_load_15min_rolling/route_A/add_load_state/lgbm_usmr_prob_mean_conformal.yaml
   kind: single
   freq: 15min
@@ -10051,7 +10051,7 @@ entries:
     actual_available_supervised_origins: 3264
     actual_final_training_origin_count: 2784
   old_fingerprint: 40534eabcac7f49d5aafc2ebb971706e3ad6598175b033b68b9231342d9199a9
-  new_fingerprint: 25ea59f12b5d336dad8b8716f4f9b9a5258cca04a0c90ab89d0f94cbb88e5f66
+  new_fingerprint: 7fb220cae0f6c9921f69cc83b0f9897498286778898164e09ead4b77a6c6f59c
 - path: config/aidc_load_15min_rolling/route_A/add_load_state/ridge_usmd_mean.yaml
   kind: single
   freq: 15min
@@ -10120,7 +10120,7 @@ entries:
     actual_available_supervised_origins: 3264
     actual_final_training_origin_count: 2784
   old_fingerprint: 59d8bb8c7f585e14530f2c9b953fe1c4bf3f32c2a5be4c88f941368b40f8d8e0
-  new_fingerprint: 0ed20cd1d517aa2a945fc558ffd868c143fcb98a537811a6b5ce0b09559a873c
+  new_fingerprint: acc8e9b70b6caad40d941abe42dcea8eb8aa0894ac29f82a7f37dc137386b3d1
 - path: config/aidc_load_15min_rolling/route_A/baseline/lasso_usmd_mean.yaml
   kind: single
   freq: 15min
@@ -10165,7 +10165,7 @@ entries:
     configured_final_train_window: 2784
     actual_final_training_origin_count: null
   old_fingerprint: 36aae4c48dd5d958a5b293cc4dd7bdcd1ee3926541471d67e236d02a0ae0fb89
-  new_fingerprint: 2e65ef1515d9e3e2b390e1a7bdc8e4e1bf477fba831bef2d51617ba47e81d220
+  new_fingerprint: 2867f70f3e6fbe9550d916c57afc82dcbe0d7cb404b159d7a9c74460d9e48739
   old_oof_geometry:
     train_window_length: 30
     fold_count: 1
@@ -10196,7 +10196,7 @@ entries:
     actual_available_supervised_origins: 3264
     actual_final_training_origin_count: 2784
   old_fingerprint: ca879df3f5df5c4269fb15e631fd80da502973778298e24c9e3c3f8711de1c37
-  new_fingerprint: 47d54169d89e713246450804323b56a29aa962a522af79d06bf0b108675d8124
+  new_fingerprint: 158934153fb71527a5a031b0a58e8f2fabfd53c8852b753d5bcd4ce69ff3a7a6
 - path: config/aidc_load_15min_rolling/route_A/baseline/lgbm_usmd_prob_mean_horizon_conformal.yaml
   kind: single
   freq: 15min
@@ -10219,7 +10219,7 @@ entries:
     actual_available_supervised_origins: 3264
     actual_final_training_origin_count: 2784
   old_fingerprint: 40b7b1dac6e2e1fbcaf028c10f4e8e49b14507ad952761a0407bdb8a377b9afb
-  new_fingerprint: d62445f3b339c9ed8488a0b1d9041935deebc756aea6e530735f165d305e7f78
+  new_fingerprint: 8ac3240504d4e18a0e194bbc2c8329721be1bbba05eed681db2101baa58413a9
 - path: config/aidc_load_15min_rolling/route_A/baseline/lgbm_usmdp_prob_mean_conformal.yaml
   kind: single
   freq: 15min
@@ -10242,7 +10242,7 @@ entries:
     actual_available_supervised_origins: 3264
     actual_final_training_origin_count: 2784
   old_fingerprint: 27bd724c5bc24ee9d05d5fb4b54aa9c87e814ff9f626b20dbce0a572747cac2c
-  new_fingerprint: 1119f7b206e39924f3ee260f9aa1ec0a38d69e4e593f9644d6d77942ccc6d7d6
+  new_fingerprint: 796a7173a1da54abbbd13c8fe1f6b3c92b9a03c6d7bb8335c45cdc3d51ff5d02
 - path: config/aidc_load_15min_rolling/route_A/baseline/lgbm_usmdr_prob_mean_conformal.yaml
   kind: single
   freq: 15min
@@ -10265,7 +10265,7 @@ entries:
     actual_available_supervised_origins: 3264
     actual_final_training_origin_count: 2784
   old_fingerprint: 00990a92bece465510053495ee88af9a402ff43ad2c87197c1a5249c50382d14
-  new_fingerprint: 87c49f3490fbf45a50502878558466a7fb764551171c72fc0cbe1befc28b8147
+  new_fingerprint: f522dc818e3b360d0a1794742f188f51669d6bd84023efc60617403af4edeb9e
 - path: config/aidc_load_15min_rolling/route_A/baseline/lgbm_usmr_prob_mean_conformal.yaml
   kind: single
   freq: 15min
@@ -10288,7 +10288,7 @@ entries:
     actual_available_supervised_origins: 3264
     actual_final_training_origin_count: 2784
   old_fingerprint: 34fd8b7365aba0fd6882758e536b986c6171c30c38886c1a17627aa6f896e7fb
-  new_fingerprint: 53e287261e2d427e28ad40ab6950a81b78c6a609558a5378e0fbcde663abe8e4
+  new_fingerprint: 0ce29aeee78bf781f5e54b5cc5e061406699b7c58cdffd8a010db34a88c046b5
 - path: config/aidc_load_15min_rolling/route_A/baseline/ridge_usmd_mean.yaml
   kind: single
   freq: 15min
@@ -10495,7 +10495,7 @@ entries:
     actual_available_supervised_origins: 3264
     actual_final_training_origin_count: 2784
   old_fingerprint: 64390c8f0abbb8909951e8e69777e1719b44ec3c0c0bf9e45d85f32a2824f0d4
-  new_fingerprint: b05a2bceb24d220885437a6b5c6d6f16b18e43f1b0f8f456e3509afefe210818
+  new_fingerprint: 4efbd21fb41090f05f686aeb949eff65a90a8cfc4f59b1294da9becd44071470
 - path: config/aidc_load_15min_rolling/route_B/add_decomposition/lgbm_usmd_mean_prob_horizon_decomp_mstl96-672.yaml
   kind: single
   freq: 15min
@@ -10518,7 +10518,7 @@ entries:
     actual_available_supervised_origins: 3264
     actual_final_training_origin_count: 2784
   old_fingerprint: 536895eefba8566152a1c7aa2766d6b5dce5ede1a1ef3969c22799b010b59a5b
-  new_fingerprint: 165d161fb16693a9beb4884faa4fd67c9e59c0a317536f11467bf89de21141b0
+  new_fingerprint: ed4e62c271e65eb4b1ae45ba901aac8abdc26aeec2c4436feae3747af9b9bd1a
 - path: config/aidc_load_15min_rolling/route_B/add_decomposition/lgbm_usmd_mean_prob_horizon_decomp_stl96.yaml
   kind: single
   freq: 15min
@@ -10541,7 +10541,7 @@ entries:
     actual_available_supervised_origins: 3264
     actual_final_training_origin_count: 2784
   old_fingerprint: 098857e4ff73dcb3a3e9726f96948d798057a2c4cb23242620db829a1687bc43
-  new_fingerprint: 5eefae937055c763444e4798f21a9ce6fc0ab7e4b946655cc362e4f6251ff3e3
+  new_fingerprint: 9920d5cc360fcc357c0614e277c47082a712bf917cd58cde30f97765fcce64fc
 - path: config/aidc_load_15min_rolling/route_B/add_decomposition/lgbm_usmd_prob_mean_decomp_linear.yaml
   kind: single
   freq: 15min
@@ -10564,7 +10564,7 @@ entries:
     actual_available_supervised_origins: 3264
     actual_final_training_origin_count: 2784
   old_fingerprint: e6a93a6edec27a529deaf0139da523e679ec0dc319d310300087352e8e89440d
-  new_fingerprint: 38cb617f6623a7e276639fb8467ed122557f485a89fcfda16147b6e054d1863a
+  new_fingerprint: 842d649a84608efe48f30023106e6f9ba26b5e96a0e65eae74cfe23b07532dbc
 - path: config/aidc_load_15min_rolling/route_B/add_decomposition/lgbm_usmd_prob_mean_decomp_mstl96-672.yaml
   kind: single
   freq: 15min
@@ -10587,7 +10587,7 @@ entries:
     actual_available_supervised_origins: 3264
     actual_final_training_origin_count: 2784
   old_fingerprint: 738cabccda0bac2f6e6f9b40694952bdb2f4e98f777eaa6bb764a2f06e460e4c
-  new_fingerprint: 50e885a5661e7326d9346cc42292b357d7439d9d08976fe1a7cd3e2f834d5c78
+  new_fingerprint: 76e3544cf6faf8d8d50636b0367487c80ff0d04944014b89d8659e41a726351b
 - path: config/aidc_load_15min_rolling/route_B/add_decomposition/lgbm_usmd_prob_mean_decomp_stl96.yaml
   kind: single
   freq: 15min
@@ -10610,7 +10610,7 @@ entries:
     actual_available_supervised_origins: 3264
     actual_final_training_origin_count: 2784
   old_fingerprint: e276ae585165a933d4e8c0f7f74a6df8123931b3f4250598a6d763b4b63ee0e1
-  new_fingerprint: 773952abddc592cdb0dd7ba5a81a2f5be544989a6a87a9107cd2048f1790dd70
+  new_fingerprint: 5d5a37cb60966b87a9d96297cba93c377aa6c4e20907f199f2fb39a14b7a383a
 - path: config/aidc_load_15min_rolling/route_B/add_decomposition/lgbm_usmdp_prob_mean_decomp_linear.yaml
   kind: single
   freq: 15min
@@ -10633,7 +10633,7 @@ entries:
     actual_available_supervised_origins: 3264
     actual_final_training_origin_count: 2784
   old_fingerprint: b6002c17590a87f48f18503aa0449e386052731de43f81fd4e64719641ab5eb2
-  new_fingerprint: 631a6a3fee1a3a61e62a4852a79cfeffbedbdf9400fb79f8cfb390c857a9627e
+  new_fingerprint: 895edcab48fe89d7bdd3a21a61802c0be143935fade9a81dd001cbf3f874d521
 - path: config/aidc_load_15min_rolling/route_B/add_decomposition/lgbm_usmdp_prob_mean_decomp_mstl96-672.yaml
   kind: single
   freq: 15min
@@ -10656,7 +10656,7 @@ entries:
     actual_available_supervised_origins: 3264
     actual_final_training_origin_count: 2784
   old_fingerprint: 35ef6e499fcc07b3d6102aea8702939a0c2ce6bd7249b75623a3c31ea0b5b0fe
-  new_fingerprint: 1bc4151d6799b669c838e39369f55a4fd984239ad2ba1ae4252202d9303bc1da
+  new_fingerprint: 7341d0da61aba43a46ee3f3304dab6734d8d91b03fc5f5dd6eb17be3b5295ac8
 - path: config/aidc_load_15min_rolling/route_B/add_decomposition/lgbm_usmdp_prob_mean_decomp_stl96.yaml
   kind: single
   freq: 15min
@@ -10679,7 +10679,7 @@ entries:
     actual_available_supervised_origins: 3264
     actual_final_training_origin_count: 2784
   old_fingerprint: 710e8931d77cac9e1c461ac2a4d04c345f02618b008c47b4da670230d95680e0
-  new_fingerprint: 9cd5a96e0659589e6ba6884d091958d554d406ddeab8592dcfa37267f1c974f8
+  new_fingerprint: 8c22ccf26417fbf219b5e062c46a9d8afcf0dc81e39552656e43ba3e72edbbb7
 - path: config/aidc_load_15min_rolling/route_B/add_decomposition/lgbm_usmdr_prob_mean_decomp_linear.yaml
   kind: single
   freq: 15min
@@ -10702,7 +10702,7 @@ entries:
     actual_available_supervised_origins: 3264
     actual_final_training_origin_count: 2784
   old_fingerprint: 5caed39a257590ff7db0493425899008a7989ec55aff8bbc31b35e9fe1f28436
-  new_fingerprint: cb084590ff9e0670a5592db89f52abc5e297cb1fc2fe6b4ea5d0bda8661e3a51
+  new_fingerprint: 898fd66dd0d95ce9beb5b2a6d43970ca8837c9c0649ccf9f5c7771ba3226702c
 - path: config/aidc_load_15min_rolling/route_B/add_decomposition/lgbm_usmdr_prob_mean_decomp_mstl96-672.yaml
   kind: single
   freq: 15min
@@ -10725,7 +10725,7 @@ entries:
     actual_available_supervised_origins: 3264
     actual_final_training_origin_count: 2784
   old_fingerprint: 93bed85b4990ac6fb5d9409b2659494378bfcbd077f5d0e64b2fc6b0634e3ea9
-  new_fingerprint: 9c310d55fcfa7477174831cbb2c8aaebd8599092121d9a92cd91085db30afc48
+  new_fingerprint: 730203e02d39d7facfe0a4d7a87e95c3adc7f9b3bf620ae3c6c1b462339156fd
 - path: config/aidc_load_15min_rolling/route_B/add_decomposition/lgbm_usmdr_prob_mean_decomp_stl96.yaml
   kind: single
   freq: 15min
@@ -10748,7 +10748,7 @@ entries:
     actual_available_supervised_origins: 3264
     actual_final_training_origin_count: 2784
   old_fingerprint: 4fdba1cb59d31e16ddd6aee1f03d391e5477ba4d868e16bb0b48921c90d9f10e
-  new_fingerprint: 6034071afe101b5d0d599ce18b7235c447505b4e4d9736287db3d5bbcdb5ef94
+  new_fingerprint: b1837c56319f81048fbfdac7ab9aed6cf7f9abe9c6fd34adfe88b1392e549845
 - path: config/aidc_load_15min_rolling/route_B/add_decomposition/lgbm_usmr_prob_mean_decomp_linear.yaml
   kind: single
   freq: 15min
@@ -10771,7 +10771,7 @@ entries:
     actual_available_supervised_origins: 3264
     actual_final_training_origin_count: 2784
   old_fingerprint: af9e10bc69d66328c452a6b8bbdce98f9e90d1bd0405ba5cadb6aa2562cf66da
-  new_fingerprint: 0357fed3b8d357647bba99ed3679e8f6a4061b2922dc5ee1ab492878fe1e179a
+  new_fingerprint: 4b3333c10d62ba8f5506930c56c2c3706003ddacac0a6ef84d81e560f9040a99
 - path: config/aidc_load_15min_rolling/route_B/add_decomposition/lgbm_usmr_prob_mean_decomp_mstl96-672.yaml
   kind: single
   freq: 15min
@@ -10794,7 +10794,7 @@ entries:
     actual_available_supervised_origins: 3264
     actual_final_training_origin_count: 2784
   old_fingerprint: 982cbbb4fba5fd1117375b90e7233cd12f433c42a55e1bb8f45c37d9640af6af
-  new_fingerprint: a0fdc077b0b06c3ca802386a15cd8ffc414aa2eb3ce6598e573ac816b961e878
+  new_fingerprint: 11147037108284d24723e95482d2ee2feb91f385cb44dd3d4ecfd4e658b58a9c
 - path: config/aidc_load_15min_rolling/route_B/add_decomposition/lgbm_usmr_prob_mean_decomp_stl96.yaml
   kind: single
   freq: 15min
@@ -10817,7 +10817,7 @@ entries:
     actual_available_supervised_origins: 3264
     actual_final_training_origin_count: 2784
   old_fingerprint: b2cd1846087750bb94b790e5497ee7b2346525ee0f76aba86043303fdd770e3e
-  new_fingerprint: d476049d579ad4701b03859deeeed904b5c98cee064112144966cec1ce156195
+  new_fingerprint: 2ba988a08b530bffb5f99d0767affded99433396d993474f1c7277d71d6714ca
 - path: config/aidc_load_15min_rolling/route_B/add_decomposition/ridge_usmd_mean_decomp_linear.yaml
   kind: single
   freq: 15min
@@ -11268,7 +11268,7 @@ entries:
     actual_available_supervised_origins: 3264
     actual_final_training_origin_count: 2784
   old_fingerprint: 3ec66fd760906965c5c149765f3e78e41c07b886982d5d8292b5658d5f32c4a7
-  new_fingerprint: 9267d058e6189fd6568cdf2edcc5d0c93ad1d95a9256a81aa5b39a3a4e0bacc4
+  new_fingerprint: 24ae03f3119986d393e4bc9bd91712fb16162ddcb8c574460759a669eeeaa9be
 - path: config/aidc_load_15min_rolling/route_B/add_exogenous_weather_date/lgbm_usmd_prob_mean_conformal.yaml
   kind: single
   freq: 15min
@@ -11291,7 +11291,7 @@ entries:
     actual_available_supervised_origins: 3264
     actual_final_training_origin_count: 2784
   old_fingerprint: 15d38db40ae247c8289e3f2b954b0699a48fe2c57649bf21f54a67462119aa83
-  new_fingerprint: 5fc29a7c31446241ef246f810cdb7bfb20244407414da00f87e25f5032b7ff23
+  new_fingerprint: b5eb33023f6e9a0c5a7d733821405d680da658446699eaac0fdaa2e9703a9b0b
 - path: config/aidc_load_15min_rolling/route_B/add_exogenous_weather_date/lgbm_usmdp_prob_mean_conformal.yaml
   kind: single
   freq: 15min
@@ -11314,7 +11314,7 @@ entries:
     actual_available_supervised_origins: 3264
     actual_final_training_origin_count: 2784
   old_fingerprint: 12e638c2a0d3ff78c2926b046e16d9a8de9a15a81d8bc8729d5a20aae96b9020
-  new_fingerprint: 04d0bf807389ab260c531c786c56590a661d0a61dc5bdc93887670434dd0281b
+  new_fingerprint: 6303a0a3d5164515932c7c6a2802698fa930be36d1f1ba6208ff27a9aa65795f
 - path: config/aidc_load_15min_rolling/route_B/add_exogenous_weather_date/lgbm_usmdr_prob_mean_conformal.yaml
   kind: single
   freq: 15min
@@ -11337,7 +11337,7 @@ entries:
     actual_available_supervised_origins: 3264
     actual_final_training_origin_count: 2784
   old_fingerprint: 8e70d6bbb50d9f6241665e1b1b6a598955663824fd47eac7e613073d1eda0bbc
-  new_fingerprint: d68bab9022ff24bde23be7922ded9ec5b24f4a04d63d8177f943c69d5115b399
+  new_fingerprint: 989e41bb5be16c55b9640d3cef40c0a7518a2d4215b3c9b478be61250b28be2b
 - path: config/aidc_load_15min_rolling/route_B/add_exogenous_weather_date/lgbm_usmr_prob_mean_conformal.yaml
   kind: single
   freq: 15min
@@ -11360,7 +11360,7 @@ entries:
     actual_available_supervised_origins: 3264
     actual_final_training_origin_count: 2784
   old_fingerprint: ce3f28ec110449925eebb03e90b1fb75a8d027c82bec913c064527b330e607f2
-  new_fingerprint: 2a992689da2da8cb29a370ddaedb5cf6fb10f72c0c03b4f920b1f1948449b66d
+  new_fingerprint: f6b4535fc011e183aa12ba6daa08f52a830ebaa866b551e5fce7786ca372322b
 - path: config/aidc_load_15min_rolling/route_B/add_exogenous_weather_date/ridge_usmd_mean.yaml
   kind: single
   freq: 15min
@@ -11452,7 +11452,7 @@ entries:
     actual_available_supervised_origins: 3264
     actual_final_training_origin_count: 2784
   old_fingerprint: 976e8e59c7d50631bb5705ba4ce12e0cafba81de18fe2585a91eca8608bd4466
-  new_fingerprint: 39fa434d74e0c37e67a2e4e0c6eb3b0f6f545fb80ac1525e63b573320cff3d37
+  new_fingerprint: 1bc6c73c3ee8a182a02e9c9bc3722ac290ec62fb0322b3cc1502427870f320d5
 - path: config/aidc_load_15min_rolling/route_B/add_load_state/lgbm_usmd_prob_mean_conformal.yaml
   kind: single
   freq: 15min
@@ -11475,7 +11475,7 @@ entries:
     actual_available_supervised_origins: 3264
     actual_final_training_origin_count: 2784
   old_fingerprint: b666d628b47829c74bd25756ad61f98238bb1f742c8eab329e280545bdd0bcf1
-  new_fingerprint: a99e0249ba7de73a68fa59a2ce78671e6ee6b1b87b7962bf1e549d7e297f6b0e
+  new_fingerprint: 6dcffc800890372f4e374dc06fa571b3d7e543f81e15a3c321bf9572268205c9
 - path: config/aidc_load_15min_rolling/route_B/add_load_state/lgbm_usmdp_prob_mean_conformal.yaml
   kind: single
   freq: 15min
@@ -11498,7 +11498,7 @@ entries:
     actual_available_supervised_origins: 3264
     actual_final_training_origin_count: 2784
   old_fingerprint: 432dfb785d5d58cf293cda6faa76e0fa3789c876e93436be7db0a7f168228d06
-  new_fingerprint: be1acdb1ca2b78d74ac623fbae0ed9a27849c6b0d658d4e88113ead425aab8d9
+  new_fingerprint: 8d602f4196ba42cc8ea75c7e2398de61e63072f509a0ca1206ad7a665b51316f
 - path: config/aidc_load_15min_rolling/route_B/add_load_state/lgbm_usmdr_prob_mean_conformal.yaml
   kind: single
   freq: 15min
@@ -11521,7 +11521,7 @@ entries:
     actual_available_supervised_origins: 3264
     actual_final_training_origin_count: 2784
   old_fingerprint: 3fda64125c195fe5fe51a22df17b7be45d29aa75e5e629a202ddf47dd07bace4
-  new_fingerprint: af855d25bd86c995d53f235d09932fc9baf2967bc43e20a023794cd59a6408a0
+  new_fingerprint: 5948d9c0b9991c9c1fed9a80391af664216efc6746b0891d592ce3b4b8a42eb1
 - path: config/aidc_load_15min_rolling/route_B/add_load_state/lgbm_usmr_prob_mean_conformal.yaml
   kind: single
   freq: 15min
@@ -11544,7 +11544,7 @@ entries:
     actual_available_supervised_origins: 3264
     actual_final_training_origin_count: 2784
   old_fingerprint: e111b6b1478a15f9bc203c0c64961d05b13e28ea82e7f156f15bba1509c10dc9
-  new_fingerprint: ae0020ee88d3203c6f127f7a7ff21543767cb2e5b7a008ab248110cd7f161a9a
+  new_fingerprint: ac74c9aa1cbf3efdf25a4b5d4be88469073bec85e77e3ef5891c36907bfe7edb
 - path: config/aidc_load_15min_rolling/route_B/add_load_state/ridge_usmd_mean.yaml
   kind: single
   freq: 15min
@@ -11613,7 +11613,7 @@ entries:
     actual_available_supervised_origins: 3264
     actual_final_training_origin_count: 2784
   old_fingerprint: a35540b855e8d481f1bdb233ea472db539b3331c8c853f556fbf675d0101b67e
-  new_fingerprint: 5632608f33130c7540aa1c0849c293726a27511fcfd024e3be9e71312f147657
+  new_fingerprint: 8888f6d963bfafb0b2149f1f4ce67e14b56b101e0338d42d10dd3606d6ef936c
 - path: config/aidc_load_15min_rolling/route_B/baseline/lasso_usmd_mean.yaml
   kind: single
   freq: 15min
@@ -11658,7 +11658,7 @@ entries:
     configured_final_train_window: 2784
     actual_final_training_origin_count: null
   old_fingerprint: ead39c938df1cdf2d50532e8e06fadd45e2d96b1e0d2306781888ccf13ff4cc5
-  new_fingerprint: 5e776b4e59c55a07b9e6426c31590d173633e3b4d2388ec10201ae5047533f7f
+  new_fingerprint: 438fcd750d1aca5e598cdd28271f7b139477c9a6598b65a15495d8d7a5c8f71a
   old_oof_geometry:
     train_window_length: 30
     fold_count: 1
@@ -11689,7 +11689,7 @@ entries:
     actual_available_supervised_origins: 3264
     actual_final_training_origin_count: 2784
   old_fingerprint: ce9b5cde4ae8bff9e88dc3657c754071ae454f2914ef4b142658b809477bcff4
-  new_fingerprint: a101a436f08003af78a952bd3700718d522f702658090ca130161694c6ea8487
+  new_fingerprint: 2445134139b2365669e0c103137aac5160b5e6ee49ecffd9109f9208b84c9194
 - path: config/aidc_load_15min_rolling/route_B/baseline/lgbm_usmd_prob_mean_horizon_conformal.yaml
   kind: single
   freq: 15min
@@ -11712,7 +11712,7 @@ entries:
     actual_available_supervised_origins: 3264
     actual_final_training_origin_count: 2784
   old_fingerprint: 297b68db313593881d8d359948f33045d27cf2bd41d604c9441840a3d604a22e
-  new_fingerprint: e53c94b2de1dfb7ec4cca72edee57a740de6cde6bac7dbebec42b103f6cf7929
+  new_fingerprint: 3cdcc24597085f559a296005fdc78431e60a2d38d33d11d122bc3ea75c7fc312
 - path: config/aidc_load_15min_rolling/route_B/baseline/lgbm_usmdp_prob_mean_conformal.yaml
   kind: single
   freq: 15min
@@ -11735,7 +11735,7 @@ entries:
     actual_available_supervised_origins: 3264
     actual_final_training_origin_count: 2784
   old_fingerprint: a78ae1c910e73a765c87da88b7757b9c9ff01c474990f10b3afa3684028d8250
-  new_fingerprint: 5173d87aaf89834deed27c3f7918ec00152e2f4b8e5cd5392603a1afe36d3e11
+  new_fingerprint: 53cfe9f941f6fe5054888723c78c1d80fe0c14ecc10c116e34d1c00be90f6bee
 - path: config/aidc_load_15min_rolling/route_B/baseline/lgbm_usmdr_prob_mean_conformal.yaml
   kind: single
   freq: 15min
@@ -11758,7 +11758,7 @@ entries:
     actual_available_supervised_origins: 3264
     actual_final_training_origin_count: 2784
   old_fingerprint: 8f5fd65dc963e67b43df97df1db9a8f79b391fca7ff38b615b0def0f6a88a34a
-  new_fingerprint: 74a94cb9de3e92e34a35e1e56cbf9c52eef35edfc8438aa8183de79849b6bec4
+  new_fingerprint: e64c79d92efa5007a1ed0fd8435ee6f7071b86444420a95a28010f60ea947aec
 - path: config/aidc_load_15min_rolling/route_B/baseline/lgbm_usmr_prob_mean_conformal.yaml
   kind: single
   freq: 15min
@@ -11781,7 +11781,7 @@ entries:
     actual_available_supervised_origins: 3264
     actual_final_training_origin_count: 2784
   old_fingerprint: 76dd0a77f08283b58f80881251ebf5a278e892615031cde3585a5ad57c46c471
-  new_fingerprint: 5db58349cc50b1fb6edd0cb8402a9b3875d376c6ead1e741bf5b3f6b081e5212
+  new_fingerprint: 5eec4630ed5e214754fea278bd767a3a5a3d544797dd0ba070b9e439f5247d99
 - path: config/aidc_load_15min_rolling/route_B/baseline/ridge_usmd_mean.yaml
   kind: single
   freq: 15min
@@ -11988,7 +11988,7 @@ entries:
     actual_available_supervised_origins: 1536
     actual_final_training_origin_count: 1424
   old_fingerprint: c0ccc042cbcda16774b7d78ae818fa70c5d180322c1e756db0f2b4cfbfcff9ce
-  new_fingerprint: 622a191a54790004a9c454f2f264f6d1939c48e9a9a081fd11d193e01c8674e1
+  new_fingerprint: d663062ade75312cfa4904663160d3fc5d31005c8d430e068d872ebf0fe5e29c
 - path: config/aidc_load_15min_short/route_A/add_decomposition/lgbm_usmd_mean_prob_horizon_decomp_mstl96-672.yaml
   kind: single
   freq: 15min
@@ -12011,7 +12011,7 @@ entries:
     actual_available_supervised_origins: 1536
     actual_final_training_origin_count: 1424
   old_fingerprint: ee4e05110bcff6c0c54f6cfb56157802c7df9025b970b379556fada187dda8db
-  new_fingerprint: a4364afd584e19f5ce8ebf72bd22c1f19cffa604866a7d041654cf83370f74d6
+  new_fingerprint: 575264e33046c94c6131d80e8071add786742a44fae25c47930df35a20d1c3e4
 - path: config/aidc_load_15min_short/route_A/add_decomposition/lgbm_usmd_mean_prob_horizon_decomp_stl96.yaml
   kind: single
   freq: 15min
@@ -12034,7 +12034,7 @@ entries:
     actual_available_supervised_origins: 1536
     actual_final_training_origin_count: 1424
   old_fingerprint: 9ee01b33335669454d7a61455517a0186c38f26dea9e53eddb453dc167094823
-  new_fingerprint: 60d1533f45566b2d7d36688bd70e4cf7b441aaade8e23e3926b4c7a94ce36d14
+  new_fingerprint: cd9fec4b0e7593704695e313a12ac20cc37d288006d047dc50e8654c9282b3dc
 - path: config/aidc_load_15min_short/route_A/add_decomposition/lgbm_usmd_prob_mean_decomp_linear.yaml
   kind: single
   freq: 15min
@@ -12057,7 +12057,7 @@ entries:
     actual_available_supervised_origins: 1536
     actual_final_training_origin_count: 1424
   old_fingerprint: 1620a103c3c0aaaa53719a09b1029839cc0d71bd8f78685f6eeaa2a26fd5c89c
-  new_fingerprint: 75d0abae645032a70839ec251969bb114a58d305d903f6d094240a770781661d
+  new_fingerprint: 193fb5c8266a941a345bca1eea1c7740274df95241d88046e4c7c215b514e5b7
 - path: config/aidc_load_15min_short/route_A/add_decomposition/lgbm_usmd_prob_mean_decomp_mstl96-672.yaml
   kind: single
   freq: 15min
@@ -12080,7 +12080,7 @@ entries:
     actual_available_supervised_origins: 1536
     actual_final_training_origin_count: 1424
   old_fingerprint: db981f664a47e1f2fb8237c97fe25f61c976065b3eccd0e7e7fc8ab08ca2cf67
-  new_fingerprint: 0fc447653299b9d2d4e8ce4b31f71d21b04eab1a2cfb796254397769b2244322
+  new_fingerprint: 6da77e98247cfa8930b29202a74b3e0ce472e83b7fed61435be2de87a4da7934
 - path: config/aidc_load_15min_short/route_A/add_decomposition/lgbm_usmd_prob_mean_decomp_stl96.yaml
   kind: single
   freq: 15min
@@ -12103,7 +12103,7 @@ entries:
     actual_available_supervised_origins: 1536
     actual_final_training_origin_count: 1424
   old_fingerprint: bd4a5c3b455c1789a6aa48d335ed190e75c8b824251a58f4dd30ee0c9118eddd
-  new_fingerprint: cfbeb2c53fcd2736a4cf679599f885a74fb9295a27421041cd5c0ae9ee8114fa
+  new_fingerprint: 25abeb2226fea0dd9ed3b91de293a2775519bdc9782a19081222d38ac96ef88c
 - path: config/aidc_load_15min_short/route_A/add_decomposition/lgbm_usmdp_prob_mean_decomp_linear.yaml
   kind: single
   freq: 15min
@@ -12126,7 +12126,7 @@ entries:
     actual_available_supervised_origins: 1536
     actual_final_training_origin_count: 1424
   old_fingerprint: 87236c840465e6135b0fb012e785dce1aac6cad69b0d366603bae393722d4ba5
-  new_fingerprint: e04d2faaf8d279bd834f4c54a0711c8ee12b070e8896408ff71f211730864f87
+  new_fingerprint: 2cb2d9fcd3d9f3e6a8078df3fbf05cc156b6e832922f9fef70f0ef836e544ccc
 - path: config/aidc_load_15min_short/route_A/add_decomposition/lgbm_usmdp_prob_mean_decomp_mstl96-672.yaml
   kind: single
   freq: 15min
@@ -12149,7 +12149,7 @@ entries:
     actual_available_supervised_origins: 1536
     actual_final_training_origin_count: 1424
   old_fingerprint: 0b2bcfee848abd49ec6fb61e5589cb4caeaaf2551e4b62cdb022d6f09bfa40a2
-  new_fingerprint: c06f7b4f7fa311f745a079852ab249929ce2f3b33f85540b2783c7dbd10fc135
+  new_fingerprint: 289b4b7ce8eb1f48f6ba3d464d3c207c4c8f28bb86b42ee696b0da7bd7b6dbb2
 - path: config/aidc_load_15min_short/route_A/add_decomposition/lgbm_usmdp_prob_mean_decomp_stl96.yaml
   kind: single
   freq: 15min
@@ -12172,7 +12172,7 @@ entries:
     actual_available_supervised_origins: 1536
     actual_final_training_origin_count: 1424
   old_fingerprint: 474362a6a90fd19768eedc7e109895c9710dad5e2af89d37b6ed3858f3590fb4
-  new_fingerprint: 618350f8def5d482830e169979f5be3c1152c77df62f0ad93c6e2f0956886e47
+  new_fingerprint: 45bc68cae93950c968eceab162f23d289ebb336e0c5d0eafbbd9272c7164bd3e
 - path: config/aidc_load_15min_short/route_A/add_decomposition/lgbm_usmdr_prob_mean_decomp_linear.yaml
   kind: single
   freq: 15min
@@ -12195,7 +12195,7 @@ entries:
     actual_available_supervised_origins: 1536
     actual_final_training_origin_count: 1424
   old_fingerprint: 9bf9a3d01c66657dca04afe929ca551643a7e32b73caa550a4d1ad00ecc7f4b8
-  new_fingerprint: 79c2db5453c1dc76927f203b6669d8eb54fec5cc956181e8f77e6453f21ae064
+  new_fingerprint: b5ee87b452f3c6477708f14031e63603ac982613f6b7d3c16d4b36b8de87ce89
 - path: config/aidc_load_15min_short/route_A/add_decomposition/lgbm_usmdr_prob_mean_decomp_mstl96-672.yaml
   kind: single
   freq: 15min
@@ -12218,7 +12218,7 @@ entries:
     actual_available_supervised_origins: 1536
     actual_final_training_origin_count: 1424
   old_fingerprint: e886efde9e3d79c66a0e33e3887ec7c03984c7ecc7a538a53b73083cb1130cf0
-  new_fingerprint: e8de0975d0b3f94b8680ec6b4cc4ae3d91db50174c27c65b14be5a8991939071
+  new_fingerprint: f8a90926796509d8a3d31c6be6992166866fccf7a7eed4e8ec14ff7552eed4cf
 - path: config/aidc_load_15min_short/route_A/add_decomposition/lgbm_usmdr_prob_mean_decomp_stl96.yaml
   kind: single
   freq: 15min
@@ -12241,7 +12241,7 @@ entries:
     actual_available_supervised_origins: 1536
     actual_final_training_origin_count: 1424
   old_fingerprint: 07eb610e3c3f65c9d71827204dba88e5d2ba9e0b00dbf791efb5a0a93e24226e
-  new_fingerprint: c69f5776b05f1f2bc3b9b0ff4574bb4e3678a200e4222894d9d3d550dcab8897
+  new_fingerprint: 4adb841c1e5afe1348223c0e8823b71c39062f7873f2933172c6a2663ca7faf8
 - path: config/aidc_load_15min_short/route_A/add_decomposition/lgbm_usmr_prob_mean_decomp_linear.yaml
   kind: single
   freq: 15min
@@ -12264,7 +12264,7 @@ entries:
     actual_available_supervised_origins: 1536
     actual_final_training_origin_count: 1424
   old_fingerprint: 0860d0cd5adf85a8826fa56848d842e591d71a2e1d1cd0915ef5b369317ede7d
-  new_fingerprint: f5d8c55bc1fdbb94c9427c7551fd7d078c8d8c58e726e3e2a85fa1203400970c
+  new_fingerprint: f29f23bfe24d09234417b5721a6bcc53a46bd13079a6ee5e53e66dd194de1e0c
 - path: config/aidc_load_15min_short/route_A/add_decomposition/lgbm_usmr_prob_mean_decomp_mstl96-672.yaml
   kind: single
   freq: 15min
@@ -12287,7 +12287,7 @@ entries:
     actual_available_supervised_origins: 1536
     actual_final_training_origin_count: 1424
   old_fingerprint: 195a8e563834bc6fc85a534841486ff49079d92d0b09239f448839c57715c36d
-  new_fingerprint: 026f71f1c941a2716fad8d9a91f8816c87d0585ead0fdde652bed4810728a3a5
+  new_fingerprint: 8b60524aca11516a73d62e007dd9d3871c2509d36426b1c767896172b59c0c39
 - path: config/aidc_load_15min_short/route_A/add_decomposition/lgbm_usmr_prob_mean_decomp_stl96.yaml
   kind: single
   freq: 15min
@@ -12310,7 +12310,7 @@ entries:
     actual_available_supervised_origins: 1536
     actual_final_training_origin_count: 1424
   old_fingerprint: 0df4cae85f41eb4f5651d0574e9355df833b82d5773d4058c7a8d7765383f9b2
-  new_fingerprint: 019e5834595be14d7428cac2f0e5cd1ec5f204a5b693d1a1053bbd9ccd0ccf03
+  new_fingerprint: 5daf9adaccb4d288adc982785e7aae2ad0a5b3633e93225191699d1e36861c80
 - path: config/aidc_load_15min_short/route_A/add_decomposition/ridge_usmd_mean_decomp_linear.yaml
   kind: single
   freq: 15min
@@ -12761,7 +12761,7 @@ entries:
     actual_available_supervised_origins: 1536
     actual_final_training_origin_count: 1424
   old_fingerprint: dba205888aa7c2085df4ab80adb3772ee6435ba518953f0e83373086a3c06a46
-  new_fingerprint: 21ee69d2028bfef6467ec68879684d9896c4c306c67892b858b5c1c773e087a2
+  new_fingerprint: 0c53e1a5f3dbcbe12c9323ebe5fb2e018b891512d8b7d998a3c52aa3bf1ed001
 - path: config/aidc_load_15min_short/route_A/add_exogenous_weather_date/lgbm_usmd_prob_mean_conformal.yaml
   kind: single
   freq: 15min
@@ -12784,7 +12784,7 @@ entries:
     actual_available_supervised_origins: 1536
     actual_final_training_origin_count: 1424
   old_fingerprint: 1a7d7c05ac6967b7cb238b7602c74c310fc1323075e81f3f7a6b229859fcf4f1
-  new_fingerprint: 583bd5227322b2ee614e370e8410ff43138a9657c5642f3cb4ca51472d8a9fa3
+  new_fingerprint: 2e7a3c7f88760ab3a268226100b546d5222fd00f5cba9125bf2fc2fe53ba8b42
 - path: config/aidc_load_15min_short/route_A/add_exogenous_weather_date/lgbm_usmdp_prob_mean_conformal.yaml
   kind: single
   freq: 15min
@@ -12807,7 +12807,7 @@ entries:
     actual_available_supervised_origins: 1536
     actual_final_training_origin_count: 1424
   old_fingerprint: 76b408715e4e11f0190607d56304c0b0d2a9a01ca16555a89bb13c5aeb090444
-  new_fingerprint: 5a4635c2bb7183c3612e935971933981296c11062a045d47a5e55fe6f3007f76
+  new_fingerprint: 1a19296063a8f3c38771c21266f8e57970822f3e4636682b7d93e26b66638413
 - path: config/aidc_load_15min_short/route_A/add_exogenous_weather_date/lgbm_usmdr_prob_mean_conformal.yaml
   kind: single
   freq: 15min
@@ -12830,7 +12830,7 @@ entries:
     actual_available_supervised_origins: 1536
     actual_final_training_origin_count: 1424
   old_fingerprint: 69de7108ad865fe60687863428ca5a34d6210b336ee72381ea8895ec755ba6b0
-  new_fingerprint: f73067b74c1eaf1dcc85320926d5600aac081aaf4ee31341e3d1a12126e9d3d3
+  new_fingerprint: 35442b1b972c7e7201d27531e0779e140cba700ecd40cf2fd81cb39e331d3a71
 - path: config/aidc_load_15min_short/route_A/add_exogenous_weather_date/lgbm_usmr_prob_mean_conformal.yaml
   kind: single
   freq: 15min
@@ -12853,7 +12853,7 @@ entries:
     actual_available_supervised_origins: 1536
     actual_final_training_origin_count: 1424
   old_fingerprint: 361a6fc53dee5198cd5440e03fef7f681a4ae8defcbc21b06b71542b49282b99
-  new_fingerprint: bd3c94249877df1a5b3e67cdfbe0620e30d2a42aa6b25369f90f6a1f4f70619b
+  new_fingerprint: 6933022ec90b202258d65838d0a8d7b80ab6ac266d15ef99b0d9a1ad803889cc
 - path: config/aidc_load_15min_short/route_A/add_exogenous_weather_date/ridge_usmd_mean.yaml
   kind: single
   freq: 15min
@@ -12945,7 +12945,7 @@ entries:
     actual_available_supervised_origins: 1536
     actual_final_training_origin_count: 1424
   old_fingerprint: b6a2947f67cd28b6c88fc1f3cc4d52dffcc8e2b2d074345c31de88eaff5708ea
-  new_fingerprint: 1f6be8c2b2cd9470d05093f9b8e3669711d458120bbca1dc9e6dc192c2815b1c
+  new_fingerprint: c0f8fb0d1ae2c9b96578dea45ca3db575af9cc1eac62e5afe1a4e55f2b671dbe
 - path: config/aidc_load_15min_short/route_A/add_load_state/lgbm_usmd_prob_mean_conformal.yaml
   kind: single
   freq: 15min
@@ -12968,7 +12968,7 @@ entries:
     actual_available_supervised_origins: 1536
     actual_final_training_origin_count: 1424
   old_fingerprint: 97847aae71d3bd7f70cd55d8cbe0276426708682709ffdf2f0ac04298ac5d86f
-  new_fingerprint: cdb2e1f51f4cc26c0029a3e06a696cfff62afa7fa1d45c6dcbf0b58eec0138e9
+  new_fingerprint: b4f380ece1b89de10507a3052c97d199854b3ca1755495330874f78e2bf27d33
 - path: config/aidc_load_15min_short/route_A/add_load_state/lgbm_usmdp_prob_mean_conformal.yaml
   kind: single
   freq: 15min
@@ -12991,7 +12991,7 @@ entries:
     actual_available_supervised_origins: 1536
     actual_final_training_origin_count: 1424
   old_fingerprint: 64c9a7a5351456502ec0facba77da8a8fe75599649da4e4d9c473df19ca6409c
-  new_fingerprint: f706c9ba697430d3fab9317a88a93ffcca82f8df4b459abee29b6516feb05d31
+  new_fingerprint: dfb17b530fbdaf003561b5f89b21492bbbbd0e423f6581944c480031b180d433
 - path: config/aidc_load_15min_short/route_A/add_load_state/lgbm_usmdr_prob_mean_conformal.yaml
   kind: single
   freq: 15min
@@ -13014,7 +13014,7 @@ entries:
     actual_available_supervised_origins: 1536
     actual_final_training_origin_count: 1424
   old_fingerprint: 24b9d715ce8c99fb5838810a081caa6096994298f82037a150d598d462c8f8b9
-  new_fingerprint: 8671dbac6b0e36f4c98d1498d23e69e897b68655f6af086120ec112079891449
+  new_fingerprint: 37599a95e599b9d1631c99c10069c7982831cf438dab878962bce433f4df6fe7
 - path: config/aidc_load_15min_short/route_A/add_load_state/lgbm_usmr_prob_mean_conformal.yaml
   kind: single
   freq: 15min
@@ -13037,7 +13037,7 @@ entries:
     actual_available_supervised_origins: 1536
     actual_final_training_origin_count: 1424
   old_fingerprint: 75a43c2c326466f2209ee796f879a60d30a9723bf6f8665fd95af87e26d7be66
-  new_fingerprint: 1e4c279ca2204be503e26dd5764cafeeb225a8217d9718ce972b2e5025ef34de
+  new_fingerprint: 81053b9c24123c1d535cad1cfb75b2e1dd4f778409c8ce1dd23bb7c9fa94960a
 - path: config/aidc_load_15min_short/route_A/add_load_state/ridge_usmd_mean.yaml
   kind: single
   freq: 15min
@@ -13106,7 +13106,7 @@ entries:
     actual_available_supervised_origins: 1536
     actual_final_training_origin_count: 1424
   old_fingerprint: 4022754fcc3b3d7df95acd384b5ee752acffd31163b8416026c27bd01fc3bead
-  new_fingerprint: 37163bf0cebbfd92ad9f3ce21b51885f7c82c9330434956244f2b329bdd3935d
+  new_fingerprint: 53d119f1fb09c8f3e6999b238c78ffd836e3a25ac97909360d5106e4df0e3b6e
 - path: config/aidc_load_15min_short/route_A/baseline/lasso_usmd_mean.yaml
   kind: single
   freq: 15min
@@ -13151,7 +13151,7 @@ entries:
     configured_final_train_window: 1424
     actual_final_training_origin_count: null
   old_fingerprint: 49b53bce9aa5f188376e84a68f7d68fed32d5348cae3f6f95f37dd36ec9bb38f
-  new_fingerprint: 47c40e832cc57d6210d0c2240f62c1d2514bd894cbcb31fc90f0f2d2b9ac95d2
+  new_fingerprint: 9c8f971ff92dbcdaf5bf6c9f43aedeede57ac56abcbb87cea96afd850a24e984
   old_oof_geometry:
     train_window_length: 15
     fold_count: 1
@@ -13182,7 +13182,7 @@ entries:
     actual_available_supervised_origins: 1536
     actual_final_training_origin_count: 1424
   old_fingerprint: e4f9619088a92e13a00268063cd6a91918de0c70532b5f0bc5962b7ab34d648f
-  new_fingerprint: 94ace49d23a6075dc068bb76c1e5b4ab17110cfa4881f27098b2a5d4f05e4e26
+  new_fingerprint: e0c7bb0da3f68717dd678e25cd1ba8ea59e953c292ec1f125cd38438eb9aad9f
 - path: config/aidc_load_15min_short/route_A/baseline/lgbm_usmd_prob_mean_horizon_conformal.yaml
   kind: single
   freq: 15min
@@ -13205,7 +13205,7 @@ entries:
     actual_available_supervised_origins: 1536
     actual_final_training_origin_count: 1424
   old_fingerprint: 4f8d6652aefcb32fa4c7fb3655e299dbe5d9f37bbc5f159495fa703271c09e2b
-  new_fingerprint: 9d3fe07848d40895c06a66db2e2db8681b4d0217dc9db001c3bea816b2d1b3b3
+  new_fingerprint: b238c494968a959db3e181eac3d01d7c68c59882b67aabc517c91ade3de091ec
 - path: config/aidc_load_15min_short/route_A/baseline/lgbm_usmdp_prob_mean_conformal.yaml
   kind: single
   freq: 15min
@@ -13228,7 +13228,7 @@ entries:
     actual_available_supervised_origins: 1536
     actual_final_training_origin_count: 1424
   old_fingerprint: 380b1cd5fa07300ced424a46aef8336cbd55acfd51bd3724bc58f7a5ac343c9e
-  new_fingerprint: e1f7c37fe42d28aecf0be02d4ff5f600f8361fd7a9ff701b11e30798c480fda3
+  new_fingerprint: 7f19032e1e4b58a5a14c0233794f0adef530a5adf2f04e86e95927345a54bd54
 - path: config/aidc_load_15min_short/route_A/baseline/lgbm_usmdr_prob_mean_conformal.yaml
   kind: single
   freq: 15min
@@ -13251,7 +13251,7 @@ entries:
     actual_available_supervised_origins: 1536
     actual_final_training_origin_count: 1424
   old_fingerprint: 0f6aafc82e402b7567ef075037c4bd1dc0a386390adf66246a4cb85897199968
-  new_fingerprint: 4c06b40764b91b42536728af64e2656210540925f13af01e1d1b9b48e180c3a6
+  new_fingerprint: f57f441a8841f89d05d38703d449a3d240e53452d3a36a2355dcecbbbafcb6fa
 - path: config/aidc_load_15min_short/route_A/baseline/lgbm_usmr_prob_mean_conformal.yaml
   kind: single
   freq: 15min
@@ -13274,7 +13274,7 @@ entries:
     actual_available_supervised_origins: 1536
     actual_final_training_origin_count: 1424
   old_fingerprint: e6f4efd71658cdbf703a1b3bf8d15257db675a145e8441a100116f78d165f90d
-  new_fingerprint: c8d298affeb89efb8940f3d0aa6464b560e00a2e9a4383f79b1acab969cde3d5
+  new_fingerprint: c7a310c655382dcc5a8673e1f4d1a451f7dda4c7088f8d93ddf37faf5dc79135
 - path: config/aidc_load_15min_short/route_A/baseline/ridge_usmd_mean.yaml
   kind: single
   freq: 15min
@@ -13481,7 +13481,7 @@ entries:
     actual_available_supervised_origins: 1536
     actual_final_training_origin_count: 1424
   old_fingerprint: 8233bf275f3c3ddd994d46212631563219a016f5c74a734d604ea6d9a19a793c
-  new_fingerprint: 0dca7fbea741385221e1fc535e633fd17a1cfc53c0e56e8d848020f4273e2a66
+  new_fingerprint: b2ae67c2c659f9fc6decd8156e902eda04cedbd97e46d65dda529bc277e8fa2a
 - path: config/aidc_load_15min_short/route_B/add_decomposition/lgbm_usmd_mean_prob_horizon_decomp_mstl96-672.yaml
   kind: single
   freq: 15min
@@ -13504,7 +13504,7 @@ entries:
     actual_available_supervised_origins: 1536
     actual_final_training_origin_count: 1424
   old_fingerprint: 025437aa0341e2512ea39c02324eda314bc655420c8338971e5ec343bd57341a
-  new_fingerprint: 3c711482467b144ff016c0a28ce30c5329fc63e96c13617075389ef9230dd39d
+  new_fingerprint: b83b560be27c42f1cf1dc9855f0ab91fb4067291b217812c43b75e18d2b4a351
 - path: config/aidc_load_15min_short/route_B/add_decomposition/lgbm_usmd_mean_prob_horizon_decomp_stl96.yaml
   kind: single
   freq: 15min
@@ -13527,7 +13527,7 @@ entries:
     actual_available_supervised_origins: 1536
     actual_final_training_origin_count: 1424
   old_fingerprint: fe617c7770fc97409ba59ad4c46255bd0401302817ed8766e71cf6c39caf1550
-  new_fingerprint: cc3808bbb87259c20407b883be95304391c575517efd24a40eae8086604497ac
+  new_fingerprint: 39592a69dc7702e6edeabf1fae6cad841d4a14f7d4e0fd83da1efd05f8d12d88
 - path: config/aidc_load_15min_short/route_B/add_decomposition/lgbm_usmd_prob_mean_decomp_linear.yaml
   kind: single
   freq: 15min
@@ -13550,7 +13550,7 @@ entries:
     actual_available_supervised_origins: 1536
     actual_final_training_origin_count: 1424
   old_fingerprint: 9f40c5cf2a3e4b10579c0dfbc3f2e19974888e9e4abc9f915381377ef340c94e
-  new_fingerprint: af579b6e32a4672ef4a105c28453082e5dcd94347d077fe5bc1f67dc181a54bf
+  new_fingerprint: 7f66ccf04d4502f2a18fccf1e0bb1e10d999918b85c03bbe7adb15c903ce2c59
 - path: config/aidc_load_15min_short/route_B/add_decomposition/lgbm_usmd_prob_mean_decomp_mstl96-672.yaml
   kind: single
   freq: 15min
@@ -13573,7 +13573,7 @@ entries:
     actual_available_supervised_origins: 1536
     actual_final_training_origin_count: 1424
   old_fingerprint: 0599b388e94861490b93d0c9a815692f07fc9e14c80779f7b685ba88f410360b
-  new_fingerprint: d615f99c9a1433305e8c949cafb7439c1d6fd7aa10b4de776896fe1ccec6feef
+  new_fingerprint: ef267486ea41dfc655cd6994b5f6a7aa7ed58c10c4cc0a9e75adfac8e4967bd5
 - path: config/aidc_load_15min_short/route_B/add_decomposition/lgbm_usmd_prob_mean_decomp_stl96.yaml
   kind: single
   freq: 15min
@@ -13596,7 +13596,7 @@ entries:
     actual_available_supervised_origins: 1536
     actual_final_training_origin_count: 1424
   old_fingerprint: 96e136002010b85abc1d782f424eed33c25962c121922a72a85e6a08610dc873
-  new_fingerprint: 07b2602c0b73cd05f4e60f8f42b1949a9492b1d461ca6fb39c8fea968e0dd491
+  new_fingerprint: 68dea41435a18fc88f11345b2ef324fb9e5ac043fca6e4a2935a79f3680f72c8
 - path: config/aidc_load_15min_short/route_B/add_decomposition/lgbm_usmdp_prob_mean_decomp_linear.yaml
   kind: single
   freq: 15min
@@ -13619,7 +13619,7 @@ entries:
     actual_available_supervised_origins: 1536
     actual_final_training_origin_count: 1424
   old_fingerprint: 98685ce1e9726be651458eead4b643e60a0cbf0c4740c31fa2309cdd89d6d18f
-  new_fingerprint: 881a98719aa5cc69a1783ef8260db77bacfd73a8acdb2120119151de02135ef0
+  new_fingerprint: b99dccc4b8230d3b136add0209121978e21d16050d3f2cca7c74d181b81ba6b1
 - path: config/aidc_load_15min_short/route_B/add_decomposition/lgbm_usmdp_prob_mean_decomp_mstl96-672.yaml
   kind: single
   freq: 15min
@@ -13642,7 +13642,7 @@ entries:
     actual_available_supervised_origins: 1536
     actual_final_training_origin_count: 1424
   old_fingerprint: 36f5095dd13f4a17379e2699882363fe19fd545b44d3e18762e0ce838df0decf
-  new_fingerprint: dcfe145938dd9b356cdcfa5137316ad25d0bc935dcb00452e4e704328246f87c
+  new_fingerprint: 7ef217a5ec87658973564ee10a0d8c6fd695c25855e89ae7fb295c59facc7ce1
 - path: config/aidc_load_15min_short/route_B/add_decomposition/lgbm_usmdp_prob_mean_decomp_stl96.yaml
   kind: single
   freq: 15min
@@ -13665,7 +13665,7 @@ entries:
     actual_available_supervised_origins: 1536
     actual_final_training_origin_count: 1424
   old_fingerprint: f2058a00d61ebedff4ac2d5db9fd61e93c5d2651fcce52c5d31e5d1187b56974
-  new_fingerprint: 0ef58cea9a74c00e4848b3c45caa3a008bbcaa6ef08743bdaec628b349f576cc
+  new_fingerprint: c7864975a6c3755e1bb6e82b12c7c6c023b28c802f3c06e382883ea1356ffa40
 - path: config/aidc_load_15min_short/route_B/add_decomposition/lgbm_usmdr_prob_mean_decomp_linear.yaml
   kind: single
   freq: 15min
@@ -13688,7 +13688,7 @@ entries:
     actual_available_supervised_origins: 1536
     actual_final_training_origin_count: 1424
   old_fingerprint: 0f7231a387a6bb9a4e453d06020b5637c10b6387f9a0926ba79170dbba0ee88a
-  new_fingerprint: 5baff8acac807c68917bbb6f1640458734446dc77e51b86b16b42a3151a6fc96
+  new_fingerprint: d2af5158a834927adb21e455121b6a1bf994e8ee1ef89eef93066ab3642fc97e
 - path: config/aidc_load_15min_short/route_B/add_decomposition/lgbm_usmdr_prob_mean_decomp_mstl96-672.yaml
   kind: single
   freq: 15min
@@ -13711,7 +13711,7 @@ entries:
     actual_available_supervised_origins: 1536
     actual_final_training_origin_count: 1424
   old_fingerprint: ce3b4143624f84385e574010df4283e87cc0cbf9d23fff5362c735da2c6507eb
-  new_fingerprint: 468acf63a89a91b24b2ab17103b3a98716cff0d2880feda2a10b1710b57d409e
+  new_fingerprint: 10d408adfa8b0cfaee2f0ed244d1e4ff6f2ade7fa23f438999055c6be8cb304b
 - path: config/aidc_load_15min_short/route_B/add_decomposition/lgbm_usmdr_prob_mean_decomp_stl96.yaml
   kind: single
   freq: 15min
@@ -13734,7 +13734,7 @@ entries:
     actual_available_supervised_origins: 1536
     actual_final_training_origin_count: 1424
   old_fingerprint: 5ce7de219fa140c8136ab4fa9bdafc65b6da45a4c7f86bddf031eeb8f12674b4
-  new_fingerprint: 2a73d1ea553df075092e68face459c67e40cca89e19bf385a3aa2f90220ff20f
+  new_fingerprint: 9b4e774d27ee6262bef6d0c09d195b0f57af99ca2db8fcae2a8be05820e5ee32
 - path: config/aidc_load_15min_short/route_B/add_decomposition/lgbm_usmr_prob_mean_decomp_linear.yaml
   kind: single
   freq: 15min
@@ -13757,7 +13757,7 @@ entries:
     actual_available_supervised_origins: 1536
     actual_final_training_origin_count: 1424
   old_fingerprint: 10ba50ce953840b84730d2143a74b52022110dda80bd0fdc217abf35d80a4f51
-  new_fingerprint: 4051a34a3d3ac94937096598e152b86886fc1d08f53057710c0eb53ce4bbe976
+  new_fingerprint: 37caa233930dd427eeaf646c9b323acd3a3d02ed6be5c0368eceb582b3fa9b30
 - path: config/aidc_load_15min_short/route_B/add_decomposition/lgbm_usmr_prob_mean_decomp_mstl96-672.yaml
   kind: single
   freq: 15min
@@ -13780,7 +13780,7 @@ entries:
     actual_available_supervised_origins: 1536
     actual_final_training_origin_count: 1424
   old_fingerprint: 7a97c2d221f966a2a71a2baea0604b495fd52cf762ce00144b32b519ed7f979a
-  new_fingerprint: 55cbf9fc24008332a68d0d45bacf2b396335aa00808e4f2ef1de37cce3d60baa
+  new_fingerprint: 90bf7e16820dd22522402357a5e907100d674ed967fc320b0f5d7e1047b2addf
 - path: config/aidc_load_15min_short/route_B/add_decomposition/lgbm_usmr_prob_mean_decomp_stl96.yaml
   kind: single
   freq: 15min
@@ -13803,7 +13803,7 @@ entries:
     actual_available_supervised_origins: 1536
     actual_final_training_origin_count: 1424
   old_fingerprint: ca36ddccd2becf22ba3e6df93b5e803c7a11139e159c32335481b6a4efb85915
-  new_fingerprint: b5bf11d44bec8b8658a9a1b225fa95acdecbaf9cc0ea0a0f055ee0ad198c7725
+  new_fingerprint: 0c61c2ae8a16a973ce6f88dd7ee360e746b88490ea55f44836a38b67bd31e115
 - path: config/aidc_load_15min_short/route_B/add_decomposition/ridge_usmd_mean_decomp_linear.yaml
   kind: single
   freq: 15min
@@ -14254,7 +14254,7 @@ entries:
     actual_available_supervised_origins: 1536
     actual_final_training_origin_count: 1424
   old_fingerprint: 5bcd54b6d9c90862e6fedc1c459076d9daf8bd72bd23c64d784969cf75374a87
-  new_fingerprint: f69f5e06aca7093def0f1be3ea164a78c778b358183353b3c0c8cb0a2b523a2c
+  new_fingerprint: 3161ad9d0f83c6856fb74e0ee4e3798d3725fec48a5a98ff7768437d9b81f5cc
 - path: config/aidc_load_15min_short/route_B/add_exogenous_weather_date/lgbm_usmd_prob_mean_conformal.yaml
   kind: single
   freq: 15min
@@ -14277,7 +14277,7 @@ entries:
     actual_available_supervised_origins: 1536
     actual_final_training_origin_count: 1424
   old_fingerprint: 97d6f339018eb0976f39b93c0a75338752f594b7351cf5df3024eea710a827d1
-  new_fingerprint: e474b466c33acbb693fe56aedfe467b5f49259edcf650dc029b3accfd5432f56
+  new_fingerprint: a4f4c7c2b3c247e7d132d77a975ab7266bac4b6a283630f358253b3876ede496
 - path: config/aidc_load_15min_short/route_B/add_exogenous_weather_date/lgbm_usmdp_prob_mean_conformal.yaml
   kind: single
   freq: 15min
@@ -14300,7 +14300,7 @@ entries:
     actual_available_supervised_origins: 1536
     actual_final_training_origin_count: 1424
   old_fingerprint: 72eeb7affc99163d7868b67cc596f3b86e8cf72e60106b149390e397b1610cce
-  new_fingerprint: 1a02ad3e5c7c49c228a4ee788910b7183f7ea5d937bd6671ef5f6e90a1159371
+  new_fingerprint: 253e2cc42c9ccbbf70434fc0266debc4025dbd812908c1e5306b62c1ca768e4f
 - path: config/aidc_load_15min_short/route_B/add_exogenous_weather_date/lgbm_usmdr_prob_mean_conformal.yaml
   kind: single
   freq: 15min
@@ -14323,7 +14323,7 @@ entries:
     actual_available_supervised_origins: 1536
     actual_final_training_origin_count: 1424
   old_fingerprint: d5a21c69a76d6506cfbcb76a8ca0cbc7c29465784afc0f05da217170a0180724
-  new_fingerprint: f626e78f342dfe5139c83a984c834414a362cf7878782189f2b5f09ea4ea5703
+  new_fingerprint: 32cc9680cfa876c827450cd74aa58251f60a606cfb0a36ca66f2d3afcb90dfb8
 - path: config/aidc_load_15min_short/route_B/add_exogenous_weather_date/lgbm_usmr_prob_mean_conformal.yaml
   kind: single
   freq: 15min
@@ -14346,7 +14346,7 @@ entries:
     actual_available_supervised_origins: 1536
     actual_final_training_origin_count: 1424
   old_fingerprint: fe6a2f11cd57191861ac04ec5748395fb1f51c3627b32ee5b68c7020eac52f9f
-  new_fingerprint: f45ca5d2811cf44dac05c5fdebdb4e61cf05dde35083a9012b47762804ba73c2
+  new_fingerprint: e3ef3d071fec2067ef422e655581ea8ecc974b012b4ef2e5b5054e3946753367
 - path: config/aidc_load_15min_short/route_B/add_exogenous_weather_date/ridge_usmd_mean.yaml
   kind: single
   freq: 15min
@@ -14438,7 +14438,7 @@ entries:
     actual_available_supervised_origins: 1536
     actual_final_training_origin_count: 1424
   old_fingerprint: b1372478fa06b77bc248c584c3b212d76bfaa4bc41edaf27d203f1ffdbe0424f
-  new_fingerprint: 572939008ba41dc630004e86c63dbca34bffd6355d953556020ac37b15ba0103
+  new_fingerprint: 62664ab3f73837849f9f5c2b1608c56517be870e483bd772d73b39ccb2903bf8
 - path: config/aidc_load_15min_short/route_B/add_load_state/lgbm_usmd_prob_mean_conformal.yaml
   kind: single
   freq: 15min
@@ -14461,7 +14461,7 @@ entries:
     actual_available_supervised_origins: 1536
     actual_final_training_origin_count: 1424
   old_fingerprint: 9c7551851462df19e6a77e591cc5c806ad7de3c94a17ce22f10095eff103d7e9
-  new_fingerprint: 431adf0564405e9e8d0114f79b1b2dc2ae17e90f4d902685d2a9e5f871906fb7
+  new_fingerprint: 14e6715ee3af13d475dd9cde069344e6a4e59d88abe0d162c9e73664a8f1f9d5
 - path: config/aidc_load_15min_short/route_B/add_load_state/lgbm_usmdp_prob_mean_conformal.yaml
   kind: single
   freq: 15min
@@ -14484,7 +14484,7 @@ entries:
     actual_available_supervised_origins: 1536
     actual_final_training_origin_count: 1424
   old_fingerprint: 5588c9642db36d790d52ca3add07d8ba7a422ea907d46db087c7bb39444964aa
-  new_fingerprint: 3ec333a72990e027a6f695e4ae5ec1d9caa4b2f3a57b0c9cb94624c81caa556f
+  new_fingerprint: e79b03ece0c7296e92fcd16ab54c1adbca92eed9b2d8d4a51976ffa3896c4f24
 - path: config/aidc_load_15min_short/route_B/add_load_state/lgbm_usmdr_prob_mean_conformal.yaml
   kind: single
   freq: 15min
@@ -14507,7 +14507,7 @@ entries:
     actual_available_supervised_origins: 1536
     actual_final_training_origin_count: 1424
   old_fingerprint: 92a17b336000e7c4baa20f6d67190f9872ef82f2534bb9a1175a0a323d873452
-  new_fingerprint: ae02faccee0983794e2624ed8db543a2a084e195a3d5b77238d59f6f24989553
+  new_fingerprint: a600b0d49da5fb0abfc808828db196916293b5ea598bc750abcefd6c24c4faad
 - path: config/aidc_load_15min_short/route_B/add_load_state/lgbm_usmr_prob_mean_conformal.yaml
   kind: single
   freq: 15min
@@ -14530,7 +14530,7 @@ entries:
     actual_available_supervised_origins: 1536
     actual_final_training_origin_count: 1424
   old_fingerprint: 84dd7eafe46d117f47d6c2fa83e96c36b377b99ab73046c343a8b8b23d4ce01b
-  new_fingerprint: 2d0a086701abd86d9ce7a7b10997f428a674703c2d4e20b177291176982cf744
+  new_fingerprint: 3def0886b61f2548303e0efdb4edfe230cb3e2351b8558f984fd9ac00211e3eb
 - path: config/aidc_load_15min_short/route_B/add_load_state/ridge_usmd_mean.yaml
   kind: single
   freq: 15min
@@ -14599,7 +14599,7 @@ entries:
     actual_available_supervised_origins: 1536
     actual_final_training_origin_count: 1424
   old_fingerprint: 1e54e48a350e17f9641144cffc7b555e4d28f019ccf31de6dc9807d9d69f1212
-  new_fingerprint: be0c192f86deda865ea943f783fc7f93195c1e2982dee9694c5cfc965a9d2b5e
+  new_fingerprint: 6531d6450295a0c15adf8059d31ce77f470fb24c0b2b5cb8e405d2aac59ae91a
 - path: config/aidc_load_15min_short/route_B/baseline/lasso_usmd_mean.yaml
   kind: single
   freq: 15min
@@ -14644,7 +14644,7 @@ entries:
     configured_final_train_window: 1424
     actual_final_training_origin_count: null
   old_fingerprint: e82d01454e912281395345439e203906338a7571660c158cdaa7532ce51a2397
-  new_fingerprint: 2cebaff4e569256fffb364af5d3d5f7a0cf92d42c5a23a9be578c21fa6d3ad8c
+  new_fingerprint: 680cd90299689e882c915b05b40cc92af5953cc4b5a634eaff7c5a53adf8e44d
   old_oof_geometry:
     train_window_length: 15
     fold_count: 1
@@ -14675,7 +14675,7 @@ entries:
     actual_available_supervised_origins: 1536
     actual_final_training_origin_count: 1424
   old_fingerprint: 30ff8ecd3ce6442fb08caa6601a6a56d262c73550bebc12bea83cb5604a9c4c7
-  new_fingerprint: f0fdb669e2ee6fed674ddec1b5370c96541de664595e05f5fe2f2e41eeb2e463
+  new_fingerprint: bd16481455e2061e00f5af382a91cbf4f172cc04da382227e85d512d3c379d73
 - path: config/aidc_load_15min_short/route_B/baseline/lgbm_usmd_prob_mean_horizon_conformal.yaml
   kind: single
   freq: 15min
@@ -14698,7 +14698,7 @@ entries:
     actual_available_supervised_origins: 1536
     actual_final_training_origin_count: 1424
   old_fingerprint: b538a041b918f2585aa1dfc57799a1e72daf2c77a89c1f32d7c11c3861554f6b
-  new_fingerprint: daff4076057c1108cd72e92ae7d717e951469a8ebb6b0a77ef0c19583fcefbff
+  new_fingerprint: c904d8fc4ed8cb8fb9ea4b68bdb442e9c40816b48e00df3af07d2c37cffe6807
 - path: config/aidc_load_15min_short/route_B/baseline/lgbm_usmdp_prob_mean_conformal.yaml
   kind: single
   freq: 15min
@@ -14721,7 +14721,7 @@ entries:
     actual_available_supervised_origins: 1536
     actual_final_training_origin_count: 1424
   old_fingerprint: 9ab225ea6d566f192582931ec123c650e34d5d262fab1fead229eeea32013f8f
-  new_fingerprint: 217cf49ac6e76f8aad4ed3ce2900948ea13c3d6377b1c45d791518b32bf79908
+  new_fingerprint: 7e37a3a78e2ae77842cfd9666f7e93c6b3d98a5a980aa0a44030cdb02891a4e0
 - path: config/aidc_load_15min_short/route_B/baseline/lgbm_usmdr_prob_mean_conformal.yaml
   kind: single
   freq: 15min
@@ -14744,7 +14744,7 @@ entries:
     actual_available_supervised_origins: 1536
     actual_final_training_origin_count: 1424
   old_fingerprint: 489ca3ea11b635a881de980222203e7755d4f441965302e2929f71f7b0436917
-  new_fingerprint: d682a3dc5a38d33544d1d54f7074be8e708f5339e328b086a953970350945903
+  new_fingerprint: 8e585a1f61faa3335bfb9d22e394bc89403df26f1c4b4e8dbaee7961b569ff7f
 - path: config/aidc_load_15min_short/route_B/baseline/lgbm_usmr_prob_mean_conformal.yaml
   kind: single
   freq: 15min
@@ -14767,7 +14767,7 @@ entries:
     actual_available_supervised_origins: 1536
     actual_final_training_origin_count: 1424
   old_fingerprint: 5fe18b77e9f9d7c5bcaef85a188d92f2416ebdafd1c81ea9ca9c3860d8911e18
-  new_fingerprint: b349b4c0e8cd712b10f66ab8182cea27d8d83e413d7a464581ed85f4567556de
+  new_fingerprint: a63860675df7431352cfb62a600f399d5781709227dba87f07aafa104e975b15
 - path: config/aidc_load_15min_short/route_B/baseline/ridge_usmd_mean.yaml
   kind: single
   freq: 15min
@@ -14974,7 +14974,7 @@ entries:
     actual_available_supervised_origins: 242
     actual_final_training_origin_count: 116
   old_fingerprint: 12a00b3a0d2ee8e55e9aeb3cfe3199cd47ca68f3b90576d24e3942cee05fc84c
-  new_fingerprint: cff67694db07ff6a08a5483e43a90fceccb2dad1e888ede71575cf23d00f8ea0
+  new_fingerprint: 6588a950e026cf852db5acc1ce76d99d9a3b0c7e5bad34396733691eba341c07
 - path: config/aidc_load_month/route_A/lgbm_usmdp_mean.yaml
   kind: single
   freq: 1D
@@ -15020,7 +15020,7 @@ entries:
     actual_available_supervised_origins: 208
     actual_final_training_origin_count: 116
   old_fingerprint: 038ce5e358cdb144199c7e0ef9f924b02e810387dcdea9c9ca599ad3bca31364
-  new_fingerprint: 574c87acfbf80bd5a7ab072e1168ac3e983f25faf13a1112b5b9f8eae07ea7a4
+  new_fingerprint: c21f81dad9458dc92e44ab3ffd15a13a489db479bf81f41058392f1f62cd162f
 - path: config/aidc_load_month/route_A/lgbm_usmdr_mean.yaml
   kind: single
   freq: 1D
@@ -15066,7 +15066,7 @@ entries:
     actual_available_supervised_origins: 243
     actual_final_training_origin_count: 116
   old_fingerprint: 0898ffe8df29dfcdbeb8b06b8a2714709e9bf8ffeefec2e8e2667b787dd33383
-  new_fingerprint: 7ee932f8bdcb38e6474ead654b5c86b5b0937e1cb4ee098150d536c83b436cd8
+  new_fingerprint: f925f7b80b3ff3baf925eab4ded1ffea1215f710cff47d2068123b581eee55d3
 - path: config/aidc_load_month/route_A/lgbm_usmr_mean.yaml
   kind: single
   freq: 1D
@@ -15112,7 +15112,7 @@ entries:
     actual_available_supervised_origins: 243
     actual_final_training_origin_count: 116
   old_fingerprint: 0898ffe8df29dfcdbeb8b06b8a2714709e9bf8ffeefec2e8e2667b787dd33383
-  new_fingerprint: 7ee932f8bdcb38e6474ead654b5c86b5b0937e1cb4ee098150d536c83b436cd8
+  new_fingerprint: f925f7b80b3ff3baf925eab4ded1ffea1215f710cff47d2068123b581eee55d3
 - path: config/aidc_load_month/route_B/decomposition/lgbm_usmdp_mean_damped.yaml
   kind: single
   freq: 1D
@@ -15273,7 +15273,7 @@ entries:
     actual_available_supervised_origins: 242
     actual_final_training_origin_count: 116
   old_fingerprint: f926c22bfe5720dda002f655f5193aef08c9d2b7127bbbf9cb6014428422c8b0
-  new_fingerprint: b5a76b3a136524819e164ce3eb323795acbaabca18998d4d001a1ff65c043755
+  new_fingerprint: 0e3cc31f914cb0ad89935c289f6c6efc9a2833bd88d8f0f2bbef935ebd67368b
 - path: config/aidc_load_month/route_B/lgbm_usmdp_mean.yaml
   kind: single
   freq: 1D
@@ -15319,7 +15319,7 @@ entries:
     actual_available_supervised_origins: 208
     actual_final_training_origin_count: 116
   old_fingerprint: a7acc40fc698bc3d261f61656113bba9ebcb41861a2c854645ba3433139145af
-  new_fingerprint: c9b9412023e94d8057cccdfc7bfcbd9869c1cbe43ac1154e6161c893ee8e7964
+  new_fingerprint: f8e2a3f4a1dfb74c0fdcb620ef88a5cb298faad81e6a501a4d845f1db6693515
 - path: config/aidc_load_month/route_B/lgbm_usmdr_mean.yaml
   kind: single
   freq: 1D
@@ -15365,7 +15365,7 @@ entries:
     actual_available_supervised_origins: 243
     actual_final_training_origin_count: 116
   old_fingerprint: 7b96509f53f8b63bba078ef488ca3d365d35c6a88a2b393ff8e71e23ab0b3331
-  new_fingerprint: 1dcff3e0bf8270a73fd7caf19f0fd9961bfad0588e11f27704c1add937c890fe
+  new_fingerprint: 1646b2cfabff7bef15be606cdeab71169117364fa6ca05aa4a7dd73f0f3680bd
 - path: config/aidc_load_month/route_B/lgbm_usmr_mean.yaml
   kind: single
   freq: 1D
@@ -15411,7 +15411,7 @@ entries:
     actual_available_supervised_origins: 243
     actual_final_training_origin_count: 116
   old_fingerprint: 7b96509f53f8b63bba078ef488ca3d365d35c6a88a2b393ff8e71e23ab0b3331
-  new_fingerprint: 1dcff3e0bf8270a73fd7caf19f0fd9961bfad0588e11f27704c1add937c890fe
+  new_fingerprint: 1646b2cfabff7bef15be606cdeab71169117364fa6ca05aa4a7dd73f0f3680bd
 - path: config/aidc_power_month/route_A/freq_1day/add_decomposition/enet_usmd_mean_decomp_damped.yaml
   kind: single
   freq: 1D
@@ -15600,7 +15600,7 @@ entries:
     actual_available_supervised_origins: 245
     actual_final_training_origin_count: 89
   old_fingerprint: 059fce50f8ef6dc63c404d60c7d2207635659875d5f247ba16728bb4c015c6ee
-  new_fingerprint: 71a7fd07f3940f028f5861c8a633104a65243041c12f1800b83728942c349dba
+  new_fingerprint: d02e6e03c4a8190e5d2ce1d1c782bf312c2dff4d380f95854aa8698a154b21fe
 - path: config/aidc_power_month/route_A/freq_1day/add_decomposition/lgbm_usmd_mean_prob_horizon_decomp_linear.yaml
   kind: single
   freq: 1D
@@ -15621,7 +15621,7 @@ entries:
     actual_available_supervised_origins: 245
     actual_final_training_origin_count: 89
   old_fingerprint: 37b954b1af6c5fa907d071094894f2048edaa3f7f865d6cca1e235b56c7afa90
-  new_fingerprint: 94bb85b906b14a1a73f2d7b8d0b1f9caae1d9ad90eb26831a79769d5629e780c
+  new_fingerprint: defee203557fe9c20de893f727dca87240ed4307849e65d8760b4062be0aaae3
 - path: config/aidc_power_month/route_A/freq_1day/add_decomposition/lgbm_usmd_mean_prob_horizon_decomp_quadratic.yaml
   kind: single
   freq: 1D
@@ -15642,7 +15642,7 @@ entries:
     actual_available_supervised_origins: 245
     actual_final_training_origin_count: 89
   old_fingerprint: 7774befcf4310f1c920ebd97cee7314d6741222549afe82e925ac72e20487aac
-  new_fingerprint: 4c838acf7033c6c7e065763069d7d760e38d74f1d762c62e85b5e8bac7b135db
+  new_fingerprint: 0482e84dde9b2322e11281ddeccdf24f3b417ddc060a85c81e52596862f1e746
 - path: config/aidc_power_month/route_A/freq_1day/add_decomposition/lgbm_usmd_mean_prob_horizon_decomp_stl7.yaml
   kind: single
   freq: 1D
@@ -15663,7 +15663,7 @@ entries:
     actual_available_supervised_origins: 245
     actual_final_training_origin_count: 89
   old_fingerprint: c267c5ddc9bc3e1a8fe924f579650cd3e275158c57cc49fb50b52cda0e704c49
-  new_fingerprint: 281174bbc1ac7deb0d92356b66bfb4cc753e96d3c81775b3d7b74a9cba4775b7
+  new_fingerprint: db9f211756ba4989c3cbb84db24adf8ee20f65c3c11d9e40557434c7e3ae92d4
 - path: config/aidc_power_month/route_A/freq_1day/add_decomposition/lgbm_usmd_prob_mean_decomp_damped.yaml
   kind: single
   freq: 1D
@@ -15684,7 +15684,7 @@ entries:
     actual_available_supervised_origins: 245
     actual_final_training_origin_count: 89
   old_fingerprint: 571dd7ed419e31e2dc2dd5927771df4b0050f475af0b8ba488670e10885dfc11
-  new_fingerprint: 283cdde336474ccefacdf7c810a281bb9f1e232260dbe4473526b435b6f6fa5c
+  new_fingerprint: 501c685859e0643986e6252ee2d2c6d1e19c94efafd9bc489551f4a5b1db7281
 - path: config/aidc_power_month/route_A/freq_1day/add_decomposition/lgbm_usmd_prob_mean_decomp_linear.yaml
   kind: single
   freq: 1D
@@ -15705,7 +15705,7 @@ entries:
     actual_available_supervised_origins: 245
     actual_final_training_origin_count: 89
   old_fingerprint: bd6bfabcdb6799f27e5c114e0e9c61225e17393550a5efe52c50da8f5e526d96
-  new_fingerprint: 301b28bdd534c1f95d9ed098038bb411e44439cfcbed68b1bfa64e71c9da5786
+  new_fingerprint: e87b6372165ceb920f80c00e5f67b692a69f15ace255b74fdbc3dac152b48ac4
 - path: config/aidc_power_month/route_A/freq_1day/add_decomposition/lgbm_usmd_prob_mean_decomp_quadratic.yaml
   kind: single
   freq: 1D
@@ -15726,7 +15726,7 @@ entries:
     actual_available_supervised_origins: 245
     actual_final_training_origin_count: 89
   old_fingerprint: d0d114ffe682301761ddc013b21a14c9eb914e0b0272c68e7f3b4762af3b3d99
-  new_fingerprint: d681549801e2ce96dbf3abec34510485b30e56e11439a5c45d366bbd28fa99d9
+  new_fingerprint: 065caf839796e0b09e21e5f9ce36203b2215fbfad73c7bd19ddd7144d95e3bcb
 - path: config/aidc_power_month/route_A/freq_1day/add_decomposition/lgbm_usmd_prob_mean_decomp_stl7.yaml
   kind: single
   freq: 1D
@@ -15747,7 +15747,7 @@ entries:
     actual_available_supervised_origins: 245
     actual_final_training_origin_count: 89
   old_fingerprint: 240055e3e8ee3f1e269d926422657238ecb4afc74b4cc2b4541ae1ca445f65e1
-  new_fingerprint: 70302ad1df60488d1510cf21af2d36d76eebe23358c8d19a483814fd601658aa
+  new_fingerprint: 42370ebe0c1f5edef095cd653bcc3155115afd478cf6eebfd716cd9057f91032
 - path: config/aidc_power_month/route_A/freq_1day/add_decomposition/lgbm_usmdp_prob_mean_decomp_damped.yaml
   kind: single
   freq: 1D
@@ -15768,7 +15768,7 @@ entries:
     actual_available_supervised_origins: 211
     actual_final_training_origin_count: 89
   old_fingerprint: 911ce25a099ff622241664ca7f8be50ea327ac708f40306c8428c5fb19241266
-  new_fingerprint: e200f67287d5a4ad20def50d7cd1b3e88f23883a3202f1f2bab75ba242c71dfd
+  new_fingerprint: 748901d60817a3a19656ac899cd03100683d5216de00b373a5114b8d31bb519d
 - path: config/aidc_power_month/route_A/freq_1day/add_decomposition/lgbm_usmdp_prob_mean_decomp_linear.yaml
   kind: single
   freq: 1D
@@ -15789,7 +15789,7 @@ entries:
     actual_available_supervised_origins: 211
     actual_final_training_origin_count: 89
   old_fingerprint: 9e282e963eedd4a60cf615ea600b8a527e429a4080670d6eb17a359b5fb5018d
-  new_fingerprint: bc4551fe1952bb2d051a0d0533dcda020bcf9e3af64ef967fa595a176cb1e83b
+  new_fingerprint: be9b57234c50485a1265cdca91a4b145e13912288795afaa1644ecb7b0f6215c
 - path: config/aidc_power_month/route_A/freq_1day/add_decomposition/lgbm_usmdp_prob_mean_decomp_quadratic.yaml
   kind: single
   freq: 1D
@@ -15810,7 +15810,7 @@ entries:
     actual_available_supervised_origins: 211
     actual_final_training_origin_count: 89
   old_fingerprint: e1bfb2aabd67e428c6e856ed460ea256b9c1dc38126f6ea7860b47a8cead0c71
-  new_fingerprint: a625cd0c8876a58c71551420a87680698f204de68d83173dfe33a84d3d4e668f
+  new_fingerprint: d89923c30985d6f3ddaf7b4169940d6b09972b6bc14cead516deedfd90ae8e7b
 - path: config/aidc_power_month/route_A/freq_1day/add_decomposition/lgbm_usmdp_prob_mean_decomp_stl7.yaml
   kind: single
   freq: 1D
@@ -15831,7 +15831,7 @@ entries:
     actual_available_supervised_origins: 211
     actual_final_training_origin_count: 89
   old_fingerprint: c45f6b513e1f1b54cafaf25cfc4f09cac1c63100780c7babac8da0b125f62b8e
-  new_fingerprint: a02f442b6eb292d1870e1e0cc8841db2e2f72559e3aad0b065e04aba2f2b7d7c
+  new_fingerprint: 281e22b5c230c2446a016518679bb199d7586f5f46a16cb37e2c3051587e0042
 - path: config/aidc_power_month/route_A/freq_1day/add_decomposition/lgbm_usmdr_prob_mean_decomp_damped.yaml
   kind: single
   freq: 1D
@@ -15852,7 +15852,7 @@ entries:
     actual_available_supervised_origins: 246
     actual_final_training_origin_count: 89
   old_fingerprint: 445e064dfbf5c185cd164f3187d36bf9f0c88cc209a6359183907ec575bd1edc
-  new_fingerprint: dd2c304c6228eba62e231613195aa81e0411383a3fe47b8480199908aeb29069
+  new_fingerprint: 0f5f5706d8ee0a5af15cf8f40fc4985be52562651abb2eb81f3be49cb13d00e6
 - path: config/aidc_power_month/route_A/freq_1day/add_decomposition/lgbm_usmdr_prob_mean_decomp_linear.yaml
   kind: single
   freq: 1D
@@ -15873,7 +15873,7 @@ entries:
     actual_available_supervised_origins: 246
     actual_final_training_origin_count: 89
   old_fingerprint: 2d03c2dfbf8c4ecdedffe5f9b96ae85e9967c3cc0e0cd0cc8497367cb18a4134
-  new_fingerprint: a3c8a82031221e00acb4a0c133e710060c515e569220998bdce880e405c2cafe
+  new_fingerprint: 3ed6a27b783f0fc6bbfd41daa501cb1d0417f73640da4e5c7b59e818bbdec643
 - path: config/aidc_power_month/route_A/freq_1day/add_decomposition/lgbm_usmdr_prob_mean_decomp_quadratic.yaml
   kind: single
   freq: 1D
@@ -15894,7 +15894,7 @@ entries:
     actual_available_supervised_origins: 246
     actual_final_training_origin_count: 89
   old_fingerprint: 4e99fd800907665245cbca77b6b8b36200abcda158cc8579b7db614c2b8283f4
-  new_fingerprint: 5c0cb2fbde5cc52bcd7e7323776dc3baba6ece3941a00faff12d8979b1ac8325
+  new_fingerprint: ead54f451e0e487b4ea77454fff3b9c02406fffe39257b28e66924f2bfd6299a
 - path: config/aidc_power_month/route_A/freq_1day/add_decomposition/lgbm_usmdr_prob_mean_decomp_stl7.yaml
   kind: single
   freq: 1D
@@ -15915,7 +15915,7 @@ entries:
     actual_available_supervised_origins: 246
     actual_final_training_origin_count: 89
   old_fingerprint: c8ac582e6ac63325019f9762f797fb26cc13ade1f2c10f8f7700d313952df408
-  new_fingerprint: c4e215b33a9d9e0968d5ff2aac799693dfdd59a1728e74eb5f4a1574c2526028
+  new_fingerprint: ca0bb7427d7807aea1878f06c90dbd3581724d4da9223ad315e291056e4312af
 - path: config/aidc_power_month/route_A/freq_1day/add_decomposition/lgbm_usmr_prob_mean_decomp_damped.yaml
   kind: single
   freq: 1D
@@ -15936,7 +15936,7 @@ entries:
     actual_available_supervised_origins: 246
     actual_final_training_origin_count: 89
   old_fingerprint: 445e064dfbf5c185cd164f3187d36bf9f0c88cc209a6359183907ec575bd1edc
-  new_fingerprint: dd2c304c6228eba62e231613195aa81e0411383a3fe47b8480199908aeb29069
+  new_fingerprint: 0f5f5706d8ee0a5af15cf8f40fc4985be52562651abb2eb81f3be49cb13d00e6
 - path: config/aidc_power_month/route_A/freq_1day/add_decomposition/lgbm_usmr_prob_mean_decomp_linear.yaml
   kind: single
   freq: 1D
@@ -15957,7 +15957,7 @@ entries:
     actual_available_supervised_origins: 246
     actual_final_training_origin_count: 89
   old_fingerprint: 2d03c2dfbf8c4ecdedffe5f9b96ae85e9967c3cc0e0cd0cc8497367cb18a4134
-  new_fingerprint: a3c8a82031221e00acb4a0c133e710060c515e569220998bdce880e405c2cafe
+  new_fingerprint: 3ed6a27b783f0fc6bbfd41daa501cb1d0417f73640da4e5c7b59e818bbdec643
 - path: config/aidc_power_month/route_A/freq_1day/add_decomposition/lgbm_usmr_prob_mean_decomp_quadratic.yaml
   kind: single
   freq: 1D
@@ -15978,7 +15978,7 @@ entries:
     actual_available_supervised_origins: 246
     actual_final_training_origin_count: 89
   old_fingerprint: 4e99fd800907665245cbca77b6b8b36200abcda158cc8579b7db614c2b8283f4
-  new_fingerprint: 5c0cb2fbde5cc52bcd7e7323776dc3baba6ece3941a00faff12d8979b1ac8325
+  new_fingerprint: ead54f451e0e487b4ea77454fff3b9c02406fffe39257b28e66924f2bfd6299a
 - path: config/aidc_power_month/route_A/freq_1day/add_decomposition/lgbm_usmr_prob_mean_decomp_stl7.yaml
   kind: single
   freq: 1D
@@ -15999,7 +15999,7 @@ entries:
     actual_available_supervised_origins: 246
     actual_final_training_origin_count: 89
   old_fingerprint: c8ac582e6ac63325019f9762f797fb26cc13ade1f2c10f8f7700d313952df408
-  new_fingerprint: c4e215b33a9d9e0968d5ff2aac799693dfdd59a1728e74eb5f4a1574c2526028
+  new_fingerprint: ca0bb7427d7807aea1878f06c90dbd3581724d4da9223ad315e291056e4312af
 - path: config/aidc_power_month/route_A/freq_1day/add_decomposition/ridge_usmd_mean_decomp_damped.yaml
   kind: single
   freq: 1D
@@ -16230,7 +16230,7 @@ entries:
     actual_available_supervised_origins: 245
     actual_final_training_origin_count: 89
   old_fingerprint: dc12d80f892efceed64f16fed82b68bc63ee3ed6708f998fa3941c99fb2282f3
-  new_fingerprint: 89b42b783ae484f2436c01988012b42d3ceecfc382905a1d3ecff902ab5fb96d
+  new_fingerprint: a79c9e2583a1da78272620234a34f35da247cfb554ce582c63dbc89ce0295830
 - path: config/aidc_power_month/route_A/freq_1day/add_exogenous_weather_date/lgbm_usmd_prob_mean_horizon_conformal.yaml
   kind: single
   freq: 1D
@@ -16251,7 +16251,7 @@ entries:
     actual_available_supervised_origins: 245
     actual_final_training_origin_count: 89
   old_fingerprint: f25e3e6154ace970a60f15a199dc7e38879c994cd31472fad728528452fabadf
-  new_fingerprint: 1ac87853770d48fe5c3d2e3c41cec9c5f639de249624486e156c39fd719471f7
+  new_fingerprint: 3000f6291f038b40ea9378c9533acd2ab45e4e2021e5bc7b3d0b2548a725d95d
 - path: config/aidc_power_month/route_A/freq_1day/add_exogenous_weather_date/lgbm_usmdp_prob_mean_conformal.yaml
   kind: single
   freq: 1D
@@ -16272,7 +16272,7 @@ entries:
     actual_available_supervised_origins: 211
     actual_final_training_origin_count: 89
   old_fingerprint: a269652dc01edd09cd506a11b514c1b4c7f29417a2d548b0c66c46cf0c3be37d
-  new_fingerprint: 643f405969e9d35b0d294ddbd6e9f0ce3e0b913b9087e2890e9cee84eaf2e816
+  new_fingerprint: 5e3c7a8b94b2a330b44e83ca57005ee7a0f6badfecf824e4c13a5cb01d13fcae
 - path: config/aidc_power_month/route_A/freq_1day/add_exogenous_weather_date/lgbm_usmdr_prob_mean_conformal.yaml
   kind: single
   freq: 1D
@@ -16293,7 +16293,7 @@ entries:
     actual_available_supervised_origins: 246
     actual_final_training_origin_count: 89
   old_fingerprint: adb9de9223508ca4bf76c2958a2d7153ed7c7a0aff7548974d1f76bc7b84fe19
-  new_fingerprint: 4ad4cb231085c67ab9675255f23fe82545d0e1eb49c714389beb4c343c541bd4
+  new_fingerprint: 2d31e28e11a83e9df4e8f41ea8de523072a73e88cd224ab460f95d6e96c0f0fb
 - path: config/aidc_power_month/route_A/freq_1day/add_exogenous_weather_date/lgbm_usmr_prob_mean_conformal.yaml
   kind: single
   freq: 1D
@@ -16314,7 +16314,7 @@ entries:
     actual_available_supervised_origins: 246
     actual_final_training_origin_count: 89
   old_fingerprint: adb9de9223508ca4bf76c2958a2d7153ed7c7a0aff7548974d1f76bc7b84fe19
-  new_fingerprint: 4ad4cb231085c67ab9675255f23fe82545d0e1eb49c714389beb4c343c541bd4
+  new_fingerprint: 2d31e28e11a83e9df4e8f41ea8de523072a73e88cd224ab460f95d6e96c0f0fb
 - path: config/aidc_power_month/route_A/freq_1day/add_exogenous_weather_date/ridge_usmd_mean.yaml
   kind: single
   freq: 1D
@@ -16398,7 +16398,7 @@ entries:
     actual_available_supervised_origins: 245
     actual_final_training_origin_count: 89
   old_fingerprint: 1b7d9f3ce39456375119080bcf2585c82dc17b70de47ba9648242a48b7d8b29f
-  new_fingerprint: ed123e0ea318074e131a21aaeb66153362be1982fbac9a39b7237f3550973948
+  new_fingerprint: de50714ffe403d787ec64c8fc22a46b570f5026c0a646a999e65b6c2673e5793
 - path: config/aidc_power_month/route_A/freq_1day/add_load_state/lgbm_usmd_prob_mean_horizon_conformal.yaml
   kind: single
   freq: 1D
@@ -16419,7 +16419,7 @@ entries:
     actual_available_supervised_origins: 245
     actual_final_training_origin_count: 89
   old_fingerprint: 691b6b549d2755d61091ff6df15ba615f9cdb104fd9801028f38dd99ef0a1f0a
-  new_fingerprint: 35478c4a561dbbd2e7e46e2d925d1aa96ffc481b94d44ccfdef1a6d37ddf572c
+  new_fingerprint: 7a42b095bc2fb9cddeae926c52aa78ec57b70fd4a985eefa2a34e6f1b640d946
 - path: config/aidc_power_month/route_A/freq_1day/add_load_state/lgbm_usmdp_prob_mean_conformal.yaml
   kind: single
   freq: 1D
@@ -16440,7 +16440,7 @@ entries:
     actual_available_supervised_origins: 211
     actual_final_training_origin_count: 89
   old_fingerprint: cc2ff55cc07ab9fcb4f4c80148fcb0d9c806d39bb00d1540068565ccc2e456e7
-  new_fingerprint: c8849f8ac52ebd7ad25235d6392e09e63be4bedb2857a5c224733a5a46e3633f
+  new_fingerprint: 832362216cc195c22e74bac73da30e45782639a704bf9fd251672c2972fae52a
 - path: config/aidc_power_month/route_A/freq_1day/add_load_state/lgbm_usmdr_prob_mean_conformal.yaml
   kind: single
   freq: 1D
@@ -16461,7 +16461,7 @@ entries:
     actual_available_supervised_origins: 246
     actual_final_training_origin_count: 89
   old_fingerprint: 12cecd7d54ea72b1803ccf3b0a21fc3451f60ac5c39091395fe4652b8addd40f
-  new_fingerprint: fe14734fea2c4026d1ab003efd59caa1fba4a6307d75f93504c7934c918d531c
+  new_fingerprint: d2bc302d54a1c44721263cd5082c09fef113ee3e5db76e54238693c4e61b67b9
 - path: config/aidc_power_month/route_A/freq_1day/add_load_state/lgbm_usmr_prob_mean_conformal.yaml
   kind: single
   freq: 1D
@@ -16482,7 +16482,7 @@ entries:
     actual_available_supervised_origins: 246
     actual_final_training_origin_count: 89
   old_fingerprint: 12cecd7d54ea72b1803ccf3b0a21fc3451f60ac5c39091395fe4652b8addd40f
-  new_fingerprint: fe14734fea2c4026d1ab003efd59caa1fba4a6307d75f93504c7934c918d531c
+  new_fingerprint: d2bc302d54a1c44721263cd5082c09fef113ee3e5db76e54238693c4e61b67b9
 - path: config/aidc_power_month/route_A/freq_1day/add_load_state/ridge_usmd_mean.yaml
   kind: single
   freq: 1D
@@ -16545,7 +16545,7 @@ entries:
     actual_available_supervised_origins: 245
     actual_final_training_origin_count: 89
   old_fingerprint: 5e3f49378eee015987042cfcc0ef127275e258eaf03146aee7aa1e05823d908a
-  new_fingerprint: 805cf4d539a56b8cc31df3756091698516f43a037d2ab17cbed6485d04620298
+  new_fingerprint: 4daf696805bd956a25410e0da6e937f0040d554511e5ac54d99fa289e060bda3
 - path: config/aidc_power_month/route_A/freq_1day/baseline/lasso_usmd_mean.yaml
   kind: single
   freq: 1D
@@ -16586,7 +16586,7 @@ entries:
     safe_supervised_count: derived_per_target_month
     actual_final_training_origin_count: null
   old_fingerprint: 5d7e92683fda93912ee21f9b647693a5805368bfa44be6a79b7cb20eb23c2af6
-  new_fingerprint: d759577a229717d4224220cfacb877b4230730cad39e66680d349fe88c4905b9
+  new_fingerprint: 15645686ee17fb5de393b261295a857d476b8ca63194a2b574c0e745f517b947
   old_oof_geometry:
     train_window_length: 150
     fold_count: 1
@@ -16615,7 +16615,7 @@ entries:
     actual_available_supervised_origins: 245
     actual_final_training_origin_count: 89
   old_fingerprint: 00d4097aff0cffce52e1de8f9f90628ab0bbe178d71805200789573790e3c285
-  new_fingerprint: 1b66ebda60c0f8e4b547a54408c1dfc9345b822b8cadcaacafa90359f78ffafb
+  new_fingerprint: 97888c259f6c31572046b42e4cf85a08cb5e65ecef8207736b5be6980fad6d78
 - path: config/aidc_power_month/route_A/freq_1day/baseline/lgbm_usmd_prob_mean_horizon_conformal.yaml
   kind: single
   freq: 1D
@@ -16636,7 +16636,7 @@ entries:
     actual_available_supervised_origins: 245
     actual_final_training_origin_count: 89
   old_fingerprint: ad9331fe58930d0deb77d9b659c6b798a50788440204bca426b1f5f1111fae86
-  new_fingerprint: e52caa0c609667df9a2dc6127cc29bc793b42b86d0aaf8ef91d6e7cf88e38048
+  new_fingerprint: 71491a4f92bd1a656f1451261c36d6f6a4c6b07407bb3168255ee7ddf38d02d9
 - path: config/aidc_power_month/route_A/freq_1day/baseline/lgbm_usmdp_prob_mean_conformal.yaml
   kind: single
   freq: 1D
@@ -16657,7 +16657,7 @@ entries:
     actual_available_supervised_origins: 211
     actual_final_training_origin_count: 89
   old_fingerprint: 0d89d23a2e9413b6f6146bebae51dcadd09c0a87f4178e92a0bd651f5e663f8a
-  new_fingerprint: 3a44d9ffe156444584eca1278ed319122275f2a5701980098c48cb076582f67c
+  new_fingerprint: 4dd4071ca13150bbfe050c0c3611c36425fa285ce0ecb26f0f56593fca9e3808
 - path: config/aidc_power_month/route_A/freq_1day/baseline/lgbm_usmdr_prob_mean_conformal.yaml
   kind: single
   freq: 1D
@@ -16678,7 +16678,7 @@ entries:
     actual_available_supervised_origins: 246
     actual_final_training_origin_count: 89
   old_fingerprint: 860529d01649eda134b47e3bfd70040b0ae9605d00446783a22114f76bfc8b1d
-  new_fingerprint: 1ebfc1e018eee68a408da5319deb18aded3a6c5c167192fcfbd52dc62747c541
+  new_fingerprint: 5636a0016e69cfd6fa89566bb9c9502dcc17851e0c1e2916ff04d354523b405a
 - path: config/aidc_power_month/route_A/freq_1day/baseline/lgbm_usmr_prob_mean_conformal.yaml
   kind: single
   freq: 1D
@@ -16699,7 +16699,7 @@ entries:
     actual_available_supervised_origins: 246
     actual_final_training_origin_count: 89
   old_fingerprint: 860529d01649eda134b47e3bfd70040b0ae9605d00446783a22114f76bfc8b1d
-  new_fingerprint: 1ebfc1e018eee68a408da5319deb18aded3a6c5c167192fcfbd52dc62747c541
+  new_fingerprint: 5636a0016e69cfd6fa89566bb9c9502dcc17851e0c1e2916ff04d354523b405a
 - path: config/aidc_power_month/route_A/freq_1day/baseline/ridge_usmd_mean.yaml
   kind: single
   freq: 1D
@@ -16810,7 +16810,7 @@ entries:
     actual_available_supervised_origins: 7
     actual_final_training_origin_count: 7
   old_fingerprint: a8211d3a105bd189176f47adea5d844059bf5f4e20fb0031a6d3bdf22225a512
-  new_fingerprint: 4628819bae70425877727e1a8cd0a3de3fed48b4db90e762d0bff8d98499d0a9
+  new_fingerprint: e699db409770ad2c63e93b3f67e353888d3f5d9e4073abe0bf6906f9d678fed3
 - path: config/aidc_power_month/route_A/freq_1month/window_length_10/lgbm_usmdp_prob_mean.yaml
   kind: single
   freq: 1ME
@@ -16833,7 +16833,7 @@ entries:
     actual_available_supervised_origins: 7
     actual_final_training_origin_count: 7
   old_fingerprint: 17c020eb1ca5ea7bc37206402f464da4aa64a5f13247caaf4fc7c6a93948cfed
-  new_fingerprint: 227bcf36d1c01e63d872ac5aba1d8a93df073b4c7a35af4a79d8ca859fe49ef5
+  new_fingerprint: 3c70281a002fd29257f86dd173a1e087baaff1a958aeb9d1647adeefffba58f1
 - path: config/aidc_power_month/route_A/freq_1month/window_length_10/lgbm_usmr_prob_mean.yaml
   kind: single
   freq: 1ME
@@ -16856,7 +16856,7 @@ entries:
     actual_available_supervised_origins: 7
     actual_final_training_origin_count: 7
   old_fingerprint: 7183bc56a1a6b913f692e6340dca4afa6aaab43c15fe26f037aef8e7f72f84fb
-  new_fingerprint: 8835d069340e9f318e079e0ff5e8ac4b7472fd1e882bf422e035ef485ce6880f
+  new_fingerprint: 7aab27c2a7c653e0c1e988bc58e1708be6e56131680134661e4138e306e06b19
 - path: config/aidc_power_month/route_A/freq_1month/window_length_10/ridge_usmd_mean.yaml
   kind: single
   freq: 1ME
@@ -16971,7 +16971,7 @@ entries:
     actual_available_supervised_origins: 7
     actual_final_training_origin_count: 6
   old_fingerprint: 588e772bf4e89fe4765d4cbcaf6cce2f81c85ce4be4f1f9fec14054244542654
-  new_fingerprint: c8f74e5eb116c462f8fa777d03793dd97266a259903ff5587ea9d4ecd4541e78
+  new_fingerprint: 2b9804c4c0509926a2ad4fc913bfb33faf0260c5894ee0289883034c46705334
 - path: config/aidc_power_month/route_A/freq_1month/window_length_7/lgbm_usmdp_prob_mean.yaml
   kind: single
   freq: 1ME
@@ -16994,7 +16994,7 @@ entries:
     actual_available_supervised_origins: 7
     actual_final_training_origin_count: 6
   old_fingerprint: 057d6ecee51bb22c556512f10fc5ae6c483f071492bd58cdc670d607d118dd1e
-  new_fingerprint: 3298c2373f2060a1d681181005cde7e476a0d0160c8ae5f54b81afbad2a9a7dd
+  new_fingerprint: 15422a2ded15db3260d35d77fe3c3ced4b2200f92a4cb6b2993deb2cebd72dff
 - path: config/aidc_power_month/route_A/freq_1month/window_length_7/lgbm_usmr_prob_mean.yaml
   kind: single
   freq: 1ME
@@ -17017,7 +17017,7 @@ entries:
     actual_available_supervised_origins: 7
     actual_final_training_origin_count: 6
   old_fingerprint: f0a55b922f4f6d9df641c04ec3876b084b1c76aa3440dd439366124b0b93d3f0
-  new_fingerprint: a10a9fe10926d6af8f12affa74d4e17e9a32c1687375b21915eeb8c028d0e136
+  new_fingerprint: 23cf47fe35a6c646d46998c921516206075194155c7efd1b817a8ba24313c1e9
 - path: config/aidc_power_month/route_A/freq_1month/window_length_7/ridge_usmd_mean.yaml
   kind: single
   freq: 1ME
@@ -17132,7 +17132,7 @@ entries:
     actual_available_supervised_origins: 7
     actual_final_training_origin_count: 7
   old_fingerprint: 5d9f910edc6906bb2bcbb5ee5fc2da4686fec9abaa04063afdb4fe4947e36129
-  new_fingerprint: c22b542cb961d330cb756a04daa4cfb6281ce54e4694c121709dc7dfbb114ec8
+  new_fingerprint: 45ca9b4bb96911127018eb007aac27e62546dca3e9185f727598bba4c104e122
 - path: config/aidc_power_month/route_A/freq_1month/window_length_8/lgbm_usmdp_prob_mean.yaml
   kind: single
   freq: 1ME
@@ -17155,7 +17155,7 @@ entries:
     actual_available_supervised_origins: 7
     actual_final_training_origin_count: 7
   old_fingerprint: 37325d96f078272f0d6ec5a844f2aa4fa5cc7dd497e2dd2b431235095504e75c
-  new_fingerprint: e873016c1f00b7c60c49d1ccbae70f74560160e5591f9569eb48921c0cfb55a6
+  new_fingerprint: 497a25f45ad10f90ec7ba9a7bcd6bc35712c9c8c56ff0e69866a5796baf2ccd5
 - path: config/aidc_power_month/route_A/freq_1month/window_length_8/lgbm_usmr_prob_mean.yaml
   kind: single
   freq: 1ME
@@ -17178,7 +17178,7 @@ entries:
     actual_available_supervised_origins: 7
     actual_final_training_origin_count: 7
   old_fingerprint: 92d500d3218623620338d327ab44e0448cf5e9abdfc6b7148f5d6a35d940b498
-  new_fingerprint: b74ac59ba4e48f9828ca195fcb2052c06284a92b15162927b32284828a425eaa
+  new_fingerprint: eae689a32492ba7386ce89cd6bb87586e8aa9806ffb4de899c949900518a9aec
 - path: config/aidc_power_month/route_A/freq_1month/window_length_8/ridge_usmd_mean.yaml
   kind: single
   freq: 1ME
@@ -17293,7 +17293,7 @@ entries:
     actual_available_supervised_origins: 7
     actual_final_training_origin_count: 7
   old_fingerprint: 374f3e61b1f52cceea80e492e9990c4ed8ad736a06498599c03400db8d9c8287
-  new_fingerprint: 52abecaec6e301ff81c326589d6a92c9ea299ee5a9c723d8448f9a083d1b7a42
+  new_fingerprint: ce138a539fb6535fdf1ca7354c857d4413d82fe2ef6cc25831f4445fad269ed2
 - path: config/aidc_power_month/route_A/freq_1month/window_length_9/lgbm_usmdp_prob_mean.yaml
   kind: single
   freq: 1ME
@@ -17316,7 +17316,7 @@ entries:
     actual_available_supervised_origins: 7
     actual_final_training_origin_count: 7
   old_fingerprint: d87f4158ffed9d1c846593377878a25c65e2cfce29e00cd5088e52a2996a459a
-  new_fingerprint: 1b4a3a8488abc4354bfa61fe4c6525495964da832bc2db32810f1819df10b97a
+  new_fingerprint: 16c0c5fea40e5816a1a75a2063701099d369155ac4745bcaed5849cfced7a0f5
 - path: config/aidc_power_month/route_A/freq_1month/window_length_9/lgbm_usmr_prob_mean.yaml
   kind: single
   freq: 1ME
@@ -17339,7 +17339,7 @@ entries:
     actual_available_supervised_origins: 7
     actual_final_training_origin_count: 7
   old_fingerprint: b1c07d34dc67bec4bc0e92587676a7743cbef77d33f007436be15bcdd8f88b32
-  new_fingerprint: 1bc20eec7f085966f9e7435f23a3bf6ec1e736d234e023bfe75360a1d105f925
+  new_fingerprint: 2ba52eaef387f39c436dbf04c6a1e0c46c7480bfdd33c064cb8e6e5a9947dd4e
 - path: config/aidc_power_month/route_A/freq_1month/window_length_9/ridge_usmd_mean.yaml
   kind: single
   freq: 1ME
@@ -17574,7 +17574,7 @@ entries:
     actual_available_supervised_origins: 245
     actual_final_training_origin_count: 89
   old_fingerprint: 9081575f91bed75291205756fc9859c9af742ad5edac11eee41acb74ee1654f5
-  new_fingerprint: c60b50e461732ff644d96eb99cbc36ab01887668d23f11f9814955f053aa6b07
+  new_fingerprint: 9aa2e9255f795a73d4a25fa08ef0be6676ba8106c0272945de114890c00e2d54
 - path: config/aidc_power_month/route_B/freq_1day/add_decomposition/lgbm_usmd_mean_prob_horizon_decomp_linear.yaml
   kind: single
   freq: 1D
@@ -17595,7 +17595,7 @@ entries:
     actual_available_supervised_origins: 245
     actual_final_training_origin_count: 89
   old_fingerprint: 5431f05d37071be4888d174247f04635f578592c1a0715fde9ad7be4702e5b68
-  new_fingerprint: 0bf14ef7a84d2a4b660eea1f3cb3dafcd20670973f8567a0c02020f89c6cd337
+  new_fingerprint: 2e11779ae0bd6fd94303be1c9f6ea331f5ae58f1d0f2dd0498fdda8500e500c0
 - path: config/aidc_power_month/route_B/freq_1day/add_decomposition/lgbm_usmd_mean_prob_horizon_decomp_quadratic.yaml
   kind: single
   freq: 1D
@@ -17616,7 +17616,7 @@ entries:
     actual_available_supervised_origins: 245
     actual_final_training_origin_count: 89
   old_fingerprint: 2b572fb0944e2581b8a449190b056f5ebd752e1af338f76d4de6932592214fe4
-  new_fingerprint: 11086eba87fad49094f084fa14be5cd0c4062fb752605bd016f8d2b005627fce
+  new_fingerprint: e59b290efdd340ef3cd23eb8379748ef79990f3971e10119816625b127897169
 - path: config/aidc_power_month/route_B/freq_1day/add_decomposition/lgbm_usmd_mean_prob_horizon_decomp_stl7.yaml
   kind: single
   freq: 1D
@@ -17637,7 +17637,7 @@ entries:
     actual_available_supervised_origins: 245
     actual_final_training_origin_count: 89
   old_fingerprint: 621c9f9a55bbf981b952c4e0eb439a6b573d5e65e9e06955f133c5698182d280
-  new_fingerprint: a10b0b605c8758d744e6a143d1c59402aa9bf93208c2338be086861994078723
+  new_fingerprint: db443cf96d7d617b70c59ec285cb5f093345c43fd5a9a67d46d481ca6fae332b
 - path: config/aidc_power_month/route_B/freq_1day/add_decomposition/lgbm_usmd_prob_mean_decomp_damped.yaml
   kind: single
   freq: 1D
@@ -17658,7 +17658,7 @@ entries:
     actual_available_supervised_origins: 245
     actual_final_training_origin_count: 89
   old_fingerprint: f97568f17c06fc4e476688ce79b8dd332da37da33a94dfb2ed55aff9aca8a516
-  new_fingerprint: 70e67e3cbc19a4cd07c68ae18537183015017560388ca69f1c864c3a79bee1b2
+  new_fingerprint: 8870e729f51fd40be74554b754bd1660b55da4ffbead0f5141a978dbf9954d52
 - path: config/aidc_power_month/route_B/freq_1day/add_decomposition/lgbm_usmd_prob_mean_decomp_linear.yaml
   kind: single
   freq: 1D
@@ -17679,7 +17679,7 @@ entries:
     actual_available_supervised_origins: 245
     actual_final_training_origin_count: 89
   old_fingerprint: 0f2947e922698cb0b41f3da1ffd1436f7dd898dc2dfcfc81a253e6954c780e6c
-  new_fingerprint: 709119b5d65854ee5eeaaef433460342d6740ed4050bba73b995570819ed0f59
+  new_fingerprint: ebcdb979b858f5f9dff47e744ca6a0fce05bcc356125db4b09c1353dfb8ae918
 - path: config/aidc_power_month/route_B/freq_1day/add_decomposition/lgbm_usmd_prob_mean_decomp_quadratic.yaml
   kind: single
   freq: 1D
@@ -17700,7 +17700,7 @@ entries:
     actual_available_supervised_origins: 245
     actual_final_training_origin_count: 89
   old_fingerprint: f2431103dd31ca6167416bcbf69eaff09cf2e50cfee54e7be20284e79ffb30f1
-  new_fingerprint: 2021937beb57f96485e86ff6e6f55c1918224ae378dbccaff2684df1f3d84437
+  new_fingerprint: af4d7f3ab22a187879bdefd8ff7cc7e66c656d0623eb4e4d87070448649c2515
 - path: config/aidc_power_month/route_B/freq_1day/add_decomposition/lgbm_usmd_prob_mean_decomp_stl7.yaml
   kind: single
   freq: 1D
@@ -17721,7 +17721,7 @@ entries:
     actual_available_supervised_origins: 245
     actual_final_training_origin_count: 89
   old_fingerprint: 7421e69ad00ba61b5958a9c9b19e5e1e6b3ea1a029bdfc2a661b59e1d80bb927
-  new_fingerprint: f6fb6d2eacbd5780ed6eb6cf901c88ac7cebf08e365fa8b6846aedb8f8409e0a
+  new_fingerprint: 1f347e49e11716dc994492e28a1744175295f72dde06708671d8e158ce1a222e
 - path: config/aidc_power_month/route_B/freq_1day/add_decomposition/lgbm_usmdp_prob_mean_decomp_damped.yaml
   kind: single
   freq: 1D
@@ -17742,7 +17742,7 @@ entries:
     actual_available_supervised_origins: 211
     actual_final_training_origin_count: 89
   old_fingerprint: 46fc3dd5d29ad545dac6cf581d0ed2ba497bfc96f03197588f577e187025c51b
-  new_fingerprint: 3e5c4d3687adc364ac68a1f3170ff1e279649bf4f3ed697bef74387931ef6d54
+  new_fingerprint: 638d7e5cbf63d39e83fb360fb511392e332a5d9ed3de18f55ef4a1410b6c2a0e
 - path: config/aidc_power_month/route_B/freq_1day/add_decomposition/lgbm_usmdp_prob_mean_decomp_linear.yaml
   kind: single
   freq: 1D
@@ -17763,7 +17763,7 @@ entries:
     actual_available_supervised_origins: 211
     actual_final_training_origin_count: 89
   old_fingerprint: 6f84c4af0173d9c5843ae5a00238c5fd37a791496cdf2dc1a52151fff5fdfa4e
-  new_fingerprint: 61fe9e916b1ffc59d1334c8f6801ff6abcd803d9cdcf0320fdaf2f9cf0df012e
+  new_fingerprint: 35f14a7fb32787edd215ffccde200bf01362db7ce6cd0205d53d9591a2fbf1b0
 - path: config/aidc_power_month/route_B/freq_1day/add_decomposition/lgbm_usmdp_prob_mean_decomp_quadratic.yaml
   kind: single
   freq: 1D
@@ -17784,7 +17784,7 @@ entries:
     actual_available_supervised_origins: 211
     actual_final_training_origin_count: 89
   old_fingerprint: 011453b8f354a16321de7462404d36c7d55cd9e2c300fdb6624f0e17428589d9
-  new_fingerprint: 6feb09111486aa633d5a685bbbbe4c888b7d628cb5655fe458f65144bdebe0ee
+  new_fingerprint: 1645ff4726088d8d836e2acf1adb33541ddbc33e5963a2bb14a494a394d8d858
 - path: config/aidc_power_month/route_B/freq_1day/add_decomposition/lgbm_usmdp_prob_mean_decomp_stl7.yaml
   kind: single
   freq: 1D
@@ -17805,7 +17805,7 @@ entries:
     actual_available_supervised_origins: 211
     actual_final_training_origin_count: 89
   old_fingerprint: 11e53c87f844800d91270e3900ac4a999adc47315c6eaaa7b0b40173eef7de09
-  new_fingerprint: b6b5d6e393c1c0147e2cf1b4c12d521796ee0782b1de6c8fe36cc4eae129ec43
+  new_fingerprint: 28ca0acb6c9cb8ad519a8874eca5e81d30ed7ac4fc714f2b265fb2ca171f031d
 - path: config/aidc_power_month/route_B/freq_1day/add_decomposition/lgbm_usmdr_prob_mean_decomp_damped.yaml
   kind: single
   freq: 1D
@@ -17826,7 +17826,7 @@ entries:
     actual_available_supervised_origins: 246
     actual_final_training_origin_count: 89
   old_fingerprint: 608a25411a9178906a27b461948d2fc9b7290c66b8b4014ae543fb40fdc96264
-  new_fingerprint: c2a02c55cf6c510fdaa158d92254d0baaf5f17767b3204e1e66642bc6f459038
+  new_fingerprint: 6573ee9e55a618e97a5f8961218d4d8b26a4b8cb8c8960e822ca9522aac62aa8
 - path: config/aidc_power_month/route_B/freq_1day/add_decomposition/lgbm_usmdr_prob_mean_decomp_linear.yaml
   kind: single
   freq: 1D
@@ -17847,7 +17847,7 @@ entries:
     actual_available_supervised_origins: 246
     actual_final_training_origin_count: 89
   old_fingerprint: be191b073399ac685ac24cfcc1645023c40b3a7630f4c5a66973178ecd90514d
-  new_fingerprint: 119293b9f12c9db8a9787f89951483a6556de404d0e664735ed1c893cc36a1f9
+  new_fingerprint: db47c5aec6d2bb7f7aedfff19080d167d31e7a02abf4c822cebe016781fc4370
 - path: config/aidc_power_month/route_B/freq_1day/add_decomposition/lgbm_usmdr_prob_mean_decomp_quadratic.yaml
   kind: single
   freq: 1D
@@ -17868,7 +17868,7 @@ entries:
     actual_available_supervised_origins: 246
     actual_final_training_origin_count: 89
   old_fingerprint: 8eeee9648d96655963aee8e89d680b25a0645832b1c5d96b022d77bed16d92b9
-  new_fingerprint: 4cb5adb2a9546c4ad871c332c239a3e971775ea7e2dd66ac1918be04494ff762
+  new_fingerprint: 016d080e214033bcc08117935a9a074d79a39ba1603bacbaca96f957874d96e8
 - path: config/aidc_power_month/route_B/freq_1day/add_decomposition/lgbm_usmdr_prob_mean_decomp_stl7.yaml
   kind: single
   freq: 1D
@@ -17889,7 +17889,7 @@ entries:
     actual_available_supervised_origins: 246
     actual_final_training_origin_count: 89
   old_fingerprint: 1c1263f6a23c25dc659386d4a51d9e190d25b75eb00c3d7ecdb8fad44b138592
-  new_fingerprint: 76958a3ea3f5b7e891b647e1bc2d40ca2ce435d8932698ad5c86d827e07c2ee3
+  new_fingerprint: 26d4c67bd1b0f33c2cecfcb870b01e23eefd049027ed4eff23f7845ebc4c7b57
 - path: config/aidc_power_month/route_B/freq_1day/add_decomposition/lgbm_usmr_prob_mean_decomp_damped.yaml
   kind: single
   freq: 1D
@@ -17910,7 +17910,7 @@ entries:
     actual_available_supervised_origins: 246
     actual_final_training_origin_count: 89
   old_fingerprint: 608a25411a9178906a27b461948d2fc9b7290c66b8b4014ae543fb40fdc96264
-  new_fingerprint: c2a02c55cf6c510fdaa158d92254d0baaf5f17767b3204e1e66642bc6f459038
+  new_fingerprint: 6573ee9e55a618e97a5f8961218d4d8b26a4b8cb8c8960e822ca9522aac62aa8
 - path: config/aidc_power_month/route_B/freq_1day/add_decomposition/lgbm_usmr_prob_mean_decomp_linear.yaml
   kind: single
   freq: 1D
@@ -17931,7 +17931,7 @@ entries:
     actual_available_supervised_origins: 246
     actual_final_training_origin_count: 89
   old_fingerprint: be191b073399ac685ac24cfcc1645023c40b3a7630f4c5a66973178ecd90514d
-  new_fingerprint: 119293b9f12c9db8a9787f89951483a6556de404d0e664735ed1c893cc36a1f9
+  new_fingerprint: db47c5aec6d2bb7f7aedfff19080d167d31e7a02abf4c822cebe016781fc4370
 - path: config/aidc_power_month/route_B/freq_1day/add_decomposition/lgbm_usmr_prob_mean_decomp_quadratic.yaml
   kind: single
   freq: 1D
@@ -17952,7 +17952,7 @@ entries:
     actual_available_supervised_origins: 246
     actual_final_training_origin_count: 89
   old_fingerprint: 8eeee9648d96655963aee8e89d680b25a0645832b1c5d96b022d77bed16d92b9
-  new_fingerprint: 4cb5adb2a9546c4ad871c332c239a3e971775ea7e2dd66ac1918be04494ff762
+  new_fingerprint: 016d080e214033bcc08117935a9a074d79a39ba1603bacbaca96f957874d96e8
 - path: config/aidc_power_month/route_B/freq_1day/add_decomposition/lgbm_usmr_prob_mean_decomp_stl7.yaml
   kind: single
   freq: 1D
@@ -17973,7 +17973,7 @@ entries:
     actual_available_supervised_origins: 246
     actual_final_training_origin_count: 89
   old_fingerprint: 1c1263f6a23c25dc659386d4a51d9e190d25b75eb00c3d7ecdb8fad44b138592
-  new_fingerprint: 76958a3ea3f5b7e891b647e1bc2d40ca2ce435d8932698ad5c86d827e07c2ee3
+  new_fingerprint: 26d4c67bd1b0f33c2cecfcb870b01e23eefd049027ed4eff23f7845ebc4c7b57
 - path: config/aidc_power_month/route_B/freq_1day/add_decomposition/ridge_usmd_mean_decomp_damped.yaml
   kind: single
   freq: 1D
@@ -18204,7 +18204,7 @@ entries:
     actual_available_supervised_origins: 245
     actual_final_training_origin_count: 89
   old_fingerprint: 9cd57485f93e207a6417e0776a45e236f735acbf340ac45aa87c563f4a612964
-  new_fingerprint: 7bcece3649e0f4654d8b3c09d849cd0fba344cf65bac0efe5683df41712ba8a6
+  new_fingerprint: eac9b3871e7465ea9de2f0f568bc11f0cb768d54a8af28336a7629ea3ef092c6
 - path: config/aidc_power_month/route_B/freq_1day/add_exogenous_weather_date/lgbm_usmd_prob_mean_horizon_conformal.yaml
   kind: single
   freq: 1D
@@ -18225,7 +18225,7 @@ entries:
     actual_available_supervised_origins: 245
     actual_final_training_origin_count: 89
   old_fingerprint: fd31f2a65d073b3bffd8b94daa9be269a3f3fa471086e5679cc59be5defc128d
-  new_fingerprint: e0003cff4bdffcc14e3a77bed71ac8cf4d44927b6008a95368b6a9f108febc20
+  new_fingerprint: 378a3b607b8437cfed7e075d50839c79262524dce9d5ac867c6740a72765daec
 - path: config/aidc_power_month/route_B/freq_1day/add_exogenous_weather_date/lgbm_usmdp_prob_mean_conformal.yaml
   kind: single
   freq: 1D
@@ -18246,7 +18246,7 @@ entries:
     actual_available_supervised_origins: 211
     actual_final_training_origin_count: 89
   old_fingerprint: a3c93ef6b4189558c9e7171c6b1aa42799c12bed0ba0492dd459bb3455328aed
-  new_fingerprint: ab89abae86e48297400800609126695a5d8bdb93538a82e155889d1ebea9ba0d
+  new_fingerprint: 814268f0729983bf2ab4979a1d36fb252802272bd6870c90bd6d67663b935c0e
 - path: config/aidc_power_month/route_B/freq_1day/add_exogenous_weather_date/lgbm_usmdr_prob_mean_conformal.yaml
   kind: single
   freq: 1D
@@ -18267,7 +18267,7 @@ entries:
     actual_available_supervised_origins: 246
     actual_final_training_origin_count: 89
   old_fingerprint: f4af92ad2f4e2d131e56ed5cdc59dd6e60fd63f0d3e5d327e204298a1fa17112
-  new_fingerprint: cf48afc77c67903c024d82ce65a6aa633d57be33c86a1fe47b58caada87eb648
+  new_fingerprint: e4e8b1454447da9ed5748d43041bc5926e5b1967919b3f536e1f21730dba0ec0
 - path: config/aidc_power_month/route_B/freq_1day/add_exogenous_weather_date/lgbm_usmr_prob_mean_conformal.yaml
   kind: single
   freq: 1D
@@ -18288,7 +18288,7 @@ entries:
     actual_available_supervised_origins: 246
     actual_final_training_origin_count: 89
   old_fingerprint: f4af92ad2f4e2d131e56ed5cdc59dd6e60fd63f0d3e5d327e204298a1fa17112
-  new_fingerprint: cf48afc77c67903c024d82ce65a6aa633d57be33c86a1fe47b58caada87eb648
+  new_fingerprint: e4e8b1454447da9ed5748d43041bc5926e5b1967919b3f536e1f21730dba0ec0
 - path: config/aidc_power_month/route_B/freq_1day/add_exogenous_weather_date/ridge_usmd_mean.yaml
   kind: single
   freq: 1D
@@ -18372,7 +18372,7 @@ entries:
     actual_available_supervised_origins: 245
     actual_final_training_origin_count: 89
   old_fingerprint: 5dd565eb48b99093c4a5fef92b956acc41dc40b83cc60c15db8a193a921c72c0
-  new_fingerprint: 04d96030de112193cce669754a57db526ab3420db73d7c76b0ead9b0125a248d
+  new_fingerprint: a58a6d3cc2e14149611068fa4b26f208cf1081bf9860e49f3a268cfc4a26ac89
 - path: config/aidc_power_month/route_B/freq_1day/add_load_state/lgbm_usmd_prob_mean_horizon_conformal.yaml
   kind: single
   freq: 1D
@@ -18393,7 +18393,7 @@ entries:
     actual_available_supervised_origins: 245
     actual_final_training_origin_count: 89
   old_fingerprint: 92c2f1a419b22e106ade933fc01671cccf984cd15ab3e60a3582f43184e5fb41
-  new_fingerprint: 0bf0d2fe74a773f0a914c0822697f725efd9978bca016bc36bb7fc7c79c6a8f9
+  new_fingerprint: 22e85c6eb031aa36d2571f66be37657e6569dfa86ca325e00a210a45d5939593
 - path: config/aidc_power_month/route_B/freq_1day/add_load_state/lgbm_usmdp_prob_mean_conformal.yaml
   kind: single
   freq: 1D
@@ -18414,7 +18414,7 @@ entries:
     actual_available_supervised_origins: 211
     actual_final_training_origin_count: 89
   old_fingerprint: b9358a670d4383024f7d9bdff6c868d509a74cf1ab2e4ea189ac28690b784e69
-  new_fingerprint: 0f2b8ebe07f86c4acdcc6f5fcdf4083dbfae569a9c718290cc88802b78450c71
+  new_fingerprint: 1bde2ab93dcd22ecccf4f2a38829d8eb6498d01b6372923d0e75880dd6e11c12
 - path: config/aidc_power_month/route_B/freq_1day/add_load_state/lgbm_usmdr_prob_mean_conformal.yaml
   kind: single
   freq: 1D
@@ -18435,7 +18435,7 @@ entries:
     actual_available_supervised_origins: 246
     actual_final_training_origin_count: 89
   old_fingerprint: a268eb3c4cbcbb3792d46ac1b0c6aa946f0ad186cc2112c80e34fda453924dcf
-  new_fingerprint: bc7d29de1dd1cb6d7adee0ccc53c6d5fce1be20ad9acdf0a677568e9f4bd511d
+  new_fingerprint: 22ff22c01b539a990992957db106661b2de787d293b4e419cabfee326006d4a2
 - path: config/aidc_power_month/route_B/freq_1day/add_load_state/lgbm_usmr_prob_mean_conformal.yaml
   kind: single
   freq: 1D
@@ -18456,7 +18456,7 @@ entries:
     actual_available_supervised_origins: 246
     actual_final_training_origin_count: 89
   old_fingerprint: a268eb3c4cbcbb3792d46ac1b0c6aa946f0ad186cc2112c80e34fda453924dcf
-  new_fingerprint: bc7d29de1dd1cb6d7adee0ccc53c6d5fce1be20ad9acdf0a677568e9f4bd511d
+  new_fingerprint: 22ff22c01b539a990992957db106661b2de787d293b4e419cabfee326006d4a2
 - path: config/aidc_power_month/route_B/freq_1day/add_load_state/ridge_usmd_mean.yaml
   kind: single
   freq: 1D
@@ -18519,7 +18519,7 @@ entries:
     actual_available_supervised_origins: 245
     actual_final_training_origin_count: 89
   old_fingerprint: 399c2b43f2fc46e1bd2cf56b65579940874ed7939ed20fe87c64ad9cd2444675
-  new_fingerprint: acad905aa3adcc594482bbd36f5b5e4df8b8dee9e2cb93e356b6b13db3910f86
+  new_fingerprint: 6ccb0c6f520bc52d3b0ecfbdd71efe0a1f819951dcf2f2db9e4255f5c9d2a959
 - path: config/aidc_power_month/route_B/freq_1day/baseline/lasso_usmd_mean.yaml
   kind: single
   freq: 1D
@@ -18560,7 +18560,7 @@ entries:
     safe_supervised_count: derived_per_target_month
     actual_final_training_origin_count: null
   old_fingerprint: e30ed42ecbc0fc7143aa9eb3103f8827373f3ca94f2a4c453d015aa629ac6d2b
-  new_fingerprint: bf191eecd40a9a6c96d9b9c8497875b69bcfd17fb823a5d641106daf418dfdf5
+  new_fingerprint: b2041c3ee605a42877ff4ed8292bdbf99a331c9cede94b69b2aa4d48a5e344d8
   old_oof_geometry:
     train_window_length: 150
     fold_count: 1
@@ -18589,7 +18589,7 @@ entries:
     actual_available_supervised_origins: 245
     actual_final_training_origin_count: 89
   old_fingerprint: f63ee0a515b7c79401c08d0a1529036780663cae261dcaff67d6c927923614f5
-  new_fingerprint: 1670068ecca46681562bfe5694fe2585a93910c69c780ff596e2bd409b6c51a3
+  new_fingerprint: dfd0db24a3c8b65e2e3f9acf522b3173b9a68923103b1773a08de0f0ce20db1f
 - path: config/aidc_power_month/route_B/freq_1day/baseline/lgbm_usmd_prob_mean_horizon_conformal.yaml
   kind: single
   freq: 1D
@@ -18610,7 +18610,7 @@ entries:
     actual_available_supervised_origins: 245
     actual_final_training_origin_count: 89
   old_fingerprint: 446e504511ec62dd33bd670fb1cfebce5f7d4fb7817ef18e0010fd470ccce03e
-  new_fingerprint: 1673c853e3fc04569d0a8ad249911a99e5cfe847033cb5110567d8b5e71bd25d
+  new_fingerprint: eee7685544462fe39fcb4326eb6cc01e0c2e960a323e835b9deb6bafef067808
 - path: config/aidc_power_month/route_B/freq_1day/baseline/lgbm_usmdp_prob_mean_conformal.yaml
   kind: single
   freq: 1D
@@ -18631,7 +18631,7 @@ entries:
     actual_available_supervised_origins: 211
     actual_final_training_origin_count: 89
   old_fingerprint: 52bc03ac321fcacb1db6f48f183e25a6194b91dd1d06bbcf040a1020cdd2b61c
-  new_fingerprint: 32610237ddd574322b78327fe23668d262dc766dec98d3f59de626bc93b7340e
+  new_fingerprint: d7e4db00a0a2bf78c33bef7b65455e640966ed54559c04f72ea837b776813029
 - path: config/aidc_power_month/route_B/freq_1day/baseline/lgbm_usmdr_prob_mean_conformal.yaml
   kind: single
   freq: 1D
@@ -18652,7 +18652,7 @@ entries:
     actual_available_supervised_origins: 246
     actual_final_training_origin_count: 89
   old_fingerprint: d98d8ff7c74ebb11d947e40ac828ab4fe2cc9c7f0901ca2ed56b83e698e205bc
-  new_fingerprint: 67183ea58326fad2d044e400760675c10b4f66a061a3cdfeea6583fba498a8fa
+  new_fingerprint: 51753e355a2861423caee980f6c0db5b0a4ab069221c761cb49fefecadd570a3
 - path: config/aidc_power_month/route_B/freq_1day/baseline/lgbm_usmr_prob_mean_conformal.yaml
   kind: single
   freq: 1D
@@ -18673,7 +18673,7 @@ entries:
     actual_available_supervised_origins: 246
     actual_final_training_origin_count: 89
   old_fingerprint: d98d8ff7c74ebb11d947e40ac828ab4fe2cc9c7f0901ca2ed56b83e698e205bc
-  new_fingerprint: 67183ea58326fad2d044e400760675c10b4f66a061a3cdfeea6583fba498a8fa
+  new_fingerprint: 51753e355a2861423caee980f6c0db5b0a4ab069221c761cb49fefecadd570a3
 - path: config/aidc_power_month/route_B/freq_1day/baseline/ridge_usmd_mean.yaml
   kind: single
   freq: 1D
@@ -18784,7 +18784,7 @@ entries:
     actual_available_supervised_origins: 7
     actual_final_training_origin_count: 7
   old_fingerprint: deae75c291b63d2664fc728afc193687a8c56af7248a4d306ebaa801ef5d2843
-  new_fingerprint: 92f32f423b2b65086ab8bc64decf40dd99e65816aed2e2b3702a031c611ea27b
+  new_fingerprint: f32ebd12ac56869b47aeabd16c8aab1ff4d3ee8557bb079089f1ba2ac28ede85
 - path: config/aidc_power_month/route_B/freq_1month/window_length_10/lgbm_usmdp_prob_mean.yaml
   kind: single
   freq: 1ME
@@ -18807,7 +18807,7 @@ entries:
     actual_available_supervised_origins: 7
     actual_final_training_origin_count: 7
   old_fingerprint: 15155f57a9e447d0c199e82031607a6e8abf8406ad4c761661f80531efc79b27
-  new_fingerprint: 745d8eae2af12c2349f4e08d432b3a4a2b4455e42d25362392dfd77b1b9d28a6
+  new_fingerprint: 1088003d7fc6cd184d240fd82949f5b1263be4045a5a9382c095835d93a7c3ce
 - path: config/aidc_power_month/route_B/freq_1month/window_length_10/lgbm_usmr_prob_mean.yaml
   kind: single
   freq: 1ME
@@ -18830,7 +18830,7 @@ entries:
     actual_available_supervised_origins: 7
     actual_final_training_origin_count: 7
   old_fingerprint: d2d818a6d9fd19be60b0d3d07d6f9b4ffca7570094f2f3056868ca7dca9e991e
-  new_fingerprint: f20cee0a3e196890bcb275ac4a422df55a18773c438bec99e4018086bba2b5ef
+  new_fingerprint: 4f9e08b434d5fcb44137f6c5137aba10196c28d1645cd03edbb5b11118449467
 - path: config/aidc_power_month/route_B/freq_1month/window_length_10/ridge_usmd_mean.yaml
   kind: single
   freq: 1ME
@@ -18945,7 +18945,7 @@ entries:
     actual_available_supervised_origins: 7
     actual_final_training_origin_count: 6
   old_fingerprint: bef349584001e6baa99b5779e3f10f681668b3f753e64dacb3b8e8e7d9517f66
-  new_fingerprint: 8a1a313e8040ed66d627629dce4fc7c4f2915fdffd1c9cf2afb396a320dd7353
+  new_fingerprint: d0e74c9357a6c57f0901d7ec371cc2b54849cf8903c821381b29c30fbc74c932
 - path: config/aidc_power_month/route_B/freq_1month/window_length_7/lgbm_usmdp_prob_mean.yaml
   kind: single
   freq: 1ME
@@ -18968,7 +18968,7 @@ entries:
     actual_available_supervised_origins: 7
     actual_final_training_origin_count: 6
   old_fingerprint: 16c7b20da7ce9aa8138fc191002b8d03a1425e9662564d38dba6eeb9ecc60dc0
-  new_fingerprint: 30d1d73f9492bab3c989fa9722642e633e118706d6a8c5b644e2472d16735940
+  new_fingerprint: c0c1a04101ade02fd028d8018465604b93f2907f172657d26fc96382301f1c77
 - path: config/aidc_power_month/route_B/freq_1month/window_length_7/lgbm_usmr_prob_mean.yaml
   kind: single
   freq: 1ME
@@ -18991,7 +18991,7 @@ entries:
     actual_available_supervised_origins: 7
     actual_final_training_origin_count: 6
   old_fingerprint: 9264d6509770bcdccbc9f880fada09a1f12e03d0546e972ddb643688108eec24
-  new_fingerprint: 7c23686ac51d9f7f4c3aad45a24d95914d5282909efa9b79237daa77261af461
+  new_fingerprint: 4b241075e6596e72569e9cf1f899f8e6bd9a2c0d3127bc9014001fbfe332f178
 - path: config/aidc_power_month/route_B/freq_1month/window_length_7/ridge_usmd_mean.yaml
   kind: single
   freq: 1ME
@@ -19106,7 +19106,7 @@ entries:
     actual_available_supervised_origins: 7
     actual_final_training_origin_count: 7
   old_fingerprint: 0384c9b8ea3323b0d07fbe592f9c3f8a5e00ce7423678aba7ee30926345baf60
-  new_fingerprint: d74fad7738805ee95261ac741dab7ca605e603a07d31f2e31f316f279a3e5541
+  new_fingerprint: 9f48fda79a1f2a19b36275451fe0451a31afce95df85345d39074126cfab0b7a
 - path: config/aidc_power_month/route_B/freq_1month/window_length_8/lgbm_usmdp_prob_mean.yaml
   kind: single
   freq: 1ME
@@ -19129,7 +19129,7 @@ entries:
     actual_available_supervised_origins: 7
     actual_final_training_origin_count: 7
   old_fingerprint: eddc1f66c5a37724ad4bc386bee519ffeb31a9e14a76571cf4c2ae1e82398dd1
-  new_fingerprint: cfca6b952c8ea3e4a33ba1292b15f937425025770f9ec499ab4705089bec8bae
+  new_fingerprint: a8c64711e9aeaf9688cb4b063e92db75a10896032265fe8a115d2fa4a4a94c01
 - path: config/aidc_power_month/route_B/freq_1month/window_length_8/lgbm_usmr_prob_mean.yaml
   kind: single
   freq: 1ME
@@ -19152,7 +19152,7 @@ entries:
     actual_available_supervised_origins: 7
     actual_final_training_origin_count: 7
   old_fingerprint: 0c4018315a1efc82e4e0126db26804cfd9f660fdcfd3702c239c81648533612c
-  new_fingerprint: 44bdf238268ee04bc673c7e3ab54c0fd2b24f8be614e310b9de14019709f3778
+  new_fingerprint: 7be2cc612d97258092412b760c6039c005532c98725fffa26597aa75d8897b41
 - path: config/aidc_power_month/route_B/freq_1month/window_length_8/ridge_usmd_mean.yaml
   kind: single
   freq: 1ME
@@ -19267,7 +19267,7 @@ entries:
     actual_available_supervised_origins: 7
     actual_final_training_origin_count: 7
   old_fingerprint: 85409be970d22850bb2f4bffe6c25ee6c1af9884a966dc4349c93716eb48b580
-  new_fingerprint: 1c468f32815e15ff2826b14e101556d2e78f860d17d2022b300c56d5b1395e64
+  new_fingerprint: 9f718668ae144d2bd13bc7d2b7b921519560691b601872d16c1d130dc84d9c44
 - path: config/aidc_power_month/route_B/freq_1month/window_length_9/lgbm_usmdp_prob_mean.yaml
   kind: single
   freq: 1ME
@@ -19290,7 +19290,7 @@ entries:
     actual_available_supervised_origins: 7
     actual_final_training_origin_count: 7
   old_fingerprint: a4253327c4b8f8c21fdb6c90dd8f941c79de4306183e36032e4b859f73fe95d2
-  new_fingerprint: 7948ea8b7901fe108cd31fb4b111e0d3ee984284502f4a3b1d9670acf81d0f57
+  new_fingerprint: be12f06b1c1d524fb32873f84bb4027476f952d5f224514f2303ac0068fd2e86
 - path: config/aidc_power_month/route_B/freq_1month/window_length_9/lgbm_usmr_prob_mean.yaml
   kind: single
   freq: 1ME
@@ -19313,7 +19313,7 @@ entries:
     actual_available_supervised_origins: 7
     actual_final_training_origin_count: 7
   old_fingerprint: 009ed223195c492ffed650560b09c99fb99aaaa99b81e3c4487088545e025500
-  new_fingerprint: 54c9d4c99583e5f680e266c1d00d12f2d13a774545714b86afd910e72bf6b1ea
+  new_fingerprint: 93c1bcbc09affc92f4d88e1aa4cdb829ca52356f82231a9c08713df24b661f2b
 - path: config/aidc_power_month/route_B/freq_1month/window_length_9/ridge_usmd_mean.yaml
   kind: single
   freq: 1ME

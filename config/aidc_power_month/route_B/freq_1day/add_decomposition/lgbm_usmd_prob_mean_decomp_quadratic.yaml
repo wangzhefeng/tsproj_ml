@@ -118,12 +118,9 @@ probabilistic:
   - 0.9
   point_quantile: 0.5
   recursive_propagation: median_path
-  crossing_method: isotonic
-  conformal:
-    method: none
-    coverage: 0.9
-    min_scores: 30
-    min_windows: 3
+  crossing:
+    method: median_preserving_isotonic
+    report_raw: true
 validation:
   forecast_origin: '2026-07-31T00:00:00'
   schedule_mode: daily

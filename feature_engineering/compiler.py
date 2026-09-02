@@ -297,6 +297,1015 @@ class FeatureCompiler:
             visibility_proof=proofs,
         )
 
+    def compile_batch(
+        self,
+        information_sets: Sequence[MaterializedInformationSet],
+        requests: Sequence[InformationSetRequest],
+        *,
+        horizon_steps: Sequence[int] | None = None,
+        visibility_cutoffs: Sequence[pd.Timestamp] | None = None,
+    ) -> tuple[CompiledFeatures, ...]:
+        """批量编译无 provider 依赖的 origins，保持逐行审计合同不变。
+
+        lag/known-future 按时间数组定位，rolling/difference 只对共享历史计算
+        一次，再广播到该 origin 的全部 horizon 行。依赖逐步 provider 的策略与
+        暂未批量化的历史变换显式回退 :meth:`compile`。
+        """
+        if len(information_sets) != len(requests):
+            raise ValueError(
+                "compile_batch requires information_sets and requests of equal length"
+            )
+        if visibility_cutoffs is not None and len(visibility_cutoffs) != len(requests):
+            raise ValueError(
+                "compile_batch requires one visibility cutoff per request"
+            )
+        batch_cutoffs = (
+            tuple(visibility_cutoffs)
+            if visibility_cutoffs is not None
+            else (None,) * len(requests)
+        )
+        for information_set, request in zip(information_sets, requests):
+            if not isinstance(information_set, MaterializedInformationSet):
+                raise TypeError("information_set must be a MaterializedInformationSet")
+            if not isinstance(request, InformationSetRequest):
+                raise TypeError("request must be an InformationSetRequest")
+        selected_steps = tuple(
+            self._normalize_horizon_steps(horizon_steps, request.H)
+            for request in requests
+        )
+        for request in requests:
+            if request.H != self.problem.horizon:
+                raise ValueError(
+                    "information-set horizon does not match ForecastProblemSpec: "
+                    f"request={request.H}, problem={self.problem.horizon}"
+                )
+            if request.information_mode != self.problem.information_mode:
+                raise ValueError("information-set mode does not match ForecastProblemSpec")
+
+        if self._batch_requires_fallback(requests, selected_steps):
+            warnings.warn(
+                "compile_batch is falling back to per-request compile because the "
+                "strategy or feature set requires sequential history/provider semantics",
+                RuntimeWarning,
+                stacklevel=2,
+            )
+            return self._compile_batch_fallback(
+                information_sets,
+                requests,
+                selected_steps,
+                batch_cutoffs,
+            )
+
+        previous_scope = self._compile_scope_frames
+        previous_aux = self._compile_scope_aux
+        try:
+            items = [
+                self._prepare_batch_item(information_set, request, steps, cutoff)
+                for information_set, request, steps, cutoff in zip(
+                    information_sets,
+                    requests,
+                    selected_steps,
+                    batch_cutoffs,
+                )
+            ]
+            self._compile_batch_lag_mapping(
+                items,
+                ColumnRole.TARGET,
+                self.features.target_lags,
+            )
+            self._compile_batch_lag_mapping(
+                items,
+                ColumnRole.OBSERVED_PAST,
+                self.features.observed_past_lags,
+            )
+            self._compile_batch_known_future(items)
+            self._compile_batch_static(items)
+            self._compile_batch_datetime(items)
+            self._compile_batch_transformations(items)
+            return tuple(self._finish_batch_item(item) for item in items)
+        finally:
+            self._compile_scope_frames = previous_scope
+            self._compile_scope_aux = previous_aux
+
+    def _batch_requires_fallback(
+        self,
+        requests: Sequence[InformationSetRequest],
+        selected_steps: Sequence[tuple[int, ...]],
+    ) -> bool:
+        if (
+            self.resolved_strategy.consumes_previous
+            and self.resolved_strategy.name is not StrategyName.RECMO
+        ):
+            return True
+        advanced = self.features.transformations.get("advanced", {})
+        if isinstance(advanced, Mapping) and any(
+            advanced.get(kind) is not None
+            for kind in ("expanding", "percent_change", "time_since", "ewm")
+        ):
+            return True
+        for role, lag_mapping in (
+            (ColumnRole.TARGET, self.features.target_lags),
+            (ColumnRole.OBSERVED_PAST, self.features.observed_past_lags),
+        ):
+            if not lag_mapping:
+                continue
+            for request, steps in zip(requests, selected_steps):
+                target_times = request.forecast_times.take(list(steps))
+                anchors = pd.DatetimeIndex(
+                    [
+                        self._history_anchor_time(request, pd.Timestamp(target_time))
+                        for target_time in target_times
+                    ]
+                )
+                for lags in lag_mapping.values():
+                    for lag in lags:
+                        source_times = anchors - lag * pd.tseries.frequencies.to_offset(
+                            self.problem.freq
+                        )
+                        if bool((source_times > request.forecast_origin).any()):
+                            return True
+                if role is ColumnRole.OBSERVED_PAST:
+                    continue
+        return False
+
+    def _compile_batch_fallback(
+        self,
+        information_sets: Sequence[MaterializedInformationSet],
+        requests: Sequence[InformationSetRequest],
+        selected_steps: Sequence[tuple[int, ...]],
+        visibility_cutoffs: Sequence[pd.Timestamp | None],
+    ) -> tuple[CompiledFeatures, ...]:
+        compiled_items = []
+        for information_set, request, steps, cutoff in zip(
+            information_sets,
+            requests,
+            selected_steps,
+            visibility_cutoffs,
+        ):
+            compiled_items.append(
+                self.compile(
+                    information_set,
+                    request,
+                    horizon_steps=tuple(step + 1 for step in steps),
+                    visibility_cutoff=cutoff,
+                )
+            )
+        return tuple(compiled_items)
+
+    def _prepare_batch_item(
+        self,
+        information_set: MaterializedInformationSet,
+        request: InformationSetRequest,
+        selected_steps: tuple[int, ...],
+        visibility_cutoff: pd.Timestamp | None,
+    ) -> dict[str, Any]:
+        identities = self._request_identities(request)
+        steps = np.asarray(selected_steps, dtype=np.int64)
+        step_count = len(steps)
+        row_identities = tuple(
+            identity for identity in identities for _ in range(step_count)
+        )
+        selected_target_times = request.forecast_times.take(steps)
+        target_times = pd.DatetimeIndex(
+            np.tile(selected_target_times.asi8, len(identities))
+        )
+        history_anchors = pd.DatetimeIndex(
+            [
+                self._history_anchor_time(request, pd.Timestamp(target_time))
+                for target_time in selected_target_times
+            ]
+        )
+        frame_data: dict[str, Any] = {}
+        for column in self.problem.series_id_cols:
+            frame_data[column] = [
+                self._identity_payload(identity)[column]
+                for identity in identities
+                for _ in range(step_count)
+            ]
+        frame_data["target_time"] = target_times
+        frame_data["horizon_step"] = np.tile(steps + 1, len(identities))
+        return {
+            "information_set": information_set,
+            "request": request,
+            "selected_steps": selected_steps,
+            "identities": identities,
+            "row_identities": row_identities,
+            "target_times": target_times,
+            "history_anchors": history_anchors,
+            "frames": {
+                ColumnRole.TARGET.value: information_set.target_history,
+                ColumnRole.OBSERVED_PAST.value: information_set.observed_past,
+                ColumnRole.KNOWN_FUTURE.value: information_set.known_future,
+            },
+            "static_frames": information_set.static,
+            "columns": frame_data,
+            "proof_columns": {},
+            "visibility_cutoff": visibility_cutoff,
+        }
+
+    def _compile_batch_lag_mapping(
+        self,
+        items: Sequence[dict[str, Any]],
+        role: ColumnRole,
+        lag_mapping: Mapping[str, tuple[int, ...]],
+    ) -> None:
+        offset = pd.tseries.frequencies.to_offset(self.problem.freq)
+        for column_name, lags in lag_mapping.items():
+            source = self._source_for_column(column_name, role)
+            shared_frame = None
+            shared_lookup = None
+            if (
+                items
+                and not source.series_id_cols
+                and source.availability is AvailabilityPolicy.SOURCE_TIME
+            ):
+                master = max(
+                    items,
+                    key=lambda item: pd.Timestamp(item["request"].forecast_origin),
+                )
+                shared_frame = master["frames"][role.value].get(source.name)
+                if shared_frame is None:
+                    raise ValueError(
+                        f"history source {source.name!r} was not materialized"
+                    )
+                cache_key = self._row_cache_key(source, role)
+                information_set = cast(
+                    MaterializedInformationSet, master["information_set"]
+                )
+                try:
+                    _frames, shared_lookup = information_set.row_position_lookup(
+                        cache_key
+                    )
+                except KeyError:
+                    information_set.register_row_position_lookup(
+                        cache_key,
+                        {source.name: shared_frame},
+                        cast(str, source.time_col),
+                        frame_name=source.name,
+                    )
+                    _frames, shared_lookup = information_set.row_position_lookup(
+                        cache_key
+                    )
+            for lag in lags:
+                feature_name = f"{column_name}__lag_{lag}"
+                for item in items:
+                    steps = cast(tuple[int, ...], item["selected_steps"])
+                    anchors = cast(pd.DatetimeIndex, item["history_anchors"])
+                    source_times = pd.DatetimeIndex(
+                        np.tile((anchors - lag * offset).asi8, len(item["identities"]))
+                    )
+                    values = np.empty(len(source_times), dtype=object)
+                    available_at = np.empty(len(source_times), dtype=object)
+                    step_count = len(steps)
+                    frame = item["frames"][role.value].get(source.name)
+                    if frame is None:
+                        raise ValueError(
+                            f"history source {source.name!r} was not materialized"
+                        )
+                    for identity_index, identity in enumerate(item["identities"]):
+                        row_slice = slice(
+                            identity_index * step_count,
+                            (identity_index + 1) * step_count,
+                        )
+                        if shared_frame is not None and shared_lookup is not None:
+                            selected = shared_frame
+                            positions = np.fromiter(
+                                (
+                                    shared_lookup.get(int(timestamp_ns), -1)
+                                    for timestamp_ns in source_times[row_slice].asi8
+                                ),
+                                dtype=np.int64,
+                                count=step_count,
+                            )
+                            if bool(
+                                ((positions < 0) | (positions >= len(selected))).any()
+                            ):
+                                missing = int(np.flatnonzero(positions < 0)[0])
+                                raise ValueError(
+                                    f"source {source.name!r} requires exactly one row at "
+                                    f"{source_times[row_slice][missing]} for series "
+                                    f"{identity!r}"
+                                )
+                        else:
+                            selected = self._filter_identity(source, frame, identity)
+                            positions = self._batch_temporal_positions(
+                                source,
+                                selected,
+                                source_times[row_slice],
+                                item["information_set"],
+                                role,
+                            )
+                        source_values = selected[column_name].to_numpy(copy=False)
+                        values[row_slice] = source_values[positions]
+                        if source.availability is AvailabilityPolicy.SOURCE_TIME:
+                            available_at[row_slice] = source_times[row_slice].to_pydatetime()
+                        else:
+                            available_at_col = (
+                                source.available_at_col
+                                if source.availability is AvailabilityPolicy.COLUMN
+                                else "available_at"
+                            )
+                            available_at[row_slice] = selected[
+                                available_at_col
+                            ].to_numpy(copy=False)[positions]
+                    item["columns"][feature_name] = values
+                    self._add_batch_proof_column(
+                        item,
+                        feature_name,
+                        source.name,
+                        role.value,
+                        source_times,
+                        available_at,
+                    )
+
+    def _batch_temporal_positions(
+        self,
+        source: DataSourceSpec,
+        frame: pd.DataFrame,
+        source_times: pd.DatetimeIndex,
+        information_set: MaterializedInformationSet,
+        role: ColumnRole,
+    ) -> np.ndarray:
+        if source.time_col is None:
+            raise ValueError(f"temporal source {source.name!r} has no time_col")
+        if not source.series_id_cols:
+            cache_key = self._row_cache_key(source, role)
+            try:
+                _frames, lookup = information_set.row_position_lookup(cache_key)
+            except KeyError:
+                information_set.register_row_position_lookup(
+                    cache_key,
+                    {source.name: frame},
+                    source.time_col,
+                    frame_name=source.name,
+                )
+                _frames, lookup = information_set.row_position_lookup(cache_key)
+            positions = np.fromiter(
+                (lookup.get(int(timestamp_ns), -1) for timestamp_ns in source_times.asi8),
+                dtype=np.int64,
+                count=len(source_times),
+            )
+        else:
+            time_index = pd.DatetimeIndex(
+                pd.to_datetime(frame[source.time_col].to_numpy())
+            )
+            if time_index.has_duplicates:
+                positions = np.full(len(source_times), -1, dtype=np.int64)
+            else:
+                positions = time_index.get_indexer(source_times)
+        if bool(((positions < 0) | (positions >= len(frame))).any()):
+            missing_position = int(np.flatnonzero(positions < 0)[0])
+            raise ValueError(
+                f"source {source.name!r} requires exactly one row at "
+                f"{source_times[missing_position]} for series"
+            )
+        return positions
+
+    def _compile_batch_known_future(
+        self,
+        items: Sequence[dict[str, Any]],
+    ) -> None:
+        for source in self.data.sources:
+            columns = tuple(
+                column
+                for column in source.columns
+                if column.role is ColumnRole.KNOWN_FUTURE
+            )
+            if not columns:
+                continue
+            for item in items:
+                request = cast(InformationSetRequest, item["request"])
+                step_count = len(item["selected_steps"])
+                frame = item["frames"][ColumnRole.KNOWN_FUTURE.value].get(
+                    source.name
+                )
+                if frame is None:
+                    raise ValueError(
+                        f"known_future source {source.name!r} was not materialized"
+                    )
+                positions = np.empty(len(item["target_times"]), dtype=np.int64)
+                available_at = np.empty(len(positions), dtype=object)
+                for identity_index, identity in enumerate(item["identities"]):
+                    row_slice = slice(
+                        identity_index * step_count,
+                        (identity_index + 1) * step_count,
+                    )
+                    selected = self._filter_identity(source, frame, identity)
+                    time_index = pd.DatetimeIndex(
+                        pd.to_datetime(selected[source.time_col].to_numpy())
+                    )
+                    if time_index.has_duplicates:
+                        selected_positions = np.full(step_count, -1, dtype=np.int64)
+                    else:
+                        selected_positions = time_index.get_indexer(
+                            item["target_times"][row_slice]
+                        )
+                    if bool(
+                        (
+                            (selected_positions < 0)
+                            | (selected_positions >= len(selected))
+                        ).any()
+                    ):
+                        missing = int(np.flatnonzero(selected_positions < 0)[0])
+                        raise ValueError(
+                            f"source {source.name!r} requires exactly one row at "
+                            f"{item['target_times'][row_slice][missing]} for series "
+                            f"{identity!r}"
+                        )
+                    positions[row_slice] = selected_positions
+                    available_at_col = (
+                        source.available_at_col
+                        if source.availability is AvailabilityPolicy.COLUMN
+                        else (
+                            "available_at"
+                            if source.availability
+                            is AvailabilityPolicy.GENERATOR_DEFINED
+                            else None
+                        )
+                    )
+                    if available_at_col is None:
+                        available_at[row_slice] = request.forecast_origin
+                    else:
+                        available_at[row_slice] = selected[
+                            available_at_col
+                        ].to_numpy(copy=False)[selected_positions]
+                    for column in columns:
+                        values = item["columns"].get(column.name)
+                        if values is None:
+                            values = np.empty(len(positions), dtype=object)
+                        values[row_slice] = selected[column.name].to_numpy(
+                            copy=False
+                        )[selected_positions]
+                        item["columns"][column.name] = values
+                for column in columns:
+                    self._add_batch_proof_column(
+                        item,
+                        column.name,
+                        source.name,
+                        ColumnRole.KNOWN_FUTURE.value,
+                        item["target_times"],
+                        available_at,
+                    )
+
+    def _compile_batch_static(self, items: Sequence[dict[str, Any]]) -> None:
+        for source in self.data.sources:
+            columns = tuple(
+                column for column in source.columns if column.role is ColumnRole.STATIC
+            )
+            if not columns:
+                continue
+            for item in items:
+                request = cast(InformationSetRequest, item["request"])
+                frame = item["static_frames"].get(source.name)
+                if frame is None:
+                    raise ValueError(f"static source {source.name!r} was not materialized")
+                step_count = len(item["selected_steps"])
+                values_by_column = {
+                    column.name: np.empty(len(item["target_times"]), dtype=object)
+                    for column in columns
+                }
+                for identity_index, identity in enumerate(item["identities"]):
+                    selected = self._filter_identity(source, frame, identity)
+                    if len(selected) != 1:
+                        raise ValueError(
+                            f"static source {source.name!r} requires exactly one row "
+                            f"for {identity!r}"
+                        )
+                    row_slice = slice(
+                        identity_index * step_count,
+                        (identity_index + 1) * step_count,
+                    )
+                    source_row = selected.iloc[0]
+                    for column in columns:
+                        values_by_column[column.name][row_slice] = source_row[column.name]
+                for column in columns:
+                    item["columns"][column.name] = values_by_column[column.name]
+                    self._add_batch_proof_column(
+                        item,
+                        column.name,
+                        source.name,
+                        ColumnRole.STATIC.value,
+                        (None,) * len(item["target_times"]),
+                        (request.forecast_origin,) * len(item["target_times"]),
+                    )
+
+    def _compile_batch_datetime(self, items: Sequence[dict[str, Any]]) -> None:
+        for item in items:
+            request = cast(InformationSetRequest, item["request"])
+            for name in self.datetime_features:
+                feature_name = f"dt_{name}"
+                item["columns"][feature_name] = [
+                    self._DATETIME_FEATURES[name](pd.Timestamp(target_time))
+                    for target_time in item["target_times"]
+                ]
+                self._add_batch_proof_column(
+                    item,
+                    feature_name,
+                    "calendar",
+                    ColumnRole.KNOWN_FUTURE.value,
+                    item["target_times"],
+                    (request.forecast_origin,) * len(item["target_times"]),
+                )
+
+    def _compile_batch_transformations(
+        self,
+        items: Sequence[dict[str, Any]],
+    ) -> None:
+        transformations = self.features.transformations
+        unknown = sorted(set(transformations) - self._TRANSFORMATION_KEYS)
+        if unknown:
+            raise ValueError(f"unsupported feature transformations: {unknown}")
+        direct = transformations.get("direct")
+        if direct is not None:
+            if not isinstance(direct, Mapping):
+                raise TypeError("transformations.direct must be a mapping")
+            layout = direct.get("layout")
+            if layout not in {"independent_models", "single_model_horizon"}:
+                raise ValueError(f"unsupported direct layout: {layout!r}")
+            if layout == "single_model_horizon":
+                horizon_feature = direct.get("horizon_feature", {})
+                if not isinstance(horizon_feature, Mapping):
+                    raise TypeError(
+                        "transformations.direct.horizon_feature must be a mapping"
+                    )
+                name = str(horizon_feature.get("name", "forecast_horizon_idx"))
+                for item in items:
+                    values = np.asarray(
+                        item["columns"]["horizon_step"], dtype=float
+                    )
+                    item["columns"][name] = values
+                    if bool(horizon_feature.get("cyclical", False)):
+                        period = float(self.problem.horizon)
+                        item["columns"][f"{name}_sin"] = np.sin(
+                            2.0 * np.pi * values / period
+                        )
+                        item["columns"][f"{name}_cos"] = np.cos(
+                            2.0 * np.pi * values / period
+                        )
+
+        advanced = transformations.get("advanced", {})
+        if not isinstance(advanced, Mapping):
+            raise TypeError("transformations.advanced must be a mapping")
+        supported = {
+            "rolling",
+            "expanding",
+            "difference",
+            "percent_change",
+            "time_since",
+            "ewm",
+            "cyclical",
+            "interaction",
+            "polynomial",
+        }
+        unknown_advanced = sorted(set(advanced) - supported)
+        if unknown_advanced:
+            raise ValueError(
+                f"unsupported advanced transformations: {unknown_advanced}"
+            )
+        self._compile_batch_history_transformations(items, advanced)
+        for item in items:
+            self._compile_batch_row_transformations(item["columns"], advanced)
+            self._compile_batch_named_interactions(
+                item["columns"], transformations.get("interactions", {})
+            )
+            request = cast(InformationSetRequest, item["request"])
+            for feature_name in item["columns"]:
+                if feature_name in item["proof_columns"] or feature_name in {
+                    *self.problem.series_id_cols,
+                    "target_time",
+                    "horizon_step",
+                }:
+                    continue
+                self._add_batch_proof_column(
+                    item,
+                    feature_name,
+                    "derived_visible_features",
+                    "derived",
+                    (request.forecast_origin,) * len(item["target_times"]),
+                    (request.forecast_origin,) * len(item["target_times"]),
+                )
+
+    def _compile_batch_history_transformations(
+        self,
+        items: Sequence[dict[str, Any]],
+        advanced: Mapping[str, Any],
+    ) -> None:
+        rolling_spec = advanced.get("rolling")
+        if rolling_spec is not None:
+            if not isinstance(rolling_spec, Mapping):
+                raise TypeError("transformations.advanced.rolling must be a mapping")
+            columns = self._string_sequence(
+                rolling_spec.get("columns", ()), "advanced.rolling.columns"
+            )
+            windows = self._positive_int_sequence(
+                rolling_spec.get("windows", ()), "rolling.windows"
+            )
+            stats = self._string_sequence(
+                rolling_spec.get("stats", ()), "rolling.stats"
+            )
+            for column in columns:
+                histories = self._batch_master_histories(items, column)
+                for window in windows:
+                    rolled_by_identity = {
+                        identity: self._batch_rolling_series(history, window, stats)
+                        for identity, history in histories.items()
+                    }
+                    for stat in stats:
+                        feature_name = f"{column}_rolling_{stat}_{window}"
+                        for item in items:
+                            values = np.empty(len(item["target_times"]), dtype=float)
+                            step_count = len(item["selected_steps"])
+                            for identity_index, identity in enumerate(
+                                item["identities"]
+                            ):
+                                history = histories[identity]
+                                position = int(
+                                    np.searchsorted(
+                                        history.index.asi8,
+                                        pd.Timestamp(
+                                            item["request"].forecast_origin
+                                        ).value,
+                                        side="right",
+                                    )
+                                    - 1
+                                )
+                                if position < 0:
+                                    raise ValueError(
+                                        f"history column {column!r} has no visible values"
+                                    )
+                                value = float(
+                                    rolled_by_identity[identity][stat].iloc[position]
+                                )
+                                # pandas rolling 的增量算法与逐片 Series 统计可能有
+                                # 浮点末位差异；逐片复算只发生在 origin 粒度，用于
+                                # 保持 compile() 的逐值合同，不再按 horizon 重算。
+                                exact = self._statistic(
+                                    history.iloc[
+                                        max(0, position - window + 1) : position + 1
+                                    ],
+                                    stat,
+                                )
+                                if value != exact:
+                                    value = exact
+                                row_slice = slice(
+                                    identity_index * step_count,
+                                    (identity_index + 1) * step_count,
+                                )
+                                values[row_slice] = value
+                            item["columns"][feature_name] = values
+
+        difference_spec = advanced.get("difference")
+        if difference_spec is not None:
+            if not isinstance(difference_spec, Mapping):
+                raise TypeError("transformations.advanced.difference must be a mapping")
+            columns = self._string_sequence(
+                difference_spec.get("columns", ()), "advanced.difference.columns"
+            )
+            periods = self._positive_int_sequence(
+                difference_spec.get("periods", ()), "difference.periods"
+            )
+            for column in columns:
+                histories = self._batch_master_histories(items, column)
+                for period in periods:
+                    feature_name = f"{column}_diff_{period}"
+                    for item in items:
+                        values = np.empty(len(item["target_times"]), dtype=float)
+                        step_count = len(item["selected_steps"])
+                        for identity_index, identity in enumerate(item["identities"]):
+                            history = histories[identity]
+                            position = int(
+                                np.searchsorted(
+                                    history.index.asi8,
+                                    pd.Timestamp(item["request"].forecast_origin).value,
+                                    side="right",
+                                )
+                                - 1
+                            )
+                            if position < period:
+                                raise ValueError(
+                                    f"{column!r} has insufficient visible history "
+                                    f"for diff {period}"
+                                )
+                            row_slice = slice(
+                                identity_index * step_count,
+                                (identity_index + 1) * step_count,
+                            )
+                            values[row_slice] = float(
+                                history.iloc[position]
+                                - history.iloc[position - period]
+                            )
+                        item["columns"][feature_name] = values
+
+    def _batch_master_histories(
+        self,
+        items: Sequence[dict[str, Any]],
+        column_name: str,
+    ) -> dict[Any, pd.Series]:
+        matches = [
+            (source, column.role)
+            for source in self.data.sources
+            for column in source.columns
+            if column.name == column_name
+            and column.role in {ColumnRole.TARGET, ColumnRole.OBSERVED_PAST}
+        ]
+        if len(matches) != 1:
+            raise ValueError(
+                f"advanced history column {column_name!r} must resolve to one "
+                "visible history source"
+            )
+        source, role = matches[0]
+        if source.availability is not AvailabilityPolicy.SOURCE_TIME:
+            raise ValueError(
+                "batch history transformations require availability=source_time; "
+                f"source {source.name!r} uses {source.availability.value!r}"
+            )
+        identities = tuple(
+            dict.fromkeys(
+                identity for item in items for identity in item["identities"]
+            )
+        )
+        histories: dict[Any, pd.Series] = {}
+        for identity in identities:
+            candidates = [
+                item
+                for item in items
+                if identity in item["identities"]
+            ]
+            master = max(
+                candidates,
+                key=lambda item: pd.Timestamp(item["request"].forecast_origin),
+            )
+            frame = master["frames"][role.value].get(source.name)
+            if frame is None:
+                raise ValueError(
+                    f"history source {source.name!r} was not materialized"
+                )
+            selected = self._filter_identity(source, frame, identity)
+            if source.time_col is None:
+                raise ValueError(f"history source {source.name!r} has no time_col")
+            times = pd.DatetimeIndex(
+                pd.to_datetime(selected[source.time_col].to_numpy())
+            )
+            order = np.argsort(times.asi8, kind="stable")
+            times = times[order]
+            values = pd.to_numeric(
+                selected[column_name].iloc[order], errors="raise"
+            ).astype(float)
+            visible = times <= pd.Timestamp(master["request"].forecast_origin)
+            times = times[visible]
+            values = values.iloc[np.flatnonzero(visible)].reset_index(drop=True)
+            if len(values) == 0:
+                raise ValueError(
+                    f"history column {column_name!r} has no visible values"
+                )
+            if not np.isfinite(values.to_numpy()).all():
+                raise ValueError(
+                    f"history column {column_name!r} must be finite"
+                )
+            values.index = times
+            histories[identity] = values
+        return histories
+
+    def _batch_rolling_series(
+        self,
+        history: pd.Series,
+        window: int,
+        stats: Sequence[str],
+    ) -> dict[str, pd.Series]:
+        results: dict[str, pd.Series] = {}
+        rolling = history.rolling(window, min_periods=1)
+        for stat in stats:
+            if stat in {"max_diff", "min_diff"}:
+                if window < 2:
+                    results[stat] = pd.Series(0.0, index=history.index)
+                else:
+                    diffs = history.diff()
+                    method = "max" if stat == "max_diff" else "min"
+                    results[stat] = getattr(
+                        diffs.rolling(window - 1, min_periods=1), method
+                    )().fillna(0.0)
+                continue
+            if stat not in {"mean", "std", "min", "max", "median", "skew", "kurt"}:
+                raise ValueError(f"unsupported history statistic: {stat!r}")
+            results[stat] = getattr(rolling, stat)().fillna(0.0)
+        return results
+
+    def _compile_batch_row_transformations(
+        self,
+        frame: dict[str, Any],
+        advanced: Mapping[str, Any],
+    ) -> None:
+        cyclical = advanced.get("cyclical")
+        if cyclical is not None:
+            if not isinstance(cyclical, Mapping):
+                raise TypeError("transformations.advanced.cyclical must be a mapping")
+            period = cyclical.get("period")
+            if (
+                isinstance(period, bool)
+                or not isinstance(period, (int, float))
+                or period <= 0
+            ):
+                raise ValueError("cyclical.period must be positive")
+            for configured in self._string_sequence(
+                cyclical.get("columns", ()), "cyclical.columns"
+            ):
+                column = configured if configured in frame else f"dt_{configured}"
+                if column not in frame:
+                    raise ValueError(
+                        f"cyclical references unknown feature: {configured!r}"
+                    )
+                values = np.asarray(frame[column], dtype=float)
+                frame[f"{column}_sin"] = np.sin(
+                    2.0 * np.pi * values / float(period)
+                )
+                frame[f"{column}_cos"] = np.cos(
+                    2.0 * np.pi * values / float(period)
+                )
+
+        interaction = advanced.get("interaction")
+        if interaction is not None:
+            if not isinstance(interaction, Mapping):
+                raise TypeError(
+                    "transformations.advanced.interaction must be a mapping"
+                )
+            pairs = interaction.get("column_pairs", ())
+            if isinstance(pairs, (str, bytes)) or not isinstance(pairs, Sequence):
+                raise TypeError("interaction.column_pairs must be a sequence")
+            operations = set(
+                self._string_sequence(
+                    interaction.get("operations", ()), "interaction.operations"
+                )
+            )
+            for pair in pairs:
+                if (
+                    isinstance(pair, (str, bytes))
+                    or not isinstance(pair, Sequence)
+                    or len(pair) != 2
+                ):
+                    raise TypeError(
+                        "interaction column pairs must contain two feature names"
+                    )
+                left, right = pair
+                if left not in frame or right not in frame:
+                    raise ValueError(
+                        f"interaction references unknown features: {pair}"
+                    )
+                left_values = np.asarray(frame[left], dtype=float)
+                right_values = np.asarray(frame[right], dtype=float)
+                if "add" in operations:
+                    frame[f"{left}_add_{right}"] = left_values + right_values
+                if "subtract" in operations:
+                    frame[f"{left}_substract_{right}"] = left_values - right_values
+                if "multiply" in operations:
+                    frame[f"{left}_multiply_{right}"] = left_values * right_values
+                if "divide" in operations:
+                    frame[f"{left}_divide_{right}"] = left_values / (
+                        right_values + 1e-8
+                    )
+
+        polynomial = advanced.get("polynomial")
+        if polynomial is not None:
+            if not isinstance(polynomial, Mapping):
+                raise TypeError(
+                    "transformations.advanced.polynomial must be a mapping"
+                )
+            degree = polynomial.get("degree", 2)
+            if (
+                isinstance(degree, bool)
+                or not isinstance(degree, int)
+                or degree < 2
+            ):
+                raise ValueError("polynomial.degree must be an integer >= 2")
+            for column in self._string_sequence(
+                polynomial.get("columns", ()), "polynomial.columns"
+            ):
+                if column not in frame:
+                    raise ValueError(
+                        f"polynomial references unknown feature: {column!r}"
+                    )
+                values = np.asarray(frame[column], dtype=float)
+                for current_degree in range(2, degree + 1):
+                    frame[f"{column}_pow_{current_degree}"] = (
+                        values ** current_degree
+                    )
+
+    def _compile_batch_named_interactions(
+        self,
+        frame: dict[str, Any],
+        interactions: Any,
+    ) -> None:
+        if not isinstance(interactions, Mapping):
+            raise TypeError("transformations.interactions must be a mapping")
+        for name, members in interactions.items():
+            if isinstance(members, (str, bytes)) or not isinstance(members, Sequence):
+                raise TypeError(f"interaction {name!r} must list feature names")
+            if len(members) < 2:
+                raise ValueError(f"interaction {name!r} requires at least two features")
+            missing = [member for member in members if member not in frame]
+            if missing:
+                raise ValueError(
+                    f"interaction {name!r} references unknown features: {missing}"
+                )
+            values = np.column_stack(
+                [np.asarray(frame[member], dtype=float) for member in members]
+            )
+            if not np.isfinite(values).all():
+                raise ValueError(
+                    f"interaction {name!r} requires finite numeric features"
+                )
+            frame[str(name)] = np.prod(values, axis=1)
+
+    @staticmethod
+    def _add_batch_proof_column(
+        item: dict[str, Any],
+        feature_name: str,
+        source_name: str,
+        role: str,
+        source_times: Any,
+        available_at: Any,
+    ) -> None:
+        normalized_source_times = (
+            source_times
+            if len(source_times) == 0 or source_times[0] is None
+            else tuple(pd.DatetimeIndex(source_times))
+        )
+        item["proof_columns"][feature_name] = (
+            source_name,
+            role,
+            normalized_source_times,
+            tuple(pd.DatetimeIndex(available_at)),
+        )
+
+    def _finish_batch_item(self, item: dict[str, Any]) -> CompiledFeatures:
+        columns = cast(dict[str, Any], item["columns"])
+        frame = pd.DataFrame(columns).infer_objects(copy=False)
+        request = cast(InformationSetRequest, item["request"])
+        key_columns = [*self.problem.series_id_cols, "target_time", "horizon_step"]
+        feature_names = tuple(
+            column for column in frame.columns if column not in key_columns
+        )
+        categorical_names = tuple(
+            column
+            for source in self.data.sources
+            for column_spec in source.columns
+            if column_spec.categorical and column_spec.name in feature_names
+            for column in (column_spec.name,)
+        )
+        categorical_names = (
+            *categorical_names,
+            *(
+                f"dt_{name}"
+                for name in self.datetime_categorical
+                if f"dt_{name}" in feature_names
+            ),
+        )
+        proofs = []
+        target_times = cast(pd.DatetimeIndex, item["target_times"])
+        horizon_values = np.asarray(columns["horizon_step"], dtype=np.int64)
+        for row_index, (target_time, horizon_step) in enumerate(
+            zip(target_times, horizon_values)
+        ):
+            for feature_name in feature_names:
+                source_name, role, source_times, available_at = item[
+                    "proof_columns"
+                ][feature_name]
+                # compile() 的 derived proof 集合跨行累积，因此派生特征只在
+                # 第一行登记一次；批路径必须保留这一既有审计布局。
+                if role == "derived" and row_index > 0:
+                    continue
+                proofs.append(
+                    VisibilityProof(
+                        feature_name=feature_name,
+                        source_name=source_name,
+                        role=role,
+                        target_time=target_time,
+                        source_time=source_times[row_index],
+                        forecast_origin=request.forecast_origin,
+                        horizon_step=int(horizon_step),
+                        available_at=available_at[row_index],
+                    )
+                )
+        normalized_cutoff = pd.Timestamp(
+            request.forecast_origin
+            if item["visibility_cutoff"] is None
+            else item["visibility_cutoff"]
+        )
+        if normalized_cutoff is pd.NaT:
+            raise ValueError("visibility_cutoff must be a valid timestamp")
+        cutoff = cast(pd.Timestamp, normalized_cutoff)
+        if cutoff < request.forecast_origin:
+            raise ValueError("visibility_cutoff must be at or after forecast_origin")
+        self._validate_visibility_proofs(proofs, cutoff)
+        return CompiledFeatures(
+            frame=frame,
+            schema=FeatureSchema(
+                feature_names=feature_names,
+                categorical_names=tuple(dict.fromkeys(categorical_names)),
+            ),
+            source_lineage=item["information_set"].lineage,
+            visibility_proof=proofs,
+        )
+
     def _normalize_datetime_categorical(
         self,
         value: Any,
@@ -518,16 +1527,16 @@ class FeatureCompiler:
             ]
             if not columns:
                 continue
-            if not source.series_id_cols:
-                try:
-                    frames, _lookup = information_set.row_position_lookup(source.name)
-                except KeyError:
-                    pass
             frame = frames.get(source.name)
             if frame is None:
                 raise ValueError(f"known_future source {source.name!r} was not materialized")
             source_row = self._exact_temporal_row(
-                source, frame, identity, target_time, information_set
+                source,
+                frame,
+                identity,
+                target_time,
+                information_set,
+                cache_key=self._row_cache_key(source, ColumnRole.KNOWN_FUTURE),
             )
             available_at_col = (
                 source.available_at_col
@@ -891,24 +1900,33 @@ class FeatureCompiler:
         frame = frames.get(source.name)
         if frame is None:
             raise ValueError(f"history source {source.name!r} was not materialized")
-        # 性能（2026-09-01）：可见历史序列对 (information_set, source) 不变，
-        # 缓存过滤+排序结果，避免 advanced 特征逐行调用时反复
-        # pd.to_datetime 全列解析（cProfile 实测占单 origin 编译的 ~73%）。
+        # 性能（2026-09-02 两级缓存）：
+        # L1（instance 级，跨 origin 共享）：解析后的时间 ns 数组 + 排序位置。
+        # 时间列解析与排序不依赖 forecast_origin，整个回测只需一次。
+        # L2（compile 作用域级）：按当前 origin 过滤后的可见序列。
         cache_key = f"visible_history::{source.name}::{source.time_col}"
-        cached = self._compile_scope_aux.get(cache_key)
-        if cached is None:
+        parsed = self._compile_scope_aux.get(f"{cache_key}::parsed")
+        order = self._compile_scope_aux.get(f"{cache_key}::order")
+        if parsed is None or order is None:
             selected = self._filter_identity(source, frame, identity)
             if source.time_col is None:
                 raise ValueError(f"history source {source.name!r} has no time_col")
-            selected = selected.loc[
-                pd.to_datetime(selected[source.time_col]) <= request.forecast_origin
-            ].sort_values(source.time_col, kind="stable")
-            cached = selected
-            self._compile_scope_aux[cache_key] = cached
-        selected = cached
-        if selected.empty:
+            parsed = pd.DatetimeIndex(
+                pd.to_datetime(selected[source.time_col].to_numpy())
+            )
+            order = np.argsort(parsed.asi8, kind="stable")
+            parsed = parsed[order]
+            self._compile_scope_aux[f"{cache_key}::parsed"] = parsed
+            self._compile_scope_aux[f"{cache_key}::order"] = order
+            self._compile_scope_aux[f"{cache_key}::selected"] = selected
+        selected = self._compile_scope_aux[f"{cache_key}::selected"]
+        # searchsorted：origin 之前的可见前缀（排序后），替代全列布尔掩码
+        cutoff_ns = pd.Timestamp(request.forecast_origin).value
+        visible_count = int(np.searchsorted(parsed.asi8, cutoff_ns, side="right"))
+        ordered = selected.iloc[order[:visible_count]]
+        if ordered.empty:
             raise ValueError(f"history column {column_name!r} has no visible values")
-        numeric = pd.to_numeric(selected[column_name], errors="raise").astype(float)
+        numeric = pd.to_numeric(ordered[column_name], errors="raise").astype(float)
         if not np.isfinite(numeric.to_numpy()).all():
             raise ValueError(f"history column {column_name!r} must be finite")
         return numeric.reset_index(drop=True)
@@ -1021,21 +2039,17 @@ class FeatureCompiler:
         source_time: pd.Timestamp,
         information_set: MaterializedInformationSet,
     ) -> Any:
-        use_cache = not source.series_id_cols
-        if use_cache:
-            # 方案 A：无键 source 直接复用 lookup 登记帧，避免 property 每次
-            # 访问的 deep copy（同 origin 的 16 个 call 共享同一份帧）。
-            try:
-                frames, _lookup = information_set.row_position_lookup(source.name)
-            except KeyError:
-                frames = self._role_frames(information_set, role)
-        else:
-            frames = self._role_frames(information_set, role)
+        frames = self._role_frames(information_set, role)
         frame = frames.get(source.name)
         if frame is None:
             raise ValueError(f"history source {source.name!r} was not materialized")
         return self._exact_temporal_row(
-            source, frame, identity, source_time, information_set
+            source,
+            frame,
+            identity,
+            source_time,
+            information_set,
+            cache_key=self._row_cache_key(source, role),
         )[column_name]
 
     def _history_available_at(
@@ -1054,7 +2068,12 @@ class FeatureCompiler:
         )
         frame = self._role_frames(information_set, role)[source.name]
         row = self._exact_temporal_row(
-            source, frame, identity, source_time, information_set
+            source,
+            frame,
+            identity,
+            source_time,
+            information_set,
+            cache_key=self._row_cache_key(source, role),
         )
         if source.availability is AvailabilityPolicy.COLUMN:
             return pd.Timestamp(row[source.available_at_col])
@@ -1088,6 +2107,8 @@ class FeatureCompiler:
         identity: Any,
         source_time: pd.Timestamp,
         information_set: MaterializedInformationSet | None = None,
+        *,
+        cache_key: str | None = None,
     ) -> pd.Series:
         if source.time_col is None:
             raise ValueError(f"temporal source {source.name!r} has no time_col")
@@ -1098,18 +2119,20 @@ class FeatureCompiler:
         # 保持原逐次精确匹配路径（正确性优先）。语义均不变：非恰好一行即 RAISE。
         use_cache = information_set is not None and not source.series_id_cols
         if use_cache:
+            resolved_cache_key = cache_key or source.name
             try:
                 _frames, time_lookup = information_set.row_position_lookup(
-                    source.name
+                    resolved_cache_key
                 )
             except KeyError:
                 information_set.register_row_position_lookup(
-                    source.name,
+                    resolved_cache_key,
                     {source.name: frame},
                     source.time_col,
+                    frame_name=source.name,
                 )
                 _frames, time_lookup = information_set.row_position_lookup(
-                    source.name
+                    resolved_cache_key
                 )
             position = time_lookup.get(pd.Timestamp(source_time).value, -1)
         else:
@@ -1124,6 +2147,10 @@ class FeatureCompiler:
                 f"for series {identity!r}"
             )
         return selected.iloc[position]
+
+    @staticmethod
+    def _row_cache_key(source: DataSourceSpec, role: ColumnRole) -> str:
+        return f"{role.value}:{source.name}"
 
     @staticmethod
     def _filter_identity(

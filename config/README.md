@@ -1,6 +1,6 @@
 # Config
 
-`config/` 当前包含 845 个活动 schema-2 模型 YAML：797 个普通单模型、24 个 Ensemble、24 个独立 Ensemble 成员；另有 41 个数据工具 YAML。3 个声明列与物理资产列族错配的配置已于 2026-08-31 经批准原样迁至 `docs/archived_configs/`，不计入活动集。
+`config/` 当前包含 707 个活动 schema-2 模型 YAML：671 个普通单模型、6 个独立 Ensemble 成员、30 个 Ensemble；按 typed spec 计为 677 个 `ForecastConfigSpec` + 30 个 `EnsembleConfigSpec`。另有 41 个数据工具 YAML。三个 AIDC 15min 负荷场景的 `add_ensemble/` 直接引用 `add_exogenous/` 现役模型，不维护重复 member；其他场景既有 6 个独立 member 保持不变。3 个声明列与物理资产列族错配的配置已于 2026-08-31 经批准原样迁至 `docs/archived_configs/`，不计入活动集。
 
 ## 唯一 schema
 

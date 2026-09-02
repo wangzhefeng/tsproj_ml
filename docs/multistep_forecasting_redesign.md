@@ -8,7 +8,7 @@
 
 `tsproj_ml` 只保留 canonical 运行体系：
 
-- 845 个活动模型 YAML 均为 `schema_version: 2`：797 个普通单模型、24 个引用式 Ensemble、24 个 `ensemble_members/` 独立基模型；另有 41 个数据工具 YAML，不计入模型数。3 个无有效资产的配置原样保存在 `docs/archived_configs/`，不进入 loader/audit/runtime。
+- 707 个活动模型 YAML 均为 `schema_version: 2`：671 个普通单模型、6 个其他场景保留的独立 Ensemble member、30 个引用式 Ensemble；按 typed spec 计为 677 个 `ForecastConfigSpec` + 30 个 `EnsembleConfigSpec`。另有 41 个数据工具 YAML，不计入模型数。三个 AIDC 15min 负荷场景直接引用 add_exogenous 现役成员，不维护 `ensemble_members/` 副本；3 个无有效资产配置原样保存在 `docs/archived_configs/`，不进入 loader/audit/runtime。
 - `load_yaml_config()` 严格分派 `ForecastConfigSpec | EnsembleConfigSpec`。未知字段、重复 YAML key、角色冲突和非法 strategy/chunk 均 RAISE。
 - `main.py`、`run.py` 不接受 legacy 配置或旧产物。旧 `base_config + overrides`、九方法运行类、旧宽表、旧 pkl 和迁移兼容层均已删除。
 - `docs/model_ensemble_redesign.md` 与 `docs/time_series_probabilistic_forecasting_redesign.md` 仅作历史决策参考，本文和 `AGENTS.md` 才是当前事实源。
@@ -198,11 +198,11 @@ results/<scenario>/<result_identity>/
 
 | Slice | 状态 | 当前证据 |
 |---|---|---|
-| C0/C1 | completed | strict typed schema、生产 parser/constructor 门禁、845 个活动配置；3 个错配配置已批准归档 |
-| C2 | completed | fixed-step/calendar-month typed geometry；845 YAML + 迁移 manifest；final fit 同训练窗；615 个子日单模型 sample-count 一致 |
+| C0/C1 | completed | strict typed schema、生产 parser/constructor 门禁、707 个活动配置；3 个错配配置已批准归档 |
+| C2 | completed | fixed-step/calendar-month typed geometry；707 YAML + 迁移 manifest；final fit 同训练窗；471 个子日单模型 sample-count 一致 |
 | C3 | completed | proper quantile blending、自包含 bundle、bundle-only point/quantile 部署、优化审计与 canonical long result 已落地；用户批准的 H16/H31 两个代表均 exit 0 且完整产物核验通过 |
 | C4 | completed | 稳定概率合同唯一位于 `forecasting_core/`；Protocol 注入、包 DAG、runtime 窄模块和重复合同清理完成 |
-| C5 | completed | typed 845-row catalog、CLI/checker 单模型边界、legacy/test-only/零消费者链和 requirements 门禁已收口 |
+| C5 | completed | typed 707-row catalog、CLI/checker 单模型边界、legacy/test-only/零消费者链和 requirements 门禁已收口 |
 | C6 | completed | README、权威设计、§17 与 AGENTS typed geometry 已同步；活动 Markdown 断链 0 |
 | C7 | completed | fresh 615 tests、三项审计、compile/diff/Markdown 和 H16/H31 代表均已通过；完整证据见架构计划 §17.5 |
 

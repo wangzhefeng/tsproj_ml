@@ -15,7 +15,7 @@
 - 点评估：MAE/RMSE/MAPE/Accuracy、seasonal-naive、eval mask。
 - 概率评估：pinball、coverage、width、Winkler、coverage gap。
 
-不支持：联合轨迹样本生成、ensemble-of-ensemble、canonical CQR runtime。现有 `probabilistic.calibration` 只保留数学内核，不代表生产已输出 `predict_pi*`。
+不支持：联合轨迹样本生成、ensemble-of-ensemble。CQR runtime 已支持严格 as-of 校准，并可在回测与部署结果中输出 `predict_pi*`；未声明 `probabilistic.calibration` 的配置不启用。
 
 ## 当前架构
 
@@ -60,7 +60,7 @@
 | `models/` | estimator factory 与底层 pickle IO |
 | `decomposition/` | 趋势/季节/残差分解与恢复 |
 | `data_process/` | 进模型前的离线聚合、填补、异常、事件、周期与峰谷分析 |
-| `config/` | 845 个活动模型 YAML + 41 个独立数据工具 YAML；3 个无有效资产配置归档于 `docs/archived_configs/` |
+| `config/` | 707 个活动模型 YAML（677 单模型 + 30 Ensemble）+ 41 个独立数据工具 YAML；3 个无有效资产配置归档于 `docs/archived_configs/` |
 | `scripts/` | 配置、Ensemble 与运行资产审计 |
 | `tests/` | unittest、runtime smoke、结构门禁和场景数据链测试 |
 

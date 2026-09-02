@@ -1,8 +1,6 @@
-# aidc_load_15min_daily 模型测试配置重设计（2026-09-01，方案稿 v1）
+# aidc_load_15min_daily 模型测试配置重设计与实施记录（2026-09-01/02）
 
-> 状态：**设计稿，未实施**。用户裁决要点：全部配置改为**点预测**（去掉 quantile/conformal）；
-> 消融组重设计为 baseline / add_exogenous / add_endogenous / add_decomposition 四组 + **模型融合**；
-> 配置命名丢弃 US*/MS* 旧缩写，改用 canonical 语义命名。
+> 状态：**配置矩阵实施完成（2026-09-02）**。§一至§六保留 2026-09-01 的设计过程与当时基线，不能当作当前目录清单；最终实施状态、执行偏差和验证证据统一见 §七。
 
 ## 一、现状盘点（核实于 2026-09-01 仓库现场）
 
@@ -197,3 +195,27 @@ lgbm_ensemble_{averaging|weighted|linear-blending|stacking}.yaml
 5. route_B 镜像生成 + 全量校验；
 6. 重写 `模型测试说明.md`；
 7. 清理旧结果目录（用户确认范围后）。
+
+## 七、实施结果（completed 2026-09-02）
+
+### 7.1 最终矩阵
+
+- 三个场景 `aidc_load_15min_{daily,rolling,short}` × A/B 两路采用同一六组结构：`baseline`、`add_exogenous`、`add_endogenous_cross_route`、`add_endogenous_state`、`add_decomposition`、`add_ensemble`。
+- 每路 41 份现役 YAML：9 + 8 + 3 + 8 + 9 + 4；每场景 82 份，三个场景合计 **246 份**。
+- 全部使用 `probabilistic.mode: point`；天气为 5 列严格三段 source；节假日使用 `chinese_holiday` generated source；旧 US*/MS* 文件名已退出三个场景。
+- 模型融合仅位于 `add_ensemble/`，四个方法直接引用 `../add_exogenous/lgbm_direct.yaml` 与 `../add_exogenous/lgbm_recursive.yaml`；不维护 `ensemble_members/` 重复副本。
+
+### 7.2 相对方案正文的执行偏差
+
+| 偏差 | 最终处理 | 原因 |
+|---|---|---|
+| 融合原计划按四个特征组铺开 32 份 | 收敛为独立 `add_ensemble`，每路 4 份，基座固定 add_exogenous | 用户 2026-09-02 追加裁决：融合配置集中存放，避免融合轴与特征组乘积膨胀 |
+| cross-route 中间产物名为 `lgbm_recmo.yaml` | 更名为 `lgbm_mimo.yaml` | YAML 的真实 `strategy.name` 是 `mimo`；按 canonical 真实语义修复文件名 |
+| 融合初期保留专用 recursive member | 删除副本，直接引用 add_exogenous 现役 recursive | 用户纠正：不得恢复 `ensemble_members`；相同语义只保留一个事实源 |
+| 设计稿预计 54 份/路 | 最终 41 份/路 | 融合不再乘四组、cross-route 仅保留 direct/mimo/recursive 三个多变量模型 |
+
+### 7.3 可重复维护与验证
+
+- `scripts/generate_load_15min_matrix.py` 默认只读校验完整 246 份矩阵；`--write-derived` 只重写 24 个 `add_ensemble` 顶层 YAML，不覆盖人工审定的基础单模型。
+- 配置合约验证覆盖：严格文件清单、全部 point、`scenario_subpath`、文件名/strategy 对齐、ensemble member resolve 与 source subset。
+- 2026-09-02 验证基线：矩阵脚本 `single=222 ensemble=24 total=246`；项目配置 checker 与全量 unittest 的最终结果以本次工作结束汇报为准。

@@ -35,10 +35,10 @@ class ValidationGeometryManifestTest(unittest.TestCase):
             for path in (ROOT / "config").rglob("*.yaml")
             if is_model_yaml(path)
         }
-        self.assertEqual(len(entries), 845)
-        self.assertEqual(len(by_path), 845)
+        self.assertEqual(len(entries), 707)
+        self.assertEqual(len(by_path), 707)
         self.assertEqual(set(by_path), active_paths)
-        self.assertEqual(manifest["counts"]["subday_single_models"], 615)
+        self.assertEqual(manifest["counts"]["subday_single_models"], 471)
 
         timeline_cache: dict[tuple[str, str], pd.DatetimeIndex] = {}
         checked_subday = 0
@@ -82,7 +82,7 @@ class ValidationGeometryManifestTest(unittest.TestCase):
                 geometry.train_window_steps,
                 relative,
             )
-        self.assertEqual(checked_subday, 615)
+        self.assertEqual(checked_subday, 471)
 
     @staticmethod
     def _actual_final_training_count(

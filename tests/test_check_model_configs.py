@@ -20,7 +20,7 @@ class ModelYamlDetectionTest(unittest.TestCase):
     def test_cli_counts_ensemble_semantic_problem_as_hard_failure(self):
         source = (
             ROOT
-            / "config/aidc_load_15min_short/route_A/baseline/"
+            / "config/aidc_power_month/route_A/freq_1day/baseline/"
             / "lgbm_usbr_prob_mean_conformal.yaml"
         )
         payload = yaml.safe_load(source.read_text(encoding="utf-8"))

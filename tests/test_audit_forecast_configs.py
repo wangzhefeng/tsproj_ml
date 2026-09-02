@@ -17,12 +17,12 @@ class ForecastConfigAuditTest(unittest.TestCase):
         cls.rows = build_catalog(ROOT / "config")
 
     def test_catalog_covers_every_active_model_yaml(self):
-        self.assertEqual(len(self.rows), 845)
+        self.assertEqual(len(self.rows), 707)
         self.assertEqual(
             Counter(row["config_kind"] for row in self.rows),
-            {"single_model": 821, "ensemble": 24},
+            {"single_model": 677, "ensemble": 30},
         )
-        self.assertEqual(len({row["path"] for row in self.rows}), 845)
+        self.assertEqual(len({row["path"] for row in self.rows}), 707)
 
     def test_catalog_has_typed_canonical_fields(self):
         self.assertEqual(set(REQUIRED_KEYS), set(self.rows[0]))

@@ -60,7 +60,7 @@ class ActiveConfigRuntimeContractTest(unittest.TestCase):
                     (str(path.relative_to(ROOT)), unknown, unknown_advanced)
                 )
 
-        self.assertEqual(base_count, 821)
+        self.assertEqual(base_count, 677)
         self.assertEqual(
             incompatible,
             [],
@@ -71,11 +71,11 @@ class ActiveConfigRuntimeContractTest(unittest.TestCase):
     def test_fixed_step_configs_store_explicit_origin_step_geometry(self):
         cases = (
             (
-                "config/aidc_load_15min_short/route_A/baseline/st_usmr_mean.yaml",
+                "config/aidc_load_15min_short/route_A/baseline/st_recursive.yaml",
                 (1536, 1424, 7, 16),
             ),
             (
-                "config/aidc_load_15min_daily/route_A/baseline/enet_usmd_mean.yaml",
+                "config/aidc_load_15min_daily/route_A/baseline/enet_direct.yaml",
                 (3264, 2784, 5, 96),
             ),
             (
@@ -124,7 +124,7 @@ class ActiveConfigRuntimeContractTest(unittest.TestCase):
     def test_legacy_geometry_fields_fail_during_parse(self):
         path = (
             ROOT
-            / "config/aidc_load_15min_short/route_A/baseline/st_usmr_mean.yaml"
+            / "config/aidc_load_15min_short/route_A/baseline/st_recursive.yaml"
         )
         config = load_yaml_config(path)
         payload = config.canonical_payload()
@@ -145,7 +145,7 @@ class ActiveConfigRuntimeContractTest(unittest.TestCase):
     def test_unknown_runtime_sections_fail_during_parse(self):
         path = (
             ROOT
-            / "config/aidc_load_15min_short/route_A/baseline/st_usmr_mean.yaml"
+            / "config/aidc_load_15min_short/route_A/baseline/st_recursive.yaml"
         )
         config = load_yaml_config(path)
         self.assertIsInstance(config, ForecastConfigSpec)
@@ -173,7 +173,7 @@ class ActiveConfigRuntimeContractTest(unittest.TestCase):
     def test_checker_accepts_visible_target_history_transformations(self):
         path = (
             ROOT
-            / "config/aidc_load_15min_short/route_A/baseline/enet_usmd_mean.yaml"
+            / "config/aidc_load_15min_short/route_A/baseline/enet_direct.yaml"
         )
         _, problems = check_model_yaml(str(path))
         self.assertEqual(problems, [])

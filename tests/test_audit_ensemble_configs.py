@@ -19,12 +19,12 @@ class EnsembleConfigAuditTest(unittest.TestCase):
         single = (
             ROOT
             / "config/aidc_load_15min_short/route_A/baseline/"
-            / "lgbm_usmd_prob_mean_conformal.yaml"
+            / "lgbm_direct.yaml"
         )
         ensemble = (
             ROOT
-            / "config/aidc_load_15min_short/route_A/baseline/"
-            / "lgbm_usbr_prob_mean_conformal.yaml"
+            / "config/aidc_load_15min_short/route_A/add_ensemble/"
+            / "lgbm_ensemble_averaging.yaml"
         )
 
         self.assertTrue(MODULE._is_single_model_config(single))

@@ -1,0 +1,297 @@
+schema_version: 2
+problem:
+  time_col: time
+  freq: 15min
+  horizon: 16
+  targets:
+  - value
+  information_mode: forecast
+  training_scope: local
+  series_id_cols: []
+data:
+  sources:
+  - name: target_history
+    source_type: file
+    columns:
+    - name: value
+      role: target
+      categorical: false
+    history_path: dataset/aidc_load_15min_short/A_Loads_15min_mean_20251001_20260731.csv
+    time_col: time
+    series_id_cols: []
+    availability: source_time
+  - name: weather
+    source_type: file
+    columns:
+    - name: rt_tt2
+      role: known_future
+      categorical: false
+    - name: cal_rh
+      role: known_future
+      categorical: false
+    - name: rt_ssr
+      role: known_future
+      categorical: false
+    - name: rt_ws10
+      role: known_future
+      categorical: false
+    - name: rt_dt
+      role: known_future
+      categorical: false
+    history_path: dataset/aidc_load_15min_short/weather_15min_20250101_20260731T1345.csv
+    backtest_path: dataset/aidc_load_15min_short/weather_15min_backtest_proxy_20260101_20260731.csv
+    future_path: dataset/aidc_load_15min_short/weather_15min_future_proxy_20260731T1400_20260831.csv
+    time_col: ts
+    series_id_cols: []
+    availability: column
+    available_at_col: available_at
+  - name: load_state
+    source_type: file
+    columns:
+    - name: state_roll_1h_mean
+      role: observed_past
+      categorical: false
+    - name: state_roll_1h_std
+      role: observed_past
+      categorical: false
+    - name: state_roll_4h_mean
+      role: observed_past
+      categorical: false
+    - name: state_roll_4h_std
+      role: observed_past
+      categorical: false
+    - name: state_roll_24h_range
+      role: observed_past
+      categorical: false
+    - name: state_diff_15min
+      role: observed_past
+      categorical: false
+    - name: state_diff_1h
+      role: observed_past
+      categorical: false
+    - name: state_diff_24h_pct
+      role: observed_past
+      categorical: false
+    - name: state_robust_z_7d
+      role: observed_past
+      categorical: false
+    - name: state_weekly_base_dev_pct
+      role: observed_past
+      categorical: false
+    - name: state_route_diff_pct
+      role: observed_past
+      categorical: false
+    history_path: dataset/aidc_load_15min_short/load_state_features/A_load_state_history.csv
+    time_col: time
+    series_id_cols: []
+    availability: source_time
+    provider: persistence
+  - name: chinese_holiday
+    source_type: generated
+    generator: chinese_holiday
+    columns:
+    - name: is_holiday
+      role: known_future
+      categorical: false
+    - name: next_holiday_days
+      role: known_future
+      categorical: false
+    time_col: time
+    availability: generator_defined
+features:
+  target_lags:
+    value:
+    - 1
+    - 2
+    - 3
+    - 4
+    - 8
+    - 12
+    - 16
+    - 96
+    - 192
+    - 672
+  observed_past_lags:
+    state_roll_1h_mean:
+    - 1
+    - 2
+    - 3
+    - 4
+    - 8
+    - 12
+    - 16
+    - 96
+    - 192
+    - 672
+    state_roll_1h_std:
+    - 1
+    - 2
+    - 3
+    - 4
+    - 8
+    - 12
+    - 16
+    - 96
+    - 192
+    - 672
+    state_roll_4h_mean:
+    - 1
+    - 2
+    - 3
+    - 4
+    - 8
+    - 12
+    - 16
+    - 96
+    - 192
+    - 672
+    state_roll_4h_std:
+    - 1
+    - 2
+    - 3
+    - 4
+    - 8
+    - 12
+    - 16
+    - 96
+    - 192
+    - 672
+    state_roll_24h_range:
+    - 1
+    - 2
+    - 3
+    - 4
+    - 8
+    - 12
+    - 16
+    - 96
+    - 192
+    - 672
+    state_diff_15min:
+    - 1
+    - 2
+    - 3
+    - 4
+    - 8
+    - 12
+    - 16
+    - 96
+    - 192
+    - 672
+    state_diff_1h:
+    - 1
+    - 2
+    - 3
+    - 4
+    - 8
+    - 12
+    - 16
+    - 96
+    - 192
+    - 672
+    state_diff_24h_pct:
+    - 1
+    - 2
+    - 3
+    - 4
+    - 8
+    - 12
+    - 16
+    - 96
+    - 192
+    - 672
+    state_robust_z_7d:
+    - 1
+    - 2
+    - 3
+    - 4
+    - 8
+    - 12
+    - 16
+    - 96
+    - 192
+    - 672
+    state_weekly_base_dev_pct:
+    - 1
+    - 2
+    - 3
+    - 4
+    - 8
+    - 12
+    - 16
+    - 96
+    - 192
+    - 672
+    state_route_diff_pct:
+    - 1
+    - 2
+    - 3
+    - 4
+    - 8
+    - 12
+    - 16
+    - 96
+    - 192
+    - 672
+  datetime_features:
+  - hour
+  - minute
+  - day
+  - day_of_week
+  - week_of_year
+  - month
+  - days_in_month
+  - quarter
+  - day_of_year
+  - year
+  transformations:
+    direct:
+      layout: single_model_horizon
+      align_to_target: false
+      horizon_feature:
+        name: forecast_horizon_idx
+        cyclical: true
+    advanced:
+      rolling:
+        columns:
+        - value
+        windows:
+        - 16
+        - 96
+        - 672
+        stats:
+        - mean
+        - std
+        - min
+        - max
+      difference:
+        columns:
+        - value
+        periods:
+        - 1
+        - 96
+        - 672
+strategy:
+  name: direct
+estimator:
+  model_type: lightgbm
+  target_adapter: independent
+  params: {}
+probabilistic:
+  mode: point
+validation:
+  forecast_origin: '2026-07-31T14:00:00'
+  schedule_mode: intraday
+  horizon_mode: fixed_steps
+  history_steps: 1536
+  train_window_steps: 1424
+  fold_count: 7
+  stride_steps: 16
+output:
+  scenario_subpath: aidc_load_15min_short/route_A/add_endogenous_state
+  setting_suffix: ''
+  results_root: results
+  directories:
+    checkpoints: ./results/pretrained_models/
+    tests: ./results/results_test/
+    forecast: ./results/results_forecast/

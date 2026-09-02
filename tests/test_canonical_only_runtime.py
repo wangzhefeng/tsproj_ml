@@ -18,7 +18,7 @@ class CanonicalOnlyRuntimeTest(unittest.TestCase):
     def test_build_model_accepts_active_single_model_spec(self):
         config = load_yaml_config(
             ROOT
-            / "config/aidc_load_15min_short/route_A/baseline/st_usmr_mean.yaml"
+            / "config/aidc_load_15min_short/route_A/baseline/st_recursive.yaml"
         )
 
         self.assertIsInstance(build_model(config), CanonicalModel)

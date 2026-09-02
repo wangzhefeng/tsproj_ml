@@ -122,6 +122,37 @@ class FeatureCompiler:
             self.features.transformations.get("datetime_categorical", ()),
         )
         self._validate_runtime_transformations()
+        # 性能（2026-09-01）：known_future property 每次访问都对全部帧做 deep copy，
+        # 而编译按 (identity, horizon_step) 逐行进入 _compile_known_future——
+        # 5 折 × 96 步 = 480 次全帧拷贝是多外生列场景的主要耗时。
+        # 按 information_set 身份缓存一次取值（帧不可变，copy 一次即足够）。
+        # compile 作用域的帧缓存：compile() 进入时按当前 information_set 取一次
+        # 三角色帧（property 会 deep copy），作用域内全部逐行查询共享这一份。
+        self._compile_scope_frames: dict[str, dict[str, Any]] = {}
+        self._compile_scope_aux: dict[str, Any] = {}
+
+    def _prime_compile_scope(self, information_set: MaterializedInformationSet) -> None:
+        """compile() 进入时调用：刷新当前信息集的帧与派生缓存。"""
+        self._compile_scope_frames = {
+            ColumnRole.TARGET.value: information_set.target_history,
+            ColumnRole.OBSERVED_PAST.value: information_set.observed_past,
+            ColumnRole.KNOWN_FUTURE.value: information_set.known_future,
+        }
+        # Compiler 会跨 backtest origin 复用；派生缓存只在单次 compile 内有效。
+        self._compile_scope_aux = {}
+
+    def _role_frames(
+        self,
+        information_set: MaterializedInformationSet,
+        role: ColumnRole,
+    ) -> dict[str, Any]:
+        """返回 compile 作用域内的角色帧（避免逐行 property 访问触发 deep copy）。"""
+        frames = self._compile_scope_frames.get(role.value)
+        if frames is None:
+            raise RuntimeError(
+                "compile-scope frames not primed; call compile() entry first"
+            )
+        return frames
 
     def compile(
         self,
@@ -137,6 +168,7 @@ class FeatureCompiler:
             raise TypeError("information_set must be a MaterializedInformationSet")
         if not isinstance(request, InformationSetRequest):
             raise TypeError("request must be an InformationSetRequest")
+        self._prime_compile_scope(information_set)
         if request.H != self.problem.horizon:
             raise ValueError(
                 "information-set horizon does not match ForecastProblemSpec: "
@@ -477,7 +509,7 @@ class FeatureCompiler:
         request: InformationSetRequest,
         information_set: MaterializedInformationSet,
     ) -> None:
-        frames = information_set.known_future
+        frames = self._role_frames(information_set, ColumnRole.KNOWN_FUTURE)
         for source in self.data.sources:
             columns = [
                 column
@@ -855,20 +887,25 @@ class FeatureCompiler:
                 f"advanced history column {column_name!r} must resolve to one visible history source"
             )
         source, role = matches[0]
-        frames = (
-            information_set.target_history
-            if role is ColumnRole.TARGET
-            else information_set.observed_past
-        )
+        frames = self._role_frames(information_set, role)
         frame = frames.get(source.name)
         if frame is None:
             raise ValueError(f"history source {source.name!r} was not materialized")
-        selected = self._filter_identity(source, frame, identity)
-        if source.time_col is None:
-            raise ValueError(f"history source {source.name!r} has no time_col")
-        selected = selected.loc[
-            pd.to_datetime(selected[source.time_col]) <= request.forecast_origin
-        ].sort_values(source.time_col, kind="stable")
+        # 性能（2026-09-01）：可见历史序列对 (information_set, source) 不变，
+        # 缓存过滤+排序结果，避免 advanced 特征逐行调用时反复
+        # pd.to_datetime 全列解析（cProfile 实测占单 origin 编译的 ~73%）。
+        cache_key = f"visible_history::{source.name}::{source.time_col}"
+        cached = self._compile_scope_aux.get(cache_key)
+        if cached is None:
+            selected = self._filter_identity(source, frame, identity)
+            if source.time_col is None:
+                raise ValueError(f"history source {source.name!r} has no time_col")
+            selected = selected.loc[
+                pd.to_datetime(selected[source.time_col]) <= request.forecast_origin
+            ].sort_values(source.time_col, kind="stable")
+            cached = selected
+            self._compile_scope_aux[cache_key] = cached
+        selected = cached
         if selected.empty:
             raise ValueError(f"history column {column_name!r} has no visible values")
         numeric = pd.to_numeric(selected[column_name], errors="raise").astype(float)
@@ -991,17 +1028,9 @@ class FeatureCompiler:
             try:
                 frames, _lookup = information_set.row_position_lookup(source.name)
             except KeyError:
-                frames = (
-                    information_set.target_history
-                    if role is ColumnRole.TARGET
-                    else information_set.observed_past
-                )
+                frames = self._role_frames(information_set, role)
         else:
-            frames = (
-                information_set.target_history
-                if role is ColumnRole.TARGET
-                else information_set.observed_past
-            )
+            frames = self._role_frames(information_set, role)
         frame = frames.get(source.name)
         if frame is None:
             raise ValueError(f"history source {source.name!r} was not materialized")
@@ -1018,11 +1047,12 @@ class FeatureCompiler:
     ) -> pd.Timestamp:
         if source.availability is AvailabilityPolicy.SOURCE_TIME:
             return pd.Timestamp(source_time)
-        frame = (
-            information_set.target_history
+        role = (
+            ColumnRole.TARGET
             if any(column.role is ColumnRole.TARGET for column in source.columns)
-            else information_set.observed_past
-        )[source.name]
+            else ColumnRole.OBSERVED_PAST
+        )
+        frame = self._role_frames(information_set, role)[source.name]
         row = self._exact_temporal_row(
             source, frame, identity, source_time, information_set
         )

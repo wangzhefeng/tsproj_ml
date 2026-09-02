@@ -210,6 +210,17 @@ class FeatureVisibilityCompilerTest(unittest.TestCase):
             )
         )
 
+    def test_compile_resets_derived_cache_between_information_sets(self):
+        self.write_fixture()
+        config = self.build_config()
+        request = self.request()
+        compiler = FeatureCompiler(config)
+        compiler._compile_scope_aux["stale"] = object()
+
+        compiler.compile(self.materialize(config, request), request)
+
+        self.assertNotIn("stale", compiler._compile_scope_aux)
+
     def test_direct_rejects_target_lag_that_would_consume_a_future_prediction(self):
         self.write_fixture()
         config = self.build_config(target_lags={"load": (1,), "power": (1,)})

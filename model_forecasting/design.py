@@ -8,13 +8,19 @@ from typing import Any, Mapping, Sequence
 import numpy as np
 import pandas as pd
 
-from data_loading import EndogenousFutureProvider, InformationSetRequest, SourceRegistry
+from data_loading import (
+    EndogenousFutureProvider,
+    InformationSetRequest,
+    MaterializedInformationSet,
+    SourceRegistry,
+)
 from feature_engineering import CompiledFeatures, FeatureCompiler
 from forecasting_core.specs import (
     CalendarMonthBacktestSpec,
     ColumnRole,
     FixedStepBacktestSpec,
     ForecastConfigSpec,
+    StrategyName,
 )
 from forecasting_core.tensors import PointForecastTensor
 from model_forecasting.transforms import CanonicalTargetTransform
@@ -104,6 +110,16 @@ class _OracleTargetProvider:
 
     def available_at(self, _name: str, _step: int) -> pd.Timestamp:
         return self._origin
+
+
+@dataclass(frozen=True, slots=True)
+class TrainingDesignProbe:
+    """一个真实训练 origin 的 canonical 设计编译摘要。"""
+
+    origin: pd.Timestamp
+    design_shapes: tuple[tuple[int, ...], ...]
+    target_shape: tuple[int, ...]
+    feature_names: tuple[str, ...]
 
 
 class _RegistryDesignBuilder:
@@ -343,6 +359,13 @@ class _RegistryDesignBuilder:
     ) -> tuple[np.ndarray, dict[Any, dict[str, tuple[float, ...]]]]:
         request = self.request(origin, mode="oracle")
         information_set = self.registry.materialize(request)
+        return self._labels_from_information_set(request, information_set)
+
+    def _labels_from_information_set(
+        self,
+        request: InformationSetRequest,
+        information_set: MaterializedInformationSet,
+    ) -> tuple[np.ndarray, dict[Any, dict[str, tuple[float, ...]]]]:
         values = np.empty(
             (
                 self.n_series,
@@ -420,6 +443,16 @@ class _RegistryDesignBuilder:
             horizon_steps=(call_step,),
             visibility_cutoff=visibility_cutoff,
         )
+        schema = self._update_feature_schema(compiled)
+        frame = compiled.frame.loc[:, list(schema)]
+        design = frame.to_numpy(copy=True)
+        self._audit.append(compiled)
+        return design
+
+    def _update_feature_schema(
+        self,
+        compiled: CompiledFeatures,
+    ) -> tuple[str, ...]:
         schema = (
             (*self.config.problem.series_id_cols, *compiled.schema.feature_names)
             if self.is_global
@@ -437,10 +470,7 @@ class _RegistryDesignBuilder:
             ) if self.is_global else compiled.schema.categorical_names
         elif schema != self.feature_schema:
             raise ValueError("compiled feature schema changed across forecast origins")
-        frame = compiled.frame.loc[:, list(schema)]
-        design = frame.to_numpy(copy=True)
-        self._audit.append(compiled)
-        return design
+        return schema
 
     def training_row(
         self,
@@ -469,6 +499,110 @@ class _RegistryDesignBuilder:
             for call_index in range(len(self.plan.call_coordinates))
         )
         return designs, target_values if self.is_global else target_values[0]
+
+    def training_rows(
+        self,
+        origins: Sequence[pd.Timestamp],
+    ) -> tuple[tuple[tuple[np.ndarray, ...], np.ndarray], ...]:
+        """批量编译一组监督 origins；provider 依赖策略保持逐行路径。"""
+        normalized_origins = tuple(pd.Timestamp(origin) for origin in origins)
+        if not normalized_origins:
+            return ()
+        call_steps = tuple(
+            coordinates[0].horizon_step
+            for coordinates in self.plan.call_coordinates
+        )
+        if not self._can_batch_training(call_steps):
+            return tuple(self.training_row(origin) for origin in normalized_origins)
+
+        training_requests = tuple(
+            self.request(origin, mode="oracle") for origin in normalized_origins
+        )
+        union_forecast_times = pd.DatetimeIndex(
+            np.unique(
+                np.concatenate(
+                    [request.forecast_times.asi8 for request in training_requests]
+                )
+            )
+        )
+        materialization_request = InformationSetRequest(
+            forecast_origin=max(normalized_origins),
+            forecast_times=union_forecast_times,
+            series_ids=self.series_ids if self.is_global else (),
+            information_mode="oracle",
+        )
+        shared_information_set = self.registry.materialize(materialization_request)
+        information_sets = (shared_information_set,) * len(training_requests)
+        target_values = tuple(
+            self._labels_from_information_set(request, information_set)[0]
+            for request, information_set in zip(
+                training_requests,
+                information_sets,
+            )
+        )
+        compile_requests = tuple(
+            self.request(origin) for origin in normalized_origins
+        )
+        compiled_items = self.compiler.compile_batch(
+            information_sets,
+            compile_requests,
+            horizon_steps=call_steps,
+            visibility_cutoffs=tuple(
+                pd.Timestamp(request.forecast_times[-1])
+                for request in training_requests
+            ),
+        )
+        rows = []
+        for compiled, values in zip(compiled_items, target_values):
+            schema = self._update_feature_schema(compiled)
+            frame = compiled.frame
+            designs = tuple(
+                frame.loc[
+                    frame["horizon_step"] == call_step,
+                    list(schema),
+                ].to_numpy(copy=True)
+                for call_step in call_steps
+            )
+            if any(len(design) != self.n_series for design in designs):
+                raise ValueError(
+                    "batch compilation returned an unexpected row count per strategy call"
+                )
+            rows.append(
+                (
+                    designs,
+                    values if self.is_global else values[0],
+                )
+            )
+        return tuple(rows)
+
+    def _can_batch_training(self, call_steps: Sequence[int]) -> bool:
+        if self.config.strategy is None:
+            return False
+        resolved = self.config.strategy.resolve(self.config.problem.horizon)
+        if (
+            resolved.consumes_previous
+            and resolved.name is not StrategyName.RECMO
+        ):
+            return False
+        advanced = self.config.features.transformations.get("advanced", {})
+        if isinstance(advanced, Mapping) and any(
+            advanced.get(kind) is not None
+            for kind in ("percent_change", "time_since", "ewm")
+        ):
+            return False
+        direct = self.config.features.transformations.get("direct")
+        if isinstance(direct, Mapping) and direct.get("align_to_target") is False:
+            return True
+        max_step = max(call_steps)
+        return all(
+            lag >= max_step
+            for lag_mapping in (
+                self.config.features.target_lags,
+                self.config.features.observed_past_lags,
+            )
+            for lags in lag_mapping.values()
+            for lag in lags
+        )
 
     def forecast_designs(
         self,
@@ -517,6 +651,25 @@ class _RegistryDesignBuilder:
             )
 
         return (base_design,), provider
+
+
+def probe_training_design(
+    config: ForecastConfigSpec,
+    registry: SourceRegistry,
+    origin: pd.Timestamp,
+) -> TrainingDesignProbe:
+    """Compile one production-equivalent training row without fitting a model."""
+    normalized_origin = pd.Timestamp(origin)
+    if not isinstance(normalized_origin, pd.Timestamp):
+        raise ValueError("training design probe origin must be a valid timestamp")
+    builder = _RegistryDesignBuilder(config, registry)
+    designs, targets = builder.training_row(normalized_origin)
+    return TrainingDesignProbe(
+        origin=normalized_origin,
+        design_shapes=tuple(tuple(design.shape) for design in designs),
+        target_shape=tuple(targets.shape),
+        feature_names=builder.feature_schema,
+    )
 
 
 def minimum_history_rows(config: ForecastConfigSpec) -> int:
@@ -588,7 +741,12 @@ def _supervised_arrays(
         candidate_origins = available_origins
     else:
         candidate_origins = available_origins
-    rows = [builder.training_row(candidate) for candidate in candidate_origins]
+    rows = []
+    batch_size = 128
+    for start in range(0, len(candidate_origins), batch_size):
+        rows.extend(
+            builder.training_rows(candidate_origins[start : start + batch_size])
+        )
     if len(rows) < 2:
         raise ValueError("canonical runtime requires at least two complete supervised samples")
     designs_by_call = tuple(

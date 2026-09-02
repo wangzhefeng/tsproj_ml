@@ -1,7 +1,8 @@
 """Canonical adapters between estimators and ``(N, H, K)`` targets."""
 
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
-from typing import Callable
+from typing import Callable, Sequence
 
 import numpy as np
 
@@ -174,23 +175,13 @@ class IndependentMultiTargetAdapter(_BaseMultiTargetAdapter):
         X: np.ndarray,
         Y: np.ndarray,
         sample_weight: np.ndarray | None = None,
+        *,
+        max_workers: int = 1,
     ) -> "IndependentMultiTargetAdapter":
-        design, flat_targets, validated_weight = self._validated_fit_arrays(
-            X, Y, sample_weight
+        fit_independent_adapters(
+            ((self, X, Y, sample_weight),),
+            max_workers=max_workers,
         )
-        estimators = []
-        for column_index in range(flat_targets.shape[1]):
-            estimator = self.estimator_factory()
-            self._fit_estimator(
-                estimator,
-                design,
-                flat_targets[:, column_index],
-                validated_weight,
-            )
-            estimators.append(estimator)
-        self.estimators = tuple(estimators)
-        self.estimator_factory = None
-        self._is_fit = True
         return self
 
     def predict(self, X: np.ndarray) -> np.ndarray:
@@ -200,6 +191,98 @@ class IndependentMultiTargetAdapter(_BaseMultiTargetAdapter):
             tuple(self._scalar_prediction(estimator, design) for estimator in self.estimators)
         )
         return self._reshape_prediction(flat_prediction)
+
+
+IndependentFitJob = tuple[
+    IndependentMultiTargetAdapter,
+    np.ndarray,
+    np.ndarray,
+    np.ndarray | None,
+]
+
+
+def fit_independent_adapters(
+    jobs: Sequence[IndependentFitJob],
+    *,
+    max_workers: int = 1,
+) -> tuple[IndependentMultiTargetAdapter, ...]:
+    """Fit all independent adapter outputs in one deterministic worker pool."""
+    if (
+        isinstance(max_workers, bool)
+        or not isinstance(max_workers, int)
+        or max_workers <= 0
+    ):
+        raise ValueError("max_workers must be a positive integer")
+    if not jobs:
+        return ()
+
+    prepared = []
+    tasks = []
+    for adapter, X, Y, sample_weight in jobs:
+        if not isinstance(adapter, IndependentMultiTargetAdapter):
+            raise TypeError("jobs must contain IndependentMultiTargetAdapter values")
+        design, flat_targets, validated_weight = adapter._validated_fit_arrays(
+            X, Y, sample_weight
+        )
+        factory = adapter.estimator_factory
+        if not callable(factory):
+            raise RuntimeError("adapter cannot be fit more than once")
+        batch_fitter = getattr(factory, "fit_independent_outputs", None)
+        if callable(batch_fitter) and flat_targets.shape[1] > 1:
+            prepared.append((adapter, 1))
+            tasks.append(
+                (
+                    "batch",
+                    batch_fitter,
+                    design,
+                    flat_targets,
+                    validated_weight,
+                )
+            )
+            continue
+        estimators = tuple(factory() for _ in range(flat_targets.shape[1]))
+        prepared.append((adapter, len(estimators)))
+        tasks.extend(
+            (
+                "scalar",
+                adapter,
+                estimator,
+                design,
+                flat_targets[:, column_index],
+                validated_weight,
+            )
+            for column_index, estimator in enumerate(estimators)
+        )
+
+    def fit_task(task):
+        if task[0] == "batch":
+            _, batch_fitter, design, targets, sample_weight = task
+            return tuple(batch_fitter(design, targets, sample_weight))
+        _, adapter, estimator, design, target, sample_weight = task
+        adapter._fit_estimator(estimator, design, target, sample_weight)
+        return (estimator,)
+
+    worker_count = min(max_workers, len(tasks))
+    if worker_count == 1:
+        fitted = tuple(fit_task(task) for task in tasks)
+    else:
+        with ThreadPoolExecutor(max_workers=worker_count) as executor:
+            fitted = tuple(executor.map(fit_task, tasks))
+
+    cursor = 0
+    adapters = []
+    for adapter, task_count in prepared:
+        task_results = fitted[cursor : cursor + task_count]
+        adapter.estimators = tuple(
+            estimator
+            for result in task_results
+            for estimator in result
+        )
+        adapter.estimator_factory = None
+        adapter._is_fit = True
+        adapters.append(adapter)
+        cursor += task_count
+    return tuple(adapters)
 
 
 class RegressorChainMultiTargetAdapter(_BaseMultiTargetAdapter):

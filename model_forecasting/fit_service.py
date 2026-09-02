@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Mapping
 
 import numpy as np
 import pandas as pd
@@ -34,6 +34,8 @@ def _fit_runtime_transforms(
     origins: tuple[pd.Timestamp, ...],
     sample_series_ids: tuple[Any, ...],
     history_cutoff: pd.Timestamp,
+    *,
+    target_history: PointForecastTensor | None = None,
 ) -> tuple[
     CanonicalFeatureScaler,
     CanonicalTargetTransform,
@@ -60,7 +62,11 @@ def _fit_runtime_transforms(
     )
     transformed_X = feature_scaler.fit_transform_calls(X_by_call)
     target_transform = CanonicalTargetTransform.from_config(config)
-    target_transform.fit_transform(builder.target_history(history_cutoff))
+    target_transform.fit_transform(
+        target_history
+        if target_history is not None
+        else builder.target_history(history_cutoff)
+    )
     transformed_Y = target_transform.transform_training(
         Y,
         origins,
@@ -99,6 +105,129 @@ def _restore_prediction(
     raise TypeError(f"unsupported canonical prediction type: {type(prediction).__name__}")
 
 
+_THREAD_PARAM_BY_MODEL = {
+    "lgb": "n_jobs",
+    "lightgbm": "n_jobs",
+    "xgb": "n_jobs",
+    "xgboost": "n_jobs",
+    "rf": "n_jobs",
+    "randomforest": "n_jobs",
+    "cat": "thread_count",
+    "catboost": "thread_count",
+}
+
+
+_DEFAULT_OUTPUT_WORKERS_BY_MODEL = {
+    "lgb": 4,
+    "lightgbm": 4,
+    "xgb": 4,
+    "xgboost": 4,
+    "cat": 2,
+    "catboost": 2,
+    "rf": 2,
+    "randomforest": 2,
+    "ridge": 4,
+    "enet": 4,
+    "elasticnet": 4,
+    "lasso": 4,
+    "qr": 2,
+    "quantileregressor": 2,
+}
+
+
+def _runtime_scalar_fit_count(config: ForecastConfigSpec) -> int:
+    if config.strategy is None:
+        return 1
+    resolved = config.strategy.resolve(config.problem.horizon)
+    count = resolved.model_count
+    if config.estimator.target_adapter is TargetAdapter.INDEPENDENT:
+        count *= resolved.steps_per_call * len(config.problem.targets)
+    return count
+
+
+def _runtime_estimator_params(config: ForecastConfigSpec) -> dict[str, Any]:
+    """Resolve non-semantic estimator threading controls for one fit."""
+    params = dict(config.estimator.params)
+    performance = config.validation.get("performance", {})
+    if not isinstance(performance, Mapping):
+        raise TypeError("validation.performance must be a mapping")
+    configured = performance.get("model_thread_count")
+    normalized_model = config.estimator.model_type.strip().lower()
+    thread_param = _THREAD_PARAM_BY_MODEL.get(normalized_model)
+
+    if configured is None:
+        if (
+            _runtime_scalar_fit_count(config) > 1
+            and thread_param is not None
+            and thread_param not in params
+        ):
+            # 多输出/多 horizon 策略由外层保序任务池并行；每个子模型
+            # 固定单线程，避免 estimator 内外层线程乘法放大。
+            params[thread_param] = 1
+        return params
+
+    if isinstance(configured, bool) or not isinstance(configured, int) or configured <= 0:
+        raise ValueError("validation.performance.model_thread_count must be positive")
+    if thread_param is None:
+        raise ValueError(
+            "validation.performance.model_thread_count is unsupported for "
+            f"model_type {normalized_model!r}"
+        )
+    existing = params.get(thread_param)
+    if existing is not None and existing != configured:
+        raise ValueError(
+            f"estimator.params.{thread_param} conflicts with "
+            "validation.performance.model_thread_count"
+        )
+    params[thread_param] = configured
+    return params
+
+
+def _runtime_model_workers(config: ForecastConfigSpec) -> int:
+    """Resolve workers for independent strategy estimator fit tasks."""
+    if config.strategy is None:
+        return 1
+    task_count = _runtime_scalar_fit_count(config)
+    performance = config.validation.get("performance", {})
+    if not isinstance(performance, Mapping):
+        raise TypeError("validation.performance must be a mapping")
+    configured = performance.get("multi_output_n_jobs")
+    if configured is None:
+        normalized_model = config.estimator.model_type.strip().lower()
+        default_workers = _DEFAULT_OUTPUT_WORKERS_BY_MODEL.get(normalized_model, 1)
+        return min(default_workers, task_count)
+    if isinstance(configured, bool) or not isinstance(configured, int) or configured <= 0:
+        raise ValueError("validation.performance.multi_output_n_jobs must be positive")
+    return min(configured, task_count)
+
+
+def _runtime_fit_worker_plan(config: ForecastConfigSpec) -> tuple[int, int]:
+    """Resolve mutually exclusive quantile-level and estimator-output workers."""
+    output_workers = _runtime_model_workers(config)
+    if str(config.probabilistic.get("mode", "point")) != "quantile":
+        return 1, output_workers
+    if supports_native_multi_quantile(config.estimator.model_type):
+        return 1, 1
+
+    levels = tuple(config.probabilistic.get("quantiles", ()))
+    if not levels:
+        raise ValueError("quantile worker planning requires a nonempty quantile grid")
+    performance = config.validation.get("performance", {})
+    if not isinstance(performance, Mapping):
+        raise TypeError("validation.performance must be a mapping")
+    configured = performance.get("quantile_parallel_workers")
+    if configured is not None:
+        if isinstance(configured, bool) or not isinstance(configured, int) or configured <= 0:
+            raise ValueError(
+                "validation.performance.quantile_parallel_workers must be positive"
+            )
+        level_workers = min(configured, len(levels))
+        return level_workers, 1 if level_workers > 1 else output_workers
+    if output_workers > 1:
+        return 1, output_workers
+    return min(4, len(levels)), 1
+
+
 def _fit_point(
     config: ForecastConfigSpec,
     feature_schema: tuple[str, ...],
@@ -106,10 +235,12 @@ def _fit_point(
     Y: np.ndarray,
     *,
     n_series: int,
+    max_workers: int | None = None,
 ):
+    runtime_params = _runtime_estimator_params(config)
     capabilities = resolve_model_capabilities(
         config.estimator.model_type,
-        config.estimator.params,
+        runtime_params,
         feature_names=feature_schema,
         probe_native=config.estimator.target_adapter is TargetAdapter.NATIVE,
     )
@@ -117,13 +248,22 @@ def _fit_point(
         config,
         estimator_factory=make_model_factory(
             config.estimator.model_type,
-            config.estimator.params,
+            runtime_params,
             feature_names=feature_schema,
         ),
         capabilities=capabilities,
         feature_schema=feature_schema,
     )
-    return trainer, trainer.train(X_by_call, Y, n_series=n_series)
+    return trainer, trainer.train(
+        X_by_call,
+        Y,
+        n_series=n_series,
+        max_workers=(
+            _runtime_model_workers(config)
+            if max_workers is None
+            else max_workers
+        ),
+    )
 
 
 def _fit_quantile(
@@ -133,10 +273,12 @@ def _fit_quantile(
     Y: np.ndarray,
     *,
     n_series: int,
+    worker_plan: tuple[int, int] | None = None,
 ):
+    runtime_params = _runtime_estimator_params(config)
     capabilities = resolve_model_capabilities(
         config.estimator.model_type,
-        config.estimator.params,
+        runtime_params,
         feature_names=feature_schema,
         probe_native=config.estimator.target_adapter is TargetAdapter.NATIVE,
     )
@@ -153,7 +295,7 @@ def _fit_quantile(
         )
         pool = SharedMultiQuantilePool(
             config.estimator.model_type,
-            config.estimator.params,
+            runtime_params,
             levels,
             feature_schema,
         )
@@ -174,14 +316,29 @@ def _fit_quantile(
         config,
         estimator_factory_for_level=lambda level: make_model_factory(
             config.estimator.model_type,
-            config.estimator.params,
+            runtime_params,
             feature_names=feature_schema,
             quantile=level,
         ),
         capabilities=capabilities,
         feature_schema=feature_schema,
     )
-    return trainer, trainer.train(X_by_call, Y, n_series=n_series), capabilities
+    level_workers, output_workers = (
+        _runtime_fit_worker_plan(config)
+        if worker_plan is None
+        else worker_plan
+    )
+    return (
+        trainer,
+        trainer.train(
+            X_by_call,
+            Y,
+            n_series=n_series,
+            max_workers=level_workers,
+            output_workers=output_workers,
+        ),
+        capabilities,
+    )
 
 
 def _predict(

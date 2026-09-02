@@ -121,7 +121,9 @@ class MaterializedInformationSet:
         )
         object.__setattr__(self, "_lineage", tuple(lineage))
         object.__setattr__(self, "_sealed", True)
-        # 性能缓存（2026-08-30 方案 A）：(source_name) -> {ts_ns: row_position}。
+        # 性能缓存（2026-08-30 方案 A）：(cache_key) -> {ts_ns: row_position}。
+        # 同一物理 source 可按角色投影为不同时间范围/列集，调用方须用
+        # 角色限定 cache_key 隔离这些 frame。
         # 本对象不可变、帧内容终身不变，缓存可安全共享给同一 origin 的全部查询；
         # 相比在 Compiler 侧按 id(frame) 缓存，这里不受防御性 copy 影响。
         object.__setattr__(self, "_row_position_caches", {})
@@ -135,31 +137,36 @@ class MaterializedInformationSet:
     def _copy_frames(frames: Mapping[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:
         return {name: frame.copy(deep=True) for name, frame in frames.items()}
 
-    def row_position_lookup(self, source_name: str) -> callable:
-        """返回 ``(frames, lookup)``：该 source 的帧字典与时间→行位置映射。
+    def row_position_lookup(
+        self,
+        cache_key: str,
+    ) -> tuple[Mapping[str, pd.DataFrame], Mapping[int, int]]:
+        """返回 ``(frames, lookup)``：指定缓存域的帧字典与时间→行位置映射。
 
         性能契约（2026-08-30 方案 A）：同一 information_set 内帧内容不变，
         时间→位置映射只解析一次并共享给全部查询方（compiler 的逐 lag 取值）。
         ``frames`` 仍是防御性 copy（调用方对其做行提取），lookup 的 position
         直接索引 copy 后的帧是安全的——copy 保持行序与行数不变。
         """
-        cached = self._row_position_caches.get(source_name)
+        cached = self._row_position_caches.get(cache_key)
         if cached is not None:
             return cached
         raise KeyError(
-            f"no row-position cache registered for source {source_name!r}"
+            f"no row-position cache registered for key {cache_key!r}"
         )
 
     def register_row_position_lookup(
         self,
-        source_name: str,
+        cache_key: str,
         frames: Mapping[str, pd.DataFrame],
         time_col: str,
+        *,
+        frame_name: str | None = None,
     ) -> None:
-        """为指定 source 构建并登记时间→行位置映射（每 information_set 一次）。"""
-        if source_name in self._row_position_caches:
+        """为指定缓存域构建并登记时间→行位置映射。"""
+        if cache_key in self._row_position_caches:
             return
-        frame = frames[source_name]
+        frame = frames[frame_name or cache_key]
         parsed = pd.DatetimeIndex(pd.to_datetime(frame[time_col].to_numpy()))
         lookup: dict[int, int] = {}
         for position, value in enumerate(parsed.asi8):
@@ -170,7 +177,7 @@ class MaterializedInformationSet:
                 lookup[value] = position
         object.__setattr__(
             self, "_row_position_caches",
-            {**self._row_position_caches, source_name: (frames, lookup)},
+            {**self._row_position_caches, cache_key: (frames, lookup)},
         )
 
     @property

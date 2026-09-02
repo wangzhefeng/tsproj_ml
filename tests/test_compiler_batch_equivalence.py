@@ -21,7 +21,10 @@ from data_loading.information_set import InformationSetRequest  # noqa: E402
 from data_loading.registry import SourceRegistry  # noqa: E402
 from feature_engineering.compiler import FeatureCompiler  # noqa: E402
 
-CONFIG_PATH = "config/aidc_load_15min_daily/route_A/add_exogenous/lgbm_direct.yaml"
+CONFIG_PATH = (
+    "config/aidc_load_15min_daily/route_A/add_exogenous/"
+    "lgbm_direct_holiday-weather.yaml"
+)
 
 
 def _build_request(origin: pd.Timestamp) -> InformationSetRequest:

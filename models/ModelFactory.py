@@ -837,7 +837,11 @@ class SeasonalTemplateModel(BaseModel):
         self.lag_medians_ = Z_df.median().to_numpy(dtype=float)
         # 全局权重
         self.weights_ = self._fit_weights(Z_c, y_c)
-        logger.info(f"{self.log_prefix} template weights (global): {np.round(self.weights_, 4)}")
+        if self.log_params:
+            logger.info(
+                f"{self.log_prefix} template weights (global): "
+                f"{np.round(self.weights_, 4)}"
+            )
         # 工作日/周末分组权重（两组样本都足够才启用，否则回退全局）
         self.group_weights_ = None
         if self.params.get("day_type_split") and self.DOW_COL in X.columns:
@@ -849,11 +853,12 @@ class SeasonalTemplateModel(BaseModel):
                     group_weights[group_name] = self._fit_weights(Z_c[group_mask], y_c[group_mask])
             if len(group_weights) == 2:
                 self.group_weights_ = group_weights
-                logger.info(
-                    f"{self.log_prefix} day-type split enabled: "
-                    f"weekday={np.round(group_weights['weekday'], 4)}, "
-                    f"weekend={np.round(group_weights['weekend'], 4)}"
-                )
+                if self.log_params:
+                    logger.info(
+                        f"{self.log_prefix} day-type split enabled: "
+                        f"weekday={np.round(group_weights['weekday'], 4)}, "
+                        f"weekend={np.round(group_weights['weekend'], 4)}"
+                    )
         self.is_fitted = True
 
         return self

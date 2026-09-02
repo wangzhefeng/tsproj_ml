@@ -359,15 +359,39 @@ class FeatureCompiler:
         previous_scope = self._compile_scope_frames
         previous_aux = self._compile_scope_aux
         try:
-            items = [
-                self._prepare_batch_item(information_set, request, steps, cutoff)
-                for information_set, request, steps, cutoff in zip(
-                    information_sets,
-                    requests,
-                    selected_steps,
-                    batch_cutoffs,
+            items = []
+            frame_cache: dict[
+                int,
+                tuple[dict[str, dict[str, Any]], dict[str, pd.DataFrame]],
+            ] = {}
+            for information_set, request, steps, cutoff in zip(
+                information_sets,
+                requests,
+                selected_steps,
+                batch_cutoffs,
+            ):
+                cache_key = id(information_set)
+                cached_frames = frame_cache.get(cache_key)
+                if cached_frames is None:
+                    cached_frames = (
+                        {
+                            ColumnRole.TARGET.value: information_set.target_history,
+                            ColumnRole.OBSERVED_PAST.value: information_set.observed_past,
+                            ColumnRole.KNOWN_FUTURE.value: information_set.known_future,
+                        },
+                        information_set.static,
+                    )
+                    frame_cache[cache_key] = cached_frames
+                items.append(
+                    self._prepare_batch_item(
+                        information_set,
+                        request,
+                        steps,
+                        cutoff,
+                        role_frames=cached_frames[0],
+                        static_frames=cached_frames[1],
+                    )
                 )
-            ]
             self._compile_batch_lag_mapping(
                 items,
                 ColumnRole.TARGET,
@@ -400,7 +424,7 @@ class FeatureCompiler:
         advanced = self.features.transformations.get("advanced", {})
         if isinstance(advanced, Mapping) and any(
             advanced.get(kind) is not None
-            for kind in ("expanding", "percent_change", "time_since", "ewm")
+            for kind in ("percent_change", "time_since", "ewm")
         ):
             return True
         for role, lag_mapping in (
@@ -458,6 +482,9 @@ class FeatureCompiler:
         request: InformationSetRequest,
         selected_steps: tuple[int, ...],
         visibility_cutoff: pd.Timestamp | None,
+        *,
+        role_frames: dict[str, dict[str, Any]],
+        static_frames: dict[str, pd.DataFrame],
     ) -> dict[str, Any]:
         identities = self._request_identities(request)
         steps = np.asarray(selected_steps, dtype=np.int64)
@@ -492,12 +519,8 @@ class FeatureCompiler:
             "row_identities": row_identities,
             "target_times": target_times,
             "history_anchors": history_anchors,
-            "frames": {
-                ColumnRole.TARGET.value: information_set.target_history,
-                ColumnRole.OBSERVED_PAST.value: information_set.observed_past,
-                ColumnRole.KNOWN_FUTURE.value: information_set.known_future,
-            },
-            "static_frames": information_set.static,
+            "frames": role_frames,
+            "static_frames": static_frames,
             "columns": frame_data,
             "proof_columns": {},
             "visibility_cutoff": visibility_cutoff,
@@ -714,14 +737,11 @@ class FeatureCompiler:
                     available_at_col = (
                         source.available_at_col
                         if source.availability is AvailabilityPolicy.COLUMN
-                        else (
-                            "available_at"
-                            if source.availability
-                            is AvailabilityPolicy.GENERATOR_DEFINED
-                            else None
-                        )
+                        else None
                     )
                     if available_at_col is None:
+                        # generated known-future 天然在各自 forecast origin 可得；
+                        # batch 可共享 union materialization，但 proof 仍按请求原点。
                         available_at[row_slice] = request.forecast_origin
                     else:
                         available_at[row_slice] = selected[
@@ -951,6 +971,55 @@ class FeatureCompiler:
                                 )
                                 values[row_slice] = value
                             item["columns"][feature_name] = values
+
+        expanding_spec = advanced.get("expanding")
+        if expanding_spec is not None:
+            if not isinstance(expanding_spec, Mapping):
+                raise TypeError("transformations.advanced.expanding must be a mapping")
+            columns = self._string_sequence(
+                expanding_spec.get("columns", ()), "advanced.expanding.columns"
+            )
+            stats = self._string_sequence(
+                expanding_spec.get("stats", ()), "expanding.stats"
+            )
+            for column in columns:
+                histories = self._batch_master_histories(items, column)
+                for item in items:
+                    values_by_stat = {
+                        stat: np.empty(len(item["target_times"]), dtype=float)
+                        for stat in stats
+                    }
+                    step_count = len(item["selected_steps"])
+                    for identity_index, identity in enumerate(item["identities"]):
+                        history = histories[identity]
+                        position = int(
+                            np.searchsorted(
+                                pd.DatetimeIndex(history.index).asi8,
+                                pd.Timestamp(item["request"].forecast_origin).value,
+                                side="right",
+                            )
+                            - 1
+                        )
+                        if position < 0:
+                            raise ValueError(
+                                f"history column {column!r} has no visible values"
+                            )
+                        visible = history.iloc[: position + 1]
+                        row_slice = slice(
+                            identity_index * step_count,
+                            (identity_index + 1) * step_count,
+                        )
+                        for stat in stats:
+                            # 保留逐行 compile() 的 pandas 统计合同，但只在
+                            # origin 粒度计算一次，再广播到该 origin 的 calls。
+                            values_by_stat[stat][row_slice] = self._statistic(
+                                visible,
+                                stat,
+                            )
+                    for stat, values in values_by_stat.items():
+                        item["columns"][
+                            f"{column}_expanding_{stat}"
+                        ] = values
 
         difference_spec = advanced.get("difference")
         if difference_spec is not None:

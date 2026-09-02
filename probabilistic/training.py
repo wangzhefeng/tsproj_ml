@@ -85,6 +85,7 @@ class CanonicalMarginalQuantileTrainer:
         sample_weight: np.ndarray | None = None,
         n_series: int = 1,
         max_workers: int | None = None,
+        output_workers: int = 1,
     ) -> CanonicalMarginalQuantileArtifact:
         """逐 level 训练完整 canonical 策略 artifact。
 
@@ -99,10 +100,22 @@ class CanonicalMarginalQuantileTrainer:
         )
         if workers < 1:
             raise ValueError("max_workers must be >= 1")
+        if (
+            isinstance(output_workers, bool)
+            or not isinstance(output_workers, int)
+            or output_workers < 1
+        ):
+            raise ValueError("output_workers must be a positive integer")
+        effective_output_workers = 1 if workers > 1 else output_workers
         if workers == 1 or len(levels) <= 1:
             artifacts = {
                 level: self._train_level(
-                    level, X_by_call, Y, sample_weight, n_series
+                    level,
+                    X_by_call,
+                    Y,
+                    sample_weight,
+                    n_series,
+                    effective_output_workers,
                 )
                 for level in levels
             }
@@ -118,6 +131,7 @@ class CanonicalMarginalQuantileTrainer:
                         Y,
                         sample_weight,
                         n_series,
+                        effective_output_workers,
                     ): level
                     for level in levels
                 }
@@ -140,6 +154,7 @@ class CanonicalMarginalQuantileTrainer:
         Y: np.ndarray,
         sample_weight: np.ndarray | None,
         n_series: int,
+        output_workers: int,
     ):
         estimator_factory = self.estimator_factory_for_level(level)
         if not callable(estimator_factory):
@@ -156,4 +171,5 @@ class CanonicalMarginalQuantileTrainer:
             Y,
             sample_weight=sample_weight,
             n_series=n_series,
+            max_workers=output_workers,
         )

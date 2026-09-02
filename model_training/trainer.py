@@ -2,6 +2,7 @@
 """Canonical trainer（2026-08-29 架构收敛自 models/ModelTraining.py 迁入，类实现逐字保真）。"""
 
 # python libraries
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Sequence
 
@@ -12,6 +13,7 @@ from model_training.estimators import (
     IndependentMultiTargetAdapter,
     NativeMultiTargetAdapter,
     RegressorChainMultiTargetAdapter,
+    fit_independent_adapters,
 )
 from forecasting_core.specs import ForecastConfigSpec, TargetAdapter
 from forecasting_core.tensors import unflatten_time_major
@@ -86,6 +88,7 @@ class CanonicalTrainer:
         *,
         sample_weight: np.ndarray | None = None,
         n_series: int = 1,
+        max_workers: int = 1,
     ) -> CanonicalStrategyArtifact:
         if isinstance(X_by_call, np.ndarray) or not isinstance(X_by_call, Sequence):
             raise TypeError(
@@ -127,14 +130,20 @@ class CanonicalTrainer:
         ):
             raise ValueError("n_series must be a positive integer")
 
+        if (
+            isinstance(max_workers, bool)
+            or not isinstance(max_workers, int)
+            or max_workers <= 0
+        ):
+            raise ValueError("max_workers must be a positive integer")
+
         validated_weight = None
         if sample_weight is not None:
             validated_weight = np.asarray(sample_weight, dtype=float)
             if validated_weight.shape != (n_rows,):
                 raise ValueError("sample_weight must match the training row axis")
 
-        model_groups = []
-        for model_index in range(self.target_plan.model_count):
+        def prepare_model_group(model_index: int):
             call_indices = tuple(
                 index
                 for index, candidate in enumerate(self.target_plan.model_indices)
@@ -173,26 +182,77 @@ class CanonicalTrainer:
                 for step in range(1, steps_per_call + 1)
                 for target in self.config.problem.targets
             )
-            adapter_type = self._ADAPTERS[
-                self.config.estimator.target_adapter
-            ]
-            adapter = adapter_type(
-                self.estimator_factory,
-                self.capabilities,
-                local_coordinates,
-                probabilistic_mode=self.probabilistic_mode,
-            ).fit(
+            return (
+                coordinate_groups,
                 group_design,
                 group_targets,
-                sample_weight=group_weight,
+                group_weight,
+                local_coordinates,
             )
-            model_groups.append(
+
+        model_indices = tuple(range(self.target_plan.model_count))
+        prepared_groups = tuple(
+            prepare_model_group(model_index) for model_index in model_indices
+        )
+        adapter_type = self._ADAPTERS[self.config.estimator.target_adapter]
+        if adapter_type is IndependentMultiTargetAdapter:
+            adapters = tuple(
+                IndependentMultiTargetAdapter(
+                    self.estimator_factory,
+                    self.capabilities,
+                    prepared[4],
+                    probabilistic_mode=self.probabilistic_mode,
+                )
+                for prepared in prepared_groups
+            )
+            fitted_adapters = fit_independent_adapters(
+                tuple(
+                    (adapter, prepared[1], prepared[2], prepared[3])
+                    for adapter, prepared in zip(adapters, prepared_groups)
+                ),
+                max_workers=max_workers,
+            )
+            model_groups = tuple(
                 StrategyModelGroupArtifact(
                     model_index=model_index,
-                    coordinate_groups=coordinate_groups,
+                    coordinate_groups=prepared[0],
                     predictor=AdapterPredictor(adapter),
                 )
+                for model_index, prepared, adapter in zip(
+                    model_indices,
+                    prepared_groups,
+                    fitted_adapters,
+                )
             )
+        else:
+            def fit_model_group(model_index: int) -> StrategyModelGroupArtifact:
+                prepared = prepared_groups[model_index]
+                adapter = adapter_type(
+                    self.estimator_factory,
+                    self.capabilities,
+                    prepared[4],
+                    probabilistic_mode=self.probabilistic_mode,
+                ).fit(
+                    prepared[1],
+                    prepared[2],
+                    sample_weight=prepared[3],
+                )
+                return StrategyModelGroupArtifact(
+                    model_index=model_index,
+                    coordinate_groups=prepared[0],
+                    predictor=AdapterPredictor(adapter),
+                )
+
+            worker_count = min(max_workers, len(model_indices))
+            if worker_count == 1:
+                model_groups = tuple(
+                    fit_model_group(index) for index in model_indices
+                )
+            else:
+                with ThreadPoolExecutor(max_workers=worker_count) as executor:
+                    model_groups = tuple(
+                        executor.map(fit_model_group, model_indices)
+                    )
 
         return CanonicalStrategyArtifact(
             target_plan=self.target_plan,

@@ -206,6 +206,29 @@ class CanonicalFeatureScalerTest(unittest.TestCase):
         np.testing.assert_allclose(holdout, restored_scaler.transform(training.iloc[[2]]))
         self.assertEqual(scaler.feature_groups["categorical"], ("site",))
 
+    def test_no_scaling_numeric_calls_use_ndarray_fast_path(self):
+        config = _config(
+            feature_scaling={
+                "method": "none",
+                "grouped": False,
+                "encode_categorical": False,
+            }
+        )
+        scaler = CanonicalFeatureScaler.from_config(
+            config,
+            feature_names=("load__lag_1", "dt_hour"),
+        )
+        first = np.arange(12.0).reshape(6, 2)
+        second = first + 100.0
+
+        transformed = scaler.fit_transform_calls((first, second))
+        holdout = scaler.transform(first)
+
+        self.assertIs(transformed[0], first)
+        self.assertIs(transformed[1], second)
+        self.assertIs(holdout, first)
+        self.assertTrue(scaler.is_fitted)
+
     def test_feature_compiler_validates_but_does_not_consume_runtime_transforms(self):
         config = _config(
             target_transform={

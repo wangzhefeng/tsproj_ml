@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 from pathlib import Path
 from typing import Any, Mapping
@@ -88,6 +89,10 @@ def overwrite_calendar_month_backtest(
                 freq_offset=to_offset(str(config.problem.freq)),
             )
     calibration_audits: list[dict[str, Any]] = []
+    runners_by_horizon: dict[int, Any] = {}
+    fold_contexts = []
+    raw_history_times = final_runner.builder.target_history_times(final_runner.origin)
+    dynamic_history_steps = len(final_runner.supervised_origins)
     for fold in folds:
         dynamic_problem = replace(config.problem, horizon=fold.horizon)
         dynamic_validation = {
@@ -95,7 +100,6 @@ def overwrite_calendar_month_backtest(
             for key, value in dict(config.validation).items()
             if key not in {"train_window_days", "stride_months"}
         }
-        dynamic_history_steps = len(final_runner.supervised_origins)
         dynamic_validation.update(
             {
                 "horizon_mode": "fixed_steps",
@@ -114,11 +118,14 @@ def overwrite_calendar_month_backtest(
             problem=dynamic_problem,
             validation=dynamic_validation,
         )
-        runner = runner_factory(
-            dynamic_config,
-            registry,
-            final_runner.origin,
-        )
+        runner = runners_by_horizon.get(fold.horizon)
+        if runner is None:
+            runner = runner_factory(
+                dynamic_config,
+                registry,
+                final_runner.origin,
+            )
+            runners_by_horizon[fold.horizon] = runner
         try:
             origin_index = runner.supervised_origins.index(fold.origin)
         except ValueError as exc:
@@ -126,9 +133,6 @@ def overwrite_calendar_month_backtest(
                 f"calendar-month origin {fold.origin} is not a supervised origin"
             ) from exc
         holdout_label_start = runner.geometry.label_start(fold.origin)
-        raw_history_times = final_runner.builder.target_history_times(
-            final_runner.origin
-        )
         train_start_time = pd.Timestamp(raw_history_times[fold.train_indices[0]])
         train_indices = tuple(
             index
@@ -141,8 +145,51 @@ def overwrite_calendar_month_backtest(
             raise ValueError(
                 f"calendar-month fold {fold.window} has no safe supervised samples"
             )
+        training_label_end_max = max(
+            runner.geometry.label_end(runner.supervised_origins[index])
+            for index in train_indices
+        )
+        fold_contexts.append(
+            (
+                fold,
+                runner,
+                origin_index,
+                train_indices,
+                training_label_end_max,
+                runner.builder.target_history(training_label_end_max),
+            )
+        )
 
-        scaler, transform, _X, _Y, artifact = runner.fit(train_indices)
+    performance = config.validation.get("performance", {})
+    if not isinstance(performance, Mapping):
+        raise TypeError("validation.performance must be a mapping")
+    configured_workers = performance.get("window_parallel_workers", 1)
+    if (
+        isinstance(configured_workers, bool)
+        or not isinstance(configured_workers, int)
+        or configured_workers <= 0
+    ):
+        raise ValueError(
+            "validation.performance.window_parallel_workers must be positive"
+        )
+    window_workers = min(configured_workers, len(fold_contexts))
+
+    def fit_context(context):
+        return context[1].fit(
+            context[3],
+            target_history=context[5],
+            force_serial=window_workers > 1,
+        )
+
+    if window_workers > 1:
+        with ThreadPoolExecutor(max_workers=window_workers) as executor:
+            fold_fits = tuple(executor.map(fit_context, fold_contexts))
+    else:
+        fold_fits = tuple(fit_context(context) for context in fold_contexts)
+
+    for context, fit_result in zip(fold_contexts, fold_fits):
+        fold, runner, origin_index, train_indices, training_label_end_max, _ = context
+        scaler, transform, _X, _Y, artifact = fit_result
         designs, provider = runner.forecast_designs(
             fold.origin,
             scaler,
@@ -199,10 +246,7 @@ def overwrite_calendar_month_backtest(
         fold_metadata.append(
             {
                 **fold.metadata,
-                "training_label_end_max": max(
-                    runner.geometry.label_end(runner.supervised_origins[index])
-                    for index in train_indices
-                ).isoformat(),
+                "training_label_end_max": training_label_end_max.isoformat(),
             }
         )
 

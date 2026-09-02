@@ -15,6 +15,7 @@ from model_training.estimators.multi_target import (
     IndependentMultiTargetAdapter,
     NativeMultiTargetAdapter,
     RegressorChainMultiTargetAdapter,
+    fit_independent_adapters,
 )
 
 __all__ = [
@@ -26,6 +27,7 @@ __all__ = [
     "ProbeResult",
     "RegressorChainMultiTargetAdapter",
     "SharedMultiQuantilePool",
+    "fit_independent_adapters",
     "make_model_factory",
     "probe_native_multioutput",
     "resolve_model_capabilities",

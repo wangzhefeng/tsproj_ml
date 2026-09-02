@@ -119,6 +119,26 @@ class CanonicalFeatureScaler:
             )
         return frame.loc[:, self.feature_names].copy()
 
+    def _numeric_passthrough(self, values: Any) -> np.ndarray | None:
+        if (
+            self.method != "none"
+            or self.encode_categorical
+            or self.categorical_names
+        ):
+            return None
+        array = (
+            values.to_numpy(dtype=float, copy=False)
+            if isinstance(values, pd.DataFrame)
+            else np.asarray(values, dtype=float)
+        )
+        if array.ndim != 2:
+            raise ValueError(f"feature matrix must be two-dimensional; got {array.shape}")
+        if array.shape[1] != len(self.feature_names):
+            raise ValueError("feature matrix width must match feature schema")
+        if not np.isfinite(array).all():
+            raise ValueError("canonical transformed features must be finite")
+        return array
+
     @staticmethod
     def _new_scaler(method: str):
         if method == "standard":
@@ -174,6 +194,12 @@ class CanonicalFeatureScaler:
         return {"all": numeric} if numeric else {}
 
     def fit_transform(self, values: Any) -> np.ndarray:
+        passthrough = self._numeric_passthrough(values)
+        if passthrough is not None:
+            self.scalers = {}
+            self.category_mappings = {}
+            self.is_fitted = True
+            return passthrough
         frame = self._encode_fit(self._frame(values))
         self.scalers = {}
         if self.method != "none":
@@ -190,6 +216,12 @@ class CanonicalFeatureScaler:
         self,
         calls: Sequence[Any],
     ) -> tuple[np.ndarray, ...]:
+        passthrough = tuple(self._numeric_passthrough(call) for call in calls)
+        if all(value is not None for value in passthrough):
+            self.scalers = {}
+            self.category_mappings = {}
+            self.is_fitted = True
+            return tuple(value for value in passthrough if value is not None)
         frames = tuple(self._frame(call) for call in calls)
         lengths = tuple(len(frame) for frame in frames)
         combined = pd.concat(frames, ignore_index=True)
@@ -204,6 +236,9 @@ class CanonicalFeatureScaler:
     def transform(self, values: Any) -> np.ndarray:
         if not self.is_fitted:
             raise RuntimeError("feature scaler must be fitted before transform")
+        passthrough = self._numeric_passthrough(values)
+        if passthrough is not None:
+            return passthrough
         frame = self._encode_transform(self._frame(values))
         if self.method != "none":
             for group_name, columns in self._numeric_groups().items():

@@ -9,6 +9,8 @@
 
 import io
 import pickle
+import threading
+import time
 import unittest
 
 import numpy as np
@@ -43,6 +45,29 @@ class MeanQuantileRegressor:
 
     def predict(self, X):
         return np.full(len(X), self.value, dtype=float)
+
+
+class ConcurrentMeanQuantileRegressor(MeanQuantileRegressor):
+    lock = threading.Lock()
+    active = 0
+    max_active = 0
+
+    @classmethod
+    def reset(cls):
+        with cls.lock:
+            cls.active = 0
+            cls.max_active = 0
+
+    def fit(self, X, y, sample_weight=None):
+        with type(self).lock:
+            type(self).active += 1
+            type(self).max_active = max(type(self).max_active, type(self).active)
+        try:
+            time.sleep(0.02)
+            return MeanQuantileRegressor.fit(self, X, y, sample_weight)
+        finally:
+            with type(self).lock:
+                type(self).active -= 1
 
 
 CAPABILITIES = EstimatorCapabilities(
@@ -155,6 +180,50 @@ class LevelParallelismTest(unittest.TestCase):
         np.testing.assert_allclose(
             seq_dist.quantiles.values, par_dist.quantiles.values
         )
+
+    def test_output_workers_parallelize_one_level_without_nested_pool(self):
+        ConcurrentMeanQuantileRegressor.reset()
+        trainer = CanonicalMarginalQuantileTrainer(
+            _config(),
+            estimator_factory_for_level=lambda level: (
+                lambda: ConcurrentMeanQuantileRegressor(level)
+            ),
+            capabilities=CAPABILITIES,
+            feature_schema=("x",),
+        )
+        X_by_call, Y = _toy_arrays()
+
+        trainer.train(
+            X_by_call,
+            Y,
+            n_series=1,
+            max_workers=1,
+            output_workers=2,
+        )
+
+        self.assertGreaterEqual(ConcurrentMeanQuantileRegressor.max_active, 2)
+
+    def test_level_parallelism_clamps_output_workers_to_one(self):
+        ConcurrentMeanQuantileRegressor.reset()
+        trainer = CanonicalMarginalQuantileTrainer(
+            _config(),
+            estimator_factory_for_level=lambda level: (
+                lambda: ConcurrentMeanQuantileRegressor(level)
+            ),
+            capabilities=CAPABILITIES,
+            feature_schema=("x",),
+        )
+        X_by_call, Y = _toy_arrays()
+
+        trainer.train(
+            X_by_call,
+            Y,
+            n_series=1,
+            max_workers=3,
+            output_workers=2,
+        )
+
+        self.assertLessEqual(ConcurrentMeanQuantileRegressor.max_active, 3)
 
     def test_invalid_max_workers_raises(self):
         trainer = CanonicalMarginalQuantileTrainer(

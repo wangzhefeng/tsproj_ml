@@ -210,6 +210,64 @@ class FeatureVisibilityCompilerTest(unittest.TestCase):
             )
         )
 
+    def test_one_source_can_project_target_and_observed_past_lags(self):
+        self.write_csv(
+            "mixed.csv",
+            [
+                {"ts": "2026-01-01 01:00", "load": 1.0, "humidity": 10.0},
+                {"ts": "2026-01-01 02:00", "load": 2.0, "humidity": 20.0},
+                {"ts": "2026-01-01 03:00", "load": 3.0, "humidity": 30.0},
+            ],
+        )
+        config = ForecastConfigSpec(
+            problem=ForecastProblemSpec(
+                time_col="ts",
+                freq="1h",
+                horizon=2,
+                targets=("load",),
+                information_mode="forecast",
+                training_scope="local",
+                series_id_cols=(),
+            ),
+            data=DataSpec(
+                (
+                    DataSourceSpec(
+                        name="mixed",
+                        source_type="file",
+                        columns=(
+                            ColumnSpec("load", "target"),
+                            ColumnSpec("humidity", "observed_past"),
+                        ),
+                        history_path="mixed.csv",
+                        time_col="ts",
+                        series_id_cols=(),
+                        availability="source_time",
+                        provider="persistence",
+                    ),
+                )
+            ),
+            features=FeatureSpec(
+                target_lags={"load": (2,)},
+                observed_past_lags={"humidity": (2,)},
+                datetime_features=(),
+                transformations={},
+            ),
+            strategy=ForecastStrategySpec("direct"),
+            estimator=EstimatorSpec(model_type="ridge", target_adapter="independent"),
+            probabilistic={},
+            validation={},
+            output={},
+        )
+        request = self.request()
+
+        compiled = FeatureCompiler(config).compile(
+            self.materialize(config, request),
+            request,
+        )
+
+        self.assertEqual(compiled.frame["load__lag_2"].tolist(), [2.0, 3.0])
+        self.assertEqual(compiled.frame["humidity__lag_2"].tolist(), [20.0, 30.0])
+
     def test_compile_resets_derived_cache_between_information_sets(self):
         self.write_fixture()
         config = self.build_config()

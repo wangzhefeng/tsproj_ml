@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import json
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict, dataclass, replace
 from pathlib import Path
-from typing import Any, Mapping, Sequence
+from time import perf_counter
+from typing import Any, Mapping, Sequence, cast
 
 import numpy as np
 import pandas as pd
@@ -22,6 +24,7 @@ from model_training.estimators import (
     resolve_model_capabilities,
 )
 from feature_engineering import CompiledFeatures, FeatureCompiler
+from feature_engineering import cache as compiled_cache
 from model_evaluation.marginal import evaluate_marginal_distribution
 from model_evaluation.point import (
     evaluate_point_forecasts,
@@ -75,6 +78,7 @@ from probabilistic.training import CanonicalMarginalQuantileTrainer
 from forecasting_core.artifacts import ForecastModelBundle, MarginalForecastDistribution
 from model_forecasting.backtest_runtime import overwrite_calendar_month_backtest
 from model_forecasting.design import (
+    _BacktestWindow,
     _RegistryDesignBuilder,
     _actual_at_origin,
     _holdout_training_indices,
@@ -108,42 +112,6 @@ class CanonicalRuntimeResult:
     forecast_dir: Path
     fingerprint: str
     bundle: ForecastModelBundle
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 def _write_json(path: Path, payload: Mapping[str, Any]) -> None:
@@ -228,10 +196,11 @@ def _compiled_lineage(
             availability_summary.setdefault("static", []).append(feature)
             continue
         proof = by_feature[feature]
-        availability = (
+        availability = cast(
+            str,
             "known_future"
             if proof["source_name"] == "calendar"
-            else source_availability.get(proof["source_name"], proof["role"])
+            else source_availability.get(proof["source_name"], proof["role"]),
         )
         feature_lineage.append(
             {
@@ -346,6 +315,36 @@ def _output_paths(
     )
 
 
+def _runtime_window_workers(config: ForecastConfigSpec) -> int:
+    performance = config.validation.get("performance", {})
+    if not isinstance(performance, Mapping):
+        raise TypeError("validation.performance must be a mapping")
+    configured = performance.get("window_parallel_workers", 1)
+    if (
+        isinstance(configured, bool)
+        or not isinstance(configured, int)
+        or configured <= 0
+    ):
+        raise ValueError(
+            "validation.performance.window_parallel_workers must be positive"
+        )
+    return configured
+
+
+def _sample_selector(
+    origin_indices: tuple[int, ...],
+    *,
+    n_series: int,
+) -> slice | tuple[int, ...]:
+    """Use a zero-copy slice when origin-major sample rows are contiguous."""
+    indices = _sample_indices(origin_indices, n_series)
+    if not indices:
+        return ()
+    if indices == tuple(range(indices[0], indices[-1] + 1)):
+        return slice(indices[0], indices[-1] + 1)
+    return indices
+
+
 class CanonicalBaseModelRunner:
     """Public narrow facade over the validated single-model runtime path.
 
@@ -359,6 +358,8 @@ class CanonicalBaseModelRunner:
         config: ForecastConfigSpec,
         registry: SourceRegistry,
         origin: pd.Timestamp,
+        *,
+        compiled_cache_root: str | Path | None = None,
     ) -> None:
         if not isinstance(config, ForecastConfigSpec):
             raise TypeError("config must be a ForecastConfigSpec")
@@ -368,13 +369,106 @@ class CanonicalBaseModelRunner:
         self.registry = registry
         self.origin = origin
         self.builder = _RegistryDesignBuilder(config, registry)
+        self.compiled_cache_hit = False
+        self.compiled_cache_fingerprint: str | None = None
+        self.X_all: tuple[np.ndarray, ...]
+        self.Y_all: np.ndarray
+        self.supervised_origins: tuple[pd.Timestamp, ...]
+        self.supervised_sample_origins: tuple[pd.Timestamp, ...]
+        self.supervised_sample_series_ids: tuple[Any, ...]
+        if compiled_cache_root is None:
+            self._compile_supervised_arrays()
+            return
+
+        cache_root = Path(compiled_cache_root)
+        fingerprint = compiled_cache.compute_compiled_fingerprint(
+            config,
+            base_dir=registry._base_dir,
+            origin=origin,
+            generators=registry._generators,
+        )
+        self.compiled_cache_fingerprint = fingerprint
+        started = perf_counter()
+        try:
+            payload = compiled_cache.load_compiled_cache(cache_root, fingerprint)
+        except FileNotFoundError:
+            self._compile_supervised_arrays()
+            compiled_cache.save_compiled_cache(
+                cache_root,
+                fingerprint,
+                self._compiled_cache_payload(),
+            )
+            logger.info(
+                "[CompiledFeaturesCache] miss key=%s compile_seconds=%.3f",
+                fingerprint[:12],
+                perf_counter() - started,
+            )
+        else:
+            self._restore_compiled_cache(payload)
+            self.compiled_cache_hit = True
+            logger.info(
+                "[CompiledFeaturesCache] hit key=%s load_seconds=%.3f",
+                fingerprint[:12],
+                perf_counter() - started,
+            )
+
+    def _compile_supervised_arrays(self) -> None:
         (
             self.X_all,
             self.Y_all,
             self.supervised_origins,
             self.supervised_sample_origins,
             self.supervised_sample_series_ids,
-        ) = _supervised_arrays(self.builder, origin)
+        ) = _supervised_arrays(self.builder, self.origin)
+
+    def _compiled_cache_payload(self) -> dict[str, Any]:
+        return {
+            "X_all": self.X_all,
+            "Y_all": self.Y_all,
+            "supervised_origins": self.supervised_origins,
+            "supervised_sample_origins": self.supervised_sample_origins,
+            "supervised_sample_series_ids": self.supervised_sample_series_ids,
+            "feature_schema": self.builder.feature_schema,
+            "categorical_schema": self.builder.categorical_schema,
+        }
+
+    def _restore_compiled_cache(self, payload: Mapping[str, Any]) -> None:
+        required = {
+            "X_all",
+            "Y_all",
+            "supervised_origins",
+            "supervised_sample_origins",
+            "supervised_sample_series_ids",
+            "feature_schema",
+            "categorical_schema",
+        }
+        missing = sorted(required - set(payload))
+        if missing:
+            raise ValueError(
+                f"compiled feature cache payload is missing fields: {missing}"
+            )
+        X_all = tuple(np.asarray(design) for design in payload["X_all"])
+        Y_all = np.asarray(payload["Y_all"])
+        sample_origins = tuple(
+            cast(pd.Timestamp, pd.Timestamp(value))
+            for value in payload["supervised_sample_origins"]
+        )
+        if any(len(design) != len(Y_all) for design in X_all):
+            raise ValueError("compiled feature cache X/Y sample counts differ")
+        if len(sample_origins) != len(Y_all):
+            raise ValueError("compiled feature cache origin/Y sample counts differ")
+        self.X_all = X_all
+        self.Y_all = Y_all
+        self.supervised_origins = tuple(
+            cast(pd.Timestamp, pd.Timestamp(value))
+            for value in payload["supervised_origins"]
+        )
+        self.supervised_sample_origins = sample_origins
+        self.supervised_sample_series_ids = tuple(
+            payload["supervised_sample_series_ids"]
+        )
+        self.builder.feature_schema = tuple(payload["feature_schema"])
+        self.builder.categorical_schema = tuple(payload["categorical_schema"])
 
     @property
     def geometry(self) -> validation.TimeGeometry:
@@ -399,6 +493,9 @@ class CanonicalBaseModelRunner:
     def fit(
         self,
         train_indices: tuple[int, ...],
+        *,
+        target_history: PointForecastTensor | None = None,
+        force_serial: bool = False,
     ) -> tuple[
         CanonicalFeatureScaler,
         CanonicalTargetTransform,
@@ -418,10 +515,12 @@ class CanonicalBaseModelRunner:
             train_indices,
             self.builder.n_series,
         )
-        X_train = tuple(
-            design[list(train_sample_indices)] for design in self.X_all
+        train_selector = _sample_selector(
+            train_indices,
+            n_series=self.builder.n_series,
         )
-        Y_train = self.Y_all[list(train_sample_indices)]
+        X_train = tuple(design[train_selector] for design in self.X_all)
+        Y_train = self.Y_all[train_selector]
         training_origins = tuple(
             self.supervised_sample_origins[index]
             for index in train_sample_indices
@@ -447,6 +546,7 @@ class CanonicalBaseModelRunner:
             training_origins,
             training_series_ids,
             training_history_cutoff,
+            target_history=target_history,
         )
         # 监督特征选择（2026-08-30 专项）：有监督步骤挂在训练 fit 边界，
         # 每个回测窗口/最终训练各自重拟合，只消费当前训练窗 (X, Y)，无泄漏；
@@ -461,6 +561,7 @@ class CanonicalBaseModelRunner:
                 X_train_transformed,
                 Y_train_transformed,
                 n_series=self.builder.n_series,
+                max_workers=1 if force_serial else None,
             )
         else:
             _, artifact, _ = _fit_quantile(
@@ -469,6 +570,7 @@ class CanonicalBaseModelRunner:
                 X_train_transformed,
                 Y_train_transformed,
                 n_series=self.builder.n_series,
+                worker_plan=(1, 1) if force_serial else None,
             )
         return (
             feature_scaler,
@@ -605,10 +707,12 @@ class CanonicalBaseModelRunner:
         if not origin_indices:
             raise ValueError("canonical final fit has no safe supervised samples")
         sample_indices = _sample_indices(origin_indices, self.builder.n_series)
-        X_window = tuple(
-            design[list(sample_indices)] for design in self.X_all
+        sample_selector = _sample_selector(
+            origin_indices,
+            n_series=self.builder.n_series,
         )
-        Y_window = self.Y_all[list(sample_indices)]
+        X_window = tuple(design[sample_selector] for design in self.X_all)
+        Y_window = self.Y_all[sample_selector]
         sample_origins = tuple(
             self.supervised_sample_origins[index] for index in sample_indices
         )
@@ -639,7 +743,7 @@ class CanonicalBaseModelRunner:
         self,
         X_transformed: tuple[np.ndarray, ...],
         Y_transformed: np.ndarray,
-    ) -> tuple[CanonicalTrainer, Any, Any]:
+    ) -> tuple[Any, Any, Any]:
         """Train the final artifact and return (trainer, artifact, capabilities)."""
         mode = self._mode()
         X_transformed, feature_schema = self._apply_feature_selection(
@@ -786,14 +890,54 @@ class CanonicalBaseModelRunner:
                     freq_offset=to_offset(str(config.problem.freq)),
                 )
         calibration_audits: list[dict[str, Any]] = []
-        for backtest_window in self.backtest_windows():
+        backtest_windows = self.backtest_windows()
+        window_workers = min(
+            _runtime_window_workers(config),
+            max(1, len(backtest_windows)),
+        )
+        parallel_fits = None
+        if window_workers > 1 and backtest_windows:
+            target_histories = tuple(
+                builder.target_history(
+                    max(
+                        _label_end(
+                            builder,
+                            cast(pd.Timestamp, self.supervised_origins[index]),
+                        )
+                        for index in backtest_window.train_indices
+                    )
+                )
+                for backtest_window in backtest_windows
+            )
+
+            def fit_window(item):
+                backtest_window, target_history = item
+                return self.fit(
+                    backtest_window.train_indices,
+                    target_history=target_history,
+                    force_serial=True,
+                )
+
+            with ThreadPoolExecutor(max_workers=window_workers) as executor:
+                parallel_fits = tuple(
+                    executor.map(
+                        fit_window,
+                        zip(backtest_windows, target_histories),
+                    )
+                )
+
+        for window_index, backtest_window in enumerate(backtest_windows):
             (
                 holdout_feature_scaler,
                 holdout_target_transform,
                 _X_train_transformed,
                 _Y_train_transformed,
                 holdout_artifact,
-            ) = self.fit(backtest_window.train_indices)
+            ) = (
+                parallel_fits[window_index]
+                if parallel_fits is not None
+                else self.fit(backtest_window.train_indices)
+            )
 
             builder.reset_audit()
             holdout_designs, holdout_provider = self.forecast_designs(
@@ -943,6 +1087,10 @@ class CanonicalBaseModelRunner:
                 **final_calibration_audit,
             }
             if final_correction.status == "applied":
+                if not isinstance(forecast, MarginalForecastDistribution):
+                    raise TypeError("CQR requires a marginal forecast distribution")
+                if final_correction.correction is None:
+                    raise ValueError("applied CQR correction must be finite")
                 lower_col, upper_col = calibration_tracker.pi_columns
                 lower, upper = calibration_tracker.correction_bounds(
                     forecast.quantiles.values,
@@ -1081,8 +1229,6 @@ class CanonicalBaseModelRunner:
         return mode
 
 
-
-
 def run_canonical_config(
     config: ForecastConfigSpec,
     output_root: str | Path | None = None,
@@ -1098,7 +1244,17 @@ def run_canonical_config(
     merged_generators: dict[str, Any] = {**BUILTIN_GENERATORS, **(generators or {})}
     registry = SourceRegistry(config.data, Path.cwd(), generators=merged_generators)
     origin = _resolve_origin(registry, config.validation.get("forecast_origin"))
-    runner = CanonicalBaseModelRunner(config, registry, origin)
+    compiled_cache_root = (
+        Path(output_root)
+        if output_root is not None
+        else Path(str(config.output.get("results_root", "results")))
+    )
+    runner = CanonicalBaseModelRunner(
+        config,
+        registry,
+        origin,
+        compiled_cache_root=compiled_cache_root,
+    )
     result = runner.run(output_root)
     if str(config.validation.get("horizon_mode", "fixed_steps")) == "calendar_month":
         overwrite_calendar_month_backtest(

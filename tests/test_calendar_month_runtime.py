@@ -3,15 +3,18 @@
 
 import pickle
 import tempfile
+import threading
+import time
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import patch
 
 import numpy as np
 import pandas as pd
 
 from config.config_loader import load_yaml_config
-from model_forecasting.runtime import run_canonical_config
+from model_forecasting.runtime import CanonicalBaseModelRunner, run_canonical_config
 from forecasting_core.specs import ForecastConfigSpec
 from forecasting_core.specs.config import parse_model_config
 from forecasting_core.tensors import PointForecastTensor
@@ -20,6 +23,35 @@ from model_testing.backtest import seasonal_naive_tensor
 
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+class _CountingRunner(CanonicalBaseModelRunner):
+    created_horizons = []
+    lock = threading.Lock()
+    active = 0
+    max_active = 0
+
+    @classmethod
+    def reset(cls) -> None:
+        cls.created_horizons = []
+        with cls.lock:
+            cls.active = 0
+            cls.max_active = 0
+
+    def __init__(self, config, registry, origin, **kwargs):
+        type(self).created_horizons.append(config.problem.horizon)
+        super().__init__(config, registry, origin, **kwargs)
+
+    def fit(self, train_indices, **kwargs):
+        with type(self).lock:
+            type(self).active += 1
+            type(self).max_active = max(type(self).max_active, type(self).active)
+        try:
+            time.sleep(0.03)
+            return super().fit(train_indices, **kwargs)
+        finally:
+            with type(self).lock:
+                type(self).active -= 1
 
 
 class CalendarMonthRuntimeGeometryTest(unittest.TestCase):
@@ -105,12 +137,29 @@ class CalendarMonthRuntimeGeometryTest(unittest.TestCase):
                         "train_window_days": 120,
                         "fold_count": 6,
                         "stride_months": 1,
+                        "performance": {
+                            "window_parallel_workers": 2,
+                            "multi_output_n_jobs": 2,
+                        },
                     },
                     "output": {"scenario_subpath": "calendar-runtime"},
                 },
                 source="<calendar-runtime-test>",
             )
-            result = run_canonical_config(config, output_root=root / "results")
+            _CountingRunner.reset()
+            with patch(
+                "model_forecasting.runtime.CanonicalBaseModelRunner",
+                _CountingRunner,
+            ):
+                result = run_canonical_config(
+                    config,
+                    output_root=root / "results",
+                )
+            self.assertEqual(
+                _CountingRunner.created_horizons,
+                [31, 28, 31, 30],
+            )
+            self.assertGreaterEqual(_CountingRunner.max_active, 2)
             cv = pd.read_csv(result.test_dir / "cv_plot_df.csv")
             horizons = cv.groupby("window")["time"].nunique().tolist()
             self.assertEqual(horizons, [28, 31, 30, 31, 30, 31])

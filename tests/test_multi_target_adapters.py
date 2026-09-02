@@ -1,5 +1,7 @@
 import ast
 import json
+import threading
+import time
 import unittest
 from dataclasses import FrozenInstanceError
 from pathlib import Path
@@ -75,6 +77,29 @@ class RecordingScalarEstimator:
     def predict(self, X):
         self.predict_X = np.asarray(X, dtype=float).copy()
         return np.full(len(X), self.prediction_value, dtype=float)
+
+
+class ConcurrentTrackingEstimator(RecordingScalarEstimator):
+    lock = threading.Lock()
+    active = 0
+    max_active = 0
+
+    @classmethod
+    def reset(cls):
+        with cls.lock:
+            cls.active = 0
+            cls.max_active = 0
+
+    def fit(self, X, y, **kwargs):
+        with type(self).lock:
+            type(self).active += 1
+            type(self).max_active = max(type(self).max_active, type(self).active)
+        try:
+            time.sleep(0.02)
+            return RecordingScalarEstimator.fit(self, X, y, **kwargs)
+        finally:
+            with type(self).lock:
+                type(self).active -= 1
 
 
 class RecordingNativeEstimator:
@@ -463,6 +488,66 @@ class MultiTargetAdapterTests(unittest.TestCase):
             np.testing.assert_allclose(estimator.fit_sample_weight, self.sample_weight)
         self.assertEqual(prediction.shape, (2, 4, 2))
         np.testing.assert_allclose(prediction[0], np.arange(8).reshape(4, 2))
+
+    def test_independent_parallel_fit_preserves_output_order(self):
+        ConcurrentTrackingEstimator.reset()
+        created = []
+
+        def factory():
+            estimator = ConcurrentTrackingEstimator(len(created))
+            created.append(estimator)
+            return estimator
+
+        adapter = IndependentMultiTargetAdapter(
+            factory,
+            self.scalar_capabilities,
+            self.coordinates,
+        ).fit(
+            self.X,
+            self.Y,
+            sample_weight=self.sample_weight,
+            max_workers=4,
+        )
+
+        self.assertGreaterEqual(ConcurrentTrackingEstimator.max_active, 2)
+        np.testing.assert_allclose(
+            adapter.predict(self.X[:1])[0],
+            np.arange(8, dtype=float).reshape(4, 2),
+        )
+        for index, estimator in enumerate(created):
+            np.testing.assert_allclose(
+                estimator.fit_y,
+                self.Y.reshape(3, 8)[:, index],
+            )
+
+    def test_ridge_factory_uses_one_shared_multi_rhs_model(self):
+        optimized = IndependentMultiTargetAdapter(
+            make_model_factory(
+                "ridge",
+                {"alpha": 1e-6},
+                feature_names=("x0", "x1"),
+            ),
+            self.scalar_capabilities,
+            self.coordinates,
+        ).fit(self.X, self.Y, sample_weight=self.sample_weight, max_workers=4)
+        baseline = IndependentMultiTargetAdapter(
+            lambda: Ridge(alpha=1e-6),
+            self.scalar_capabilities,
+            self.coordinates,
+        ).fit(self.X, self.Y, sample_weight=self.sample_weight)
+
+        np.testing.assert_allclose(
+            optimized.predict(self.X),
+            baseline.predict(self.X),
+            rtol=1e-12,
+            atol=1e-12,
+        )
+        estimators = getattr(optimized, "estimators")
+        self.assertTrue(all(hasattr(estimator, "_shared") for estimator in estimators))
+        self.assertEqual(
+            len({id(estimator._shared) for estimator in estimators}),
+            1,
+        )
 
     def test_regressor_chain_uses_truth_then_predictions_as_dependencies(self):
         created = []

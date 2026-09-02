@@ -7,12 +7,19 @@ from typing import List, Optional, Sequence, Tuple
 import numpy as np
 import pandas as pd
 
-from forecasting_core.probabilistic_spec import validate_cqr_params
+from forecasting_core.probabilistic_spec import ProbabilisticSpec, validate_cqr_params
+from forecasting_core.artifacts import QuantileGrid
 
 
 @dataclass(frozen=True)
 class CalibrationRecord:
-    """一条带完整时序可得性信息的 CQR 校准记录。"""
+    """一条带完整时序可得性信息的 CQR 校准记录。
+
+    ``series_id``/``target`` 为 2026-09-01 新增的可选字段：pooled 分组下
+    同一 target_time 可对应多条（series, target）记录，选择时按
+    ``(target_time, series_id, target)`` 去重；缺省 None 时退化为旧的
+    单序列单目标语义（按 target_time 去重）。
+    """
 
     forecast_origin: pd.Timestamp
     target_time: pd.Timestamp
@@ -25,6 +32,8 @@ class CalibrationRecord:
     y_true: float
     score: float
     stage: str
+    series_id: Optional[str] = None
+    target: Optional[str] = None
 
 
 @dataclass(frozen=True)
@@ -71,11 +80,16 @@ def select_calibration_records(
     seen_targets = set()
     for _, window_records in eligible[:window_limit]:
         for record in sorted(window_records, key=lambda item: pd.Timestamp(item.target_time)):
-            target_time = pd.Timestamp(record.target_time)
-            if target_time in seen_targets:
+            # pooled 语义：去重键含 series/target，缺省 None 时退化为 target_time
+            dedup_key = (
+                pd.Timestamp(record.target_time),
+                record.series_id,
+                record.target,
+            )
+            if dedup_key in seen_targets:
                 continue
             selected.append(record)
-            seen_targets.add(target_time)
+            seen_targets.add(dedup_key)
     return selected
 
 
@@ -145,6 +159,7 @@ def calibrate_with_records(
         reason="",
     )
 
+
 def _as_1d_finite_array(values, name: str, allow_nonfinite: bool = False) -> np.ndarray:
     array = np.asarray(values, dtype=float).reshape(-1)
     if not allow_nonfinite and not np.isfinite(array).all():
@@ -203,6 +218,18 @@ def calibrate_quantile_band(
     return lower - correction, upper + correction, correction
 
 
+def pi_column_names(target_coverage: float) -> Tuple[str, str]:
+    """``predict_pi<coverage>_lower/upper`` 列名的唯一生成入口。"""
+    coverage = float(target_coverage)
+    validate_cqr_params(alpha=1.0 - coverage, min_scores=1)
+    coverage_percent = coverage * 100.0
+    if np.isclose(coverage_percent, round(coverage_percent), atol=1e-10):
+        token = str(int(round(coverage_percent)))
+    else:
+        token = f"{coverage_percent:.6f}".rstrip("0").rstrip(".").replace(".", "p")
+    return f"predict_pi{token}_lower", f"predict_pi{token}_upper"
+
+
 def attach_cqr_interval_columns(
     frame: pd.DataFrame,
     lower: np.ndarray,
@@ -210,8 +237,7 @@ def attach_cqr_interval_columns(
     target_coverage: float,
 ) -> pd.DataFrame:
     """追加独立 CQR prediction interval 列，不覆盖模型 quantile。"""
-    coverage = float(target_coverage)
-    validate_cqr_params(alpha=1.0 - coverage, min_scores=1)
+    lower_column, upper_column = pi_column_names(target_coverage)
     lower_values = _as_1d_finite_array(lower, "lower")
     upper_values = _as_1d_finite_array(upper, "upper")
     if not (len(frame) == len(lower_values) == len(upper_values)):
@@ -222,12 +248,196 @@ def attach_cqr_interval_columns(
     if np.any(lower_values > upper_values):
         raise ValueError("CQR interval output requires lower <= upper at every point")
 
-    coverage_percent = coverage * 100.0
-    if np.isclose(coverage_percent, round(coverage_percent), atol=1e-10):
-        token = str(int(round(coverage_percent)))
-    else:
-        token = f"{coverage_percent:.6f}".rstrip("0").rstrip(".").replace(".", "p")
     result = frame.copy()
-    result[f"predict_pi{token}_lower"] = lower_values
-    result[f"predict_pi{token}_upper"] = upper_values
+    result[lower_column] = lower_values
+    result[upper_column] = upper_values
     return result
+
+
+class ConformalCalibrationTracker:
+    """canonical rolling backtest 的 as-of CQR 校准追踪器（pooled 分组）。
+
+    每折先用 origin 严格更早、且标签已可得的历史折校准当前折区间，再把
+    当前折记入校准池（apply-before-collect）；不足 min_windows/min_scores
+    时诚实降级：不产出 ``predict_pi*`` 列，audit 记录原因。
+
+    标签可得性约定：``label_available_at = target_time +
+    label_availability_delay_steps * freq_offset``（delay=0 时即目标时刻
+    本身——回测中前一折的目标期整体早于当前折 origin 时才参与校准）。
+    """
+
+    def __init__(self, spec: ProbabilisticSpec, *, freq_offset) -> None:
+        if not isinstance(spec, ProbabilisticSpec):
+            raise TypeError("spec must be a ProbabilisticSpec")
+        calibration = spec.calibration
+        interval = spec.calibration_interval
+        if calibration is None or interval is None:
+            raise ValueError(
+                "ConformalCalibrationTracker requires spec.calibration referencing "
+                "a configured interval"
+            )
+        grid = QuantileGrid(spec.quantiles, point_level=spec.point_quantile)
+        self._lower_column = grid.column_name(interval.lower_quantile)
+        self._upper_column = grid.column_name(interval.upper_quantile)
+        self._calibration = calibration
+        self._interval = interval
+        self._alpha = round(1.0 - calibration.target_coverage, 15)
+        self._freq_offset = freq_offset
+        self._records: List[CalibrationRecord] = []
+
+    @property
+    def interval_name(self) -> str:
+        return self._interval.name
+
+    @property
+    def target_coverage(self) -> float:
+        return self._calibration.target_coverage
+
+    @property
+    def pi_columns(self) -> Tuple[str, str]:
+        return pi_column_names(self._calibration.target_coverage)
+
+    @property
+    def lower_column(self) -> str:
+        return self._lower_column
+
+    @property
+    def upper_column(self) -> str:
+        return self._upper_column
+
+    def _check_frame(self, frame: pd.DataFrame) -> None:
+        required = {
+            "series_id",
+            "time",
+            "target",
+            "actual_value",
+            self._lower_column,
+            self._upper_column,
+        }
+        missing = required - set(frame.columns)
+        if missing:
+            raise ValueError(
+                f"CQR calibration frame is missing columns: {sorted(missing)}"
+            )
+
+    def _calibrate(self, forecast_origin: pd.Timestamp) -> CalibrationResult:
+        return calibrate_with_records(
+            # 修正量只由历史 score 决定；这里只需要 correction，不需要逐点边界
+            q_low=np.zeros(1),
+            q_high=np.zeros(1),
+            records=self._records,
+            forecast_origin=forecast_origin,
+            n_windows=self._calibration.calibration_windows,
+            min_windows=self._calibration.min_windows,
+            min_scores=self._calibration.min_scores,
+            alpha=self._alpha,
+            allow_interval_shrink=self._calibration.allow_interval_shrink,
+        )
+
+    def _audit(self, result: CalibrationResult) -> dict:
+        return {
+            "interval": self._interval.name,
+            "target_coverage": self._calibration.target_coverage,
+            "status": result.status,
+            "reason": result.reason,
+            "correction": result.correction,
+            "selected_windows": result.selected_windows,
+            "selected_scores": result.selected_scores,
+        }
+
+    def apply_to_frame(
+        self,
+        frame: pd.DataFrame,
+        *,
+        forecast_origin: pd.Timestamp,
+    ) -> Tuple[pd.DataFrame, dict]:
+        """用校准池修正当前折区间；未 applied 时原样返回。"""
+        self._check_frame(frame)
+        result = self._calibrate(pd.Timestamp(forecast_origin))
+        audit = self._audit(result)
+        if result.status != "applied":
+            return frame, audit
+        corrected = attach_cqr_interval_columns(
+            frame,
+            lower=frame[self._lower_column].to_numpy(dtype=float)
+            - float(result.correction),
+            upper=frame[self._upper_column].to_numpy(dtype=float)
+            + float(result.correction),
+            target_coverage=self._calibration.target_coverage,
+        )
+        return corrected, audit
+
+    def collect_from_frame(
+        self,
+        frame: pd.DataFrame,
+        *,
+        forecast_origin: pd.Timestamp,
+        window: int,
+        stage: str = "backtest",
+    ) -> int:
+        """把一折的（有限 actual）行记入校准池；返回新增记录数。"""
+        self._check_frame(frame)
+        origin = pd.Timestamp(forecast_origin)
+        delay = int(self._calibration.label_availability_delay_steps)
+        frame = frame.copy()
+        frame["cqr_actual"] = pd.to_numeric(frame["actual_value"], errors="coerce")
+        frame["cqr_lower"] = pd.to_numeric(frame[self._lower_column], errors="coerce")
+        frame["cqr_upper"] = pd.to_numeric(frame[self._upper_column], errors="coerce")
+        finite = (
+            np.isfinite(frame["cqr_actual"])
+            & np.isfinite(frame["cqr_lower"])
+            & np.isfinite(frame["cqr_upper"])
+        )
+        sub = frame.loc[finite].sort_values("time")
+        if sub.empty:
+            return 0
+        # horizon_step：每个 (series_id, target) 内按 time 的排名（1 起）
+        sub["cqr_hstep"] = (
+            sub.groupby(["series_id", "target"], sort=False).cumcount() + 1
+        )
+        count = 0
+        for row in sub.itertuples(index=False):
+            target_time = pd.Timestamp(row.time)
+            count += 1
+            self._records.append(
+                CalibrationRecord(
+                    forecast_origin=origin,
+                    target_time=target_time,
+                    label_available_at=target_time + delay * self._freq_offset,
+                    horizon_step=int(row.cqr_hstep),
+                    window=int(window),
+                    interval_name=self._interval.name,
+                    lower=float(row.cqr_lower),
+                    upper=float(row.cqr_upper),
+                    y_true=float(row.cqr_actual),
+                    score=float(
+                        max(row.cqr_lower - row.cqr_actual, row.cqr_actual - row.cqr_upper)
+                    ),
+                    stage=stage,
+                    series_id=str(row.series_id),
+                    target=str(row.target),
+                )
+            )
+        return count
+
+    def final_correction(
+        self,
+        forecast_origin: pd.Timestamp,
+    ) -> Tuple[CalibrationResult, dict]:
+        """最终预测的修正量：消费全部满足 as-of 的历史折。"""
+        result = self._calibrate(pd.Timestamp(forecast_origin))
+        return result, self._audit(result)
+
+    def correction_bounds(
+        self,
+        quantile_values: np.ndarray,
+        levels: Sequence[float],
+        correction: float,
+    ) -> Tuple[np.ndarray, np.ndarray]:
+        """把修正量应用到任意形状的 quantile values 末轴（levels 维）。"""
+        levels = tuple(float(level) for level in levels)
+        lower_index = levels.index(self._interval.lower_quantile)
+        upper_index = levels.index(self._interval.upper_quantile)
+        lower = quantile_values[..., lower_index] - float(correction)
+        upper = quantile_values[..., upper_index] + float(correction)
+        return lower, upper

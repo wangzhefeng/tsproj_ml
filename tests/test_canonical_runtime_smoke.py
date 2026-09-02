@@ -232,7 +232,14 @@ class CanonicalRuntimeSmokeTest(unittest.TestCase):
                 ["series_id", "time", "target", "predict_value"],
             )
             self.assertEqual(len(prediction), 2)
-            self.assertEqual(scores["scope"].tolist(), ["target", "aggregate"])
+            # K=1、H=2、1 窗：target + aggregate + 2 horizon + 2 aggregate_horizon
+            self.assertEqual(
+                scores["scope"].tolist()[:2], ["target", "aggregate"]
+            )
+            self.assertEqual(
+                set(scores["scope"]),
+                {"target", "aggregate", "horizon", "aggregate_horizon"},
+            )
             # 点模式不产出概率分数文件（2026-08-30 接线：仅 quantile 模式）
             self.assertFalse(
                 (result.test_dir / "test_scores_probabilistic_df.csv").exists()
@@ -305,8 +312,12 @@ class CanonicalRuntimeSmokeTest(unittest.TestCase):
             self.assertEqual(sorted(cv["window"].unique().tolist()), [1, 2, 3])
             self.assertEqual(set(cv["target"]), {"load", "power"})
             self.assertEqual(len(cv), 3 * 2 * 2)
-            self.assertEqual(len(scores), 3 * 3)
-            self.assertEqual(set(scores["scope"]), {"target", "aggregate"})
+            # K=2、H=2、3 窗：每窗 2 target + 1 aggregate + 4 horizon + 2 aggregate_horizon = 9
+            self.assertEqual(len(scores), 3 * 9)
+            self.assertEqual(
+                set(scores["scope"]),
+                {"target", "aggregate", "horizon", "aggregate_horizon"},
+            )
             self.assertTrue((result.test_dir / "target_plots" / "load.png").exists())
             self.assertTrue((result.test_dir / "target_plots" / "power.png").exists())
             metadata = json.loads(
@@ -348,6 +359,7 @@ class CanonicalRuntimeSmokeTest(unittest.TestCase):
                 set(prob_scores["metric"]),
                 {
                     "mae",
+                    "bias",
                     "pinball",
                     "interval_coverage",
                     "interval_width",
@@ -356,7 +368,10 @@ class CanonicalRuntimeSmokeTest(unittest.TestCase):
                     "calibration_error",
                 },
             )
-            self.assertEqual(set(prob_scores["scope"]), {"target", "aggregate"})
+            self.assertEqual(
+                set(prob_scores["scope"]),
+                {"target", "aggregate", "horizon", "aggregate_horizon"},
+            )
             self.assertEqual(
                 set(prob_scores["interval_name"].dropna()), {"central80"}
             )
@@ -911,10 +926,16 @@ class CanonicalRuntimeSmokeTest(unittest.TestCase):
                     scores = pd.read_csv(result.test_dir / "test_scores_df.csv")
                     self.assertEqual(len(prediction), 8)
                     self.assertEqual(set(prediction["target"]), {"load", "power"})
+                    # K=2、H=4、1 窗：2 target + 1 aggregate + 8 horizon + 4 aggregate_horizon
                     self.assertEqual(
-                        scores["scope"].tolist(),
+                        scores["scope"].tolist()[:3],
                         ["target", "target", "aggregate"],
                     )
+                    self.assertEqual(
+                        set(scores["scope"]),
+                        {"target", "aggregate", "horizon", "aggregate_horizon"},
+                    )
+                    self.assertEqual((scores["scope"] == "horizon").sum(), 2 * 4)
                     self.assertEqual(result.run_dir.name, config.result_identity())
                     self.assertEqual(
                         result.bundle.model.model_count,

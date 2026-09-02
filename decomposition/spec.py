@@ -1,10 +1,10 @@
 # -*- coding: utf-8 -*-
 """时间序列分解的配置契约层。
 
-将两类外部输入归一化为唯一的运行时对象 :class:`DecompositionSpec`：
-
-1. 旧写法 ``overrides.preprocessing.decomposition_*`` 散列字段（兼容层）；
-2. 新写法 ``overrides.decomposition`` 原始 mapping（规范层）。
+唯一配置输入为 ``decomposition`` mapping（canonical YAML
+``features.transformations.target.decomposition``），归一化为运行时对象
+:class:`DecompositionSpec`。legacy ``preprocessing.decomposition_*`` 散列字段
+已随 legacy 配置体系删除，不再解析。
 
 preset（none/linear/stl/mstl）在 resolve 阶段展开为固定组件组合；
 ``custom`` 为未来组件级编排预留，当前一律 fail-fast。
@@ -23,19 +23,7 @@ __all__ = [
     "resolve_decomposition_spec",
 ]
 
-# 兼容旧写法的 preset 字段（preprocessing.decomposition_* 后缀 → spec 字段名）
-_PRESET_FIELD_MAP: dict[str, str] = {
-    "decomposition_method": "method",
-    "decomposition_periods": "periods",
-    "decomposition_robust": "robust",
-    "decomposition_trend_degree": "trend_degree",
-    "decomposition_trend_forecast": "trend_forecast",
-    "decomposition_damping": "damping",
-    "decomposition_trend_lookback": "trend_lookback",
-    "decomposition_seasonal_cycles": "seasonal_cycles",
-}
-
-# 新写法 preset 模式下允许的键（不含 method 本身）
+# preset 模式下允许的键（不含 method 本身）
 _PRESET_ALLOWED_KEYS = {
     "composition",
     "periods",
@@ -78,7 +66,7 @@ RESERVED_METHODS = {
 
 _VALID_PRESET_METHODS = {"none", "linear", "stl", "mstl"}
 
-# PresetParams 的字段默认值（与 PreprocessingConfig 保持一致）
+# PresetParams 的字段默认值
 _PRESET_DEFAULTS = {
     "composition": "additive",
     "periods": (),
@@ -205,59 +193,6 @@ class DecompositionSpec:
         )
 
 
-def _preset_params_from_legacy(cfg: Any) -> PresetParams | None:
-    """从旧 preprocessing.decomposition_* 字段构造 PresetParams；全部默认返回 None。"""
-    method = str(getattr(cfg, "decomposition_method", "none") or "none").lower()
-    if method == "none" and not any(
-        getattr(cfg, key, None) not in (None, "", [], ())
-        for key in _PRESET_FIELD_MAP
-        if key != "decomposition_method"
-    ):
-        # method=none 且无其他显式旧字段 → 视为未配置
-        return None
-    periods_raw = getattr(cfg, "decomposition_periods", None) or []
-    return PresetParams(
-        method=method,
-        composition="additive",
-        periods=tuple(int(p) for p in periods_raw),
-        robust=bool(getattr(cfg, "decomposition_robust", True)),
-        trend_degree=int(getattr(cfg, "decomposition_trend_degree", 1)),
-        trend_forecast=str(
-            getattr(cfg, "decomposition_trend_forecast", "polynomial") or "polynomial"
-        ).lower(),
-        damping=float(getattr(cfg, "decomposition_damping", 0.98)),
-        trend_lookback=int(getattr(cfg, "decomposition_trend_lookback", 28)),
-        seasonal_cycles=int(getattr(cfg, "decomposition_seasonal_cycles", 4)),
-    )
-
-
-def _legacy_explicitly_set(cfg: Any) -> bool:
-    """旧字段是否有任何显式偏离非 method 默认值的设置。
-
-    判定口径：decomposition_method != 'none'，或任一参数字段非默认值。
-    """
-    method = str(getattr(cfg, "decomposition_method", "none") or "none").lower()
-    if method != "none":
-        return True
-    checks = {
-        "decomposition_periods": (),
-        "decomposition_robust": True,
-        "decomposition_trend_degree": 1,
-        "decomposition_trend_forecast": "polynomial",
-        "decomposition_damping": 0.98,
-        "decomposition_trend_lookback": 28,
-        "decomposition_seasonal_cycles": 4,
-    }
-    for key, default in checks.items():
-        value = getattr(cfg, key, default)
-        if isinstance(default, tuple):
-            if tuple(value or ()):
-                return True
-        elif value != default:
-            return True
-    return False
-
-
 def _coerce_preset(raw: Mapping[str, Any], source: str) -> PresetParams:
     """把新写法 mapping 归一化为 PresetParams（含未知键/合法性校验）。"""
     unknown = set(raw) - ({"method"} | _PRESET_ALLOWED_KEYS)
@@ -334,48 +269,27 @@ def _spec_from_custom(raw: Mapping[str, Any], source: str) -> DecompositionSpec:
 
 
 def resolve_decomposition_spec(cfg: Any) -> DecompositionSpec:
-    """把新旧两类配置输入归一化为 DecompositionSpec。
+    """把 ``cfg.decomposition`` mapping 归一化为 DecompositionSpec。
 
-    合并规则（见设计文档 §5.6）：
+    规则：
 
-    - 只有旧字段 → 旧 preset；
-    - 只有新字段 → 新 mapping（custom 则 fail-fast）；
-    - 都没有 → method=none；
-    - 都有 → 两侧归一化后逐项比较，不一致直接 ValueError；
-    - custom 与任何旧字段并存 → ValueError。
+    - 未配置或空 mapping → ``method=none``；
+    - preset 方法（none/linear/stl/mstl）→ ``_coerce_preset`` 校验并归一化；
+    - ``custom`` → 组件级编排预留，fail-fast；
+    - RESERVED_METHODS → fail-fast。
+
+    legacy ``preprocessing.decomposition_*`` 散列字段已随 legacy 配置体系删除，
+    不再解析；canonical YAML 的未知字段由 ``load_yaml_config()`` 在上游拦截。
     """
     source = "cfg"
-    new_raw: Mapping[str, Any] = getattr(cfg, "decomposition", None) or {}
-    legacy_set = _legacy_explicitly_set(cfg)
-    new_set = bool(new_raw)
+    raw: Mapping[str, Any] = getattr(cfg, "decomposition", None) or {}
 
-    if new_set:
-        method = str(new_raw.get("method", "none")).lower()
-        if method == "custom":
-            if legacy_set:
-                raise ValueError(
-                    "decomposition method 'custom' cannot be combined with legacy "
-                    "'preprocessing.decomposition_*' fields; use one style only."
-                )
-            return _spec_from_custom(new_raw, source)
-
-    if not new_set and not legacy_set:
+    if not raw:
         return DecompositionSpec(method="none")
 
-    legacy_params = _preset_params_from_legacy(cfg) if legacy_set else None
-    new_params = _coerce_preset(new_raw, source) if new_set else None
+    method = str(raw.get("method", "none")).lower()
+    if method == "custom":
+        return _spec_from_custom(raw, source)
 
-    if legacy_params is not None and new_params is not None:
-        if legacy_params != new_params:
-            raise ValueError(
-                "Conflicting decomposition config: legacy "
-                "'preprocessing.decomposition_*' and new 'decomposition' group "
-                f"resolve to different specs (legacy={legacy_params}, new={new_params})."
-            )
-        merged = new_params
-    else:
-        merged = legacy_params or new_params
-    assert merged is not None  # 至少一侧存在
-    if merged.method in RESERVED_METHODS:  # pragma: no cover - _coerce 已拦截
-        raise ValueError(f"decomposition method '{merged.method}' is reserved but not implemented.")
+    merged = _coerce_preset(raw, source)
     return DecompositionSpec(method=merged.method, composition=merged.composition, preset=merged)

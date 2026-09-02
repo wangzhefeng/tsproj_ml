@@ -266,6 +266,9 @@ class ForecastModelBundle:
     training_scope: str | None = None
     result_schema_version: int | None = None
     config_fingerprint: str | None = None
+    # CQR 校准状态（2026-09-01 激活）：final fit 时由回测折的 as-of 校准池
+    # 计算，部署期据此产出 predict_pi 区间；未配置 calibration 时为 None。
+    calibration_state: dict[str, Any] | None = None
 
     def __post_init__(self) -> None:
         version = int(self.schema_version)
@@ -353,6 +356,16 @@ class ForecastModelBundle:
         self.target_order = tuple(str(target) for target in self.target_order)
         self.feature_lineage = tuple(dict(item) for item in self.feature_lineage)
         self.source_lineage = tuple(dict(item) for item in self.source_lineage)
+        if self.calibration_state is not None:
+            if not isinstance(self.calibration_state, dict):
+                raise TypeError("calibration_state must be a dict or None")
+            if self.calibration_state.get("status") == "applied" and not isinstance(
+                self.calibration_state.get("correction"), (int, float)
+            ):
+                raise ValueError(
+                    "applied calibration_state requires a numeric correction"
+                )
+            self.calibration_state = dict(self.calibration_state)
 
     def schema_payload(self) -> dict[str, Any]:
         """返回不含模型对象、可供人工审计的 JSON metadata。"""
@@ -383,6 +396,7 @@ class ForecastModelBundle:
                 "training_scope": self.training_scope,
                 "result_schema_version": self.result_schema_version,
                 "config_fingerprint": self.config_fingerprint,
+                "calibration_state": self.calibration_state,
             }
         )
         return payload

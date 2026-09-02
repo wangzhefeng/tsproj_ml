@@ -18,12 +18,18 @@ from forecasting_core.specs import (
 from forecasting_core.tensors import PointForecastTensor
 from model_evaluation.marginal import evaluate_marginal_distribution
 from model_evaluation.point import (
-    build_eval_mask_payload,
     evaluate_point_forecasts,
     resolve_aggregate_weighting,
 )
 from model_forecasting.results import backtest_tensors_to_long, write_backtest_results
+from model_forecasting.persistence import persist_model_bundle
 from model_testing import validation
+from pandas.tseries.frequencies import to_offset
+from probabilistic.calibration import (
+    ConformalCalibrationTracker,
+    attach_cqr_interval_columns,
+)
+from forecasting_core.probabilistic_spec import probabilistic_spec_from_mapping
 
 
 def _write_json(path: Path, payload: Mapping[str, Any]) -> None:
@@ -69,6 +75,19 @@ def overwrite_calendar_month_backtest(
     score_frames = []
     probabilistic_frames = []
     fold_metadata = []
+    # CQR（2026-09-01 激活）：calendar-month 与 fixed-step 同一追踪器语义，
+    # 逐折 apply-before-collect；final 修正量消费全部合格历史折。
+    calibration_tracker = None
+    if str(config.probabilistic.get("mode", "point")) == "quantile":
+        prob_spec = probabilistic_spec_from_mapping(
+            config.probabilistic.canonical_payload()
+        )
+        if prob_spec.calibration is not None:
+            calibration_tracker = ConformalCalibrationTracker(
+                prob_spec,
+                freq_offset=to_offset(str(config.problem.freq)),
+            )
+    calibration_audits: list[dict[str, Any]] = []
     for fold in folds:
         dynamic_problem = replace(config.problem, horizon=fold.horizon)
         dynamic_validation = {
@@ -144,9 +163,20 @@ def overwrite_calendar_month_backtest(
             if isinstance(prediction, PointForecastTensor)
             else prediction.point
         )
-        cv_frames.append(
-            backtest_tensors_to_long(actual, prediction, window=fold.window)
-        )
+        fold_frame = backtest_tensors_to_long(actual, prediction, window=fold.window)
+        if calibration_tracker is not None:
+            fold_frame, calibration_audit = calibration_tracker.apply_to_frame(
+                fold_frame,
+                forecast_origin=fold.origin,
+            )
+            calibration_audits.append({"window": fold.window, **calibration_audit})
+        cv_frames.append(fold_frame)
+        if calibration_tracker is not None:
+            calibration_tracker.collect_from_frame(
+                fold_frame,
+                forecast_origin=fold.origin,
+                window=fold.window,
+            )
         score_frames.append(
             evaluate_point_forecasts(
                 actual,
@@ -158,19 +188,11 @@ def overwrite_calendar_month_backtest(
             )
         )
         if isinstance(prediction, MarginalForecastDistribution):
-            mask_payload = build_eval_mask_payload(eval_mask_config, actual)
             probabilistic_frames.append(
                 evaluate_marginal_distribution(
                     actual,
                     prediction,
-                    valid_masks=(
-                        {
-                            target: payload["valid_mask"]
-                            for target, payload in mask_payload.items()
-                        }
-                        if mask_payload is not None
-                        else None
-                    ),
+                    eval_mask=eval_mask_config,
                     window=fold.window,
                 )
             )
@@ -191,6 +213,8 @@ def overwrite_calendar_month_backtest(
         "stride_months": backtest.stride_months,
         "windows": fold_metadata,
     }
+    if calibration_audits:
+        metadata["calibration"] = calibration_audits
     write_backtest_results(
         result.test_dir,
         pd.concat(cv_frames, ignore_index=True),
@@ -206,6 +230,29 @@ def overwrite_calendar_month_backtest(
     resolved_path = result.forecast_dir / "resolved_config.json"
     resolved = json.loads(resolved_path.read_text(encoding="utf-8"))
     resolved.setdefault("runtime", {})["holdout"] = metadata
+    if calibration_tracker is not None:
+        # CQR final：calendar_month 的 fixed-step 折为空，最终修正量在这里
+        # 由 calendar 折池计算，冻结进 bundle 并重写 prediction.csv。
+        final_correction, final_calibration_audit = (
+            calibration_tracker.final_correction(final_runner.origin)
+        )
+        calibration_state = {"method": "cqr", **final_calibration_audit}
+        result.bundle.calibration_state = calibration_state
+        persist_model_bundle(result.bundle, result.model_dir)
+        resolved["runtime"]["calibration"] = calibration_state
+        if final_correction.status == "applied":
+            prediction_path = result.forecast_dir / "prediction.csv"
+            frame = pd.read_csv(prediction_path)
+            correction = float(final_correction.correction)
+            frame = attach_cqr_interval_columns(
+                frame,
+                lower=frame[calibration_tracker.lower_column].to_numpy(dtype=float)
+                - correction,
+                upper=frame[calibration_tracker.upper_column].to_numpy(dtype=float)
+                + correction,
+                target_coverage=calibration_tracker.target_coverage,
+            )
+            frame.to_csv(prediction_path, index=False, encoding="utf_8_sig")
     _write_json(resolved_path, resolved)
 
 

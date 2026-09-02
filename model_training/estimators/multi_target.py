@@ -5,6 +5,7 @@ from typing import Callable
 
 import numpy as np
 
+from forecasting_core.tensors import unflatten_time_major
 from model_training.estimators.capabilities import EstimatorCapabilities
 from model_training.strategies.base import TargetCoordinate
 
@@ -141,10 +142,11 @@ class _BaseMultiTargetAdapter:
         return prediction
 
     def _reshape_prediction(self, flat_prediction: np.ndarray) -> np.ndarray:
-        return flat_prediction.reshape(
-            flat_prediction.shape[0],
-            self.horizon,
-            len(self.targets),
+        # (N, steps*K) -> (N, steps, K)：time-major 合同唯一实现（tensors.py）
+        return unflatten_time_major(
+            flat_prediction,
+            steps=self.horizon,
+            width=len(self.targets),
         )
 
     def _require_fit(self) -> None:

@@ -197,7 +197,10 @@ class EnsembleRuntimeMatrixTest(EnsembleRuntimeTestBase):
         fused = result["fused_oof_scores"]
         point = fused["point"]
         self.assertIsNone(fused["probabilistic"])
-        self.assertEqual(set(point["scope"]), {"target", "aggregate"})
+        self.assertEqual(
+            set(point["scope"]),
+            {"target", "aggregate", "horizon", "aggregate_horizon"},
+        )
         self.assertTrue(np.isfinite(point["MAE"]).all())
         # 不变量：averaging 的融合 MAE 不超过最差成员的 OOF MAE
         member_maes = [

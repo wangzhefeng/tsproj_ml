@@ -739,3 +739,39 @@ def require_matching_point_axes(
         or not actual.forecast_times.equals(prediction.forecast_times)
     ):
         raise ValueError("actual and prediction axes must match")
+
+
+def flatten_time_major(
+    values: np.ndarray,
+    *,
+    steps: int,
+    width: int,
+) -> np.ndarray:
+    """``(N, steps, width)`` -> ``(N, steps*width)``（time-major 合同唯一实现）。
+
+    列序固定 time-major/target-minor：``(t0,k0), (t0,k1), ..., (t1,k0), ...``，
+    与 ``PointForecastTensor.to_time_major_matrix`` 同一合同。训练端把单次模型
+    调用负责的 ``(N, steps, K)`` 目标块压平成监督矩阵、执行器把 ``(N, H, K)``
+    预测张量压平成 2D 合同，均须走本函数，不得各自 reshape（2026-09-01 收敛）。
+    """
+    array = np.asarray(values, dtype=float)
+    if array.ndim != 3 or array.shape[1:] != (steps, width):
+        raise ValueError(
+            f"expected shape (N, {steps}, {width}), got {array.shape}"
+        )
+    return array.reshape(array.shape[0], steps * width)
+
+
+def unflatten_time_major(
+    matrix: np.ndarray,
+    *,
+    steps: int,
+    width: int,
+) -> np.ndarray:
+    """``(N, steps*width)`` -> ``(N, steps, width)``（flatten_time_major 逆变换）。"""
+    array = np.asarray(matrix, dtype=float)
+    if array.ndim != 2 or array.shape[1] != steps * width:
+        raise ValueError(
+            f"expected shape (N, {steps * width}), got {array.shape}"
+        )
+    return array.reshape(array.shape[0], steps, width)

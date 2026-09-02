@@ -1,5 +1,13 @@
 # -*- coding: utf-8 -*-
-"""概率预测后处理流水线。"""
+"""概率预测后处理流水线。
+
+【休眠状态（2026-09-01 标注）】本模块不在 canonical 主链上：生产链的
+crossing 修复在 ``model_forecasting/forecaster.py``（张量级，消费
+``probabilistic.crossing.method``），CQR 校准由 ``probabilistic/calibration.py``
+经 ``model_forecasting/runtime.py`` 的 as-of 校准追踪器接线。本模块的
+DataFrame 版组合入口仅被 ``tests/test_probabilistic_pipeline.py`` 引用，
+属于早期设计的预留实现，保留供参考，不得当作现役通路。
+"""
 
 from typing import Optional, Tuple
 

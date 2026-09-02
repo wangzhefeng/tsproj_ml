@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any, Mapping, Sequence
 
 from forecasting_core.artifacts import ForecastModelBundle
-from forecasting_core.probabilistic_spec import ProbabilisticSpec
+from forecasting_core.probabilistic_spec import probabilistic_spec_from_mapping
 from model_training.strategies import CanonicalStrategyArtifact
 from model_training.trainer import CanonicalTrainer
 from models.ModelSaveLoad import ModelDeployPkl
@@ -26,6 +26,7 @@ def build_strategy_model_bundle(
     feature_lineage: Sequence[Mapping[str, Any]] = (),
     source_lineage: Sequence[Mapping[str, Any]] = (),
     series_ids: tuple[Any, ...] = (),
+    calibration_state: Mapping[str, Any] | None = None,
 ) -> ForecastModelBundle:
     """Build a schema-2 bundle without making the training layer own IO types."""
     if not isinstance(trainer, CanonicalTrainer):
@@ -33,35 +34,11 @@ def build_strategy_model_bundle(
     if not isinstance(artifact, CanonicalStrategyArtifact):
         raise TypeError("artifact must be a CanonicalStrategyArtifact")
     config = trainer.config
-    mode = str(config.probabilistic.get("mode", "point"))
-    if mode == "point":
-        probabilistic_spec = ProbabilisticSpec(
-            mode="point",
-            quantiles=(),
-            point_quantile=0.5,
-            recursive_propagation="median_path",
-            crossing_method="none",
-            crossing_report_raw=True,
-            intervals=(),
-            calibration=None,
-        )
-    elif mode == "quantile":
-        probabilistic_spec = ProbabilisticSpec(
-            mode="quantile",
-            quantiles=tuple(
-                float(level) for level in config.probabilistic.get("quantiles", ())
-            ),
-            point_quantile=float(
-                config.probabilistic.get("point_quantile", 0.5)
-            ),
-            recursive_propagation="median_path",
-            crossing_method="median_preserving_isotonic",
-            crossing_report_raw=True,
-            intervals=(),
-            calibration=None,
-        )
-    else:
-        raise ValueError(f"unsupported canonical probabilistic mode: {mode!r}")
+    # 部署态概率规格由唯一解析入口从 canonical YAML 段构建（2026-09-01：
+    # 取代此前 mode 分支硬编码 crossing_method 的写法，配置即事实）。
+    probabilistic_spec = probabilistic_spec_from_mapping(
+        config.probabilistic.canonical_payload()
+    )
     estimator_payload = config.estimator.canonical_payload()
     estimator_payload["capabilities"] = trainer.capabilities.canonical_payload()
     assert config.strategy is not None
@@ -88,6 +65,9 @@ def build_strategy_model_bundle(
         training_scope=config.problem.training_scope,
         result_schema_version=2,
         config_fingerprint=config.fingerprint(),
+        calibration_state=(
+            dict(calibration_state) if calibration_state is not None else None
+        ),
     )
 
 

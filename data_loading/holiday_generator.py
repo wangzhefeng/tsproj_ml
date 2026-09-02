@@ -80,6 +80,71 @@ def _sorted_holiday_dates(dates: list[datetime.date]) -> list[datetime.date]:
     return sorted(holiday_set)
 
 
+# 节气→公历月份映射（每个节气的月份固定：1 月小寒/大寒……12 月大雪/冬至）。
+SOLAR_TERM_MONTH_ORDER = {
+    "the Beginning of Spring": 2,
+    "Rain Water": 2,
+    "the Waking of Insects": 3,
+    "the Spring Equinox": 3,
+    "Pure Brightness": 4,
+    "Grain Rain": 4,
+    "the Beginning of Summer": 5,
+    "Lesser Fullness of Grain": 5,
+    "Grain in Beard": 6,
+    "the Summer Solstice": 6,
+    "Lesser Heat": 7,
+    "Greater Heat": 7,
+    "the Beginning of Autumn": 8,
+    "the End of Heat": 8,
+    "White Dew": 9,
+    "the Autumn Equinox": 9,
+    "Cold Dew": 10,
+    "Frost's Descent": 10,
+    "the Beginning of Winter": 11,
+    "Lesser Snow": 11,
+    "Greater Snow": 12,
+    "the Winter Solstice": 12,
+    "Lesser Cold": 1,
+    "Greater Cold": 1,
+}
+
+
+def _solar_term_table(years: set[int]) -> list[tuple[datetime.date, str]]:
+    """计算给定年份集合（±1 年扩展）的全年 24 节气有序表 [(date, 中文名)]。"""
+    from chinese_calendar.solar_terms import (
+        SOLAR_TERMS_C_NUMS,
+        SOLAR_TERMS_DELTA,
+    )
+
+    table: list[tuple[datetime.date, str]] = []
+    for year in years:
+        year_mod = year % 100
+        century_offset = 1 if year >= 2001 else 0
+        for term, c_values in SOLAR_TERMS_C_NUMS.items():
+            month = SOLAR_TERM_MONTH_ORDER[term.value[0]]
+            day = (
+                int(year_mod * 0.2422 + c_values[century_offset])
+                - int(year_mod / 4)
+                + SOLAR_TERMS_DELTA.get((year, term), 0)
+            )
+            table.append((datetime.date(year, month, day), term.value[1]))
+    return sorted(table)
+
+
+def _solar_term_lookup(date: datetime.date) -> str:
+    """当日所处的节气：节气日返回自身名，其余日继承上一节气名。
+
+    语义：列值是「当前节令」（季节内漂移的解释变量），逐日继承；
+    例：2026-08-06 -> 小暑，08-07 -> 立秋，08-08 -> 立秋。
+    """
+    padded_years = {date.year - 1, date.year, date.year + 1}
+    table = _solar_term_table(padded_years)
+    position = bisect.bisect_right([d for d, _ in table], date) - 1
+    if position < 0:
+        return ""
+    return table[position][1]
+
+
 def chinese_holiday_frame(
     start: Any,
     end: Any,
@@ -102,26 +167,59 @@ def chinese_holiday_frame(
     day_cache: dict[datetime.date, tuple[int, str]] = {}
     for date in dates:
         on_holiday, name = cc.get_holiday_detail(date)
-        day_cache[date] = (int(bool(on_holiday)), str(name) if name else "")
-
-    # next_holiday_days：距最近一个假日（含当日）的日历日数；假日为 0，
-    # 非假日向前找（跨周末，体现节前效应渐近）。按年取全集 + bisect。
-    # 删失语义：请求日所处年份的年历若尚未入库（国务院通常年底发布次年
-    # 安排），找不到下一假日时取哨兵值 _CENSORED_NEXT_HOLIDAY_DAYS——
-    # 这是一个有文档的「已知截断」标记，不是编造的距离。
+        # 调休班日（周末上班）detail 返回 (False, 所属节日名)，清空名字以
+        # 维持「holiday_name 非空 => is_holiday=1」单向不变式；反向不成立
+        # ——补假的周末 detail 可为 (True, None)（日历未指名归属）。
+        day_cache[date] = (
+            int(bool(on_holiday)),
+            str(name) if (on_holiday and name) else "",
+        )
+    # next_holiday_days / prev_holiday_days：距最近假日（含当日）的日历
+    # 日数；假日为 0，非假日向前/向后找（跨周末，体现节前渐近与节后恢复）。
+    # 按年取全集 + 双向 bisect。删失语义：请求年次年/上年的年历若尚未入库
+    # （国务院通常年底发布次年安排），取哨兵值 _CENSORED_NEXT_HOLIDAY_DAYS
+    # ——有文档的「已知截断」标记，不是编造的距离。
     holiday_days = _sorted_holiday_dates(dates)
     next_day_distance: dict[datetime.date, float] = {}
+    prev_day_distance: dict[datetime.date, float] = {}
     for date in dates:
         if day_cache[date][0] == 1:
             next_day_distance[date] = 0.0
+            prev_day_distance[date] = 0.0
             continue
         position = bisect.bisect_left(holiday_days, date)
         if position < len(holiday_days):
             distance = (holiday_days[position] - date).days
             if distance <= _MAX_HORIZON_DAYS:
                 next_day_distance[date] = float(distance)
+            else:
+                next_day_distance[date] = float(_CENSORED_NEXT_HOLIDAY_DAYS)
+        else:
+            next_day_distance[date] = float(_CENSORED_NEXT_HOLIDAY_DAYS)
+        prev_position = bisect.bisect_right(holiday_days, date) - 1
+        if prev_position >= 0:
+            back = (date - holiday_days[prev_position]).days
+            if back <= _MAX_HORIZON_DAYS:
+                prev_day_distance[date] = float(back)
                 continue
-        next_day_distance[date] = float(_CENSORED_NEXT_HOLIDAY_DAYS)
+        prev_day_distance[date] = float(_CENSORED_NEXT_HOLIDAY_DAYS)
+
+    # is_adjusted_workday：周末但国务院安排上班（调休班日）。非周末恒 0。
+    adjusted_workday: dict[datetime.date, int] = {}
+    for date in dates:
+        if date.weekday() < 5:
+            adjusted_workday[date] = 0
+        else:
+            try:
+                adjusted_workday[date] = int(cc.is_workday(date))
+            except NotImplementedError:
+                adjusted_workday[date] = 0
+
+    # solar_term：当日所处的节气（节气日返回自身，其余日继承上一节气）。
+    # 季节内温度-负荷关系的漂移解释变量，天然已知（known_future）。
+    solar_term_cache: dict[datetime.date, str] = {}
+    for date in dates:
+        solar_term_cache[date] = _solar_term_lookup(date)
 
     return pd.DataFrame(
         {
@@ -130,6 +228,9 @@ def chinese_holiday_frame(
             "is_holiday": [day_cache[ts.date()][0] for ts in grid],
             "holiday_name": [day_cache[ts.date()][1] for ts in grid],
             "next_holiday_days": [next_day_distance[ts.date()] for ts in grid],
+            "prev_holiday_days": [prev_day_distance[ts.date()] for ts in grid],
+            "is_adjusted_workday": [adjusted_workday[ts.date()] for ts in grid],
+            "solar_term": [solar_term_cache[ts.date()] for ts in grid],
         }
     )
 

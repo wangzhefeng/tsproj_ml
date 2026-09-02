@@ -5,9 +5,11 @@ from model_training.estimators.capabilities import (
     EstimatorCapabilities,
     MODEL_FACTORY_CAPABILITY_REGISTRY,
     ProbeResult,
+    SharedMultiQuantilePool,
     make_model_factory,
     probe_native_multioutput,
     resolve_model_capabilities,
+    supports_native_multi_quantile,
 )
 from model_training.estimators.multi_target import (
     IndependentMultiTargetAdapter,
@@ -23,7 +25,9 @@ __all__ = [
     "MODEL_FACTORY_CAPABILITY_REGISTRY",
     "ProbeResult",
     "RegressorChainMultiTargetAdapter",
+    "SharedMultiQuantilePool",
     "make_model_factory",
     "probe_native_multioutput",
     "resolve_model_capabilities",
+    "supports_native_multi_quantile",
 ]

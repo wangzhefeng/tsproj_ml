@@ -15,6 +15,10 @@ _SUPPORTED_CROSSING_METHODS = {
     "rearrangement",
     "median_preserving_isotonic",
 }
+# 运行时唯一默认（2026-09-01 裂缝修复）：与 forecaster 历史硬编码行为一致——
+# 排序 + 钳制到 point level 锚点。配置缺省时必须保持这一行为，否则全部存量
+# quantile 结果的语义静默改变。
+_DEFAULT_CROSSING_METHOD = "median_preserving_isotonic"
 _SUPPORTED_RECURSIVE_PROPAGATION = {"median_path"}
 _SUPPORTED_CALIBRATION_METHODS = {"cqr"}
 _SUPPORTED_CALIBRATION_GROUPINGS = {"pooled"}
@@ -298,6 +302,27 @@ def _quantile_token(level: float) -> str:
     return f"{percent:.12f}".rstrip("0").rstrip(".").replace(".", "p")
 
 
+def resolve_crossing_settings(
+    probabilistic: Mapping[str, Any],
+) -> Tuple[str, bool]:
+    """从 canonical probabilistic mapping 解析 crossing 设置（运行时唯一入口）。
+
+    返回 ``(method, report_raw)``；未声明 ``crossing`` 块时回落到
+    ``_DEFAULT_CROSSING_METHOD``（保持历史硬编码行为）。
+    """
+    if not isinstance(probabilistic, Mapping):
+        raise TypeError("probabilistic must be a mapping")
+    raw = probabilistic.get("crossing")
+    if raw is None:
+        return _DEFAULT_CROSSING_METHOD, True
+    crossing = _require_mapping(raw, "probabilistic.crossing")
+    _validate_unknown_keys(crossing, _CROSSING_KEYS, "probabilistic.crossing")
+    method = str(crossing.get("method", _DEFAULT_CROSSING_METHOD)).lower()
+    if method not in _SUPPORTED_CROSSING_METHODS:
+        raise ValueError(f"Unsupported crossing method={method}")
+    return method, bool(crossing.get("report_raw", True))
+
+
 def _legacy_spec(args: Any) -> ProbabilisticSpec:
     mode = str(getattr(args, "predict_type", "point") or "point").lower()
     if mode == "point":
@@ -392,7 +417,9 @@ def _new_spec(raw_mapping: Mapping[str, Any]) -> ProbabilisticSpec:
     crossing_raw = mapping.get("crossing", {}) or {}
     crossing = _require_mapping(crossing_raw, "probabilistic.crossing")
     _validate_unknown_keys(crossing, _CROSSING_KEYS, "probabilistic.crossing")
-    crossing_method = str(crossing.get("method", "rearrangement"))
+    crossing_method = str(
+        crossing.get("method", _DEFAULT_CROSSING_METHOD)
+    ).lower()
     crossing_report_raw = bool(crossing.get("report_raw", True))
 
     raw_intervals = mapping.get("intervals")
@@ -485,6 +512,18 @@ def _new_spec(raw_mapping: Mapping[str, Any]) -> ProbabilisticSpec:
         calibration=calibration,
         schema_version=schema_version,
     )
+
+
+def probabilistic_spec_from_mapping(
+    raw_mapping: Mapping[str, Any],
+) -> ProbabilisticSpec:
+    """从 canonical probabilistic mapping 构建部署态 spec（运行时唯一入口）。
+
+    只接受新版键集合（mode/quantiles/point_quantile/recursive_propagation/
+    crossing/intervals/calibration/schema_version）；legacy ``crossing_method``
+    与 ``conformal`` 键一律 RAISE（已于 2026-09-01 从全部现役 YAML 清扫）。
+    """
+    return _new_spec(raw_mapping)
 
 
 def _legacy_fields_are_explicit(args: Any) -> bool:

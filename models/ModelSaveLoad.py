@@ -53,8 +53,8 @@ class ModelDeployPkl:
 
         # F8（架构收敛 D1）：低层不 import 高层，schema gate 改 duck-typing。
         # ForecastModelBundle 契约以 schema_version 属性判定，等价于原 isinstance 检查：
-        # bundle 对象必有整型 schema_version（构造期强校验）；普通估计器/DecompositionBundle
-        # 等非 schema-2 bundle 对象按原语义放行或拒绝。
+        # bundle 对象必有整型 schema_version（构造期强校验）；普通估计器等非
+        # schema-2 bundle 对象按原语义放行或拒绝。
         schema_version = getattr(model, "schema_version", None)
         if (
             isinstance(schema_version, int)
@@ -85,6 +85,6 @@ class ModelDeployPkl:
 
         model = joblib.load(self.save_file_path)
 
-        # 加载结果原样返回（DecompositionBundle / 普通模型 / 其他对象），调用方自行判型；
+        # 加载结果原样返回，调用方自行判型；
         # 不做类型检查导入（架构收敛 F8：低层不得反向 import 高层，duck-typing 收口）。
         return model

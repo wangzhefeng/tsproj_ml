@@ -1,5 +1,12 @@
 # -*- coding: utf-8 -*-
-"""分位数 crossing 诊断与 q50 锚定修复。"""
+"""分位数 crossing 诊断与 q50 锚定修复。
+
+【休眠状态（2026-09-01 标注）】本 DataFrame 版实现不在 canonical 主链上，
+仅被 ``probabilistic/pipeline.py``（同为休眠）与其测试引用。现役通路是
+``model_forecasting/forecaster.py::repair_marginal_quantile_crossing``
+（张量级，消费 ``probabilistic.crossing.method`` 配置）。两侧语义一致
+（q50 锚定修复），保留本模块供离线诊断复用。
+"""
 
 import re
 from typing import List, Tuple

@@ -31,6 +31,20 @@
 
 MO 策略严格要求 `1 < B < H` 且 `H % B == 0`；不满足时在配置解析期 RAISE，不由运行时截断。
 
+### 2.2.1 配置维度总表（2026-09-01 新增）
+
+五个配置维度互相正交，各自独立取值、组合生效；理解任何一个配置先定位它在下表的位置：
+
+| 维度 | 配置字段 | 取值 | 行为作用层 | 代码入口 |
+|---|---|---|---|---|
+| 策略 | `strategy.name`（+MO 的 `output_chunk_length`） | recursive / direct / mimo / recmo / dirrec / dirmo / dirrecmo | H 步输出如何在模型调用间分配、是否消费自身预测 | `forecasting_core/specs/strategy.py` 规则表；`model_training/strategies/` 执行 |
+| Direct layout | `features.transformations.direct.layout` | independent_models（H 个独立模型）/ single_model_horizon（共享单模型=pointwise，必配 horizon_feature） | 同一 Direct 策略下训练样本的行×列组织 | `feature_engineering/compiler.py`；`estimators/multi_target.py` |
+| 训练 scope | `problem.training_scope` | local（逐序列独立建模）/ global（panel 池化共享模型，series_id 作 key 特征） | 序列间是否共享参数 | `forecasting_core/specs/problem.py` |
+| 估计器耦合 | `estimator.target_adapter` | independent（标量模型组）/ regressor_chain（标量组+前序输出作输入，不支持 quantile）/ native（单实例多输出） | 语义输出块到物理估计器实例的映射 | `model_training/estimators/multi_target.py` |
+| 信息模式 | `problem.information_mode` | forecast / nowcast / oracle | 信息集 as-of 可见性 | `forecasting_core/specs/problem.py` + `SourceRegistry` |
+
+维度命名属合同：不得把 layout/scope/adapter 取值登记为策略名（`tests/test_canonical_strategy_spec.py` 门禁钉住）；时间-major 压平合同唯一实现在 `forecasting_core/tensors.py::flatten_time_major/unflatten_time_major`。
+
 ### 2.3 数据角色
 
 `DataSourceSpec.columns` 是入模投影视图；每个声明列必须显式且只声明一个角色：
@@ -141,12 +155,14 @@ Quantile linear blending 按 target 最小化 simplex pooled pinball，一组 ta
 
 ## 7. 概率边界
 
-当前生产能力只覆盖 point 与边际 quantile：
+生产能力覆盖 point、边际 quantile 与可选 CQR 校准区间（2026-09-01 激活）：
 
-- quantile 模式写逐 level pinball、central interval coverage/width/Winkler/coverage gap；
-- crossing 使用 median-preserving isotonic 后处理；
-- `probabilistic/calibration.py` 只保留 CQR 数学内核；canonical runtime 不执行 CQR，也不输出 `predict_pi*`；
-- 不支持 joint sample generator、联合路径概率或 ensemble-of-ensemble。
+- quantile 模式写逐 level pinball、bias、central interval coverage/width/Winkler/coverage gap，并按 horizon 步拆分诊断行（2026-09-02）；
+- crossing 后处理消费 `probabilistic.crossing.method` 配置（none/rearrangement/median_preserving_isotonic，缺省 median_preserving_isotonic=历史行为）；部署期从 bundle spec 读取（2026-09-01 裂缝修复：此前配置被静默忽略、runtime 无条件修复）；
+- CQR：`probabilistic.calibration`（method=cqr）声明即启用。回测逐折 apply-before-collect，只消费 origin 严格更早且标签已可得的历史折（as-of 双门槛 min_windows/min_scores，pooled 分组跨 series/target）；产出 `predict_pi<coverage>_lower/upper` 列进 `cv_plot_df.csv` 与 `prediction.csv`；final 修正量冻结进 bundle `calibration_state`（`ForecastModelBundle.calibration_state`），部署期应用、不重校准，且经 `distribution_to_long` 消费 bundle metadata `prediction_intervals` 落成部署链 `prediction.csv` 的 pi 列（2026-09-02 接线，此前为死写；同批修复 deployment `_predict_quantiles` 的 `bundle_crossing_method` NameError、checker probabilistic 键白名单与 geometry manifest fingerprint 再生成）。不足门槛时诚实降级：不产出 pi 列，`result_metadata.json` 记 status/reason。fixed-step（`runtime.py`）与 calendar-month（`backtest_runtime.py`）共用 `probabilistic/calibration.py::ConformalCalibrationTracker`；
+- legacy `crossing_method`/`conformal` 键已于 2026-09-01 从全部 YAML 清扫（379 个文件：`crossing_method: isotonic` → `crossing:` 块；`conformal: {method: none}` 删除；146 个 `method: cqr` 迁入 `intervals:` + `calibration:`），spec 层对 legacy 键一律 RAISE。注意 fingerprint 随之变化，存量 results 沿用旧 identity 前缀；
+- quantile 训练优化（2026-09-01）：逐 level 训练默认线程并行（数值与串行一致）；xgboost≥2.0 自动走原生多分位共享 booster（训练成本 ≈1× 而非 Q×，与并行互斥；现役 YAML 零 xgb quantile 配置）；
+- 仍不支持 joint sample generator、联合路径概率或 ensemble-of-ensemble。
 
 ## 8. 结果与产物合同
 
@@ -159,14 +175,21 @@ results/<scenario>/<result_identity>/
 │   ├── cv_plot_df.csv
 │   ├── test_scores_df.csv
 │   ├── test_scores_probabilistic_df.csv   # quantile only
+│   ├── test_prediction.png                # 单 target 拼接总图（多 target 在 target_plots/）
+│   ├── target_plots/                      # 多 target 拼接总图（per target 一张）
+│   ├── windows_results/                   # per-window 图（window_<w>.png，多 target 子图）
 │   └── result_metadata.json
 └── results_forecast/
     ├── prediction.csv
+    ├── forecast_prediction.png            # 预测图（单 target；多 target 在 prediction_plots/）
     └── resolved_config.json
 ```
 
 - `prediction.csv` 唯一键：`(series_id,time,target)`。
 - `cv_plot_df.csv` 唯一键：`(series_id,time,target,window)`。
+- 可视化产物（2026-09-02，绘图消费未掩码原始值，掩码只用于指标）：回测总图按时间排序后整条拼接（现役 stride==horizon 契约下窗口首尾相接；同 series 时间戳重复即 stride<horizon 重叠配置，拼接 RAISE 并指向 windows_results/ 单窗图）；`windows_results/window_<w>.png` 每窗一文件、多 target 纵向子图；正式预测写 `forecast_prediction.png`（多 target → `prediction_plots/`），quantile 模式附 PI 区间带。线型：Trues 实线 / Preds 点划线（沿用旧版 `models/ModelTesting.py` 口径）。
+- `test_scores_df.csv`（2026-09-02 扩展）：`scope ∈ {target, aggregate, horizon, aggregate_horizon}`。`target`/`aggregate` 行与历史一致（aggregate 为 target 加权）；指标列含 `Bias`（= mean(pred−actual)，正=高估，含 `Naive Bias` 对照）；`horizon`/`aggregate_horizon` 行为 per-horizon 诊断（2026-09-02 新增），`horizon` 列 1-based，`aggregate_horizon` 跨 target 按有效点池化（proper score 语义）。
+- `test_scores_probabilistic_df.csv`：tidy long，metric ∈ {mae, bias, pinball, interval_coverage, interval_width, interval_winkler, coverage_gap, calibration_error}；`horizon` 列仅 per-horizon 行非空；`scope ∈ {target, aggregate, horizon, aggregate_horizon}`。
 - 单模型和 Ensemble 均保存 schema-2 `ForecastModelBundle`。
 - fingerprint 只取语义 payload；日志、并行度和输出目录不进入 fingerprint。
 - resolved config/model 必须足以复算 training policy、轴顺序、source/feature lineage 和产物身份。

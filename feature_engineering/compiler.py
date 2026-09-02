@@ -680,6 +680,7 @@ class FeatureCompiler:
             "difference",
             "percent_change",
             "time_since",
+            "ewm",
             "cyclical",
             "interaction",
             "polynomial",
@@ -687,7 +688,14 @@ class FeatureCompiler:
         unknown = sorted(set(advanced) - supported)
         if unknown:
             raise ValueError(f"unsupported advanced transformations: {unknown}")
-        for kind in ("rolling", "expanding", "difference", "percent_change", "time_since"):
+        for kind in (
+            "rolling",
+            "expanding",
+            "difference",
+            "percent_change",
+            "time_since",
+            "ewm",
+        ):
             spec = advanced.get(kind)
             if spec is None:
                 continue
@@ -708,6 +716,30 @@ class FeatureCompiler:
                         values = history.iloc[-window:]
                         for stat in stats:
                             row[f"{column}_rolling_{stat}_{window}"] = self._statistic(values, stat)
+                elif kind == "ewm":
+                    # 指数加权统计（近期行为权重更高）：按半衰期计。
+                    # ewm 半衰期以样本步数计；与 rolling 窗口一样只消费可见历史。
+                    halflives = self._positive_number_sequence(
+                        spec.get("halflives", ()), "ewm.halflives"
+                    )
+                    ewm_stats = self._string_sequence(spec.get("stats", ()), "ewm.stats")
+                    for halflife in halflives:
+                        series = history.ewm(halflife=halflife, adjust=True)
+                        for stat in ewm_stats:
+                            if stat == "mean":
+                                value = series.mean().iloc[-1]
+                            elif stat == "std":
+                                value = series.std().iloc[-1]
+                            else:
+                                raise ValueError(
+                                    f"unsupported ewm statistic: {stat!r}; expected 'mean' or 'std'"
+                                )
+                            if pd.isna(value):
+                                raise ValueError(
+                                    f"{column!r} ewm_{stat} halflife={halflife} "
+                                    "produced NaN (insufficient visible history)"
+                                )
+                            row[f"{column}_ewm_{stat}_{halflife}"] = float(value)
                 elif kind == "expanding":
                     stats = self._string_sequence(spec.get("stats", ()), "expanding.stats")
                     for stat in stats:
@@ -865,7 +897,35 @@ class FeatureCompiler:
         return tuple(normalized)
 
     @staticmethod
+    def _positive_number_sequence(value: Any, field_name: str) -> tuple[float, ...]:
+        """正数序列（整数或浮点，ewm 半衰期用）。"""
+        if isinstance(value, (str, bytes)) or not isinstance(value, Sequence):
+            raise TypeError(f"{field_name} must be a sequence of positive numbers")
+        normalized = []
+        for item in value:
+            if isinstance(item, bool) or not isinstance(item, (int, float)):
+                raise ValueError(f"{field_name} entries must be positive numbers")
+            if not np.isfinite(float(item)) or float(item) <= 0:
+                raise ValueError(f"{field_name} entries must be positive finite numbers")
+            normalized.append(float(item))
+        return tuple(normalized)
+
+    @staticmethod
     def _statistic(values: pd.Series, stat: str) -> float:
+        if stat in {"max_diff", "min_diff"}:
+            # 爬坡统计：窗内相邻步最大/最小变化量。窗口 < 2 时无相邻对，
+            # 与其他统计的防御回退一致（minimum_history_rows 已保证
+            # window >= 2 才会启用 diff 类特征，此处为纵深防御）。
+            if len(values) < 2:
+                warnings.warn(
+                    f"{stat!r} requires at least 2 samples (got {len(values)}); "
+                    "falling back to 0.0",
+                    RuntimeWarning,
+                    stacklevel=3,
+                )
+                return 0.0
+            diffs = values.diff().dropna()
+            return float(diffs.max() if stat == "max_diff" else diffs.min())
         supported = {"mean", "std", "min", "max", "median", "skew", "kurt"}
         if stat not in supported:
             raise ValueError(f"unsupported history statistic: {stat!r}")

@@ -16,7 +16,12 @@ from model_forecasting.forecaster import (
     CanonicalMarginalQuantileForecaster,
 )
 from model_forecasting.transforms import CanonicalFeatureScaler, CanonicalTargetTransform
-from model_training.estimators import make_model_factory, resolve_model_capabilities
+from model_training.estimators import (
+    SharedMultiQuantilePool,
+    make_model_factory,
+    resolve_model_capabilities,
+    supports_native_multi_quantile,
+)
 from model_training.trainer import CanonicalTrainer
 from probabilistic.training import CanonicalMarginalQuantileTrainer
 
@@ -138,6 +143,32 @@ def _fit_quantile(
     if not capabilities.scalar_quantile:
         raise ValueError(
             f"model_type {config.estimator.model_type!r} does not support scalar quantiles"
+        )
+    # xgb 原生多分位（2026-09-01）：单 booster 输出整个 grid，训练成本
+    # ≈1× 而非 Q×；共享位置对齐要求逐 level 串行。其余模型走逐 level
+    # 独立训练 + 线程并行（数值与历史串行完全一致）。
+    if supports_native_multi_quantile(config.estimator.model_type):
+        levels = tuple(
+            float(level) for level in config.probabilistic.get("quantiles", ())
+        )
+        pool = SharedMultiQuantilePool(
+            config.estimator.model_type,
+            config.estimator.params,
+            levels,
+            feature_schema,
+        )
+        trainer = CanonicalMarginalQuantileTrainer(
+            config,
+            estimator_factory_for_level=lambda level: pool.factory_for_level(
+                levels.index(level)
+            ),
+            capabilities=capabilities,
+            feature_schema=feature_schema,
+        )
+        return (
+            trainer,
+            trainer.train(X_by_call, Y, n_series=n_series, max_workers=1),
+            capabilities,
         )
     trainer = CanonicalMarginalQuantileTrainer(
         config,

@@ -12,7 +12,9 @@ from forecasting_core.tensors import (
     MarginalQuantileForecastTensor,
     PointForecastTensor,
     SampleForecastTensor,
+    flatten_time_major,
     require_matching_point_axes,
+    unflatten_time_major,
 )
 
 __all__ = [
@@ -23,5 +25,7 @@ __all__ = [
     "MarginalQuantileForecastTensor",
     "PointForecastTensor",
     "SampleForecastTensor",
+    "flatten_time_major",
     "require_matching_point_axes",
+    "unflatten_time_major",
 ]

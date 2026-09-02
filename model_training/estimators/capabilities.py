@@ -2,6 +2,8 @@
 
 import copy
 import importlib
+import itertools
+import threading
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, fields, replace
 from functools import partial
@@ -321,3 +323,150 @@ def resolve_model_capabilities(
         native_multi_target_point=probe.supported,
         native_multi_target_quantile=False,
     )
+
+
+_NATIVE_MULTI_QUANTILE_MODEL_TYPES = frozenset({"xgboost", "xgb"})
+
+
+def supports_native_multi_quantile(model_type: str) -> bool:
+    """该模型类型是否支持单次训练输出整个 quantile grid（原生多分位）。
+
+    目前仅 xgboost>=2.0（``quantile_alpha`` 接受列表，单 booster 每叶
+    输出全部 level）。pyproject 钉 ``xgboost>=3.2.0``，运行时仍做版本
+    防御性探测，不支持时回落 False（调用方走逐 level 独立训练）。
+    """
+    normalized = _normalize_model_type(model_type)
+    if normalized not in _NATIVE_MULTI_QUANTILE_MODEL_TYPES:
+        return False
+    try:
+        xgboost = importlib.import_module("xgboost")
+        major = int(str(xgboost.__version__).split(".")[0])
+    except Exception:
+        return False
+    return major >= 2
+
+
+class _QuantileSliceEstimator:
+    """共享 booster 的逐 level 视图：fit 委托池（仅首次生效），predict 切列。"""
+
+    def __init__(
+        self,
+        pool: "SharedMultiQuantilePool",
+        position: int,
+        level_index: int,
+    ) -> None:
+        self._pool = pool
+        self._position = position
+        self._level_index = level_index
+
+    def fit(self, X: object, y: object, sample_weight=None):
+        self._pool.fit_position(self._position, X, y, sample_weight=sample_weight)
+        return self
+
+    def predict(self, X: object) -> np.ndarray:
+        values = self._pool.predict_position(self._position, X)
+        return values[:, self._level_index]
+
+
+class SharedMultiQuantilePool:
+    """xgb 原生多分位共享池：每个子模型位置只训练一个 booster。
+
+    对齐不变量：canonical 训练对每个 level 使用同一 ``StrategyTargetPlan``
+    （同一 config → 同一调用顺序），因此 ``factory_for_level`` 为每个 level
+    返回独立的逻辑位置计数器，按 ``(position)`` 对齐共享 booster——首个
+    到达该位置的 level 完成真实训练，后续 level 的 fit 为幂等空操作。
+
+    与 level 并行互斥：共享路径要求逐 level 串行（调用方必须
+    ``max_workers=1``），否则位置对齐在多线程下不成立。
+    """
+
+    def __init__(
+        self,
+        model_type: str,
+        params: Mapping[str, object] | None,
+        levels: Sequence[float],
+        feature_names: Sequence[str] | None,
+    ) -> None:
+        normalized = _normalize_model_type(model_type)
+        if not supports_native_multi_quantile(normalized):
+            raise ValueError(
+                f"model_type {normalized!r} does not support native multi-quantile"
+            )
+        self.model_type = normalized
+        self.levels = tuple(float(level) for level in levels)
+        if not self.levels:
+            raise ValueError("levels must not be empty")
+        self.params = {
+            **dict(params or {}),
+            "objective": "reg:quantileerror",
+            "quantile_alpha": list(self.levels),
+        }
+        self.feature_names = tuple(feature_names or ())
+        self._fitted: dict[int, _ModelFactoryEstimator] = {}
+        self._lock = threading.Lock()
+
+    def __getstate__(self) -> dict:
+        # 线程锁不可序列化；bundle 部署期只读 pool（不再 fit），重建即可
+        state = dict(self.__dict__)
+        state["_lock"] = None
+        return state
+
+    def __setstate__(self, state: dict) -> None:
+        self.__dict__.update(state)
+        self._lock = threading.Lock()
+
+    def factory_for_level(self, level_index: int) -> Callable[[], object]:
+        if not 0 <= level_index < len(self.levels):
+            raise ValueError(
+                f"level_index {level_index} out of range for {len(self.levels)} levels"
+            )
+        position_counter = itertools.count()
+
+        def factory() -> _QuantileSliceEstimator:
+            return _QuantileSliceEstimator(
+                self,
+                next(position_counter),
+                level_index,
+            )
+
+        return factory
+
+    def fit_position(
+        self,
+        position: int,
+        X: object,
+        y: object,
+        *,
+        sample_weight=None,
+    ) -> None:
+        with self._lock:
+            if position in self._fitted:
+                return  # 幂等：该位置已由首个 level 训练
+            estimator = _ModelFactoryEstimator(
+                self.model_type,
+                self.params,
+                self.feature_names,
+            )
+            estimator.fit(X, y, sample_weight=sample_weight)
+            values = np.asarray(estimator.predict(X), dtype=float)
+            if values.ndim != 2 or values.shape[1] != len(self.levels):
+                raise ValueError(
+                    "native multi-quantile predict must return "
+                    f"(n_samples, {len(self.levels)}); got {values.shape}"
+                )
+            self._fitted[position] = estimator
+
+    def predict_position(self, position: int, X: object) -> np.ndarray:
+        try:
+            estimator = self._fitted[position]
+        except KeyError as exc:
+            raise ValueError(
+                f"shared quantile position {position} predicted before fit"
+            ) from exc
+        values = np.asarray(estimator.predict(X), dtype=float)
+        if values.ndim != 2 or values.shape[1] != len(self.levels):
+            raise ValueError(
+                "native multi-quantile predict must return "
+                f"(n_samples, {len(self.levels)}); got {values.shape}"
+            )
+        return values

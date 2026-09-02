@@ -6,7 +6,6 @@
 """
 from decomposition.pipeline import DecompositionPipeline
 from decomposition.registry import build_pipeline, build_pipeline_from_args
-from decomposition.bundle import DecompositionBundle
 from decomposition.diagnostics import write_diagnostics_report
 from decomposition.residual_diagnostics import (
     diagnose_window_residual,
@@ -29,7 +28,6 @@ __all__ = [
     "ComponentForecast",
     "ComponentFrame",
     "DecompositionPipeline",
-    "DecompositionBundle",
     "DecompositionSpec",
     "PresetParams",
     "build_pipeline",

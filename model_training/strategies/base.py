@@ -8,7 +8,11 @@ import numpy as np
 import pandas as pd
 
 from forecasting_core.specs.strategy import ForecastStrategySpec, StrategyName
-from forecasting_core.tensors import PointForecastTensor
+from forecasting_core.tensors import (
+    PointForecastTensor,
+    flatten_time_major,
+    unflatten_time_major,
+)
 
 
 FeatureProvider = Callable[
@@ -116,7 +120,10 @@ class AdapterPredictor:
                 "multi-target adapter prediction must have shape (N, H, K); "
                 f"got {prediction.shape}"
             )
-        return prediction.reshape(prediction.shape[0], -1)
+        # (N, H, K) -> (N, H*K)：time-major 压平合同唯一实现（tensors.py）
+        return flatten_time_major(
+            prediction, steps=prediction.shape[1], width=prediction.shape[2]
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -264,10 +271,10 @@ class StandardStrategyExecutor:
         flat_values = np.column_stack(
             tuple(predicted[coordinate] for coordinate in self.target_plan.coordinates)
         )
-        values = flat_values.reshape(
-            design_base.shape[0],
-            self.target_plan.horizon,
-            len(self.target_plan.targets),
+        values = unflatten_time_major(
+            flat_values,
+            steps=self.target_plan.horizon,
+            width=len(self.target_plan.targets),
         )
         return PointForecastTensor(
             values=values,

@@ -2,13 +2,10 @@
 """Canonical trainer（2026-08-29 架构收敛自 models/ModelTraining.py 迁入，类实现逐字保真）。"""
 
 # python libraries
-import re
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from typing import Sequence
 
 import numpy as np
-import pandas as pd
 
 from model_training.estimators import (
     EstimatorCapabilities,
@@ -17,6 +14,7 @@ from model_training.estimators import (
     RegressorChainMultiTargetAdapter,
 )
 from forecasting_core.specs import ForecastConfigSpec, TargetAdapter
+from forecasting_core.tensors import unflatten_time_major
 from model_training.strategies import (
     AdapterPredictor,
     CanonicalStrategyArtifact,
@@ -27,155 +25,6 @@ from model_training.strategies import (
 
 # global variable
 LOGGING_LABEL = Path(__file__).name[:-3]
-
-
-class DirectMultiOutputRegressor:
-    """
-    为 Direct 多步预测定制的多输出训练器。
-
-    - 每个 horizon 单独训练一个回归器
-    - 支持为每个输出传入独立 eval_set / early stopping
-    - 支持按输出维度并行训练
-    """
-
-    def __init__(self, estimator_factory, n_jobs: int = 1, log_prefix: str = "[DirectMultiOutputRegressor]"):
-        self.estimator_factory = estimator_factory
-        self.n_jobs = max(1, int(n_jobs or 1))
-        self.log_prefix = log_prefix
-        self.estimators_: List[Any] = []
-
-    @staticmethod
-    def _to_1d(values: Any) -> np.ndarray:
-        return np.asarray(values).reshape(-1)
-
-    def _fit_single_output(self, output_idx: int, X_train, y_train, fit_kwargs: Optional[Dict[str, Any]] = None):
-        estimator = self.estimator_factory()
-        estimator.fit(X_train, self._to_1d(y_train), **(fit_kwargs or {}))
-        return output_idx, estimator
-
-    def fit(self, X_train, Y_train, fit_kwargs_list: Optional[List[Dict[str, Any]]] = None):
-        y_frame = Y_train if isinstance(Y_train, pd.DataFrame) else pd.DataFrame(Y_train)
-        n_outputs = y_frame.shape[1]
-        fit_kwargs_list = fit_kwargs_list or [{} for _ in range(n_outputs)]
-        if len(fit_kwargs_list) != n_outputs:
-            raise ValueError(
-                f"{self.log_prefix} fit_kwargs_list length ({len(fit_kwargs_list)}) "
-                f"does not match n_outputs ({n_outputs})."
-            )
-
-        estimators = [None] * n_outputs
-        if self.n_jobs > 1 and n_outputs > 1:
-            with ThreadPoolExecutor(max_workers=self.n_jobs) as executor:
-                futures = [
-                    executor.submit(
-                        self._fit_single_output,
-                        output_idx,
-                        X_train,
-                        y_frame.iloc[:, output_idx],
-                        fit_kwargs_list[output_idx],
-                    )
-                    for output_idx in range(n_outputs)
-                ]
-                for future in as_completed(futures):
-                    output_idx, estimator = future.result()
-                    estimators[output_idx] = estimator
-        else:
-            for output_idx in range(n_outputs):
-                _, estimator = self._fit_single_output(
-                    output_idx,
-                    X_train,
-                    y_frame.iloc[:, output_idx],
-                    fit_kwargs_list[output_idx],
-                )
-                estimators[output_idx] = estimator
-
-        self.estimators_ = estimators
-        # 训练完成后不再依赖工厂，清空以避免模型保存时因闭包/lambda 无法 pickle。
-        self.estimator_factory = None
-        return self
-
-    def predict(self, X) -> np.ndarray:
-        if not self.estimators_:
-            raise ValueError(f"{self.log_prefix} multi-output estimators are not fitted yet.")
-        preds = [self._to_1d(estimator.predict(X)) for estimator in self.estimators_]
-        return np.column_stack(preds)
-
-
-class HorizonAlignedDirectRegressor(DirectMultiOutputRegressor):
-    """每个输出仅消费其对应目标horizon外生列的Direct训练器。
-
-    输入宽表仍使用 ``feature_h1..feature_hH`` 表达目标时刻外生轨迹，
-    但第h个估计器只接收 ``feature_h{h}``，并在交给基模型前重命名回
-    canonical ``feature``。原点lag/advanced以及未展开的origin-frozen列共享。
-    """
-
-    _HORIZON_PATTERN = re.compile(r"^(.+)_h(\d+)$")
-
-    def __init__(self, estimator_factory, n_jobs: int = 1, log_prefix: str = "[HorizonAlignedDirectRegressor]"):
-        super().__init__(estimator_factory, n_jobs=n_jobs, log_prefix=log_prefix)
-        self.shared_features_: List[str] = []
-        self.horizon_bases_: List[str] = []
-
-    def _resolve_feature_layout(self, columns: List[str], n_outputs: int) -> None:
-        expanded = {}
-        expanded_columns = set()
-        for column in columns:
-            match = self._HORIZON_PATTERN.match(str(column))
-            if match is None:
-                continue
-            base = match.group(1)
-            horizon = int(match.group(2))
-            expanded.setdefault(base, {})[horizon] = column
-            expanded_columns.add(column)
-        if not expanded:
-            raise ValueError(f"{self.log_prefix} no horizon-aware exogenous columns found.")
-        for base, by_horizon in expanded.items():
-            missing = [h for h in range(1, n_outputs + 1) if h not in by_horizon]
-            if missing:
-                raise ValueError(
-                    f"{self.log_prefix} feature '{base}' missing horizon {missing[0]} "
-                    f"for {n_outputs} outputs."
-                )
-        expanded_bases = set(expanded)
-        self.shared_features_ = [
-            column for column in columns
-            if column not in expanded_columns and column not in expanded_bases
-        ]
-        self.horizon_bases_ = list(expanded)
-
-    def _frame_for_output(self, X: pd.DataFrame, output_idx: int) -> pd.DataFrame:
-        horizon = output_idx + 1
-        result = X.reindex(columns=self.shared_features_).copy()
-        for base in self.horizon_bases_:
-            source = f"{base}_h{horizon}"
-            if source not in X.columns:
-                raise ValueError(f"{self.log_prefix} feature '{base}' missing horizon {horizon}.")
-            result[base] = X[source].to_numpy()
-        return result
-
-    def _fit_single_output(self, output_idx: int, X_train, y_train, fit_kwargs: Optional[Dict[str, Any]] = None):
-        X_output = self._frame_for_output(X_train, output_idx)
-        kwargs = dict(fit_kwargs or {})
-        if kwargs.get("eval_set"):
-            kwargs["eval_set"] = [
-                (self._frame_for_output(X_eval, output_idx), y_eval)
-                for X_eval, y_eval in kwargs["eval_set"]
-            ]
-        return super()._fit_single_output(output_idx, X_output, y_train, kwargs)
-
-    def fit(self, X_train, Y_train, fit_kwargs_list: Optional[List[Dict[str, Any]]] = None):
-        y_frame = Y_train if isinstance(Y_train, pd.DataFrame) else pd.DataFrame(Y_train)
-        self._resolve_feature_layout(list(X_train.columns), y_frame.shape[1])
-        return super().fit(X_train, y_frame, fit_kwargs_list=fit_kwargs_list)
-
-    def predict(self, X) -> np.ndarray:
-        if not self.estimators_:
-            raise ValueError(f"{self.log_prefix} multi-output estimators are not fitted yet.")
-        preds = [
-            self._to_1d(estimator.predict(self._frame_for_output(X, output_idx)))
-            for output_idx, estimator in enumerate(self.estimators_)
-        ]
-        return np.column_stack(preds)
 
 
 class CanonicalTrainer:
@@ -378,15 +227,10 @@ class CanonicalTrainer:
             )
         )
         steps = len(coordinates) // len(self.config.problem.targets)
-        return flat.reshape(
-            len(targets),
-            steps,
-            len(self.config.problem.targets),
-        )
+        # 列收集即 time-major 顺序，收口到 (N, steps, K) 走张量合同唯一实现
+        return unflatten_time_major(flat, steps=steps, width=len(self.config.problem.targets))
 
 
 __all__ = [
     "CanonicalTrainer",
-    "DirectMultiOutputRegressor",
-    "HorizonAlignedDirectRegressor",
 ]

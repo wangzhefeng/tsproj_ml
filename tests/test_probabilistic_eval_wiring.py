@@ -128,11 +128,13 @@ class EvaluateMarginalDistributionWiringTest(unittest.TestCase):
             actual, distribution, valid_masks={"load": mask}
         )
 
-        target_rows = report[report["scope"] == "target"]
-        self.assertTrue((target_rows["n_points"] == 0).all())
-        self.assertTrue(target_rows["value"].isna().all())
-        # 全掩码时不产出 aggregate 行（无有效点可池化）
-        self.assertTrue((report["scope"] == "target").all())
+        scored = report[report["scope"].isin(["target", "horizon"])]
+        self.assertTrue((scored["n_points"] == 0).all())
+        self.assertTrue(scored["value"].isna().all())
+        # 全掩码时不产出 aggregate / aggregate_horizon 行（无有效点可池化）
+        self.assertTrue(
+            report[report["scope"].isin(["aggregate", "aggregate_horizon"])].empty
+        )
 
     def test_mask_shape_mismatch_raises(self):
         y = np.array([10.0, 20.0, 30.0, 40.0])
@@ -142,13 +144,56 @@ class EvaluateMarginalDistributionWiringTest(unittest.TestCase):
                 actual, distribution, valid_masks={"load": np.ones(3, dtype=bool)}
             )
 
+    def test_eval_mask_config_matches_manual_valid_masks(self):
+        # eval_mask 配置直传必须与手工 valid_masks 完全一致（同一 build_eval_mask_payload）。
+        y = np.array([10.0, 20.0, 30.0, 40.0])
+        actual, distribution = _distribution(y)
+        # percentile=50 → 正值中位数 25 → 掩掉前两点
+        config = {"mode": "percentile", "percentile": 50.0}
+        manual_mask = np.array([False, False, True, True])
+
+        via_config = evaluate_marginal_distribution(
+            actual, distribution, eval_mask=config
+        )
+        via_manual = evaluate_marginal_distribution(
+            actual, distribution, valid_masks={"load": manual_mask}
+        )
+
+        pd.testing.assert_frame_equal(via_config, via_manual)
+        target_rows = via_config[via_config["scope"] == "target"]
+        self.assertTrue((target_rows["n_points"] == 2).all())
+
+    def test_eval_mask_none_config_keeps_legacy_behavior(self):
+        # eval_mask 显式传 None（等价未传）不得引入掩码逻辑——与历史逐值一致。
+        y = np.array([10.0, 20.0, 30.0, 40.0])
+        actual, distribution = _distribution(y)
+
+        report = evaluate_marginal_distribution(actual, distribution, eval_mask=None)
+
+        target_rows = report[report["scope"] == "target"]
+        self.assertTrue((target_rows["n_points"] == 4).all())
+        self.assertEqual(
+            target_rows[target_rows["metric"] == "mae"]["value"].iloc[0], 0.0
+        )
+
+    def test_eval_mask_and_valid_masks_are_mutually_exclusive(self):
+        y = np.array([10.0, 20.0, 30.0, 40.0])
+        actual, distribution = _distribution(y)
+        with self.assertRaisesRegex(ValueError, "mutually exclusive"):
+            evaluate_marginal_distribution(
+                actual,
+                distribution,
+                eval_mask={"mode": "percentile", "percentile": 50.0},
+                valid_masks={"load": np.array([True] * 4)},
+            )
+
     def test_no_symmetric_pair_no_interval_rows(self):
         y = np.array([10.0, 20.0, 30.0, 40.0])
         actual, distribution = _distribution(y, levels=(0.5,))
 
         report = evaluate_marginal_distribution(actual, distribution)
 
-        self.assertEqual(set(report["metric"].unique()), {"mae", "pinball"})
+        self.assertEqual(set(report["metric"].unique()), {"mae", "bias", "pinball"})
 
     def test_aggregate_pools_valid_points_across_targets(self):
         # K=2：target A 两点误差 0（全有效），target B 一点误差 10（掩码后 1 点）

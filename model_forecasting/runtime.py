@@ -24,7 +24,6 @@ from model_training.estimators import (
 from feature_engineering import CompiledFeatures, FeatureCompiler
 from model_evaluation.marginal import evaluate_marginal_distribution
 from model_evaluation.point import (
-    build_eval_mask_payload,
     evaluate_point_forecasts,
     resolve_aggregate_weighting,
 )
@@ -39,6 +38,9 @@ from model_forecasting.results import (
     write_backtest_results,
     write_forecast_results,
 )
+from pandas.tseries.frequencies import to_offset
+from probabilistic.calibration import ConformalCalibrationTracker
+from forecasting_core.probabilistic_spec import probabilistic_spec_from_mapping
 from forecasting_core.specs import (
     CalendarMonthBacktestSpec,
     ColumnRole,
@@ -245,6 +247,50 @@ def _compiled_lineage(
     return (
         tuple(feature_lineage),
         {key: availability_summary[key] for key in sorted(availability_summary)},
+    )
+
+
+def _log_provider_usage(audits: Any) -> None:
+    """A3 可观测（2026-09-01）：聚合 VisibilityProof 的特征取值来源。
+
+    只打日志、不进结果 schema。回答「某配置深 horizon 输入中合成值
+    （provider，如 persistence 冻结）占比多少」——persistence 依赖度
+    消融与配置审计的直接证据。
+    """
+    if not audits:
+        return
+    total = 0
+    provider_hits = 0
+    by_provider: dict[str, int] = {}
+    by_feature: dict[str, int] = {}
+    for compiled in audits:
+        for proof in compiled.visibility_proof:
+            if proof.role not in {"target", "observed_past"}:
+                continue
+            total += 1
+            if proof.provider is not None:
+                provider_hits += 1
+                by_provider[proof.provider] = by_provider.get(proof.provider, 0) + 1
+                by_feature[proof.feature_name] = by_feature.get(proof.feature_name, 0) + 1
+    if total == 0:
+        return
+    if provider_hits == 0:
+        logger.info(
+            "[ProviderUsage] lag lookups: history 100%% (%d lookups, no provider involved)",
+            total,
+        )
+        return
+    top_features = sorted(by_feature.items(), key=lambda kv: -kv[1])[:5]
+    top_text = ", ".join(f"{name} x{n}" for name, n in top_features)
+    logger.warning(
+        "[ProviderUsage] lag lookups: history %d%% / provider %d%% (%d/%d); "
+        "providers=%s; top=%s",
+        round(100.0 * (total - provider_hits) / total),
+        round(100.0 * provider_hits / total),
+        provider_hits,
+        total,
+        by_provider or {},
+        top_text,
     )
 
 
@@ -727,6 +773,19 @@ class CanonicalBaseModelRunner:
             else None
         )
         holdout_audits = []
+        # CQR（2026-09-01 激活）：quantile 且声明 calibration 时启用 as-of
+        # 校准追踪器；回测逐折 apply-before-collect，final 用全部合格历史折。
+        calibration_tracker = None
+        if mode == "quantile":
+            prob_spec = probabilistic_spec_from_mapping(
+                config.probabilistic.canonical_payload()
+            )
+            if prob_spec.calibration is not None:
+                calibration_tracker = ConformalCalibrationTracker(
+                    prob_spec,
+                    freq_offset=to_offset(str(config.problem.freq)),
+                )
+        calibration_audits: list[dict[str, Any]] = []
         for backtest_window in self.backtest_windows():
             (
                 holdout_feature_scaler,
@@ -763,13 +822,29 @@ class CanonicalBaseModelRunner:
                 if isinstance(holdout_prediction, PointForecastTensor)
                 else holdout_prediction.point
             )
-            cv_frames.append(
-                backtest_tensors_to_long(
-                    actual,
-                    holdout_prediction,
+            fold_frame = backtest_tensors_to_long(
+                actual,
+                holdout_prediction,
+                window=backtest_window.window,
+            )
+            if calibration_tracker is not None:
+                # apply-before-collect：当前折只消费严格更早折的校准池
+                fold_frame, calibration_audit = (
+                    calibration_tracker.apply_to_frame(
+                        fold_frame,
+                        forecast_origin=backtest_window.origin,
+                    )
+                )
+                calibration_audits.append(
+                    {"window": backtest_window.window, **calibration_audit}
+                )
+            cv_frames.append(fold_frame)
+            if calibration_tracker is not None:
+                calibration_tracker.collect_from_frame(
+                    fold_frame,
+                    forecast_origin=backtest_window.origin,
                     window=backtest_window.window,
                 )
-            )
             score_frames.append(
                 evaluate_point_forecasts(
                     actual,
@@ -781,26 +856,19 @@ class CanonicalBaseModelRunner:
                 )
             )
             # 概率评估接线（2026-08-30）：quantile 模式逐窗产出 pinball/central 区间
-            # 指标；掩码口径与点评估共用同一 eval_mask payload（同一业务口径）。
+            # 指标；eval_mask 配置直传，掩码口径与点评估同一 payload（同一业务口径）。
             if not isinstance(holdout_prediction, PointForecastTensor):
-                prob_mask_payload = build_eval_mask_payload(eval_mask_config, actual)
                 prob_score_frames.append(
                     evaluate_marginal_distribution(
                         actual,
                         holdout_prediction,
-                        valid_masks=(
-                            {
-                                target: payload["valid_mask"]
-                                for target, payload in prob_mask_payload.items()
-                            }
-                            if prob_mask_payload is not None
-                            else None
-                        ),
+                        eval_mask=eval_mask_config,
                         window=backtest_window.window,
                     )
                 )
             holdout_audits.extend(builder.audit)
         holdout_audit = tuple(holdout_audits)
+        _log_provider_usage(holdout_audit)
         if cv_frames:
             backtest = config.validation.backtest
             if not isinstance(backtest, FixedStepBacktestSpec):
@@ -815,6 +883,8 @@ class CanonicalBaseModelRunner:
                 "stride_steps": backtest.stride_steps,
                 "windows": [window.metadata for window in windows],
             }
+            if calibration_audits:
+                holdout_metadata["calibration"] = calibration_audits
             write_backtest_results(
                 test_dir,
                 pd.concat(cv_frames, ignore_index=True),
@@ -859,6 +929,38 @@ class CanonicalBaseModelRunner:
             final_target_transform,
         )
         final_audit = builder.audit
+        # CQR final（2026-09-01 激活）：修正量入 bundle（部署自包含），
+        # predict_pi<coverage>_* 列写入 prediction.csv；修正量由全部满足
+        # as-of 的历史折池化计算。
+        calibration_state = None
+        forecast_extra_columns = None
+        if calibration_tracker is not None:
+            final_correction, final_calibration_audit = (
+                calibration_tracker.final_correction(origin)
+            )
+            calibration_state = {
+                "method": "cqr",
+                **final_calibration_audit,
+            }
+            if final_correction.status == "applied":
+                lower_col, upper_col = calibration_tracker.pi_columns
+                lower, upper = calibration_tracker.correction_bounds(
+                    forecast.quantiles.values,
+                    forecast.quantiles.levels,
+                    final_correction.correction,
+                )
+                forecast_extra_columns = {
+                    lower_col: lower.reshape(-1),
+                    upper_col: upper.reshape(-1),
+                }
+            logger.info(
+                "[CQR] final calibration: status=%s correction=%s "
+                "windows=%s scores=%s",
+                final_calibration_audit["status"],
+                final_calibration_audit["correction"],
+                final_calibration_audit["selected_windows"],
+                final_calibration_audit["selected_scores"],
+            )
         visibility_proof = _proof_payload(final_audit)
         holdout_visibility_proof = _proof_payload(holdout_audit)
         source_lineage = _source_lineage_payload(final_audit)
@@ -910,13 +1012,18 @@ class CanonicalBaseModelRunner:
             feature_lineage=feature_lineage,
             source_lineage=source_lineage,
             series_ids=builder.series_ids,
+            calibration_state=calibration_state,
         )
         if mode == "quantile":
             bundle.model = final_artifact
 
         persist_model_bundle(bundle, model_dir)
 
-        write_forecast_results(forecast_dir, forecast)
+        write_forecast_results(
+            forecast_dir,
+            forecast,
+            extra_columns=forecast_extra_columns,
+        )
         _write_json(
             forecast_dir / "resolved_config.json",
             {
@@ -932,6 +1039,7 @@ class CanonicalBaseModelRunner:
                     "source_lineage": source_lineage,
                     "visibility_proof": visibility_proof,
                     "holdout_visibility_proof": holdout_visibility_proof,
+                    "calibration": calibration_state,
                     "capability_probe": {
                         "native_multioutput_probed": (
                             config.estimator.target_adapter is TargetAdapter.NATIVE

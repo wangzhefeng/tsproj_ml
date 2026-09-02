@@ -3,18 +3,16 @@
 
 from __future__ import annotations
 
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from types import MappingProxyType
-from typing import Any, Callable, Optional, Sequence
+from typing import Callable, Sequence
 
 import numpy as np
-import pandas as pd
 
 from model_training.estimators import EstimatorCapabilities
 from model_training.trainer import CanonicalTrainer
 from forecasting_core.specs import ForecastConfigSpec
-from forecasting_core.probabilistic_spec import ProbabilisticSpec
+from forecasting_core.probabilistic_spec import validate_quantile_grid
 
 
 @dataclass(frozen=True, slots=True)
@@ -68,29 +66,16 @@ class CanonicalMarginalQuantileTrainer:
         raw_levels = config.probabilistic.get("quantiles")
         if not isinstance(raw_levels, (list, tuple)):
             raise TypeError("probabilistic.quantiles must be a sequence")
-        levels = tuple(float(level) for level in raw_levels)
-        if (
-            not levels
-            or any(
-                not np.isfinite(level) or not 0.0 < level < 1.0
-                for level in levels
-            )
-            or tuple(sorted(set(levels))) != levels
-        ):
-            raise ValueError(
-                "probabilistic.quantiles must be unique, increasing, and inside (0, 1)"
-            )
-        point_level = float(config.probabilistic.get("point_quantile", 0.5))
-        if point_level not in levels:
-            raise ValueError(
-                "point_quantile must be present in probabilistic.quantiles"
-            )
+        # 网格校验统一走合同层唯一实现（2026-09-01 去重：不再本地重复校验）
+        levels = validate_quantile_grid(raw_levels, point_quantile=float(
+            config.probabilistic.get("point_quantile", 0.5)
+        ))
         self.config = config
         self.estimator_factory_for_level = estimator_factory_for_level
         self.capabilities = capabilities
         self.feature_schema = tuple(feature_schema)
         self.levels = levels
-        self.point_level = point_level
+        self.point_level = float(config.probabilistic.get("point_quantile", 0.5))
 
     def train(
         self,
@@ -99,27 +84,76 @@ class CanonicalMarginalQuantileTrainer:
         *,
         sample_weight: np.ndarray | None = None,
         n_series: int = 1,
+        max_workers: int | None = None,
     ) -> CanonicalMarginalQuantileArtifact:
-        artifacts = {}
-        for level in self.levels:
-            estimator_factory = self.estimator_factory_for_level(level)
-            if not callable(estimator_factory):
-                raise TypeError(
-                    "estimator_factory_for_level must return an estimator factory"
+        """逐 level 训练完整 canonical 策略 artifact。
+
+        level 之间相互独立（同一 config、同一 (X, Y)，仅 objective 不同），
+        默认以线程池并行（GBM 拟合释放 GIL）；数值与串行完全一致。
+        共享 booster 路径（xgb 原生多分位）的调用方必须传
+        ``max_workers=1``——位置对齐不变量只在串行下成立。
+        """
+        levels = self.levels
+        workers = (
+            min(len(levels), 4) if max_workers is None else int(max_workers)
+        )
+        if workers < 1:
+            raise ValueError("max_workers must be >= 1")
+        if workers == 1 or len(levels) <= 1:
+            artifacts = {
+                level: self._train_level(
+                    level, X_by_call, Y, sample_weight, n_series
                 )
-            artifacts[level] = CanonicalTrainer(
-                self.config,
-                estimator_factory=estimator_factory,
-                capabilities=self.capabilities,
-                feature_schema=self.feature_schema,
-            ).train(
-                X_by_call,
-                Y,
-                sample_weight=sample_weight,
-                n_series=n_series,
-            )
+                for level in levels
+            }
+        else:
+            from concurrent.futures import ThreadPoolExecutor
+
+            with ThreadPoolExecutor(max_workers=workers) as pool:
+                futures = {
+                    pool.submit(
+                        self._train_level,
+                        level,
+                        X_by_call,
+                        Y,
+                        sample_weight,
+                        n_series,
+                    ): level
+                    for level in levels
+                }
+                results = {}
+                for future in futures:
+                    level = futures[future]
+                    results[level] = future.result()
+                # 按 levels 顺序重建，结果 dict 与串行路径完全同构
+                artifacts = {level: results[level] for level in levels}
         return CanonicalMarginalQuantileArtifact(
             levels=self.levels,
             point_level=self.point_level,
             artifacts_by_level=MappingProxyType(artifacts),
+        )
+
+    def _train_level(
+        self,
+        level: float,
+        X_by_call: Sequence[np.ndarray],
+        Y: np.ndarray,
+        sample_weight: np.ndarray | None,
+        n_series: int,
+    ):
+        estimator_factory = self.estimator_factory_for_level(level)
+        if not callable(estimator_factory):
+            raise TypeError(
+                "estimator_factory_for_level must return an estimator factory"
+            )
+        return CanonicalTrainer(
+            self.config,
+            estimator_factory=estimator_factory,
+            capabilities=self.capabilities,
+            feature_schema=self.feature_schema,
+        ).train(
+            X_by_call,
+            Y,
+            sample_weight=sample_weight,
+            n_series=n_series,
         )

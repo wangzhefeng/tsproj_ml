@@ -226,6 +226,100 @@ class FeatureVisibilityCompilerTest(unittest.TestCase):
                 target_future_providers={(): provider},
             )
 
+    def test_safe_lag_at_least_horizon_never_invokes_providers(self):
+        """safe-lag 合同：min(lags) >= horizon 时全程真实历史、零 provider。
+
+        目标日对齐（默认 align_to_target=true）下 lag_3 对 h=1,2 的
+        source_time（h−3）全部 <= origin，walk 全走 history 分支——
+        即使误传 provider 也不得被消费（M5 forecast-date-aligned 模式，
+        仓库主力语义，见 USMDP target_lags [31,35,42,49,56]）。
+        """
+        self.write_fixture()
+        config = self.build_config(target_lags={"load": (3,), "power": (3,)})
+        request = self.request()
+        # 误传的 provider：若实现错误地走到 provider 路径，值会与历史真值不同。
+        decoy_provider = ProvidedScenarioProvider(
+            horizon=2,
+            trajectories={"load": (999.0, 999.0), "power": (999.0, 999.0)},
+        )
+
+        compiled = FeatureCompiler(config).compile(
+            self.materialize(config, request),
+            request,
+            target_future_providers={(): decoy_provider},
+        )
+
+        # h=1(04:00): lag_3 -> 01:00 -> load=1, power=10
+        # h=2(05:00): lag_3 -> 02:00 -> load=2, power=20
+        self.assertEqual(compiled.frame["load__lag_3"].tolist(), [1.0, 2.0])
+        self.assertEqual(compiled.frame["power__lag_3"].tolist(), [10.0, 20.0])
+        safe_proofs = [
+            proof
+            for proof in compiled.visibility_proof
+            if proof.feature_name.endswith("__lag_3")
+        ]
+        # load 与 power 各 2 步，共 4 条 proof。
+        self.assertEqual(len(safe_proofs), 4)
+        self.assertTrue(all(proof.provider is None for proof in safe_proofs))
+        self.assertTrue(
+            all(
+                proof.source_time is not None
+                and proof.source_time <= request.forecast_origin
+                for proof in safe_proofs
+            )
+        )
+        self.assertEqual(
+            sorted(str(proof.source_time) for proof in safe_proofs),
+            sorted(
+                [
+                    str(pd.Timestamp("2026-01-01 01:00")),
+                    str(pd.Timestamp("2026-01-01 02:00")),
+                ]
+                * 2
+            ),
+        )
+
+    def test_ewm_and_ramp_statistics(self):
+        """F1+F3：ewm 半衰期统计与爬坡统计（值按 pandas 定义手算）。"""
+        self.write_fixture()
+        config = self.build_config(
+            transformations={
+                "advanced": {
+                    "ewm": {
+                        "columns": ["load"],
+                        "halflives": [2],
+                        "stats": ["mean", "std"],
+                    },
+                    "rolling": {
+                        "columns": ["load"],
+                        "windows": [3],
+                        "stats": ["max_diff", "min_diff"],
+                    },
+                }
+            }
+        )
+        request = self.request()
+
+        compiled = FeatureCompiler(config).compile(
+            self.materialize(config, request),
+            request,
+        )
+
+        # 可见历史 load = [1,2,3]（origin 03:00 前 3 点）。
+        history = pd.Series([1.0, 2.0, 3.0])
+        ewm = history.ewm(halflife=2, adjust=True)
+        expected_mean = float(ewm.mean().iloc[-1])
+        expected_std = float(ewm.std().iloc[-1])
+        self.assertAlmostEqual(
+            compiled.frame["load_ewm_mean_2.0"].tolist()[0], expected_mean, places=10
+        )
+        self.assertAlmostEqual(
+            compiled.frame["load_ewm_std_2.0"].tolist()[0], expected_std, places=10
+        )
+        # rolling_3 窗 = [1,2,3]，相邻差分 [1,1]。
+        self.assertEqual(compiled.frame["load_rolling_max_diff_3"].tolist(), [1.0, 1.0])
+        self.assertEqual(compiled.frame["load_rolling_min_diff_3"].tolist(), [1.0, 1.0])
+
     def test_direct_can_freeze_history_lags_at_forecast_origin(self):
         """显式 align_to_target=false 时，Direct 各 horizon 共用原点历史。"""
         self.write_fixture()

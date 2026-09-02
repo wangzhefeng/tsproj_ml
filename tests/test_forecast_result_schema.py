@@ -114,11 +114,13 @@ class ForecastResultSchemaTest(unittest.TestCase):
             {
                 "MAE",
                 "RMSE",
+                "Bias",
                 "MAPE",
                 "Accuracy",
                 "Valid Points",
                 "Naive MAE",
                 "Naive RMSE",
+                "Naive Bias",
                 "Naive MAPE",
                 "Naive Accuracy",
             }.issubset(report.columns)
@@ -181,6 +183,41 @@ class ForecastResultSchemaTest(unittest.TestCase):
             )
             self.assertNotIn("Y_preds", saved)
             self.assertNotIn("pred_method", saved)
+            # 预测可视化（2026-09-02）：多 target → prediction_plots/<target>.png
+            self.assertTrue((output / "prediction_plots" / "load.png").exists())
+            self.assertTrue((output / "prediction_plots" / "power.png").exists())
+
+    def test_forecast_writer_emits_single_target_plot_with_quantile_band(self):
+        times = pd.date_range("2026-09-01", periods=3, freq="1h")
+        point = PointForecastTensor(
+            values=np.arange(3.0).reshape(1, 3, 1),
+            series_ids=("A",),
+            forecast_times=times,
+            targets=("load",),
+        )
+        quantile_values = np.stack(
+            [point.values - 1.0, point.values, point.values + 1.0], axis=-1
+        )
+        distribution = MarginalForecastDistribution(
+            point=point,
+            quantiles=MarginalQuantileForecastTensor(
+                values=quantile_values,
+                levels=(0.1, 0.5, 0.9),
+                point_level=0.5,
+                series_ids=point.series_ids,
+                forecast_times=times,
+                targets=point.targets,
+            ),
+            dependence_model=None,
+        )
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            output = Path(temp_dir)
+            write_forecast_results(output, distribution)
+
+            # 单 target → forecast_prediction.png（quantile 模式同路径）
+            self.assertTrue((output / "forecast_prediction.png").exists())
+            self.assertFalse((output / "prediction_plots").exists())
 
     def test_backtest_writer_creates_long_csv_metadata_and_target_plots(self):
         actual = PointForecastTensor(
@@ -205,6 +242,40 @@ class ForecastResultSchemaTest(unittest.TestCase):
             self.assertTrue((output / "result_metadata.json").exists())
             self.assertTrue((output / "target_plots" / "load.png").exists())
             self.assertTrue((output / "target_plots" / "power.png").exists())
+            # per-window 可视化（2026-09-02）：每窗一文件
+            windows_dir = output / "windows_results"
+            self.assertTrue((windows_dir / "window_01.png").exists())
+            self.assertEqual(
+                sorted(path.name for path in windows_dir.glob("window_*.png")),
+                ["window_01.png"],
+            )
+
+    def test_stitched_overview_raises_on_overlapping_windows(self):
+        # stride < horizon：同 (series,time,target) 多窗口命中 → 拼接总图 RAISE，
+        # windows_results/ 单窗图不受影响（先于总图写出）。
+        actual = PointForecastTensor(
+            values=self.point.values + 1.0,
+            series_ids=self.point.series_ids,
+            forecast_times=self.times,
+            targets=self.point.targets,
+        )
+        frame = backtest_tensors_to_long(actual, self.point, window=1)
+        overlap = frame.copy()
+        overlap["window"] = 2
+        frame = pd.concat([frame, overlap], ignore_index=True)
+        scores = evaluate_point_forecasts(actual, self.point, window=1)
+        with tempfile.TemporaryDirectory() as temp_dir:
+            output = Path(temp_dir)
+            with self.assertRaisesRegex(ValueError, "windows overlap"):
+                write_backtest_results(
+                    output,
+                    frame,
+                    scores,
+                    aggregate_weighting=scores.attrs["aggregate_weighting"],
+                )
+            # 窗口图在总图之前已产出
+            self.assertTrue((output / "windows_results" / "window_01.png").exists())
+            self.assertTrue((output / "windows_results" / "window_02.png").exists())
 
 
 if __name__ == "__main__":

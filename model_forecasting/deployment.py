@@ -18,6 +18,7 @@ from forecasting_core.artifacts import ForecastModelBundle, MarginalForecastDist
 from forecasting_core.specs import ForecastStrategySpec
 from forecasting_core.tensors import MarginalQuantileForecastTensor, PointForecastTensor
 from model_forecasting.forecaster import repair_marginal_quantile_crossing
+from probabilistic.calibration import pi_column_names
 from model_training.strategies import (
     CanonicalStrategyArtifact,
     TargetCoordinate,
@@ -70,6 +71,7 @@ def predict_strategy_bundle(
             series_ids=resolved_series_ids,
             forecast_times=times,
             feature_provider=provider,
+            crossing_method=bundle.probabilistic_spec.crossing_method,
         )
     else:
         raise TypeError(
@@ -77,10 +79,48 @@ def predict_strategy_bundle(
             "CanonicalMarginalQuantileArtifact"
         )
     if bundle.target_transform is None:
-        return transformed
-    if isinstance(transformed, PointForecastTensor):
-        return bundle.target_transform.restore_point(transformed)
-    return bundle.target_transform.restore_distribution(transformed)
+        restored = transformed
+    elif isinstance(transformed, PointForecastTensor):
+        restored = bundle.target_transform.restore_point(transformed)
+    else:
+        restored = bundle.target_transform.restore_distribution(transformed)
+    if isinstance(restored, MarginalForecastDistribution):
+        _attach_bundle_prediction_intervals(bundle, restored)
+    return restored
+
+
+def _attach_bundle_prediction_intervals(
+    bundle: ForecastModelBundle,
+    distribution: MarginalForecastDistribution,
+) -> None:
+    """把 bundle 内 CQR 校准状态应用为部署期 predict_pi 区间（就地写 metadata）。
+
+    修正量在 final fit 时由回测校准池冻结；部署不重新校准，保证
+    bundle 自包含、不读训练期数据。数组形状 (N,H,K)，与 quantiles 张量同轴。
+    """
+    state = bundle.calibration_state
+    if not state or state.get("status") != "applied":
+        return
+    interval = bundle.probabilistic_spec.calibration_interval
+    if interval is None:
+        return
+    correction = float(state["correction"])
+    levels = list(distribution.quantiles.levels)
+    lower_index = levels.index(interval.lower_quantile)
+    upper_index = levels.index(interval.upper_quantile)
+    lower = distribution.quantiles.values[..., lower_index] - correction
+    upper = distribution.quantiles.values[..., upper_index] + correction
+    lower_col, upper_col = pi_column_names(float(state["target_coverage"]))
+    distribution.metadata["prediction_intervals"] = {
+        interval.name: {
+            "method": "cqr",
+            "target_coverage": float(state["target_coverage"]),
+            "correction": correction,
+            "lower": lower,
+            "upper": upper,
+            "columns": [lower_col, upper_col],
+        }
+    }
 
 
 def _artifact_schema(
@@ -165,6 +205,7 @@ def _predict_quantiles(
     series_ids: tuple[Any, ...],
     forecast_times: pd.DatetimeIndex,
     feature_provider: FeatureProvider | None,
+    crossing_method: str = "median_preserving_isotonic",
 ) -> MarginalForecastDistribution:
     point_artifact = artifact.artifacts_by_level[artifact.point_level]
     has_dependencies = any(point_artifact.target_plan.dependencies)
@@ -208,6 +249,7 @@ def _predict_quantiles(
             ),
         )
     ordered = [tensors[level] for level in artifact.levels]
+    # 交叉修复以 bundle 内概率规格为准（部署期不读 YAML），与训练期同口径。
     quantiles = repair_marginal_quantile_crossing(
         MarginalQuantileForecastTensor(
             values=np.stack([tensor.values for tensor in ordered], axis=-1),
@@ -216,13 +258,17 @@ def _predict_quantiles(
             series_ids=ordered[0].series_ids,
             forecast_times=ordered[0].forecast_times,
             targets=ordered[0].targets,
-        )
+        ),
+        method=crossing_method,
     )
     return MarginalForecastDistribution(
         point=quantiles.point(),
         quantiles=quantiles,
         dependence_model=None,
-        metadata={"recursive_propagation": "median_path"},
+        metadata={
+            "recursive_propagation": "median_path",
+            "crossing_method": crossing_method,
+        },
     )
 
 

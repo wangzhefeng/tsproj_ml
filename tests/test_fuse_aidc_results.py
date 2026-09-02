@@ -130,6 +130,10 @@ class FuseAidcResultsTest(unittest.TestCase):
             self.assertTrue(fused_dir.joinpath("cv_plot_df.csv").exists())
             self.assertTrue(fused_dir.joinpath("test_scores_df.csv").exists())
             self.assertTrue(fused_dir.joinpath("test_prediction.png").exists())
+            # per-window 可视化（2026-09-02）：单窗场景也有 windows_results/
+            self.assertTrue(
+                fused_dir.joinpath("windows_results", "window_01.png").exists()
+            )
             self.assertTrue(fused_dir.joinpath("train_outlier_report.csv").exists())
 
             fused_curve_df = pd.read_csv(fused_dir.joinpath("cv_plot_df.csv"))
@@ -137,8 +141,9 @@ class FuseAidcResultsTest(unittest.TestCase):
             self.assertEqual(fused_curve_df.loc[10, "predict_value"], 1012.0)
 
             fused_scores_df = pd.read_csv(fused_dir.joinpath("test_scores_df.csv"))
-            self.assertEqual(len(fused_scores_df), 2)
-            self.assertEqual(fused_scores_df["scope"].tolist(), ["target", "aggregate"])
+            # H=288 单 target 单窗：target + aggregate + 288 horizon + 288 aggregate_horizon
+            self.assertEqual(len(fused_scores_df), 1 + 1 + 2 * 288)
+            self.assertEqual(fused_scores_df["scope"].tolist()[:2], ["target", "aggregate"])
             self.assertAlmostEqual(fused_scores_df.loc[0, "MAE"], 2.0)
 
     def test_fuse_scenario_results_uses_intersection_when_source_lengths_differ(self):
@@ -156,7 +161,8 @@ class FuseAidcResultsTest(unittest.TestCase):
             fused_curve_df = pd.read_csv(fused_dir.joinpath("cv_plot_df.csv"))
             fused_scores_df = pd.read_csv(fused_dir.joinpath("test_scores_df.csv"))
             self.assertEqual(len(fused_curve_df), 288)
-            self.assertEqual(len(fused_scores_df), 2)
+            # target + aggregate + 288 horizon + 288 aggregate_horizon
+            self.assertEqual(len(fused_scores_df), 1 + 1 + 2 * 288)
 
     def test_fuse_scenario_results_reads_mixed_legacy_and_canonical_sources(self):
         with tempfile.TemporaryDirectory() as tmpdir:

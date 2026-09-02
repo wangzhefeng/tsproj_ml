@@ -194,8 +194,24 @@ class CanonicalGlobalRuntimeTest(unittest.TestCase):
                 np.testing.assert_allclose(merged["power_x"], merged["power_y"], atol=0.25)
 
                 scores = pd.read_csv(result.test_dir / "test_scores_df.csv")
-                self.assertEqual(scores["scope"].tolist(), ["target", "target", "aggregate"])
-                self.assertEqual(scores["n_points"].tolist(), [8, 8, 16])
+                self.assertEqual(scores["scope"].tolist()[:3], ["target", "target", "aggregate"])
+                self.assertEqual(scores["n_points"].tolist()[:3], [8, 8, 16])
+                # per-horizon 行（2026-09-02）：K=2、H=4 → 每 target 4 行 + 池化 4 行
+                self.assertEqual(
+                    set(scores["scope"]),
+                    {"target", "aggregate", "horizon", "aggregate_horizon"},
+                )
+                self.assertEqual((scores["scope"] == "horizon").sum(), 2 * 4)
+                self.assertEqual((scores["scope"] == "aggregate_horizon").sum(), 4)
+                self.assertTrue(
+                    (scores.loc[scores["scope"] == "horizon", "n_points"] == 2).all()
+                )
+                self.assertTrue(
+                    (
+                        scores.loc[scores["scope"] == "aggregate_horizon", "n_points"]
+                        == 4  # 池化跨 target：N(2) × K(2)
+                    ).all()
+                )
                 self.assertEqual(result.bundle.dimensions, (2, 4, 2))
                 self.assertEqual(result.bundle.input_schema["panel"]["known_series_ids"], ["A", "B"])
                 self.assertIn("series_id", result.bundle.selected_features)
@@ -258,7 +274,8 @@ class CanonicalGlobalRuntimeTest(unittest.TestCase):
         self.assertEqual(sorted(cv["window"].unique().tolist()), [1, 2])
         self.assertEqual(len(cv), 2 * 2 * 4 * 2)
         self.assertTrue({"predict_q10", "predict_q50", "predict_q90"}.issubset(cv))
-        self.assertEqual(len(scores), 2 * 3)
+        # K=2、H=4、2 窗：每窗 2 target + 1 aggregate + 8 horizon + 4 aggregate_horizon = 15
+        self.assertEqual(len(scores), 2 * 15)
 
     def test_series_order_defaults_to_target_source_first_occurrence(self):
         result = run_canonical_config(

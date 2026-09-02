@@ -873,7 +873,7 @@ def resolve_decomposition_spec(cfg) -> DecompositionSpec:
 >
 > Agent 使用约定：接手实施任务时先读本节定位断点；修改状态时同步更新 `last_updated`；实施中发现的问题追加到 §15.7"发现的实施偏差"表，不回改正文设计章节。
 
-`last_updated: 2026-08-25`
+`last_updated: 2026-09-02`
 
 ### 15.1 总览
 
@@ -1069,6 +1069,9 @@ VMD/Wavelet 的启动与否取决于实跑 `residual_diagnostics.csv` 的 stable
 | 10 | 2026-08-25 | §12.1 第 3 条 mstl 等价测试缺失；且旧文件删除后等价测试变成新 pipeline 自比，对新旧逐位一致性不再约束 | **已修复**（待办 #3）：旧实现冻结为 tests/fixtures/，等价测试恢复真实新旧对比并补 mstl 用例 |
 | 11 | 2026-08-25 | `ModelTesting._window_test` 每窗口写同一路径 `decomposition_diagnostics.csv`，逐窗口覆盖且重跑覆盖上次结果，偏离"只新增不覆盖"口径 | **已修复**（待办 #4，方案 A）：按窗口序号命名 `_win{N}` |
 | 12 | 2026-08-25 | 实现与文档接口漂移：`ComponentFrame.residual_name` 未实现；`base.py` 用未文档化的 `"__y__"` 键；`pipeline.py` 有死代码 `hasattr(..., "attach_trend"): pass`；`trend_coefficients_context_ns` 为动态贴附属性未在 `__init__` 声明；§3.1 目录结构（子包）与实际（平铺单文件）不符 | **已修复**（待办 #5）：全部清理完毕；文档 §3.1/§4.3 已同步 |
+| 13 | 2026-09-02 | legacy 配置体系删除后，`spec.py` 仍保留旧写法兼容层（`_PRESET_FIELD_MAP`/`_preset_params_from_legacy`/`_legacy_explicitly_set` 与 resolve 双侧合并逻辑，约 120 行死代码）；`bundle.py` 主链零调用方；`model_forecasting/transforms.py` 与 `feature_engineering/transform_specs.py` 存在逐行重复的 target transformations 归一化（双写漂移点） | **已修复**（§15.10）：spec.py 只读 `decomposition` mapping；bundle.py 删除；归一化单源化为 `feature_engineering/transform_specs.py`（分层门禁钉死 `forecasting_core` 零项目内依赖，合同层方案不可行，落点改为特征包） |
+| 14 | 2026-09-02 | 归一化单源化的落点偏离首选方案（原计划下沉 `forecasting_core/specs/`）：`tests/test_package_layering.py` 白名单规定 `forecasting_core` 项目内依赖为空集，引入 `decomposition` 依赖会破坏合同层纯度 | 改采备选：`model_forecasting/transforms.py`（L2）→ `feature_engineering.transform_specs`（阶段顶层包）为既有合法依赖方向；双写消除前后两函数 AST 级逐位一致（git HEAD 提取比对验证） |
+| 15 | 2026-09-02 | §15.10 验收证据中「遗留失败与本次改动无交集」的 4 项（ensemble persistence `bundle_crossing_method` NameError、ess quantile config matrix、checker probabilistic `calibration` 未知字段、validation geometry manifest fingerprint）在对抗四审查后已全部修复：NameError 为 `deployment.py::_predict_quantiles` 参数名笔误；checker 键白名单随迁移更新；manifest 379 个 fingerprint 再生成（与 YAML 清扫数一致）；另发现部署期 pi 列死写并接线 `distribution_to_long` | **已修复**（同批）：修复后 43 项定向测试 OK，全量单测以本轮会话为准 |
 
 ### 15.8 环境备忘
 
@@ -1089,3 +1092,22 @@ VMD/Wavelet 的启动与否取决于实跑 `residual_diagnostics.csv` 的 stable
 | 6 | — | Phase 4 扩展方法接入讨论（乘性/OOF/分量级/深度） | B1 残差诊断 completed；B2/B3 pending | 实跑 stable_band 结果裁决 VMD/Wavelet；B2/B3 待用户决策 |
 
 建议处理顺序：#1 → #4 → #5 → #3 → #2 → #6。
+
+### 15.10 legacy 收口与归一化单源化（completed 2026-09-02）
+
+范围：行为零变化的架构收口（fingerprint 不变，存量结果无需重跑），用户已确认方案、暂缓 commit。
+
+- **变更 1a — spec.py legacy 兼容层删除**：删除 `_PRESET_FIELD_MAP`、`_preset_params_from_legacy()`、`_legacy_explicitly_set()` 及 `resolve_decomposition_spec()` 的双侧合并/冲突检测分支（约 -145 行）；`resolve_decomposition_spec()` 现在只读 `cfg.decomposition` mapping（空 → method=none，custom/RESERVED fail-fast）。legacy 散列字段的安全性由 `load_yaml_config()` 未知字段 RAISE 在上游保证。
+- **变更 1b — bundle.py 删除**：`decomposition/bundle.py`（`DecompositionBundle`）整文件删除，主链零调用方已核实；`decomposition/__init__.py` 导出同步移除；`models/ModelSaveLoad.py` 两处注释中的 `DecompositionBundle` 提及清除（comment-only）。
+- **变更 1c — 测试改写**：`test_decomposition_spec.py` 删除 legacy 写法用例、只保留 mapping 写法；`test_decomposition_equivalence.py` 冻结核 `tests/fixtures/legacy_target_decomposition.py` 保持不变，spec 构造侧改为 `_new_cfg()` mapping 辅助函数（等价性证明力不变）；`test_decomposition_bundle.py` 拆分为 `test_decomposition_diagnostics.py`（诊断 3 例 + ModelDeployPkl 透传 1 例 + checker 对齐 2 例），bundle 用例随 `DecompositionBundle` 一并删除。
+- **变更 2 — 归一化双写消除**：`model_forecasting/transforms.py` 删除重复的 `_FEATURE_SCALING_METHODS`/`_CALENDAR_METHODS`/`_DECOMPOSITION_METHODS`/`_TARGET_SCALING_METHODS` 常量与 `normalize_feature_scaling`/`normalize_target_transformations` 函数（-113 行），改为从 `feature_engineering/transform_specs.py` import（唯一事实源）；`transforms.py::__all__` 同步移除两个名字（仓内无第三方从该模块 import）。落点为备选方案（偏差 #14）。
+
+**验收证据（2026-09-02）**
+
+| 验收项 | 命令 | 结果 |
+|---|---|---|
+| 分解定向测试 | `uv run python -m unittest tests.test_decomposition_spec tests.test_decomposition_equivalence tests.test_decomposition_diagnostics -v` | **Ran 30 tests — OK**（含冻结旧实现新旧等价 9 例） |
+| 归一化双写一致性 | `git show HEAD:model_forecasting/transforms.py` 与 `feature_engineering/transform_specs.py` 提取两函数 AST 比对 | **两函数 AST 逐位 IDENTICAL** |
+| 分层门禁 | `uv run python -m unittest tests.test_package_layering tests.test_canonical_transforms` | **Ran 22 tests — OK** |
+| fingerprint 不变 | HEAD worktree（HEAD 代码）与当前代码分别 `load_yaml_config` 同一未修改 decomp YAML（`aidc_load_15min_daily/route_A/add_decomposition/enet_usmd_mean_decomp_mstl96-672.yaml`） | **两侧 fingerprint 一致（`da87d38b170bc5e2…`）** |
+| 全量单测 | `uv run python -m unittest discover -s tests -p "test_*.py"` | 分解/变换/分层域全绿；遗留失败（ensemble persistence `bundle_crossing_method` NameError、ess quantile config matrix、checker probabilistic `calibration` 未知字段、validation geometry manifest fingerprint）全部位于用户进行中的 probabilistic/conformal 迁移脏区，与本次改动无交集（traceback 不触及本次修改文件） |

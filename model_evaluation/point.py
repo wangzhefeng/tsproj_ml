@@ -49,11 +49,13 @@ def _metric_values(
         valid = valid & eval_mask["valid_mask"]
     mape_valid = valid & (actual != 0.0)
     if not valid.any():
-        mae = rmse = float("nan")
+        mae = rmse = bias = float("nan")
     else:
         error = actual[valid] - prediction[valid]
         mae = float(np.mean(np.abs(error)))
         rmse = float(np.sqrt(np.mean(np.square(error))))
+        # bias（2026-09-02）：mean(pred - actual)，正值 = 系统性高估。
+        bias = float(np.mean(prediction[valid] - actual[valid]))
     if not mape_valid.any():
         mape = accuracy = float("nan")
     else:
@@ -69,6 +71,7 @@ def _metric_values(
     return {
         "MAE": mae,
         "RMSE": rmse,
+        "Bias": bias,
         "MAPE": mape,
         "Accuracy": accuracy,
         "Valid Points": int(mape_valid.sum()),
@@ -146,6 +149,7 @@ def evaluate_point_forecasts(
             else {
                 "MAE": float("nan"),
                 "RMSE": float("nan"),
+                "Bias": float("nan"),
                 "MAPE": float("nan"),
                 "Accuracy": float("nan"),
                 "Valid Points": 0,
@@ -168,7 +172,7 @@ def evaluate_point_forecasts(
         key: float(
             sum(float(target_metrics[target][key]) * weights[target] for target in actual.targets)
         )
-        for key in ("MAE", "RMSE", "MAPE", "Accuracy")
+        for key in ("MAE", "RMSE", "Bias", "MAPE", "Accuracy")
     }
     aggregate["Valid Points"] = int(
         sum(int(target_metrics[target]["Valid Points"]) for target in actual.targets)
@@ -183,7 +187,7 @@ def evaluate_point_forecasts(
                 for target in actual.targets
             )
         )
-        for key in ("MAE", "RMSE", "MAPE", "Accuracy")
+        for key in ("MAE", "RMSE", "Bias", "MAPE", "Accuracy")
     }
     aggregate_naive["Valid Points"] = int(
         sum(
@@ -206,7 +210,125 @@ def evaluate_point_forecasts(
             **{f"Naive {key}": value for key, value in aggregate_naive.items()},
         }
     )
+
+    # per-horizon 诊断（2026-09-02）：逐 horizon 步的指标衰减曲线。
+    # - ``scope="horizon"``：per-target，掩码切片到同一 horizon（与 target 行同口径）；
+    # - ``scope="aggregate_horizon"``：跨 target 按有效点池化（proper score 语义，
+    #   与 target 加权 aggregate 语义不同，勿混用）；
+    # - ``horizon`` 列 1-based（h=1 即第一个预测步）。
+    horizon_keys = ("MAE", "RMSE", "Bias", "MAPE", "Accuracy")
+    n_series, n_horizons, _ = prediction.values.shape
+
+    def _naive_placeholder() -> dict[str, float | int]:
+        return {
+            "MAE": float("nan"),
+            "RMSE": float("nan"),
+            "Bias": float("nan"),
+            "MAPE": float("nan"),
+            "Accuracy": float("nan"),
+            "Valid Points": 0,
+            "n_points": 0,
+        }
+
+    def _horizon_row(scope: str, label: str, h: int, values: dict, naive: dict) -> dict:
+        return {
+            "window": int(window),
+            "scope": scope,
+            "target": label,
+            "horizon": int(h) + 1,
+            **{key: values[key] for key in horizon_keys},
+            **{
+                "Valid Points": int(values["Valid Points"]),
+                "n_points": int(values["n_points"]),
+            },
+            **{f"Naive {key}": naive[key] for key in horizon_keys},
+            "Naive Valid Points": int(naive["Valid Points"]),
+            "Naive n_points": int(naive["n_points"]),
+        }
+
+    for h in range(n_horizons):
+        pooled_actual: list[np.ndarray] = []
+        pooled_prediction: list[np.ndarray] = []
+        pooled_naive: list[np.ndarray] = []
+        for target_index, target in enumerate(actual.targets):
+            actual_h = actual.values[:, h, target_index]
+            prediction_h = prediction.values[:, h, target_index]
+            naive_h = (
+                seasonal_naive.values[:, h, target_index]
+                if seasonal_naive is not None
+                else None
+            )
+            h_mask = (
+                {
+                    "valid_mask": mask_payload[target]["valid_mask"].reshape(
+                        n_series, n_horizons
+                    )[:, h]
+                }
+                if mask_payload is not None
+                else None
+            )
+            rows.append(
+                _horizon_row(
+                    "horizon",
+                    str(target),
+                    h,
+                    _metric_values(actual_h, prediction_h, h_mask),
+                    (
+                        _metric_values(actual_h, naive_h, h_mask)
+                        if naive_h is not None
+                        else _naive_placeholder()
+                    ),
+                )
+            )
+            # 池化：按各 target 掩码后有效点拼接（掩码已作用，重算时不再传）。
+            flat_mask = (
+                mask_payload[target]["valid_mask"] if mask_payload is not None else None
+            )
+            valid = np.isfinite(actual_h) & np.isfinite(prediction_h)
+            if flat_mask is not None:
+                valid = valid & flat_mask.reshape(n_series, n_horizons)[:, h]
+            pooled_actual.append(actual_h[valid])
+            pooled_prediction.append(prediction_h[valid])
+            if naive_h is not None:
+                pooled_naive.append(naive_h[valid])
+        pooled_metrics = _metric_values(
+            np.concatenate(pooled_actual), np.concatenate(pooled_prediction)
+        )
+        pooled_naive_metrics = (
+            _metric_values(
+                np.concatenate(pooled_actual), np.concatenate(pooled_naive)
+            )
+            if seasonal_naive is not None
+            else _naive_placeholder()
+        )
+        rows.append(
+            _horizon_row(
+                "aggregate_horizon",
+                "__aggregate__",
+                h,
+                pooled_metrics,
+                pooled_naive_metrics,
+            )
+        )
+
     result = pd.DataFrame(rows)
+    ordered_columns = [
+        "window",
+        "scope",
+        "target",
+        "horizon",
+        *horizon_keys,
+        "Valid Points",
+        "n_points",
+        *[f"Naive {key}" for key in horizon_keys],
+        "Naive Valid Points",
+        "Naive n_points",
+    ]
+    present = [column for column in ordered_columns if column in result.columns]
+    remaining = [
+        column for column in result.columns if column not in present
+    ]
+    result = result.loc[:, present + remaining]
     result.attrs["aggregate_weighting"] = weights
     return result
 

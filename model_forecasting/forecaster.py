@@ -7,6 +7,7 @@ import numpy as np
 import pandas as pd
 
 from forecasting_core.specs import ForecastConfigSpec
+from forecasting_core.probabilistic_spec import resolve_crossing_settings
 from model_training.strategies import (
     CanonicalStrategyArtifact,
     TargetCoordinate,
@@ -86,10 +87,31 @@ class CanonicalForecaster:
 
 def repair_marginal_quantile_crossing(
     tensor: MarginalQuantileForecastTensor,
+    *,
+    method: str = "median_preserving_isotonic",
 ) -> MarginalQuantileForecastTensor:
-    """Repair each marginal quantile grid around its fixed point level."""
+    """按配置方法修复分位数交叉；``none`` 时原样返回。
+
+    - ``median_preserving_isotonic``：排序 + 钳制到 point level 锚点（历史默认行为）；
+    - ``rearrangement``：沿分位轴整体排序，point level 不锚定（可能平移）；
+    - ``none``：不修复（保留模型原始输出，允许下界 > 上界）。
+    """
     if not isinstance(tensor, MarginalQuantileForecastTensor):
         raise TypeError("tensor must be a MarginalQuantileForecastTensor")
+    method = str(method).lower()
+    if method == "none":
+        return tensor
+    if method == "rearrangement":
+        return MarginalQuantileForecastTensor(
+            values=np.sort(tensor.values, axis=-1),
+            levels=tensor.levels,
+            point_level=tensor.point_level,
+            series_ids=tensor.series_ids,
+            forecast_times=tensor.forecast_times,
+            targets=tensor.targets,
+        )
+    if method != "median_preserving_isotonic":
+        raise ValueError(f"unsupported crossing method: {method!r}")
     values = tensor.values.copy()
     point_index = tensor.levels.index(tensor.point_level)
     anchor = values[..., point_index].copy()
@@ -191,6 +213,11 @@ class CanonicalMarginalQuantileForecaster:
             [tensor.values for tensor in point_tensors],
             axis=-1,
         )
+        # 交叉修复消费 probabilistic.crossing.method（2026-09-01 裂缝修复：
+        # 此前无条件修复，配置被静默忽略）。
+        crossing_method, _report_raw = resolve_crossing_settings(
+            self.config.probabilistic
+        )
         quantiles = repair_marginal_quantile_crossing(
             MarginalQuantileForecastTensor(
                 values=values,
@@ -199,13 +226,17 @@ class CanonicalMarginalQuantileForecaster:
                 series_ids=point_tensors[0].series_ids,
                 forecast_times=point_tensors[0].forecast_times,
                 targets=point_tensors[0].targets,
-            )
+            ),
+            method=crossing_method,
         )
         return MarginalForecastDistribution(
             point=quantiles.point(),
             quantiles=quantiles,
             dependence_model=None,
-            metadata={"recursive_propagation": "median_path"},
+            metadata={
+                "recursive_propagation": "median_path",
+                "crossing_method": crossing_method,
+            },
         )
 
 

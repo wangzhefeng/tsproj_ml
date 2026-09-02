@@ -29,7 +29,7 @@ class RuntimeAssetAuditTest(unittest.TestCase):
         )
         self.assertEqual(result.returncode, 0, result.stderr)
         payload = json.loads(result.stdout)
-        self.assertEqual(payload["model_config_count"], 707)
+        self.assertEqual(payload["model_config_count"], 5150)
         self.assertEqual(payload["missing_unique_path_count"], 0)
         self.assertEqual(payload["affected_config_count"], 0)
         self.assertEqual(payload["missing_reference_count"], 0)

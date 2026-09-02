@@ -3,11 +3,11 @@
 
 Checks, over every ensemble YAML under config/:
 - config_refs resolve, are single-model configs, unique, acyclic;
-- the direct member reference is valid and the recursive member exists;
+- every AIDC Latin filename resolves to its exact three-member rotation;
 - method distribution matches the active four-method contract;
-- exact model-YAML accounting: 671 ordinary single + 6 member + 30 ensemble == 707;
+- exact model-YAML accounting: 5,066 ordinary single + 6 member + 78 ensemble == 5,150;
 - duplicate ``ensemble_members/`` files are forbidden in the three AIDC 15min
-  scenarios, whose ensemble configs directly reuse add_exogenous models;
+  scenarios, whose 72 ensemble configs directly reuse baseline Latin members;
 - reports orphan OOF cache directories under results/_ensemble_oof.
 
 Exit code 0 only when every check passes (orphan report is informational).
@@ -28,20 +28,26 @@ from model_ensemble.specs import EnsembleConfigSpec, EnsembleSpecError
 from config.config_loader import load_yaml_config
 from forecasting_core.specs import ForecastConfigSpec
 
-EXPECTED_TOTAL = 707
-EXPECTED_SINGLE = 671
+EXPECTED_TOTAL = 5150
+EXPECTED_SINGLE = 5066
 EXPECTED_MEMBER = 6
-EXPECTED_ENSEMBLE = 30
+EXPECTED_ENSEMBLE = 78
+EXPECTED_MEMBER_REFERENCES = 228
 NO_MEMBER_SCENARIOS = {
     "aidc_load_15min_daily",
     "aidc_load_15min_rolling",
     "aidc_load_15min_short",
 }
 EXPECTED_METHOD_DISTRIBUTION = {
-    "averaging": 6,
-    "weighted": 6,
-    "linear_blending": 12,
-    "stacking": 6,
+    "averaging": 18,
+    "weighted": 18,
+    "linear_blending": 24,
+    "stacking": 18,
+}
+AIDC_LATIN_GROUPS = {
+    "latin-a": ["st_recursive", "lgbm_mimo", "ridge_direct"],
+    "latin-b": ["st_direct", "lgbm_recursive", "ridge_mimo"],
+    "latin-c": ["st_mimo", "lgbm_direct", "ridge_recursive"],
 }
 
 
@@ -84,6 +90,7 @@ def main() -> int:
     failures: list[str] = []
     method_counter: dict[str, int] = {}
     referenced_refs: set[str] = set()
+    member_reference_count = 0
 
     for path in ensemble_files:
         base_dir = Path(path).parent
@@ -104,6 +111,7 @@ def main() -> int:
                 "active distribution"
             )
         for member in config.members:
+            member_reference_count += 1
             resolved = (base_dir / member.config_ref).resolve()
             referenced_refs.add(str(resolved))
             if not resolved.exists():
@@ -125,8 +133,25 @@ def main() -> int:
                     "ForecastConfigSpec"
                 )
         names = [member.name for member in config.members]
-        if names != ["direct", "recursive"]:
-            failures.append(f"{path}: member names must be direct+recursive, got {names}")
+        if set(Path(path).parts) & NO_MEMBER_SCENARIOS:
+            latin = next(
+                (
+                    name
+                    for name in AIDC_LATIN_GROUPS
+                    if Path(path).name.startswith(f"ensemble_{name}_")
+                ),
+                None,
+            )
+            if latin is None:
+                failures.append(f"{path}: unknown AIDC Latin ensemble filename")
+                continue
+            expected_names = AIDC_LATIN_GROUPS[latin]
+        else:
+            expected_names = ["direct", "recursive"]
+        if names != expected_names:
+            failures.append(
+                f"{path}: member names must be {expected_names}, got {names}"
+            )
 
     total_models = len(single_files) + len(ensemble_files) + len(member_files)
     if total_models != EXPECTED_TOTAL:
@@ -161,6 +186,11 @@ def main() -> int:
             f"ensemble method distribution {method_counter} != expected "
             f"{EXPECTED_METHOD_DISTRIBUTION}"
         )
+    if member_reference_count != EXPECTED_MEMBER_REFERENCES:
+        failures.append(
+            f"ensemble member references {member_reference_count} != expected "
+            f"{EXPECTED_MEMBER_REFERENCES}"
+        )
 
     orphan_cache_dirs: list[str] = []
     cache_root = Path("results/_ensemble_oof")
@@ -176,6 +206,7 @@ def main() -> int:
         "ensemble_members": len(member_files),
         "data_tool": len(data_tool_files),
         "method_distribution": method_counter,
+        "member_reference_count": member_reference_count,
         "referenced_member_refs": len(referenced_refs),
         "orphan_oof_cache_dirs": orphan_cache_dirs,
         "failures": failures,

@@ -1,0 +1,108 @@
+schema_version: 2
+problem:
+  time_col: time
+  freq: 15min
+  horizon: 16
+  targets:
+  - value
+  information_mode: forecast
+  training_scope: local
+  series_id_cols: []
+data:
+  sources:
+  - name: target_history
+    source_type: file
+    columns:
+    - name: value
+      role: target
+      categorical: false
+    history_path: dataset/aidc_load_15min_short/B_Loads_15min_mean_20251001_20260731.csv
+    time_col: time
+    series_id_cols: []
+    availability: source_time
+features:
+  target_lags:
+    value:
+    - 1
+    - 2
+    - 3
+    - 4
+    - 8
+    - 12
+    - 16
+    - 96
+    - 192
+    - 672
+  observed_past_lags: {}
+  datetime_features:
+  - hour
+  - minute
+  - day
+  - day_of_week
+  - week_of_year
+  - month
+  - days_in_month
+  - quarter
+  - day_of_year
+  - year
+  transformations:
+    feature_scaling:
+      method: minmax
+      grouped: false
+      encode_categorical: false
+    target:
+      calendar_normalization:
+        method: none
+      decomposition:
+        method: linear
+        trend_degree: 1
+        trend_forecast: polynomial
+        damping: 0.98
+        trend_lookback: 28
+      scaling:
+        method: none
+        inverse: false
+    advanced:
+      rolling:
+        columns:
+        - value
+        windows:
+        - 16
+        - 96
+        - 672
+        stats:
+        - mean
+        - std
+        - min
+        - max
+      expanding:
+        columns:
+        - value
+        stats:
+        - mean
+        - std
+strategy:
+  name: recmo
+  output_chunk_length: 4
+estimator:
+  model_type: enet
+  target_adapter: independent
+  params: {}
+probabilistic:
+  mode: point
+validation:
+  forecast_origin: '2026-07-31T14:00:00'
+  schedule_mode: intraday
+  horizon_mode: fixed_steps
+  history_steps: 5072
+  train_window_steps: 1424
+  fold_count: 31
+  stride_steps: 96
+output:
+  scenario_subpath: aidc_load_15min_short/route_B/add_decomposition
+  setting_suffix: ''
+  results_root: results
+  directories:
+    checkpoints: ./results/pretrained_models/
+    tests: ./results/results_test/
+    forecast: ./results/results_forecast/

@@ -24,7 +24,7 @@ class EnsembleConfigAuditTest(unittest.TestCase):
         ensemble = (
             ROOT
             / "config/aidc_load_15min_short/route_A/add_ensemble/"
-            / "lgbm_ensemble_averaging.yaml"
+            / "ensemble_latin-a_averaging.yaml"
         )
 
         self.assertTrue(MODULE._is_single_model_config(single))

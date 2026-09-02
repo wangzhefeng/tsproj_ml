@@ -60,7 +60,7 @@ class ActiveConfigRuntimeContractTest(unittest.TestCase):
                     (str(path.relative_to(ROOT)), unknown, unknown_advanced)
                 )
 
-        self.assertEqual(base_count, 677)
+        self.assertEqual(base_count, 5072)
         self.assertEqual(
             incompatible,
             [],
@@ -72,11 +72,11 @@ class ActiveConfigRuntimeContractTest(unittest.TestCase):
         cases = (
             (
                 "config/aidc_load_15min_short/route_A/baseline/st_recursive.yaml",
-                (1536, 1424, 7, 16),
+                (5072, 1424, 31, 96),
             ),
             (
                 "config/aidc_load_15min_daily/route_A/baseline/enet_direct.yaml",
-                (3264, 2784, 5, 96),
+                (6336, 2784, 31, 96),
             ),
             (
                 "config/aidc_electricity_computility/electricity_computility/"

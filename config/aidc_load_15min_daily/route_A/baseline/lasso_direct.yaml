@@ -64,13 +64,12 @@ features:
         - std
         - min
         - max
-      difference:
+      expanding:
         columns:
         - value
-        periods:
-        - 96
-        - 192
-        - 672
+        stats:
+        - mean
+        - std
 strategy:
   name: direct
 estimator:
@@ -83,9 +82,9 @@ validation:
   forecast_origin: '2026-07-31T23:45:00'
   schedule_mode: daily
   horizon_mode: fixed_steps
-  history_steps: 3264
+  history_steps: 6336
   train_window_steps: 2784
-  fold_count: 5
+  fold_count: 31
   stride_steps: 96
 output:
   scenario_subpath: aidc_load_15min_daily/route_A/baseline

@@ -406,7 +406,10 @@ output: {}
         self.assertIn("False", result.stdout)
 
     def test_load_yaml_config_loads_canonical_groups(self):
-        config_path = ROOT / "config/aidc_load_15min_daily/route_A/add_exogenous/enet_direct.yaml"
+        config_path = (
+            ROOT
+            / "config/aidc_load_15min_daily/route_A/add_exogenous/lgbm_direct_holiday-weather.yaml"
+        )
         loaded = yaml.safe_load(config_path.read_text(encoding="utf-8"))
 
         self.assertEqual(loaded["schema_version"], 2)
@@ -427,9 +430,10 @@ output: {}
 
         cfg = load_yaml_config(config_path)
         self.assertIsInstance(cfg, ForecastConfigSpec)
+        assert isinstance(cfg, ForecastConfigSpec)
         self.assertEqual(
             tuple(source.name for source in cfg.data.sources),
-            ("target_history", "weather", "chinese_holiday"),
+            ("target_history", "chinese_holiday", "weather"),
         )
         target_source = self._source(cfg, "target_history")
         weather_source = self._source(cfg, "weather")
@@ -437,7 +441,7 @@ output: {}
             Path(target_source.history_path).name,
             "A_Loads_15min_mean_20251001_20260731.csv",
         )
-        self.assertEqual(cfg.estimator.model_type, "enet")
+        self.assertEqual(cfg.estimator.model_type, "lightgbm")
         self.assertEqual(cfg.validation["forecast_origin"], "2026-07-31T23:45:00")
         self.assertEqual(Path(weather_source.history_path).name, "weather_15min_20250101_20260731.csv")
         self.assertEqual(
@@ -883,7 +887,8 @@ class Task27ExecutionMatrixTest(unittest.TestCase):
 
         checked = _re.search(r"checked=(\d+) passed=\1 hard_failures=0", output)
         self.assertIsNotNone(checked, output[-4000:])
-        self.assertGreater(int(checked.group(1)), 700)
+        assert checked is not None
+        self.assertEqual(int(checked.group(1)), 5150)
         self.assertNotIn("硬校验失败", output)
 
 

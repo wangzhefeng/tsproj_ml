@@ -20,31 +20,6 @@ data:
     time_col: time
     series_id_cols: []
     availability: source_time
-  - name: weather
-    source_type: file
-    columns:
-    - name: rt_tt2
-      role: known_future
-      categorical: false
-    - name: cal_rh
-      role: known_future
-      categorical: false
-    - name: rt_ssr
-      role: known_future
-      categorical: false
-    - name: rt_ws10
-      role: known_future
-      categorical: false
-    - name: rt_dt
-      role: known_future
-      categorical: false
-    history_path: dataset/aidc_load_15min_rolling/weather_15min_20250101_20260731T1345.csv
-    backtest_path: dataset/aidc_load_15min_rolling/weather_15min_backtest_proxy_20260101_20260731.csv
-    future_path: dataset/aidc_load_15min_rolling/weather_15min_future_proxy_20260731T1400_20260831.csv
-    time_col: ts
-    series_id_cols: []
-    availability: column
-    available_at_col: available_at
   - name: load_state
     source_type: file
     columns:
@@ -78,26 +53,11 @@ data:
     - name: state_weekly_base_dev_pct
       role: observed_past
       categorical: false
-    - name: state_route_diff_pct
-      role: observed_past
-      categorical: false
     history_path: dataset/aidc_load_15min_rolling/load_state_features/B_load_state_history.csv
     time_col: time
     series_id_cols: []
     availability: source_time
     provider: persistence
-  - name: chinese_holiday
-    source_type: generated
-    generator: chinese_holiday
-    columns:
-    - name: is_holiday
-      role: known_future
-      categorical: false
-    - name: next_holiday_days
-      role: known_future
-      categorical: false
-    time_col: time
-    availability: generator_defined
 features:
   target_lags:
     value:
@@ -189,14 +149,6 @@ features:
     - 480
     - 576
     - 672
-    state_route_diff_pct:
-    - 96
-    - 192
-    - 288
-    - 384
-    - 480
-    - 576
-    - 672
   datetime_features:
   - hour
   - minute
@@ -226,13 +178,12 @@ features:
         - std
         - min
         - max
-      difference:
+      expanding:
         columns:
         - value
-        periods:
-        - 96
-        - 192
-        - 672
+        stats:
+        - mean
+        - std
 strategy:
   name: direct
 estimator:
@@ -245,9 +196,9 @@ validation:
   forecast_origin: '2026-07-31T14:00:00'
   schedule_mode: intraday
   horizon_mode: fixed_steps
-  history_steps: 3264
+  history_steps: 6336
   train_window_steps: 2784
-  fold_count: 5
+  fold_count: 31
   stride_steps: 96
 output:
   scenario_subpath: aidc_load_15min_rolling/route_B/add_endogenous_state

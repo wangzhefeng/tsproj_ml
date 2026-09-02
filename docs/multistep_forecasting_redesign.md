@@ -8,7 +8,7 @@
 
 `tsproj_ml` 只保留 canonical 运行体系：
 
-- 707 个活动模型 YAML 均为 `schema_version: 2`：671 个普通单模型、6 个其他场景保留的独立 Ensemble member、30 个引用式 Ensemble；按 typed spec 计为 677 个 `ForecastConfigSpec` + 30 个 `EnsembleConfigSpec`。另有 41 个数据工具 YAML，不计入模型数。三个 AIDC 15min 负荷场景直接引用 add_exogenous 现役成员，不维护 `ensemble_members/` 副本；3 个无有效资产配置原样保存在 `docs/archived_configs/`，不进入 loader/audit/runtime。
+- 5,150 个活动模型 YAML 均为 `schema_version: 2`：5,066 个普通单模型、6 个其他场景保留的独立 Ensemble member、78 个引用式 Ensemble；按 typed spec 计为 5,072 个 `ForecastConfigSpec` + 78 个 `EnsembleConfigSpec`。另有 41 个数据工具 YAML，不计入模型数。三个 AIDC 15min 负荷场景共 4,689 份：4,617 份六组全因子单模型，另有 72 个 Ensemble 按三组 Latin-square × 四方法直接引用 baseline 成员，不维护 `ensemble_members/` 副本；3 个无有效资产配置原样保存在 `docs/archived_configs/`，不进入 loader/audit/runtime。
 - `load_yaml_config()` 严格分派 `ForecastConfigSpec | EnsembleConfigSpec`。未知字段、重复 YAML key、角色冲突和非法 strategy/chunk 均 RAISE。
 - `main.py`、`run.py` 不接受 legacy 配置或旧产物。旧 `base_config + overrides`、九方法运行类、旧宽表、旧 pkl 和迁移兼容层均已删除。
 - `docs/model_ensemble_redesign.md` 与 `docs/time_series_probabilistic_forecasting_redesign.md` 仅作历史决策参考，本文和 `AGENTS.md` 才是当前事实源。
@@ -198,13 +198,13 @@ results/<scenario>/<result_identity>/
 
 | Slice | 状态 | 当前证据 |
 |---|---|---|
-| C0/C1 | completed | strict typed schema、生产 parser/constructor 门禁、707 个活动配置；3 个错配配置已批准归档 |
-| C2 | completed | fixed-step/calendar-month typed geometry；707 YAML + 迁移 manifest；final fit 同训练窗；471 个子日单模型 sample-count 一致 |
+| C0/C1 | completed | strict typed schema、生产 parser/constructor 门禁、5,150 个活动配置；3 个错配配置已批准归档 |
+| C2 | completed | fixed-step/calendar-month typed geometry；5,150 YAML + 迁移 manifest；final fit 同训练窗；4,866 个子日单模型 sample-count 一致 |
 | C3 | completed | proper quantile blending、自包含 bundle、bundle-only point/quantile 部署、优化审计与 canonical long result 已落地；用户批准的 H16/H31 两个代表均 exit 0 且完整产物核验通过 |
 | C4 | completed | 稳定概率合同唯一位于 `forecasting_core/`；Protocol 注入、包 DAG、runtime 窄模块和重复合同清理完成 |
-| C5 | completed | typed 707-row catalog、CLI/checker 单模型边界、legacy/test-only/零消费者链和 requirements 门禁已收口 |
+| C5 | completed | typed 5,150-row catalog、CLI/checker 单模型边界、legacy/test-only/零消费者链和 requirements 门禁已收口 |
 | C6 | completed | README、权威设计、§17 与 AGENTS typed geometry 已同步；活动 Markdown 断链 0 |
-| C7 | completed | fresh 615 tests、三项审计、compile/diff/Markdown 和 H16/H31 代表均已通过；完整证据见架构计划 §17.5 |
+| C7 | completed | 前轮 fresh 615 tests 与 H16/H31 代表已通过；V4 配置扩展另完成 5,150 typed parse、资产/Ensemble/manifest 审计、23 个静态定向 tests、compileall/diff，按用户要求未重跑模型 |
 
 C7 的命令、计数和七类产物核验结果只在 `docs/architecture_convergence_plan.md` 的最终执行记录维护；其他文档不复制测试数。
 
@@ -227,6 +227,7 @@ env -u PYTHONPATH UV_CACHE_DIR=.uv_cache uv run --no-sync \
 
 env -u PYTHONPATH UV_CACHE_DIR=.uv_cache uv run --no-sync python scripts/check_model_configs.py
 env -u PYTHONPATH UV_CACHE_DIR=.uv_cache uv run --no-sync python scripts/audit_runtime_assets.py
+env -u PYTHONPATH UV_CACHE_DIR=.uv_cache uv run --no-sync python scripts/audit_aidc_load_15min_designs.py
 env -u PYTHONPATH UV_CACHE_DIR=.uv_cache uv run --no-sync python scripts/audit_ensemble_configs.py
 
 env -u PYTHONPATH UV_CACHE_DIR=.uv_cache uv run --no-sync python -m compileall -q \
@@ -237,9 +238,30 @@ env -u PYTHONPATH UV_CACHE_DIR=.uv_cache uv run --no-sync python -m compileall -
 git diff --check
 ```
 
-本轮 fresh 命令、精确计数、七类产物和阻断项只在 `docs/architecture_convergence_plan.md` §17 维护；其他文档中的旧测试数只代表历史环境。
+前轮 C0–C7 的 fresh 命令、精确计数、七类产物和阻断项只在 `docs/architecture_convergence_plan.md` §17 维护；本次 V4 配置矩阵扩展的静态证据见下节，其他文档中的旧测试数只代表历史环境。
 
-## 12. 历史溯源
+## 12. V4 AIDC 15min 全因子配置矩阵（2026-09-03）
+
+- 三场景共 4,617 个单模型：每场景 A/B 两路各 729，另有 K=2 joint 81；
+- 独立保留 72 个 Latin-square Ensemble：每场景 A/B 两路各 12；
+- AIDC 合计 4,689，全仓合计 5,150 = 5,072 `ForecastConfigSpec` + 78
+  `EnsembleConfigSpec`；
+- short 两种 pointwise 仅使用 `[16,96,192,672]` safe target lags；rolling 原点为
+  `2026-07-31T14:00:00`；state 组使用资产中 10 个纯本路派生列，排除
+  `state_route_diff_pct`；
+- `scripts/generate_load_15min_matrix.py` 是确定性生成/验证入口，最终幂等结果为
+  `expected=4689 create=0 rewrite=0 delete=0 unchanged=4689`；
+- checker：`checked=5150 passed=5150 hard_failures=0 warnings=0`；资产审计缺失路径、
+  声明列、成员引用均为 0；Ensemble 审计 228 refs、`failures=[]`；manifest 5,150
+  entries / 4,866 subday single；
+- 23 个配置相关静态定向测试、九模型默认构造、文件名/字段全量审计、compileall 和
+  diff check 均通过。
+
+用户明确要求不运行模型测试，因此本轮未执行 `audit_aidc_load_15min_designs.py`、任何
+fit/backtest/forecast、融合 OOF 或 bundle smoke。配置结构与资产合同已验证；4,617 个机械
+组合的真实运行能力和预测效果均未验证。
+
+## 13. 历史溯源
 
 - 2026-08-24：概率预测专项方案，现保留为历史参考。
 - 2026-08-27 至 29：预测问题正交化、schema-2 迁移、legacy 删除。

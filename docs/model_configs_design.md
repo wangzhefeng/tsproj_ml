@@ -1,0 +1,161 @@
+baseline：
+  - 特征：
+    - target lag + rolling/expanding + datetime
+  - 模型：
+    - st
+    - ridge
+    - lasso
+    - enet
+    - lgbm
+    - xgb
+    - cab
+    - rf
+    - histgb
+  - 预测策略：
+    - direct pointwise
+    - direct pointwise horizon_feature
+    - direct
+    - recursive
+    - dirrec
+    - dirmo
+    - recom
+    - dirrecmo
+    - mimo
+add_exogenous：
+  - 特征：
+    - target lag + rolling/expanding + datetime + holiday
+    - target lag + rolling/expanding + datetime + weather
+    - target lag + rolling/expanding + datetime + holiday + weather
+  - 模型：
+    - st
+    - ridge
+    - lasso
+    - enet
+    - lgbm
+    - xgb
+    - cab
+    - rf
+    - histgb
+  - 预测策略：
+    - direct pointwise
+    - direct pointwise horizon_feature
+    - direct
+    - recursive
+    - dirrec
+    - dirmo
+    - recom
+    - dirrecmo
+    - mimo
+add_endogenous_cross_route：
+  - 特征：
+    - target lag + rolling/expanding + datetime + cross_route lag
+  - 模型：
+    - st
+    - ridge
+    - lasso
+    - enet
+    - lgbm
+    - xgb
+    - cab
+    - rf
+    - histgb
+  - 预测策略：
+    - direct pointwise
+    - direct pointwise horizon_feature
+    - direct
+    - recursive
+    - dirrec
+    - dirmo
+    - recom
+    - dirrecmo
+    - mimo
+add_endogenous_state：
+  - 特征：
+    - target lag + rolling/expanding + datetime + observed_past_lags
+  - 模型：
+    - st
+    - ridge
+    - lasso
+    - enet
+    - lgbm
+    - xgb
+    - cab
+    - rf
+    - histgb
+  - 预测策略：
+    - direct pointwise
+    - direct pointwise horizon_feature
+    - direct
+    - recursive
+    - dirrec
+    - dirmo
+    - recom
+    - dirrecmo
+    - mimo
+add_decomposition：
+  - 特征：
+    - target lag + rolling/expanding + datetime
+  - 模型：
+    - st
+    - ridge
+    - lasso
+    - enet
+    - lgbm
+    - xgb
+    - cab
+    - rf
+    - histgb
+  - 预测策略：
+    - direct pointwise
+    - direct pointwise horizon_feature
+    - direct
+    - recursive
+    - dirrec
+    - dirmo
+    - recom
+    - dirrecmo
+    - mimo
+  - 分解：
+    - linear
+    - mstl96-672
+    - stl96
+add_endogenous_joint：
+  - 特征：
+    - target—A lag + target-B lag + rolling/expanding + datetime
+  - 模型：
+    - st
+    - ridge
+    - lasso
+    - enet
+    - lgbm
+    - xgb
+    - cab
+    - rf
+    - histgb
+  - 预测策略：
+    - direct pointwise
+    - direct pointwise horizon_feature
+    - direct
+    - recursive
+    - dirrec
+    - dirmo
+    - recom
+    - dirrecmo
+    - mimo
+add_ensemble：
+  - 特征：
+    - target lag + rolling/expanding + datetime
+  - 模型：
+    - st
+    - ridge
+    - lgbm
+  - 预测策略：
+    - direct
+    - recursive
+    - mimo
+  - 分解：
+  - 融合策略
+    - averaging
+    - weighted
+    - linear-blending
+    - stacking

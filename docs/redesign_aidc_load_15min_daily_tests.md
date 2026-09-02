@@ -1,6 +1,6 @@
-# aidc_load_15min_daily 模型测试配置重设计与实施记录（2026-09-01/02）
+# aidc_load_15min_daily 模型测试配置重设计与实施记录（2026-09-01/03）
 
-> 状态：**配置矩阵实施完成（2026-09-02）**。§一至§六保留 2026-09-01 的设计过程与当时基线，不能当作当前目录清单；最终实施状态、执行偏差和验证证据统一见 §七。
+> 状态：**V3 Latin-square 融合配置已构建（2026-09-03）**。§一至§八保留历次设计与实施过程，不能当作当前目录清单；当前状态见 §九。
 
 ## 一、现状盘点（核实于 2026-09-01 仓库现场）
 
@@ -219,3 +219,174 @@ lgbm_ensemble_{averaging|weighted|linear-blending|stacking}.yaml
 - `scripts/generate_load_15min_matrix.py` 默认只读校验完整 246 份矩阵；`--write-derived` 只重写 24 个 `add_ensemble` 顶层 YAML，不覆盖人工审定的基础单模型。
 - 配置合约验证覆盖：严格文件清单、全部 point、`scenario_subpath`、文件名/strategy 对齐、ensemble member resolve 与 source subset。
 - 2026-09-02 验证基线：矩阵脚本 `single=222 ensemble=24 total=246`；项目配置 checker 与全量 unittest 的最终结果以本次工作结束汇报为准。
+
+## 八、V2 全面收敛设计（2026-09-02，已完成）
+
+### 8.1 触发原因
+
+对 222 份单模型执行真实 `FeatureCompiler` 训练设计编译后，204 份通过、18 份
+`add_endogenous_cross_route` 全部因同一 source 混合 target/observed-past 的行缓存
+碰撞而失败。进一步审计发现：现有 246 份矩阵配置轴较宽，但外层回测仅覆盖
+daily/rolling 最后 5 天、short 连续约 28 小时；24 份 ensemble 的 OOF 均为
+`train_window_steps=30/fold_count=1/stride_steps=1`，不足以支撑学习型融合结论。
+
+另有两项消融混叠：state-only 组使用了由对路负荷计算的
+`state_route_diff_pct`；cross-route Direct 未继承 add_exogenous Direct 的
+rolling/difference。V2 先修运行和归因，再用较少配置覆盖更关键的能力。
+
+### 8.2 已批准目标矩阵
+
+- `route_A/route_B` 保留六组结构；daily/rolling 各 37 份/路，short 36 份/路，
+  两路共 220 份。
+- 每场景新增 `route_AB/add_endogenous_joint/`，包含 K=2 MIMO 与 Recursive 各一份，
+  共 6 份。
+- 三场景最终 **226 份**：202 单模型 + 24 ensemble；全仓预计 **687 份**：
+  657 单模型 + 30 ensemble。
+- 删除 74 份冗余单模型，新增 54 份关键配置；删除范围已由用户在
+  “全面收敛”选项中显式批准。
+
+### 8.3 配置轴调整
+
+1. baseline 删除 Lasso，保留 ElasticNet 作为唯一稀疏线性基准。
+2. add_exogenous 删除 ElasticNet/Lasso，保留 Ridge；新增 weather-only、
+   holiday-only、XGB Direct、MIMO、DirRec、DirMO、DirRecMO，使七种 canonical
+   策略在统一完整外生基座上可比较。
+3. state 删除三线性模型、Direct horizon、Direct pointwise；保留 LGBM
+   Direct/RecMO/Recursive，并新增泄漏安全的 `lgbm_direct_selected`。
+   state-only 不再声明 `state_route_diff_pct`。
+4. decomposition：daily/rolling 收敛为 Direct×linear/STL/MSTL +
+   RecMO×MSTL + Recursive×MSTL（5 份/路）；short 不使用周周期 MSTL，保留
+   Direct×linear/STL + RecMO×STL + Recursive×STL（4 份/路）。
+5. ensemble 四方法全部保留，成员扩为 LGBM Direct、LGBM Recursive、
+   XGB Direct，不创建 `ensemble_members`。
+
+### 8.4 验证几何
+
+| 场景 | history_steps | train_window_steps | fold_count | stride_steps | OOF |
+|---|---:|---:|---:|---:|---|
+| daily | 6336 | 2784 | 31 | 96 | 2784 / 5 / 96 |
+| rolling | 6336 | 2784 | 31 | 96 | 2784 / 5 / 96 |
+| short | 5072 | 1424 | 31 | 96 | 1424 / 7 / 96 |
+
+short 改为每天同一时刻抽取 4 小时窗口，避免连续 28 小时样本把时段差异误当成
+模型稳定性。增大的 history 同时为外层最早窗口之前的嵌套 OOF 保留完整训练窗。
+实施期按真实折几何校正 daily/rolling history：原设计 6240 会使最早 nested OOF
+第一折只有 2689 个训练 origin；增加一个 H=96 的标签隔离段后取 6336，全部恢复
+为 2784。
+
+### 8.5 验收边界
+
+本批次必须通过配置加载、资产审计、全部 202 份单模型真实训练设计编译、六份
+K=2 训练/部署设计和全量 unittest。226 份配置的完整 31 折训练属于后续实验批次，
+本次不以“全矩阵已完成模型评估”作为完成声明。详细步骤见
+`.hermes/plans/2026-09-02-aidc-load-15min-matrix-v2.md`。
+
+2026-09-02 fresh 验收证据：
+
+- 矩阵门禁：`single=202 ensemble=24 total=226`；
+- 真实训练设计门禁：`compiled_count=202 failure_count=0`；
+- 全量回归：`Ran 669 tests in 303.370s`，`OK`；
+- `compileall` 与 `git diff --check` 均为 exit 0。
+
+## 九、V3 固定三模型 × 三策略 Latin-square 融合（2026-09-03）
+
+### 9.1 用户裁决
+
+- 每个 Ensemble 固定三个成员模型：ST、LightGBM、Ridge；
+- 预测策略固定为 Direct、Recursive、MIMO；
+- 特征固定为 baseline 的 target lag + rolling + expanding + datetime；
+- 不使用天气、节假日、状态、跨路协变量或时间序列分解；
+- 每个成员组分别使用 averaging、weighted、linear_blending、stacking；
+- 本批次只构建和静态校验配置，不运行训练、回测或预测。
+
+### 9.2 实施矩阵
+
+每路 baseline 提供 9 个普通成员（3 模型 × 3 策略）。三组 Latin-square 为：
+
+| 组 | ST | LightGBM | Ridge |
+|---|---|---|---|
+| Latin A | Recursive | MIMO | Direct |
+| Latin B | Direct | Recursive | MIMO |
+| Latin C | MIMO | Direct | Recursive |
+
+每组 × 四种融合方法 = 12 个 Ensemble/路。daily/rolling 各 50 份/路并另有
+2 份 route_AB，场景各 102 份；short 为 49 份/路并另有 2 份 route_AB，场景
+100 份。三个场景合计 304 份（232 单模型 + 72 Ensemble）。
+
+### 9.3 固定特征合同
+
+- daily/rolling：lags `[96,192,288,384,480,576,672]`，rolling windows
+  `[96,192,384,672]`；
+- short：lags `[1,2,3,4,8,12,16,96,192,672]`，rolling windows
+  `[16,96,672]`；
+- rolling stats 固定 `mean/std/min/max`，expanding stats 固定 `mean/std`，
+  datetime 固定 10 项；不保留 difference；
+- Ridge 单独使用 MinMax 缩放；ST 虽接收同一编译输入表，但模型实现只消费 lag
+  与可选 day-of-week。
+
+### 9.4 验证边界
+
+本批次只允许执行 YAML 解析、矩阵数量/字段合同、成员引用、Source 资产和 manifest
+静态审计。按用户要求未运行任何 estimator fit、rolling backtest、forecast 或真实设计
+编译门禁；因此“配置已构建”不等于“模型效果已验证”。
+
+2026-09-03 静态验收证据：
+
+- 矩阵：`single=232 ensemble=72 total=304`；
+- 配置 checker：`checked=765 passed=765 hard_failures=0 warnings=0`；
+- 资产审计：765 个配置，缺失路径/声明列均为 0；
+- Ensemble 审计：681 ordinary single + 6 member + 78 ensemble，228 个引用，
+  `failures=[]`；
+- manifest：765 entries，481 个子日单模型；
+- 12 个静态定向测试通过。
+
+## 十、V4 六组全因子 + 独立 Latin Ensemble（2026-09-03）
+
+### 10.1 当前矩阵
+
+用户要求六个单模型实验组对特征变体、9 模型、9 策略和分解变体（如有）做
+完整物理 YAML 笛卡尔积：
+
+- 每路：baseline 81 + add_exogenous 243 + cross-route 81 + state 81 +
+  decomposition 243 = 729 个单模型；
+- 每场景：A/B 两路 1,458 + route_AB joint 81 = 1,539 个单模型；
+- 三场景：4,617 个单模型。
+
+V3 的 72 个 `add_ensemble` 不属于上述六组乘积，但仍是独立有效实验。实施过程中
+曾按“只保留六组”的过度收口设计删除，用户随即要求重建；当前恢复为每路三组
+Latin-square × 四方法共 12 个，仍直接引用 baseline 九个成员且无
+`ensemble_members/`。因此三个 AIDC 场景当前共 **4,689** 份配置：4,617 单模型 +
+72 Ensemble；每场景 1,563 份。
+
+### 10.2 关键合同
+
+- 九模型：ST/Ridge/Lasso/ElasticNet/LightGBM/XGBoost/CatBoost/RandomForest/HistGradientBoosting；
+- 九策略/布局变体：Direct pointwise、Direct pointwise+horizon、Direct、Recursive、
+  DirRec、DirMO、RecMO、DirRecMO、MIMO；用户输入 `recom` 映射为 canonical `recmo`；
+- 两种 pointwise 使用 `single_model_horizon + align_to_target=true`，以 horizon 是否增加
+  sin/cos 周期编码区分；
+- short pointwise 的 target lag 仅保留 `[16,96,192,672]`，避免 Direct 访问原点后的
+  target；rolling/expanding 始终截断在 forecast origin；
+- rolling 调度原点为 `2026-07-31T14:00:00`，与天气 13:45 历史截止和 14:00 future
+  起点一致；daily 原点为 23:45，short 原点为 14:00；
+- 全部为 point mode；不执行训练、回测、预测、OOF 或 bundle smoke。
+
+### 10.3 静态验收
+
+状态：已实施并完成静态验收。
+
+- 生成器：`expected=4689`，`create/rewrite/delete=0`，`unchanged=4689`；其中
+  `forecast_configs=4617`、`ensemble_configs=72`；
+- 全仓 checker：`checked=5150 passed=5150 hard_failures=0 warnings=0`；
+- 资产审计：`model_config_count=5150`，缺失路径、声明列和成员引用均为 0；
+- Ensemble 审计：5,066 ordinary single + 6 member + 78 Ensemble，228 个成员引用，
+  `failures=[]`；AIDC 有 72 份 Ensemble、0 个 `ensemble_members`；
+- manifest：5,150 entries，5,072 single，78 Ensemble，4,866 个子日单模型；
+- 文件名/字段审计：4,689/4,689，`failure_count=0`；
+- ModelFactory：九种模型默认实例全部构造成功，未 fit；
+- 静态定向 unittest：17 + 4 + 1 + 1 = 23 tests，全部 `OK`；
+- `compileall -q scripts tests` 与 `git diff --check` 均 exit 0。
+
+按用户要求未运行 `audit_aidc_load_15min_designs.py`、estimator fit、rolling backtest、
+forecast、融合 OOF 或 bundle smoke。上述证据只证明配置、引用、资产与静态合同成立，
+不证明 4,617 个机械组合可实际训练或有预测收益。

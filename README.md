@@ -60,7 +60,7 @@
 | `models/` | estimator factory 与底层 pickle IO |
 | `decomposition/` | 趋势/季节/残差分解与恢复 |
 | `data_process/` | 进模型前的离线聚合、填补、异常、事件、周期与峰谷分析 |
-| `config/` | 707 个活动模型 YAML（677 单模型 + 30 Ensemble）+ 41 个独立数据工具 YAML；3 个无有效资产配置归档于 `docs/archived_configs/` |
+| `config/` | 5,150 个活动模型 YAML（5,072 ForecastConfigSpec + 78 Ensemble）+ 41 个独立数据工具 YAML；3 个无有效资产配置归档于 `docs/archived_configs/` |
 | `scripts/` | 配置、Ensemble 与运行资产审计 |
 | `tests/` | unittest、runtime smoke、结构门禁和场景数据链测试 |
 

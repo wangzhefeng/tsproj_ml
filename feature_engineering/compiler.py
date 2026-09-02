@@ -539,9 +539,8 @@ class FeatureCompiler:
                 except KeyError:
                     information_set.register_row_position_lookup(
                         cache_key,
-                        {source.name: shared_frame},
+                        {cache_key: shared_frame},
                         cast(str, source.time_col),
-                        frame_name=source.name,
                     )
                     _frames, shared_lookup = information_set.row_position_lookup(
                         cache_key
@@ -635,9 +634,8 @@ class FeatureCompiler:
             except KeyError:
                 information_set.register_row_position_lookup(
                     cache_key,
-                    {source.name: frame},
+                    {cache_key: frame},
                     source.time_col,
-                    frame_name=source.name,
                 )
                 _frames, lookup = information_set.row_position_lookup(cache_key)
             positions = np.fromiter(
@@ -2127,9 +2125,8 @@ class FeatureCompiler:
             except KeyError:
                 information_set.register_row_position_lookup(
                     resolved_cache_key,
-                    {source.name: frame},
+                    {resolved_cache_key: frame},
                     source.time_col,
-                    frame_name=source.name,
                 )
                 _frames, time_lookup = information_set.row_position_lookup(
                     resolved_cache_key

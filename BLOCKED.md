@@ -1,7 +1,7 @@
 # BLOCKED.md — 待裁决/交接清单
 
 ## 2. direct 策略完整运行接线与实测
-`compile_batch` v2 已达到 0.012786s/origin（19776 origins 线性投影 4.214min），但当前 `model_forecasting/design.py` 尚无调用点。本次允许 diff 明确排除 design/runtime，因此未接线，也未重新执行完整配置 run；现阶段只能声明批编译方法达标，不能声明生产端到端已提速。后续接线时仍需按原任务书核验完整 run、MAPE 与产物缓存。
+`compile_batch` v2 已达到 0.012638s/origin（19776 origins 线性投影 4.165min），但当前 `model_forecasting/design.py` 尚无调用点。本次允许 diff 明确排除 design/runtime，因此未接线，也未重新执行完整配置 run；现阶段只能声明批编译方法达标，不能声明生产端到端已提速。后续接线时仍需按原任务书核验完整 run、MAPE 与产物缓存。
 
 ## 3. 并发会话改动共存
 工作树存在另一会话对 decomposition 组配置的并发修改（lgbm_recmo/recursive-decomp-* 删除等），非本任务改动面，未合并处理。

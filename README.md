@@ -7,7 +7,7 @@
 - 七种多步策略：`recursive/direct/mimo/recmo/dirrec/dirmo/dirrecmo`。
 - 统一预测张量：point `(N,H,K)`，边际 quantile `(N,H,K,Q)`。
 - 显式数据角色：`target/observed_past/known_future/static/key/ignored`。
-- 严格 information set：动态 source 执行 `available_at <= forecast_origin`，缺失、重复和越界直接 RAISE。
+- 严格 information set：动态 source 执行 `available_at <= forecast_origin`，缺失、重复和越界直接 RAISE；监督训练仅通过内部 `target_access=supervised_labels` 读取预测期 target 标签。
 - 模型：LightGBM、XGBoost、CatBoost、RandomForest、HistGradientBoosting、Ridge、ElasticNet、Lasso、QuantileRegressor、SeasonalTemplate。
 - 多目标 adapter：independent、regressor-chain、native capability probe；不支持时 RAISE。
 - 目标变换：calendar normalization → decomposition → scaling，按 `(series_id,target)` 隔离并严格逆序恢复。
@@ -76,6 +76,7 @@ estimator / probabilistic / validation / output
 ```
 
 - 单模型使用 `strategy`；Ensemble 使用成员 `config_ref`，两者互斥。
+- 公共 YAML 不接受内部固定值或死参数：`problem.information_mode`、`output.setting_suffix`、`probabilistic.recursive_propagation`、`probabilistic.schema_version` 均按未知字段 RAISE。
 - `problem.horizon` 以 `freq` 为步长单位。
 - fixed-step 配置使用 `validation.history_steps/train_window_steps/fold_count/stride_steps`，四者均按监督 origin steps 保存。
 - `horizon_mode=calendar_month` 使用 `train_window_days/fold_count/stride_months`；训练窗按原始日数计，每个历史月和最终目标月动态解析 28/29/30/31 步。

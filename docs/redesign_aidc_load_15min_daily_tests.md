@@ -94,7 +94,7 @@
 组合名：  lgbm_ensemble_averaging.yaml（引用式，members 用 config_ref 指向组内 direct/recursive）
 ```
 
-- `setting_suffix` 一律空串（组目录已表达特征差异；分解变体后缀保留 `-decomp-*`）；
+- `output.setting_suffix` 已从公共 schema 删除；组目录与配置文件名表达变体差异；
 - `scenario_subpath` 同步为新组目录名；
 - 旧缩写 → 新名映射：usmd→direct、usmd+horizon→direct-horizon、usmdp→direct-pointwise、usmdr→recmo、usmr→recursive、msmd→(多变量)direct、msmr→(多变量)recursive、msmdr→(多变量)recmo、usbr/msbr→ensemble。
 

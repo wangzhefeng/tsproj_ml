@@ -33,7 +33,7 @@ MO 策略严格要求 `1 < B < H` 且 `H % B == 0`；不满足时在配置解析
 
 ### 2.2.1 配置维度总表（2026-09-01 新增）
 
-五个配置维度互相正交，各自独立取值、组合生效；理解任何一个配置先定位它在下表的位置：
+四个配置维度互相正交，各自独立取值、组合生效；理解任何一个配置先定位它在下表的位置：
 
 | 维度 | 配置字段 | 取值 | 行为作用层 | 代码入口 |
 |---|---|---|---|---|
@@ -41,7 +41,6 @@ MO 策略严格要求 `1 < B < H` 且 `H % B == 0`；不满足时在配置解析
 | Direct layout | `features.transformations.direct.layout` | independent_models（H 个独立模型）/ single_model_horizon（共享单模型=pointwise，必配 horizon_feature） | 同一 Direct 策略下训练样本的行×列组织 | `feature_engineering/compiler.py`；`estimators/multi_target.py` |
 | 训练 scope | `problem.training_scope` | local（逐序列独立建模）/ global（panel 池化共享模型，series_id 作 key 特征） | 序列间是否共享参数 | `forecasting_core/specs/problem.py` |
 | 估计器耦合 | `estimator.target_adapter` | independent（标量模型组）/ regressor_chain（标量组+前序输出作输入，不支持 quantile）/ native（单实例多输出） | 语义输出块到物理估计器实例的映射 | `model_training/estimators/multi_target.py` |
-| 信息模式 | `problem.information_mode` | forecast / nowcast / oracle | 信息集 as-of 可见性 | `forecasting_core/specs/problem.py` + `SourceRegistry` |
 
 维度命名属合同：不得把 layout/scope/adapter 取值登记为策略名（`tests/test_canonical_strategy_spec.py` 门禁钉住）；时间-major 压平合同唯一实现在 `forecasting_core/tensors.py::flatten_time_major/unflatten_time_major`。
 
@@ -58,6 +57,12 @@ MO 策略严格要求 `1 < B < H` 且 `H % B == 0`；不满足时在配置解析
 - `known_future` 可以对应未来 target time，但 `available_at <= forecast_origin`；
 - static 按 series key 唯一匹配；
 - 非 ignored 声明列缺失、重复、越界、不可见或 schema 不匹配均 RAISE；物理文件其他列在 registry 边界丢弃，不会隐式入模。
+
+信息可见性是运行时强制不变量，不再由公共 YAML 选择。特征编译只接受内部
+`target_access=history_only` 请求；监督训练通过
+`target_access=supervised_labels` 仅放开预测期 target 标签，known-future 等外生
+source 仍必须满足 `available_at <= forecast_origin`。公共配置声明旧
+`problem.information_mode` 一律 RAISE。
 
 数据填补与异常清洗只允许发生在离线 `data_process/`，或未来以 config 驱动且满足 as-of 的 compiler 前置步骤中。训练窗口内清洗与评估掩码是两套独立语义。
 
@@ -173,11 +178,13 @@ results/<scenario>/<result_identity>/
 │   └── resolved_model.json
 ├── results_test/
 │   ├── cv_plot_df.csv
-│   ├── test_scores_df.csv
-│   ├── test_scores_probabilistic_df.csv   # quantile only
-│   ├── test_prediction.png                # 单 target 拼接总图（多 target 在 target_plots/）
-│   ├── target_plots/                      # 多 target 拼接总图（per target 一张）
-│   ├── windows_results/                   # per-window 图（window_<w>.png，多 target 子图）
+│   ├── test_scores_df.csv                  # 每窗汇总：scope ∈ {target, aggregate}
+│   ├── test_scores_horizon_df.csv          # per-horizon 明细：scope ∈ {horizon, aggregate_horizon}
+│   ├── test_scores_probabilistic_df.csv    # quantile only，每窗汇总
+│   ├── test_scores_probabilistic_horizon_df.csv  # quantile only，per-horizon 明细
+│   ├── test_prediction.png                 # 单 target 拼接总图（多 target 在 target_plots/）
+│   ├── target_plots/                       # 多 target 拼接总图（per target 一张）
+│   ├── windows_results/                    # per-window 图（window_<w>.png，多 target 子图）
 │   └── result_metadata.json
 └── results_forecast/
     ├── prediction.csv
@@ -187,12 +194,14 @@ results/<scenario>/<result_identity>/
 
 - `prediction.csv` 唯一键：`(series_id,time,target)`。
 - `cv_plot_df.csv` 唯一键：`(series_id,time,target,window)`。
-- 可视化产物（2026-09-02，绘图消费未掩码原始值，掩码只用于指标）：回测总图按时间排序后整条拼接（现役 stride==horizon 契约下窗口首尾相接；同 series 时间戳重复即 stride<horizon 重叠配置，拼接 RAISE 并指向 windows_results/ 单窗图）；`windows_results/window_<w>.png` 每窗一文件、多 target 纵向子图；正式预测写 `forecast_prediction.png`（多 target → `prediction_plots/`），quantile 模式附 PI 区间带。线型：Trues 实线 / Preds 点划线（沿用旧版 `models/ModelTesting.py` 口径）。
-- `test_scores_df.csv`（2026-09-02 扩展）：`scope ∈ {target, aggregate, horizon, aggregate_horizon}`。`target`/`aggregate` 行与历史一致（aggregate 为 target 加权）；指标列含 `Bias`（= mean(pred−actual)，正=高估，含 `Naive Bias` 对照）；`horizon`/`aggregate_horizon` 行为 per-horizon 诊断（2026-09-02 新增），`horizon` 列 1-based，`aggregate_horizon` 跨 target 按有效点池化（proper score 语义）。
-- `test_scores_probabilistic_df.csv`：tidy long，metric ∈ {mae, bias, pinball, interval_coverage, interval_width, interval_winkler, coverage_gap, calibration_error}；`horizon` 列仅 per-horizon 行非空；`scope ∈ {target, aggregate, horizon, aggregate_horizon}`。
+- 可视化产物（2026-09-02，绘图消费未掩码原始值，掩码只用于指标）：回测总图按时间排序后整条拼接（现役 stride==horizon 契约下窗口首尾相接；同 series 时间戳重复即 stride<horizon 重叠配置，拼接 RAISE 并指向 windows_results/ 单窗图）；`windows_results/window_<w>.png` 每窗一文件、多 target 纵向子图；正式预测写 `forecast_prediction.png`（多 target → `prediction_plots/`），预测段前绘制 as-of origin 末段 `5×horizon` 步历史真实值参照（history 不可用时诚实降级为仅预测段并 warning），Preds 首点回接历史末点 + forecast origin 竖线，quantile 模式附 PI 区间带。线型：Trues 实线 / Preds 点划线（沿用旧版 `models/ModelTesting.py` 口径）。
+- `test_scores_df.csv`（2026-09-03 方案 B 拆分）：**每窗汇总文件**，`scope ∈ {target, aggregate}`——`target` 一窗一 target 一行，`aggregate` 为 target 加权汇总；指标列含 `Bias`（= mean(pred−actual)，正=高估，含 `Naive Bias` 对照）。
+- `test_scores_horizon_df.csv`（2026-09-02 新增明细文件）：per-horizon 诊断，`scope ∈ {horizon, aggregate_horizon}`，`horizon` 列 1-based，`aggregate_horizon` 跨 target 按有效点池化（proper score 语义）；列 schema 与汇总文件一致。
+- `test_scores_probabilistic_df.csv`（quantile only，每窗汇总）：tidy long，metric ∈ {mae, bias, pinball, interval_coverage, interval_width, interval_winkler, coverage_gap, calibration_error}。
+- `test_scores_probabilistic_horizon_df.csv`（quantile only，per-horizon 明细）：同 metric 集，`horizon` 列非空。
 - 单模型和 Ensemble 均保存 schema-2 `ForecastModelBundle`。
 - fingerprint 只取语义 payload；日志、并行度和输出目录不进入 fingerprint。
-- resolved config/model 必须足以复算 training policy、轴顺序、source/feature lineage 和产物身份。
+- resolved config/model 必须足以复算 training policy、轴顺序、source/feature lineage 和产物身份。正式预测的 `runtime.visibility_proof` 保留逐 lookup 明细；回测的 `runtime.holdout_visibility_proof` 使用 summary schema 1，按 `(forecast_origin, feature_name, source_name, role, provider)` 聚合 lookup 数及 horizon/target/source/available-at 范围，避免逐折逐 horizon JSON 膨胀。
 
 ## 9. 架构整改实施进度
 
@@ -261,7 +270,51 @@ git diff --check
 fit/backtest/forecast、融合 OOF 或 bundle smoke。配置结构与资产合同已验证；4,617 个机械
 组合的真实运行能力和预测效果均未验证。
 
-## 13. 历史溯源
+## 13. Recursive 真实运行效率收口（2026-09-03）
+
+以 `config/aidc_load_15min_daily/route_A/baseline/lgbm_recursive.yaml` 的完整 6,336 origins、31 folds、H=96、35 features 为真实验收对象，不缩窗口、不改模型目标：
+
+| 运行 | compiled cache | wall | 峰值 RSS | 关键结果 |
+|---|---|---:|---:|---|
+| 优化前冷运行 | miss | 2,313.33s | 3.77GiB | compile 1,909.35s |
+| 优化后 2 windows × 4 model threads 冷运行 | miss | 325.55s | 1.298GiB | compile 214.05s，端到端 7.106× |
+| 优化前热运行 | hit | 178.46s | 1.42GiB | 历史基线 |
+| 优化后串行热运行 | hit | 155.42s | 0.949GiB | identity target transform 已启用 |
+| 优化后现役 YAML 热运行 | hit | 108.81s | 1.126GiB | 相对优化前缩短 39.03%，相对当前串行缩短 29.99% |
+
+实施项与硬证据：
+
+- safe-lag `recursive/dirrec/dirrecmo` 不再因 `consumes_previous` 被 blanket 排除，仍由 source-time 检查决定 batch/fallback；目标配置冷编译提速 8.920×；
+- 监督训练不再累计逐 call forecast audit，同一 `training_row()` 的 information set 仅 materialize 一次；
+- calendar/decomposition/scaling 均为 `none` 时，target transform 只记录 fitted identity，训练数组、point/quantile tensor 和 recursive restore 走 no-copy 路径；32 次 transform 累计由 31.757s 降至 0.129s（99.60%）；
+- `validation.performance` 同时从 canonical fingerprint 与 compiled-design cache geometry 排除；串行/并行共享同一 cache key，identity 仍为 `recursive-lightgbm-local-k1-bdc414c1ca20`；
+- `holdout_visibility_proof` 将 105,245 个 lookup 聚合为 1,085 组，`resolved_config.json` 由 40,849,747 bytes 降至 2,403,890 bytes（94.12%）；
+- 优化前后 `cv_plot_df.csv` SHA-256 均为 `47f3600fc57918c05faf232d0ce5c1bdf71e1d2ac4a1b23a8a67ab615d6276d1`，`prediction.csv` 均为 `9058902d5acb258c1db973bafe5e4cd8d596b586253f1c93cd5443eb27c90861`；拆分后的 62 行汇总分数与 5,952 行 horizon 分数逐值 exact。
+
+2×4 预算只落到该已实测 YAML 及其确定性生成源，不外推到其他模型/策略。剩余最大冷启动瓶颈是 expanding mean/std 为保持 pandas 逐值 exact 而执行的 6,336 次 origin 统计；进一步并行或前缀算法必须先证明浮点 exact，不能用 tolerance 偷换合同。
+
+定向验收命令覆盖 compiler batch/equivalence/visibility、compiled cache、target transform、fingerprint、window/model thread、配置矩阵、geometry manifest 与 canonical runtime smoke，共 101 tests / 94.453s / OK；另有 package layering 17 tests / OK、`py_compile` / OK、`git diff --check` / OK。配置门禁为 4,689 matrix 零漂移及 `checked=5150 passed=5150 hard_failures=0 warnings=0`。Pyright 对 15 个相关文件报告 87 个存量 pandas/Optional 类型诊断；将 JSON diagnostics 与 `git diff --unified=0` 新增行范围机械求交后，本 changeset 新增行诊断为 0。按用户要求未运行全量测试。
+
+## 14. 公共配置固定值与死参数收口（2026-09-03）
+
+- 公共 YAML 已删除 `problem.information_mode`、`output.setting_suffix`、
+  `probabilistic.recursive_propagation`、`probabilistic.schema_version`，重新声明按未知字段
+  RAISE；5,150 份活动配置对应引用均为 0，历史归档配置不迁移。
+- 预测输入固定使用内部 `target_access=history_only`；监督训练仅通过
+  `target_access=supervised_labels` 放开 `forecast_times` 上的 target 标签。known-future
+  和历史 target revision 继续执行 `available_at <= forecast_origin`，故障注入测试钉住
+  后者不会读取预测后修订值。
+- quantile 递归传播在部署态内部固定为 `median_path`；概率产物内部
+  `ProbabilisticSpec.schema_version=1` 继续保存并严格校验，但二者均不能由 YAML 覆盖。
+- `output.setting_suffix` 删除不改变 fingerprint 或输出路由；其余三个语义 payload
+  字段删除会产生新 canonical fingerprint。迁移 manifest 已重算，旧结果目录与 OOF
+  cache 不重命名、不复用，后续按新 identity/cache key 生成；本次不删除既有结果。
+- 验证：AIDC 4,689 矩阵零漂移；checker
+  `checked=5150 passed=5150 hard_failures=0 warnings=0`；Ensemble 审计
+  `failures=[]`；package layering 17 项通过；全量 unittest 741 项、1167.647 秒、OK；
+  compileall 与 `git diff --check` 通过。
+
+## 15. 历史溯源
 
 - 2026-08-24：概率预测专项方案，现保留为历史参考。
 - 2026-08-27 至 29：预测问题正交化、schema-2 迁移、legacy 删除。

@@ -694,7 +694,7 @@ def interval_coverage(
 
 实验纪律：
 
-1. 从当前最优配置复制变体，用 `setting_suffix` 隔离；
+1. 从当前最优配置复制变体，用独立配置文件名和语义字段隔离；
 2. route_A 先跑 31 窗；
 3. route_A 达到候选门槛后补 route_B 31 窗；
 4. 正式判定仍为两路 median MAPE 同向且绝对差 ≥ 0.005；

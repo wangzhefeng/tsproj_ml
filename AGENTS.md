@@ -8,6 +8,7 @@ The general coding guidelines (Karpathy: think before coding, simplicity, surgic
 
 ### 配置系统
 - **现役模型配置统一为 canonical schema**：仓库内 5,150 个活动模型 YAML 均以 `schema_version: 2` 声明（5,072 个 `ForecastConfigSpec` + 78 个引用式 `EnsembleConfigSpec`，另有 41 个数据工具 YAML 不计模型数）；三个 AIDC 15min 负荷场景共 4,689 份（4,617 个六组全因子单模型 + 72 个引用式 Ensemble），不维护重复的 `ensemble_members/`。每路 baseline 为 9 模型 × 9 策略共 81 份，其中 ST/LightGBM/Ridge × Direct/Recursive/MIMO 九个普通成员供 `add_ensemble/` 的三组 Latin-square × 四方法直接引用。3 个数据列族错配配置已于 2026-08-31 经批准原样迁至 `docs/archived_configs/`，不计入活动集。`load_yaml_config()` 按互斥字段集合分派返回 `ForecastConfigSpec | EnsembleConfigSpec`，未知字段、重复 YAML key、角色冲突和非法 strategy/chunk 均 RAISE。
+- **公共配置不暴露内部固定值或死参数**：`problem.information_mode`、`output.setting_suffix`、`probabilistic.recursive_propagation`、`probabilistic.schema_version` 已删除，重新声明一律 RAISE。预测输入始终执行严格 as-of；监督训练仅通过内部 `target_access=supervised_labels` 放开预测期 target 标签，不放开 known-future 或历史 target revision 的时间边界。递归 quantile 内部固定走 `median_path`；概率部署产物仍独立保存并校验其内部 schema 版本。
 - legacy 配置体系（`base_config + overrides`、扁平 dataclass 模板、九方法名）已于 2026-08-29 彻底删除：config/ 下只存在 `schema_version: 2` canonical YAML 与数据工具 YAML，`load_yaml_config()` 只解析 canonical schema，其余一律 RAISE。
 - canonical fingerprint 只取语义 payload；并行度、日志和输出目录相关字段不进入 fingerprint。结果目录使用可读 identity + 12 位 fingerprint，语义相同的配置别名可共享 identity，这不是 hash 碰撞。
 

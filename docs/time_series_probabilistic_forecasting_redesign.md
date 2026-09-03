@@ -766,10 +766,8 @@ legacy 归一化：
 overrides:
   probabilistic:
     mode: quantile
-    schema_version: 1
     quantiles: [0.1, 0.5, 0.9]
     point_quantile: 0.5
-    recursive_propagation: median_path
     crossing:
       method: median_preserving_isotonic
       report_raw: true
@@ -1104,13 +1102,9 @@ $$
 
 ### 9.6 Recursive 传播策略
 
-本轮只实现并显式命名：
-
-```yaml
-recursive_propagation: median_path
-```
-
-含义：所有 q 的下一步预测条件于 q50 回填历史。
+本轮递归传播内部固定为 `median_path`：所有 q 的下一步预测条件于 q50
+回填历史。该机制只有一个实现，不再作为公共 YAML 参数；部署态
+`ProbabilisticSpec` 仍显式保存该内部合同及其独立产物版本。
 
 `quantile_path` 不应直接实现为“q10 回填 q10、q90 回填 q90”后宣称联合概率正确；条件分位数的递归组合不等于多步边际分位数。路径级能力应由采样模型解决。
 

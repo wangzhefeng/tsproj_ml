@@ -13,6 +13,7 @@ from data_loading import (
     InformationSetRequest,
     MaterializedInformationSet,
     SourceRegistry,
+    TargetAccess,
 )
 from feature_engineering import CompiledFeatures, FeatureCompiler
 from forecasting_core.specs import (
@@ -20,7 +21,6 @@ from forecasting_core.specs import (
     ColumnRole,
     FixedStepBacktestSpec,
     ForecastConfigSpec,
-    StrategyName,
 )
 from forecasting_core.tensors import PointForecastTensor
 from model_forecasting.transforms import CanonicalTargetTransform
@@ -265,7 +265,12 @@ class _RegistryDesignBuilder:
             raise ValueError("global training has no complete series")
         return tuple(complete)
 
-    def request(self, origin: pd.Timestamp, *, mode: str | None = None) -> InformationSetRequest:
+    def request(
+        self,
+        origin: pd.Timestamp,
+        *,
+        target_access: TargetAccess = "history_only",
+    ) -> InformationSetRequest:
         return InformationSetRequest(
             forecast_origin=origin,
             forecast_times=pd.date_range(
@@ -274,7 +279,7 @@ class _RegistryDesignBuilder:
                 freq=self.config.problem.freq,
             )[1:],
             series_ids=self.series_ids if self.is_global else (),
-            information_mode=mode or self.config.problem.information_mode,
+            target_access=target_access,
         )
 
     def reset_audit(self) -> None:
@@ -357,7 +362,7 @@ class _RegistryDesignBuilder:
         self,
         origin: pd.Timestamp,
     ) -> tuple[np.ndarray, dict[Any, dict[str, tuple[float, ...]]]]:
-        request = self.request(origin, mode="oracle")
+        request = self.request(origin, target_access="supervised_labels")
         information_set = self.registry.materialize(request)
         return self._labels_from_information_set(request, information_set)
 
@@ -432,6 +437,7 @@ class _RegistryDesignBuilder:
         *,
         target_providers: Mapping[Any, EndogenousFutureProvider] | None,
         visibility_cutoff: pd.Timestamp | None = None,
+        collect_audit: bool = True,
     ) -> np.ndarray:
         request = self.request(origin)
         call_step = self.plan.call_coordinates[call_index][0].horizon_step
@@ -446,7 +452,8 @@ class _RegistryDesignBuilder:
         schema = self._update_feature_schema(compiled)
         frame = compiled.frame.loc[:, list(schema)]
         design = frame.to_numpy(copy=True)
-        self._audit.append(compiled)
+        if collect_audit:
+            self._audit.append(compiled)
         return design
 
     def _update_feature_schema(
@@ -476,9 +483,12 @@ class _RegistryDesignBuilder:
         self,
         origin: pd.Timestamp,
     ) -> tuple[tuple[np.ndarray, ...], np.ndarray]:
-        training_request = self.request(origin, mode="oracle")
+        training_request = self.request(origin, target_access="supervised_labels")
         information_set = self.registry.materialize(training_request)
-        target_values, trajectories = self._labels(origin)
+        target_values, trajectories = self._labels_from_information_set(
+            training_request,
+            information_set,
+        )
         visibility_cutoff = pd.Timestamp(training_request.forecast_times[-1])
         designs = tuple(
             self._compile_call(
@@ -495,6 +505,7 @@ class _RegistryDesignBuilder:
                     for series_id in self.series_ids
                 },
                 visibility_cutoff=visibility_cutoff,
+                collect_audit=False,
             )
             for call_index in range(len(self.plan.call_coordinates))
         )
@@ -516,7 +527,8 @@ class _RegistryDesignBuilder:
             return tuple(self.training_row(origin) for origin in normalized_origins)
 
         training_requests = tuple(
-            self.request(origin, mode="oracle") for origin in normalized_origins
+            self.request(origin, target_access="supervised_labels")
+            for origin in normalized_origins
         )
         union_forecast_times = pd.DatetimeIndex(
             np.unique(
@@ -529,7 +541,7 @@ class _RegistryDesignBuilder:
             forecast_origin=max(normalized_origins),
             forecast_times=union_forecast_times,
             series_ids=self.series_ids if self.is_global else (),
-            information_mode="oracle",
+            target_access="supervised_labels",
         )
         shared_information_set = self.registry.materialize(materialization_request)
         information_sets = (shared_information_set,) * len(training_requests)
@@ -577,12 +589,6 @@ class _RegistryDesignBuilder:
 
     def _can_batch_training(self, call_steps: Sequence[int]) -> bool:
         if self.config.strategy is None:
-            return False
-        resolved = self.config.strategy.resolve(self.config.problem.horizon)
-        if (
-            resolved.consumes_previous
-            and resolved.name is not StrategyName.RECMO
-        ):
             return False
         advanced = self.config.features.transformations.get("advanced", {})
         if isinstance(advanced, Mapping) and any(

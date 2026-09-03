@@ -156,7 +156,7 @@ def _source_lineage_payload(
                 "path_version": lineage.path_version,
                 "path": lineage.path,
                 "availability": lineage.availability_policy,
-                "oracle": lineage.oracle,
+                "includes_target_labels": lineage.includes_target_labels,
             }
             key = tuple(item.items())
             if key not in seen:

@@ -2,14 +2,15 @@
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from typing import Any, Literal
+from typing import Any, Literal, TypeAlias
 
 import pandas as pd
 
 from data_loading.providers import EndogenousFutureProvider
 
 
-_INFORMATION_MODES = frozenset({"forecast", "nowcast", "oracle"})
+TargetAccess: TypeAlias = Literal["history_only", "supervised_labels"]
+_TARGET_ACCESS_VALUES = frozenset({"history_only", "supervised_labels"})
 
 
 def _normalize_series_id(value: Any) -> Any:
@@ -31,14 +32,14 @@ class InformationSetRequest:
     forecast_origin: pd.Timestamp
     forecast_times: pd.DatetimeIndex
     series_ids: tuple[Any, ...]
-    information_mode: Literal["forecast", "nowcast", "oracle"]
+    target_access: TargetAccess
 
     def __init__(
         self,
         forecast_origin: Any,
         forecast_times: pd.DatetimeIndex,
         series_ids: Sequence[Any],
-        information_mode: Literal["forecast", "nowcast", "oracle"],
+        target_access: TargetAccess = "history_only",
     ) -> None:
         try:
             normalized_origin = pd.Timestamp(forecast_origin)
@@ -60,13 +61,13 @@ class InformationSetRequest:
         normalized_series_ids = tuple(_normalize_series_id(value) for value in series_ids)
         if len(normalized_series_ids) != len(set(normalized_series_ids)):
             raise ValueError("series_ids must not contain duplicates")
-        if information_mode not in _INFORMATION_MODES:
-            raise ValueError(f"unknown information_mode: {information_mode!r}")
+        if target_access not in _TARGET_ACCESS_VALUES:
+            raise ValueError(f"unknown target_access: {target_access!r}")
 
         object.__setattr__(self, "forecast_origin", normalized_origin)
         object.__setattr__(self, "forecast_times", normalized_times)
         object.__setattr__(self, "series_ids", normalized_series_ids)
-        object.__setattr__(self, "information_mode", information_mode)
+        object.__setattr__(self, "target_access", target_access)
 
     @property
     def N(self) -> int:
@@ -83,7 +84,7 @@ class SourceLineage:
     path_version: str
     path: str | None
     availability_policy: str | None
-    oracle: bool
+    includes_target_labels: bool
 
 
 class MaterializedInformationSet:
@@ -209,4 +210,5 @@ __all__ = [
     "InformationSetRequest",
     "MaterializedInformationSet",
     "SourceLineage",
+    "TargetAccess",
 ]

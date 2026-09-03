@@ -21,7 +21,6 @@ from forecasting_core.specs import (
     ColumnRole,
     DataSourceSpec,
     ForecastConfigSpec,
-    StrategyName,
 )
 from feature_engineering.transform_specs import (
     normalize_feature_scaling,
@@ -174,8 +173,8 @@ class FeatureCompiler:
                 "information-set horizon does not match ForecastProblemSpec: "
                 f"request={request.H}, problem={self.problem.horizon}"
             )
-        if request.information_mode != self.problem.information_mode:
-            raise ValueError("information-set mode does not match ForecastProblemSpec")
+        if request.target_access != "history_only":
+            raise ValueError("feature compilation requires target_access='history_only'")
 
         target_providers = self._normalize_providers(target_future_providers)
         observed_providers = self._normalize_providers(observed_future_providers)
@@ -339,8 +338,8 @@ class FeatureCompiler:
                     "information-set horizon does not match ForecastProblemSpec: "
                     f"request={request.H}, problem={self.problem.horizon}"
                 )
-            if request.information_mode != self.problem.information_mode:
-                raise ValueError("information-set mode does not match ForecastProblemSpec")
+            if request.target_access != "history_only":
+                raise ValueError("feature compilation requires target_access='history_only'")
 
         if self._batch_requires_fallback(requests, selected_steps):
             warnings.warn(
@@ -416,11 +415,6 @@ class FeatureCompiler:
         requests: Sequence[InformationSetRequest],
         selected_steps: Sequence[tuple[int, ...]],
     ) -> bool:
-        if (
-            self.resolved_strategy.consumes_previous
-            and self.resolved_strategy.name is not StrategyName.RECMO
-        ):
-            return True
         advanced = self.features.transformations.get("advanced", {})
         if isinstance(advanced, Mapping) and any(
             advanced.get(kind) is not None

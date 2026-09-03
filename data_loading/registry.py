@@ -238,12 +238,16 @@ class SourceRegistry:
             frame = pd.concat(frames, ignore_index=True)
 
         if source.availability in {AvailabilityPolicy.COLUMN, AvailabilityPolicy.GENERATOR_DEFINED}:
-            oracle_request = request.information_mode == "oracle"
+            roles = {column.role for column in source.columns}
+            includes_target_labels = (
+                ColumnRole.TARGET in roles
+                and request.target_access == "supervised_labels"
+            )
             frame = self._select_as_of_vintage(
                 source,
                 frame,
                 request,
-                enforce_origin=not oracle_request,
+                include_target_labels=includes_target_labels,
             )
         return frame, lineage
 
@@ -271,7 +275,10 @@ class SourceRegistry:
             path_version=version,
             path=path,
             availability_policy=source.availability.value if source.availability else None,
-            oracle=request.information_mode == "oracle",
+            includes_target_labels=(
+                any(column.role is ColumnRole.TARGET for column in source.columns)
+                and request.target_access == "supervised_labels"
+            ),
         )
 
     def _validate_frame(
@@ -393,15 +400,21 @@ class SourceRegistry:
         frame: pd.DataFrame,
         request: InformationSetRequest,
         *,
-        enforce_origin: bool,
+        include_target_labels: bool = False,
     ) -> pd.DataFrame:
         available_at_col = self._available_at_col(source)
         if available_at_col is None:
             raise ValueError(f"source {source.name!r} has no available_at semantics")
-        if enforce_origin:
-            eligible = frame.loc[frame[available_at_col] <= request.forecast_origin].copy()
-        else:
-            eligible = frame.copy()
+        eligible_mask = frame[available_at_col] <= request.forecast_origin
+        if include_target_labels:
+            if source.time_col is None:
+                raise ValueError(
+                    f"target label source {source.name!r} requires time_col"
+                )
+            eligible_mask |= frame[source.time_col].isin(
+                request.forecast_times.tolist()
+            )
+        eligible = frame.loc[eligible_mask].copy()
         primary_key = self._primary_key(source)
         if eligible.empty:
             return eligible
@@ -421,7 +434,10 @@ class SourceRegistry:
     ) -> pd.DataFrame:
         if source.time_col is None:
             raise ValueError(f"history source {source.name!r} requires time_col at runtime")
-        if role is ColumnRole.TARGET and request.information_mode == "oracle":
+        if (
+            role is ColumnRole.TARGET
+            and request.target_access == "supervised_labels"
+        ):
             allowed_time = (frame[source.time_col] <= request.forecast_origin) | frame[source.time_col].isin(
                 request.forecast_times
             )
@@ -522,7 +538,6 @@ class SourceRegistry:
                     source,
                     provider_frame,
                     request,
-                    enforce_origin=True,
                 )
             provider_frame = provider_frame.loc[
                 provider_frame[source.time_col].isin(request.forecast_times)

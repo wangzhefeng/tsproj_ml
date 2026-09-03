@@ -4,6 +4,7 @@ from data_loading.information_set import (
     InformationSetRequest,
     MaterializedInformationSet,
     SourceLineage,
+    TargetAccess,
 )
 from data_loading.providers import (
     AuxiliaryProvider,
@@ -38,6 +39,7 @@ __all__ = [
     "ProvidedScenarioProvider",
     "SourceGenerator",
     "SourceLineage",
+    "TargetAccess",
     "SourceRegistry",
     "create_endogenous_future_provider",
 ]

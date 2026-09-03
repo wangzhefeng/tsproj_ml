@@ -17,6 +17,7 @@ from data_loading import (
     PersistenceProvider,
     ProvidedScenarioProvider,
     SourceRegistry,
+    TargetAccess,
     create_endogenous_future_provider,
 )
 from forecasting_core.specs import (
@@ -57,8 +58,8 @@ def known_future_source(
     *,
     name="weather",
     history_path=None,
-    future_path="weather_future.csv",
-    backtest_path="weather_backtest.csv",
+    future_path: str | None = "weather_future.csv",
+    backtest_path: str | None = "weather_backtest.csv",
     columns=(ColumnSpec("temperature", "known_future"),),
     series=False,
 ):
@@ -90,7 +91,6 @@ class InformationSetRequestTest(unittest.TestCase):
             forecast_origin="2026-08-01 23:00",
             forecast_times=times,
             series_ids=series_ids,
-            information_mode="forecast",
         )
 
         times.values[0] = pd.Timestamp("2030-01-01").value
@@ -102,14 +102,13 @@ class InformationSetRequestTest(unittest.TestCase):
         self.assertEqual(request.N, 2)
         self.assertEqual(request.H, 3)
         with self.assertRaises(FrozenInstanceError):
-            request.information_mode = "oracle"
+            request.target_access = "supervised_labels"
 
     def test_local_request_has_one_series_identity(self):
         request = InformationSetRequest(
             forecast_origin="2026-08-01",
             forecast_times=pd.date_range("2026-08-02", periods=2, freq="1D"),
             series_ids=(),
-            information_mode="nowcast",
         )
         self.assertEqual(request.series_ids, ())
         self.assertEqual((request.N, request.H), (1, 2))
@@ -120,7 +119,6 @@ class InformationSetRequestTest(unittest.TestCase):
             forecast_origin="2026-08-01",
             forecast_times=pd.date_range("2026-08-02", periods=2, freq="1D"),
             series_ids=series_ids,
-            information_mode="forecast",
         )
         series_ids[0][0] = "mutated"
         self.assertEqual(request.series_ids, (("north", "A"), ("south", "B")))
@@ -130,7 +128,6 @@ class InformationSetRequestTest(unittest.TestCase):
             "forecast_origin": "2026-08-01",
             "forecast_times": pd.date_range("2026-08-02", periods=2, freq="1D"),
             "series_ids": (),
-            "information_mode": "forecast",
         }
         invalid_times = (
             pd.DatetimeIndex([]),
@@ -154,7 +151,7 @@ class InformationSetRequestTest(unittest.TestCase):
                     InformationSetRequest(**{**valid, "series_ids": series_ids})
 
         with self.assertRaises(ValueError):
-            InformationSetRequest(**{**valid, "information_mode": "realtime"})
+            InformationSetRequest(**{**valid, "target_access": "all_data"})
 
 
 class SourceRegistryTest(unittest.TestCase):
@@ -168,12 +165,19 @@ class SourceRegistryTest(unittest.TestCase):
     def write_csv(self, name, rows):
         pd.DataFrame(rows).to_csv(self.base_dir / name, index=False)
 
-    def request(self, *, series_ids=(), mode="forecast", origin="2026-08-01 23:00", periods=2):
+    def request(
+        self,
+        *,
+        series_ids=(),
+        target_access: TargetAccess = "history_only",
+        origin="2026-08-01 23:00",
+        periods=2,
+    ):
         return InformationSetRequest(
             forecast_origin=origin,
             forecast_times=pd.date_range("2026-08-02 00:00", periods=periods, freq="1h"),
             series_ids=series_ids,
-            information_mode=mode,
+            target_access=target_access,
         )
 
     def test_local_multitarget_materialization_and_source_qualified_lineage(self):
@@ -229,7 +233,9 @@ class SourceRegistryTest(unittest.TestCase):
             },
         )
         self.assertTrue(all(item.availability_policy in {"source_time", "column"} for item in result.lineage))
-        self.assertTrue(all(not item.oracle for item in result.lineage))
+        self.assertTrue(
+            all(not item.includes_target_labels for item in result.lineage)
+        )
 
     def test_known_future_history_derives_availability_and_allows_optional_ignored_metadata(self):
         self.write_csv(
@@ -464,7 +470,7 @@ class SourceRegistryTest(unittest.TestCase):
         self.assertEqual(calls[0][1].H, 2)
         self.assertEqual(result.lineage[-1].path_version, "generated")
 
-    def test_forecast_nowcast_block_target_future_and_oracle_is_explicit(self):
+    def test_target_access_only_exposes_future_labels_when_explicit(self):
         self.write_csv(
             "target.csv",
             [
@@ -477,17 +483,53 @@ class SourceRegistryTest(unittest.TestCase):
         spec = DataSpec((target_source(),))
         registry = SourceRegistry(spec, self.base_dir)
 
-        for mode in ("forecast", "nowcast"):
-            with self.subTest(mode=mode):
-                result = registry.materialize(self.request(mode=mode))
-                self.assertEqual(result.target_history["target"]["load"].tolist(), [1.0])
-                self.assertTrue(all(not item.oracle for item in result.lineage))
+        prediction = registry.materialize(self.request())
+        self.assertEqual(prediction.target_history["target"]["load"].tolist(), [1.0])
+        self.assertTrue(
+            all(not item.includes_target_labels for item in prediction.lineage)
+        )
 
-        oracle = registry.materialize(self.request(mode="oracle"))
-        self.assertEqual(oracle.target_history["target"]["load"].tolist(), [1.0, 2.0, 3.0])
-        self.assertTrue(all(item.oracle for item in oracle.lineage))
+        labels = registry.materialize(self.request(target_access="supervised_labels"))
+        self.assertEqual(labels.target_history["target"]["load"].tolist(), [1.0, 2.0, 3.0])
+        self.assertTrue(all(item.includes_target_labels for item in labels.lineage))
 
-    def test_oracle_explicitly_allows_column_available_target_future(self):
+    def test_supervised_label_access_keeps_known_future_as_of_origin(self):
+        self.write_csv("target.csv", [{"ts": "2026-08-01 22:00", "load": 1.0}])
+        self.write_csv(
+            "weather_future.csv",
+            [
+                {
+                    "ts": "2026-08-02 00:00",
+                    "issued_at": "2026-08-01 22:00",
+                    "temperature": 21.0,
+                },
+                {
+                    "ts": "2026-08-02 00:00",
+                    "issued_at": "2026-08-02 00:00",
+                    "temperature": 99.0,
+                },
+                {
+                    "ts": "2026-08-02 01:00",
+                    "issued_at": "2026-08-01 22:00",
+                    "temperature": 22.0,
+                },
+            ],
+        )
+        registry = SourceRegistry(
+            DataSpec((target_source(), known_future_source(backtest_path=None))),
+            self.base_dir,
+        )
+
+        result = registry.materialize(
+            self.request(target_access="supervised_labels")
+        )
+
+        self.assertEqual(
+            result.known_future["weather"]["temperature"].tolist(),
+            [21.0, 22.0],
+        )
+
+    def test_supervised_labels_allow_column_available_target_future(self):
         self.write_csv(
             "target.csv",
             [
@@ -501,11 +543,37 @@ class SourceRegistryTest(unittest.TestCase):
             self.base_dir,
         )
 
-        forecast = registry.materialize(self.request(mode="forecast"))
-        oracle = registry.materialize(self.request(mode="oracle"))
+        prediction = registry.materialize(self.request())
+        labels = registry.materialize(
+            self.request(target_access="supervised_labels")
+        )
 
-        self.assertEqual(forecast.target_history["target"]["load"].tolist(), [1.0])
-        self.assertEqual(oracle.target_history["target"]["load"].tolist(), [1.0, 2.0, 3.0])
+        self.assertEqual(prediction.target_history["target"]["load"].tolist(), [1.0])
+        self.assertEqual(labels.target_history["target"]["load"].tolist(), [1.0, 2.0, 3.0])
+
+    def test_supervised_labels_do_not_expose_late_historical_target_revision(self):
+        self.write_csv(
+            "target.csv",
+            [
+                {"ts": "2026-08-01 22:00", "issued_at": "2026-08-01 22:00", "load": 1.0},
+                {"ts": "2026-08-01 22:00", "issued_at": "2026-08-02 00:00", "load": 99.0},
+                {"ts": "2026-08-02 00:00", "issued_at": "2026-08-02 00:00", "load": 2.0},
+                {"ts": "2026-08-02 01:00", "issued_at": "2026-08-02 01:00", "load": 3.0},
+            ],
+        )
+        registry = SourceRegistry(
+            DataSpec((target_source(availability="column"),)),
+            self.base_dir,
+        )
+
+        labels = registry.materialize(
+            self.request(target_access="supervised_labels")
+        )
+
+        self.assertEqual(
+            labels.target_history["target"]["load"].tolist(),
+            [1.0, 2.0, 3.0],
+        )
 
     def test_reader_cache_and_copy_isolation(self):
         self.write_csv("target.csv", [{"ts": "2026-08-01 22:00", "load": 1.0}])

@@ -92,11 +92,13 @@ def compute_compiled_fingerprint(
     generators: Mapping[str, Any],
 ) -> str:
     root = Path(base_dir).resolve()
+    backtest_geometry = config.validation.canonical_payload()
+    backtest_geometry.pop("performance", None)
     payload = {
         "schema_version": COMPILED_CACHE_SCHEMA_VERSION,
         "config_fingerprint": config.fingerprint(),
         "forecast_origin": str(origin),
-        "backtest_geometry": config.validation.canonical_payload(),
+        "backtest_geometry": backtest_geometry,
         "source_hashes": _source_hashes(config, root),
         "generator_hashes": _generator_hashes(config, generators),
         "environment_hashes": _environment_hashes(root),

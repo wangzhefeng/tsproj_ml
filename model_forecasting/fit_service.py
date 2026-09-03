@@ -62,11 +62,14 @@ def _fit_runtime_transforms(
     )
     transformed_X = feature_scaler.fit_transform_calls(X_by_call)
     target_transform = CanonicalTargetTransform.from_config(config)
-    target_transform.fit_transform(
-        target_history
-        if target_history is not None
-        else builder.target_history(history_cutoff)
-    )
+    if target_transform.is_identity:
+        target_transform.fit_identity(builder.series_ids, config.problem.targets)
+    else:
+        target_transform.fit_transform(
+            target_history
+            if target_history is not None
+            else builder.target_history(history_cutoff)
+        )
     transformed_Y = target_transform.transform_training(
         Y,
         origins,

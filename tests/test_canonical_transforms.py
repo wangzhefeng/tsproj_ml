@@ -3,11 +3,13 @@
 
 import pickle
 import unittest
+from typing import Any, cast
 
 import numpy as np
 import pandas as pd
 
 from feature_engineering import FeatureCompiler
+from forecasting_core.artifacts import MarginalForecastDistribution
 from forecasting_core.specs import (
     ColumnSpec,
     DataSourceSpec,
@@ -19,6 +21,7 @@ from forecasting_core.specs import (
     ForecastStrategySpec,
 )
 from forecasting_core.tensors import MarginalQuantileForecastTensor, PointForecastTensor
+from model_forecasting.fit_service import _fit_runtime_transforms
 from model_forecasting.transforms import CanonicalFeatureScaler, CanonicalTargetTransform
 
 
@@ -86,6 +89,142 @@ class CanonicalTargetTransformTest(unittest.TestCase):
             forecast_times=times,
             targets=("load", "power"),
         )
+
+    def test_identity_transform_reuses_tensor_and_preserves_fitted_state(self):
+        history = self._history()
+        transform = CanonicalTargetTransform.from_config(_config())
+
+        transformed = transform.fit_transform(history)
+        restored = transform.restore_point(transformed)
+
+        self.assertIs(transformed, history)
+        self.assertIs(restored, history)
+        expected_keys = {
+            ("A", "load"),
+            ("A", "power"),
+            ("B", "load"),
+            ("B", "power"),
+        }
+        self.assertEqual(set(transform.fitted_keys), expected_keys)
+        self.assertEqual(
+            transform.training_steps,
+            {key: () for key in expected_keys},
+        )
+
+    def test_identity_transform_reuses_training_array(self):
+        history = self._history()
+        transform = CanonicalTargetTransform.from_config(_config())
+        transform.fit_transform(history)
+        values = np.arange(24.0).reshape(3, 4, 2)
+        origins = tuple(pd.date_range("2026-03-01", periods=3, freq="1h"))
+
+        transformed = transform.transform_training(
+            values,
+            origins,
+            series_ids=("A", "A", "A"),
+        )
+
+        self.assertIs(transformed, values)
+
+    def test_identity_runtime_does_not_materialize_target_history(self):
+        class IdentityBuilder:
+            feature_schema = ("lag",)
+            categorical_schema = ()
+            series_ids = ("A",)
+
+            @staticmethod
+            def target_history(_cutoff):
+                raise AssertionError("identity transform must not load target history")
+
+        config = _config()
+        X_by_call = (np.arange(3.0).reshape(3, 1),)
+        Y = np.arange(12.0).reshape(3, 2, 2)
+        origins = tuple(pd.date_range("2026-03-01", periods=3, freq="1h"))
+
+        _, target_transform, transformed_X, transformed_Y = _fit_runtime_transforms(
+            config,
+            cast(Any, IdentityBuilder()),
+            X_by_call,
+            Y,
+            origins,
+            ("A", "A", "A"),
+            cast(pd.Timestamp, pd.Timestamp("2026-03-03")),
+        )
+
+        self.assertIs(transformed_X[0], X_by_call[0])
+        self.assertIs(transformed_Y, Y)
+        self.assertEqual(
+            target_transform.fitted_keys,
+            (("A", "load"), ("A", "power")),
+        )
+
+    def test_identity_restore_values_reuses_recursive_prediction_array(self):
+        history = self._history()
+        transform = CanonicalTargetTransform.from_config(_config())
+        transform.fit_transform(history)
+        values = np.array([11.0, 12.0])
+
+        restored = transform.restore_values(
+            "A",
+            "load",
+            values,
+            history.forecast_times[:2],
+        )
+
+        self.assertIs(restored, values)
+
+    def test_identity_transform_point_reuses_tensor(self):
+        history = self._history()
+        transform = CanonicalTargetTransform.from_config(_config())
+        transform.fit_transform(history)
+
+        transformed = transform.transform_point(history)
+
+        self.assertIs(transformed, history)
+
+    def test_identity_restore_quantiles_reuses_tensor(self):
+        history = self._history()
+        transform = CanonicalTargetTransform.from_config(_config())
+        transform.fit_transform(history)
+        quantiles = MarginalQuantileForecastTensor(
+            values=np.stack(
+                [history.values - 1.0, history.values, history.values + 1.0],
+                axis=-1,
+            ),
+            levels=(0.1, 0.5, 0.9),
+            point_level=0.5,
+            series_ids=history.series_ids,
+            forecast_times=history.forecast_times,
+            targets=history.targets,
+        )
+
+        restored = transform.restore_quantiles(quantiles)
+
+        self.assertIs(restored, quantiles)
+
+    def test_identity_restore_distribution_reuses_distribution(self):
+        history = self._history()
+        transform = CanonicalTargetTransform.from_config(_config())
+        transform.fit_transform(history)
+        quantiles = MarginalQuantileForecastTensor(
+            values=np.stack(
+                [history.values - 1.0, history.values, history.values + 1.0],
+                axis=-1,
+            ),
+            levels=(0.1, 0.5, 0.9),
+            point_level=0.5,
+            series_ids=history.series_ids,
+            forecast_times=history.forecast_times,
+            targets=history.targets,
+        )
+        distribution = MarginalForecastDistribution(
+            point=history,
+            quantiles=quantiles,
+        )
+
+        restored = transform.restore_distribution(distribution)
+
+        self.assertIs(restored, distribution)
 
     def test_n2_k2_active_decomposition_and_scaling_methods_roundtrip_exactly(self):
         decomposition_specs = {

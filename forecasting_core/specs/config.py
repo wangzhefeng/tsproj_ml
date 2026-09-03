@@ -76,7 +76,7 @@ _STRATEGY_FIELDS = frozenset({"name", "output_chunk_length"})
 _ESTIMATOR_FIELDS = frozenset({"model_type", "target_adapter", "params"})
 _FORBIDDEN_FIELD_NAMES = frozenset({"base_config", "overrides", "pred_method"})
 _NONSEMANTIC_FIELD_TOKENS = ("parallel", "worker", "thread", "n_jobs", "log")
-_NONSEMANTIC_VALIDATION_FIELDS: frozenset[str] = frozenset()
+_NONSEMANTIC_VALIDATION_FIELDS: frozenset[str] = frozenset({"performance"})
 
 
 def _semantic_mapping(value: Mapping[str, Any]) -> dict[str, Any]:

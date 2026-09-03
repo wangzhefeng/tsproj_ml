@@ -897,18 +897,21 @@ class CanonicalBaseModelRunner:
         )
         parallel_fits = None
         if window_workers > 1 and backtest_windows:
-            target_histories = tuple(
-                builder.target_history(
-                    max(
-                        _label_end(
-                            builder,
-                            cast(pd.Timestamp, self.supervised_origins[index]),
+            if CanonicalTargetTransform.from_config(config).is_identity:
+                target_histories = (None,) * len(backtest_windows)
+            else:
+                target_histories = tuple(
+                    builder.target_history(
+                        max(
+                            _label_end(
+                                builder,
+                                cast(pd.Timestamp, self.supervised_origins[index]),
+                            )
+                            for index in backtest_window.train_indices
                         )
-                        for index in backtest_window.train_indices
                     )
+                    for backtest_window in backtest_windows
                 )
-                for backtest_window in backtest_windows
-            )
 
             def fit_window(item):
                 backtest_window, target_history = item

@@ -7,7 +7,7 @@ import threading
 import time
 import unittest
 from pathlib import Path
-from typing import cast
+from typing import Any, cast
 
 import numpy as np
 import pandas as pd
@@ -176,6 +176,25 @@ class RuntimeWindowParallelismTest(unittest.TestCase):
         self.assertGreaterEqual(_TrackingRunner.max_active, 2)
         pd.testing.assert_frame_equal(parallel_cv, serial_cv, check_exact=True)
         self.assertEqual(parallel_cv["window"].drop_duplicates().tolist(), [1, 2, 3])
+
+    def test_identity_parallel_windows_do_not_materialize_target_history(self) -> None:
+        runner = self._runner(2)
+        original_target_history = runner.builder.target_history
+        target_history_calls = 0
+
+        def count_target_history(cutoff):
+            nonlocal target_history_calls
+            target_history_calls += 1
+            return original_target_history(cutoff)
+
+        cast(Any, runner.builder).target_history = count_target_history
+
+        runner.run(self.root / "parallel-identity")
+
+        self.assertEqual(
+            target_history_calls,
+            len(runner.backtest_windows()) + 1,
+        )
 
 
     def test_parallel_quantile_windows_preserve_cqr_order(self) -> None:

@@ -6,6 +6,7 @@ import tempfile
 import unittest
 from pathlib import Path
 from time import perf_counter
+from typing import cast
 
 import numpy as np
 import pandas as pd
@@ -32,8 +33,8 @@ class CompiledFeatureCacheTest(unittest.TestCase):
         self.data_path = self.root / "load.csv"
         self.times = pd.date_range("2026-01-01", periods=64, freq="1h")
         self._write_values(np.arange(len(self.times), dtype=float))
+        self.origin = cast(pd.Timestamp, pd.Timestamp(self.times.to_numpy()[-4]))
         self.config = self._config()
-        self.origin = pd.Timestamp(self.times[-4])
         self.cache_root = self.root / "results"
 
     def tearDown(self) -> None:
@@ -83,13 +84,7 @@ class CompiledFeatureCacheTest(unittest.TestCase):
                 params={"alpha": 1e-6},
             ),
             probabilistic={"mode": "point"},
-            validation={
-                "forecast_origin": self.times[-4].isoformat(),
-                "history_steps": 32,
-                "train_window_steps": 16,
-                "fold_count": 1,
-                "stride_steps": 2,
-            },
+            validation=validation,
             output={"scenario_subpath": "compiled-cache"},
         )
 
@@ -124,6 +119,27 @@ class CompiledFeatureCacheTest(unittest.TestCase):
         third = self._runner()
         self.assertFalse(third.compiled_cache_hit)
         self.assertEqual(len(tuple(cache_parent.iterdir())), 2)
+
+    def test_performance_controls_share_compiled_design_cache(self) -> None:
+        first = self._runner()
+        self.assertFalse(first.compiled_cache_hit)
+        configured = self._config(
+            {
+                "window_parallel_workers": 2,
+                "model_thread_count": 4,
+            }
+        )
+
+        second = CanonicalBaseModelRunner(
+            configured,
+            SourceRegistry(configured.data, self.root),
+            self.origin,
+            compiled_cache_root=self.cache_root,
+        )
+
+        self.assertTrue(second.compiled_cache_hit)
+        cache_parent = self.cache_root / COMPILED_CACHE_DIR_NAME
+        self.assertEqual(len(tuple(cache_parent.iterdir())), 1)
 
 
 if __name__ == "__main__":

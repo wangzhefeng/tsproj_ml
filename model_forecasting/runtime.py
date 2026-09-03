@@ -144,6 +144,101 @@ def _proof_payload(compiled_items: tuple[CompiledFeatures, ...]) -> list[dict[st
     return payload
 
 
+def _holdout_proof_summary(
+    compiled_items: tuple[CompiledFeatures, ...],
+) -> dict[str, Any]:
+    group_by = (
+        "forecast_origin",
+        "feature_name",
+        "source_name",
+        "role",
+        "provider",
+    )
+    grouped: dict[tuple[Any, ...], dict[str, Any]] = {}
+    total_lookups = 0
+    for compiled in compiled_items:
+        for proof in compiled.visibility_proof:
+            total_lookups += 1
+            key = (
+                proof.forecast_origin,
+                proof.feature_name,
+                proof.source_name,
+                proof.role,
+                proof.provider,
+            )
+            item = grouped.get(key)
+            if item is None:
+                item = {
+                    "forecast_origin": proof.forecast_origin,
+                    "feature_name": proof.feature_name,
+                    "source_name": proof.source_name,
+                    "role": proof.role,
+                    "provider": proof.provider,
+                    "lookup_count": 0,
+                    "horizon_step_min": proof.horizon_step,
+                    "horizon_step_max": proof.horizon_step,
+                    "target_time_min": proof.target_time,
+                    "target_time_max": proof.target_time,
+                    "source_time_count": 0,
+                    "source_time_min": proof.source_time,
+                    "source_time_max": proof.source_time,
+                    "available_at_min": proof.available_at,
+                    "available_at_max": proof.available_at,
+                }
+                grouped[key] = item
+            item["lookup_count"] += 1
+            item["horizon_step_min"] = min(
+                item["horizon_step_min"], proof.horizon_step
+            )
+            item["horizon_step_max"] = max(
+                item["horizon_step_max"], proof.horizon_step
+            )
+            item["target_time_min"] = min(item["target_time_min"], proof.target_time)
+            item["target_time_max"] = max(item["target_time_max"], proof.target_time)
+            item["available_at_min"] = min(
+                item["available_at_min"], proof.available_at
+            )
+            item["available_at_max"] = max(
+                item["available_at_max"], proof.available_at
+            )
+            if proof.source_time is not None:
+                item["source_time_count"] += 1
+                item["source_time_min"] = (
+                    proof.source_time
+                    if item["source_time_min"] is None
+                    else min(item["source_time_min"], proof.source_time)
+                )
+                item["source_time_max"] = (
+                    proof.source_time
+                    if item["source_time_max"] is None
+                    else max(item["source_time_max"], proof.source_time)
+                )
+
+    serialized = []
+    timestamp_fields = (
+        "forecast_origin",
+        "target_time_min",
+        "target_time_max",
+        "source_time_min",
+        "source_time_max",
+        "available_at_min",
+        "available_at_max",
+    )
+    for grouped_item in grouped.values():
+        item = dict(grouped_item)
+        for field in timestamp_fields:
+            value = item[field]
+            item[field] = value.isoformat() if value is not None else None
+        serialized.append(item)
+    return {
+        "schema_version": 1,
+        "group_by": list(group_by),
+        "total_lookups": total_lookups,
+        "group_count": len(serialized),
+        "groups": serialized,
+    }
+
+
 def _source_lineage_payload(
     compiled_items: tuple[CompiledFeatures, ...],
 ) -> list[dict[str, Any]]:
@@ -669,6 +764,10 @@ class CanonicalBaseModelRunner:
             freq=self.config.problem.freq,
         )[1:]
 
+    def target_history(self, origin: pd.Timestamp) -> PointForecastTensor:
+        """Full target history as-of origin (forecast-plot context; E5+ Protocol)."""
+        return self.builder.target_history(origin)
+
     def final_bundle_inputs(self) -> tuple[
         CanonicalFeatureScaler,
         CanonicalTargetTransform,
@@ -1113,7 +1212,7 @@ class CanonicalBaseModelRunner:
                 final_calibration_audit["selected_scores"],
             )
         visibility_proof = _proof_payload(final_audit)
-        holdout_visibility_proof = _proof_payload(holdout_audit)
+        holdout_visibility_proof = _holdout_proof_summary(holdout_audit)
         source_lineage = _source_lineage_payload(final_audit)
         feature_lineage, availability_summary = _compiled_lineage(
             builder.feature_schema,
@@ -1170,10 +1269,29 @@ class CanonicalBaseModelRunner:
 
         persist_model_bundle(bundle, model_dir)
 
+        # 预测图历史参照段（2026-09-02）：as-of origin 的 target_history 末段
+        # （5×horizon 步）随预测图绘制；历史段时间轴 <= origin，与预测段不重叠。
+        try:
+            forecast_history = builder.target_history(origin)
+            history_steps = max(1, int(config.problem.horizon) * 5)
+            forecast_history = PointForecastTensor(
+                values=forecast_history.values[:, -history_steps:, :],
+                series_ids=forecast_history.series_ids,
+                forecast_times=forecast_history.forecast_times[-history_steps:],
+                targets=forecast_history.targets,
+            )
+        except (ValueError, KeyError) as exc:
+            logger.warning(
+                "[forecast plot] target history unavailable, plot without "
+                "history reference: %s",
+                exc,
+            )
+            forecast_history = None
         write_forecast_results(
             forecast_dir,
             forecast,
             extra_columns=forecast_extra_columns,
+            history=forecast_history,
         )
         _write_json(
             forecast_dir / "resolved_config.json",

@@ -29,6 +29,7 @@ from model_ensemble.trainer import fit_ensemble
 from model_testing.backtest import resolve_origin
 from data_loading import SourceRegistry
 from model_forecasting.results import backtest_tensors_to_long, write_forecast_results
+from utils.log_util import logger
 from forecasting_core.specs.config import parse_model_config
 from forecasting_core.tensors import (
     MarginalQuantileForecastTensor,
@@ -336,7 +337,24 @@ def run_ensemble_config(
     )
 
     services.persist_bundle(bundle, model_dir)
-    write_forecast_results(forecast_dir, forecast)
+    # 预测图历史参照段（2026-09-02）：首个成员 runner 的 as-of 历史（5×horizon 步）。
+    try:
+        history_steps = max(1, int(config.problem.horizon) * 5)
+        full_history = first_runner.target_history(first_runner.origin)
+        forecast_history = PointForecastTensor(
+            values=full_history.values[:, -history_steps:, :],
+            series_ids=full_history.series_ids,
+            forecast_times=full_history.forecast_times[-history_steps:],
+            targets=full_history.targets,
+        )
+    except (ValueError, KeyError) as exc:
+        logger.warning(
+            "[ensemble forecast plot] target history unavailable, plot "
+            "without history reference: %s",
+            exc,
+        )
+        forecast_history = None
+    write_forecast_results(forecast_dir, forecast, history=forecast_history)
     forecast_dir.mkdir(parents=True, exist_ok=True)
     (forecast_dir / "resolved_config.json").write_text(
         json.dumps(

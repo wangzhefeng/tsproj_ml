@@ -58,6 +58,10 @@ class BaseModelRunner(Protocol):
     def forecast_times(self, origin: pd.Timestamp) -> pd.DatetimeIndex:
         ...
 
+    def target_history(self, origin: pd.Timestamp) -> Any:
+        """Full target history tensor as-of origin (for forecast-plot context)."""
+        ...
+
     def final_bundle_inputs(self) -> tuple[Any, Any, tuple[Any, ...], Any]:
         ...
 

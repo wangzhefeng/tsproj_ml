@@ -232,13 +232,14 @@ class CanonicalRuntimeSmokeTest(unittest.TestCase):
                 ["series_id", "time", "target", "predict_value"],
             )
             self.assertEqual(len(prediction), 2)
-            # K=1、H=2、1 窗：target + aggregate + 2 horizon + 2 aggregate_horizon
-            self.assertEqual(
-                scores["scope"].tolist()[:2], ["target", "aggregate"]
+            # K=1、H=2、1 窗：汇总 target + aggregate；horizon 明细独立文件
+            self.assertEqual(scores["scope"].tolist(), ["target", "aggregate"])
+            horizon_scores = pd.read_csv(
+                result.test_dir / "test_scores_horizon_df.csv"
             )
             self.assertEqual(
-                set(scores["scope"]),
-                {"target", "aggregate", "horizon", "aggregate_horizon"},
+                set(horizon_scores["scope"]),
+                {"horizon", "aggregate_horizon"},
             )
             # 点模式不产出概率分数文件（2026-08-30 接线：仅 quantile 模式）
             self.assertFalse(
@@ -312,11 +313,16 @@ class CanonicalRuntimeSmokeTest(unittest.TestCase):
             self.assertEqual(sorted(cv["window"].unique().tolist()), [1, 2, 3])
             self.assertEqual(set(cv["target"]), {"load", "power"})
             self.assertEqual(len(cv), 3 * 2 * 2)
-            # K=2、H=2、3 窗：每窗 2 target + 1 aggregate + 4 horizon + 2 aggregate_horizon = 9
-            self.assertEqual(len(scores), 3 * 9)
+            # K=2、H=2、3 窗：汇总每窗 2 target + 1 aggregate = 3
+            self.assertEqual(len(scores), 3 * 3)
+            self.assertEqual(set(scores["scope"]), {"target", "aggregate"})
+            horizon_scores = pd.read_csv(
+                result.test_dir / "test_scores_horizon_df.csv"
+            )
+            self.assertEqual(len(horizon_scores), 3 * 6)
             self.assertEqual(
-                set(scores["scope"]),
-                {"target", "aggregate", "horizon", "aggregate_horizon"},
+                set(horizon_scores["scope"]),
+                {"horizon", "aggregate_horizon"},
             )
             self.assertTrue((result.test_dir / "target_plots" / "load.png").exists())
             self.assertTrue((result.test_dir / "target_plots" / "power.png").exists())
@@ -368,9 +374,15 @@ class CanonicalRuntimeSmokeTest(unittest.TestCase):
                     "calibration_error",
                 },
             )
+            # 概率分数与点分数同拆分口径（2026-09-03 方案 B）：汇总文件只含
+            # target/aggregate；per-horizon 拆到 horizon 明细文件
+            self.assertEqual(set(prob_scores["scope"]), {"target", "aggregate"})
+            prob_horizon = pd.read_csv(
+                result.test_dir / "test_scores_probabilistic_horizon_df.csv"
+            )
             self.assertEqual(
-                set(prob_scores["scope"]),
-                {"target", "aggregate", "horizon", "aggregate_horizon"},
+                set(prob_horizon["scope"]),
+                {"horizon", "aggregate_horizon"},
             )
             self.assertEqual(
                 set(prob_scores["interval_name"].dropna()), {"central80"}
@@ -926,16 +938,19 @@ class CanonicalRuntimeSmokeTest(unittest.TestCase):
                     scores = pd.read_csv(result.test_dir / "test_scores_df.csv")
                     self.assertEqual(len(prediction), 8)
                     self.assertEqual(set(prediction["target"]), {"load", "power"})
-                    # K=2、H=4、1 窗：2 target + 1 aggregate + 8 horizon + 4 aggregate_horizon
+                    # K=2、H=4、1 窗：汇总 2 target + 1 aggregate；horizon 明细独立文件
                     self.assertEqual(
-                        scores["scope"].tolist()[:3],
+                        scores["scope"].tolist(),
                         ["target", "target", "aggregate"],
                     )
-                    self.assertEqual(
-                        set(scores["scope"]),
-                        {"target", "aggregate", "horizon", "aggregate_horizon"},
+                    horizon_scores = pd.read_csv(
+                        result.test_dir / "test_scores_horizon_df.csv"
                     )
-                    self.assertEqual((scores["scope"] == "horizon").sum(), 2 * 4)
+                    self.assertEqual(
+                        set(horizon_scores["scope"]),
+                        {"horizon", "aggregate_horizon"},
+                    )
+                    self.assertEqual((horizon_scores["scope"] == "horizon").sum(), 2 * 4)
                     self.assertEqual(result.run_dir.name, config.result_identity())
                     self.assertEqual(
                         result.bundle.model.model_count,

@@ -3,13 +3,18 @@
 from __future__ import annotations
 
 import unittest
-from typing import Any
+from typing import Any, cast
 from unittest.mock import patch
 
 import numpy as np
 import pandas as pd
 
-from model_forecasting.runtime import _sample_selector
+from feature_engineering.compiler import (
+    CompiledFeatures,
+    FeatureSchema,
+    VisibilityProof,
+)
+from model_forecasting.runtime import _holdout_proof_summary, _sample_selector
 from model_training.estimators import make_model_factory
 
 

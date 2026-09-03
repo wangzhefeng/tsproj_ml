@@ -210,14 +210,37 @@ class ForecastResultSchemaTest(unittest.TestCase):
             ),
             dependence_model=None,
         )
+        # 历史参照段（5×horizon=15 步，as-of origin，末点紧邻预测段首点）
+        history_times = pd.date_range("2026-08-31 09:00", periods=15, freq="1h")
+        history = PointForecastTensor(
+            values=(100.0 + np.arange(15.0)).reshape(1, 15, 1),
+            series_ids=("A",),
+            forecast_times=history_times,
+            targets=("load",),
+        )
 
         with tempfile.TemporaryDirectory() as temp_dir:
             output = Path(temp_dir)
-            write_forecast_results(output, distribution)
+            write_forecast_results(output, distribution, history=history)
 
             # 单 target → forecast_prediction.png（quantile 模式同路径）
             self.assertTrue((output / "forecast_prediction.png").exists())
             self.assertFalse((output / "prediction_plots").exists())
+
+    def test_forecast_writer_without_history_keeps_prediction_only_plot(self):
+        times = pd.date_range("2026-09-01", periods=3, freq="1h")
+        point = PointForecastTensor(
+            values=np.arange(3.0).reshape(1, 3, 1),
+            series_ids=("A",),
+            forecast_times=times,
+            targets=("load",),
+        )
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            output = Path(temp_dir)
+            write_forecast_results(output, point)
+
+            self.assertTrue((output / "forecast_prediction.png").exists())
 
     def test_backtest_writer_creates_long_csv_metadata_and_target_plots(self):
         actual = PointForecastTensor(

@@ -134,6 +134,7 @@ def write_forecast_results(
     forecast: PointForecastTensor | MarginalForecastDistribution,
     *,
     extra_columns: Mapping[str, np.ndarray] | None = None,
+    history: PointForecastTensor | None = None,
 ) -> Path:
     output_path = Path(output_dir)
     output_path.mkdir(parents=True, exist_ok=True)
@@ -152,9 +153,12 @@ def write_forecast_results(
             frame[name] = array
     destination = output_path / "prediction.csv"
     frame.to_csv(destination, index=False, encoding="utf_8_sig")
-    # 预测结果可视化（2026-09-02）：正式预测曲线图（point 单线 / quantile 带区间）
+    # 预测结果可视化（2026-09-02）：预测曲线 + 前置 5×horizon 历史真实值参照段
     if len(frame) > 0:
-        _plot_forecast(frame, output_path)
+        history_frame = (
+            _history_long_frame(history) if history is not None else None
+        )
+        _plot_forecast(frame, output_path, history_frame)
     return destination
 
 
@@ -324,24 +328,162 @@ def _plot_window(
     return output_path
 
 
-def _plot_forecast(frame: pd.DataFrame, output_dir: Path) -> None:
+def _history_long_frame(history: PointForecastTensor) -> pd.DataFrame:
+    """历史张量 → long 帧（actual_value 列），供预测图的历史段绘制。"""
+    return point_tensor_to_long(history).rename(
+        columns={"predict_value": "actual_value"}
+    )
+
+
+def _plot_forecast_series(
+    forecast_frame: pd.DataFrame,
+    title: str,
+    output_path: Path,
+    history_frame: pd.DataFrame | None = None,
+    *,
+    figsize: tuple = (14, 5),
+    dpi: int = 300,
+) -> None:
+    """正式预测图：预测段 Preds 虚线（+PI 带），可选前置历史段 Trues 实线。
+
+    历史段来自 target_history（as-of origin，与预测段时间轴首尾相接不重叠）；
+    Preds 线首点回接历史最后一个真实值，保证两段视觉连续；历史段末端画
+    forecast origin 竖线分隔参照区与预测区。
+    """
+    import matplotlib.pyplot as plt
+
+    forecast_frame = forecast_frame.copy()
+    forecast_frame["time"] = pd.to_datetime(forecast_frame["time"])
+    forecast_frame = forecast_frame.sort_values("time", kind="stable")
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    figure, axis = plt.subplots(figsize=figsize)
+    series_ids = tuple(dict.fromkeys(forecast_frame["series_id"]))
+    for series_id in series_ids:
+        segment = forecast_frame[forecast_frame["series_id"] == series_id]
+        suffix = "" if len(series_ids) == 1 else f" [{series_id}]"
+        origin_time = None
+        last_history_value = None
+        connector_x = segment["time"]
+        connector_y = segment["predict_value"].astype(float).values
+        if history_frame is not None:
+            history_segment = history_frame[
+                history_frame["series_id"] == series_id
+            ].sort_values("time", kind="stable")
+            if not history_segment.empty:
+                history_times = pd.to_datetime(history_segment["time"])
+                axis.plot(
+                    history_times,
+                    history_segment["actual_value"].astype(float).values,
+                    label=f"Trues{suffix}",
+                    lw=1.5,
+                )
+                # Preds 首点回接历史末个真实值（视觉连续）
+                last_history_value = float(
+                    history_segment["actual_value"].iloc[-1]
+                )
+                connector_x = pd.concat(
+                    [pd.Series(history_times.iloc[-1]), segment["time"]],
+                    ignore_index=True,
+                )
+                connector_y = np.concatenate(
+                    [[last_history_value], segment["predict_value"].astype(float).values]
+                )
+                origin_time = history_times.iloc[-1]
+        axis.plot(
+            connector_x,
+            connector_y,
+            label=f"Preds{suffix}",
+            lw=1.5,
+            ls="-.",
+        )
+        quantile_columns = [
+            column for column in segment.columns if column.startswith("predict_q")
+        ]
+        if len(quantile_columns) >= 2:
+            # PI 带：有历史时从历史末点起画（与 Preds 回接点对齐），否则只盖预测段
+            if origin_time is not None and last_history_value is not None:
+                band_x = pd.concat(
+                    [pd.Series(origin_time), segment["time"]], ignore_index=True
+                )
+                band_low = np.concatenate(
+                    [
+                        [last_history_value],
+                        segment[quantile_columns[0]].astype(float).values,
+                    ]
+                )
+                band_high = np.concatenate(
+                    [
+                        [last_history_value],
+                        segment[quantile_columns[-1]].astype(float).values,
+                    ]
+                )
+            else:
+                band_x = segment["time"]
+                band_low = segment[quantile_columns[0]].astype(float).values
+                band_high = segment[quantile_columns[-1]].astype(float).values
+            axis.fill_between(
+                band_x,
+                band_low,
+                band_high,
+                color="tab:blue",
+                alpha=0.15,
+                label=f"PI [{quantile_columns[0]},{quantile_columns[-1]}]",
+            )
+        if origin_time is not None:
+            axis.axvline(
+                origin_time,
+                color="gray",
+                lw=1.0,
+                ls=":",
+                alpha=0.7,
+                label="forecast origin",
+            )
+    axis.set_title(title)
+    axis.set_xlabel("Time")
+    axis.set_ylabel("Value")
+    axis.grid(True, alpha=0.3)
+    axis.legend(loc="upper left", fontsize="small")
+    _format_time_axis(axis, forecast_frame["time"])
+    figure.autofmt_xdate(rotation=30)
+    figure.tight_layout()
+    figure.savefig(output_path, dpi=dpi, bbox_inches="tight")
+    plt.close(figure)
+
+
+def _plot_forecast(
+    frame: pd.DataFrame,
+    output_dir: Path,
+    history_frame: pd.DataFrame | None = None,
+) -> None:
     """正式预测可视化：单 target → forecast_prediction.png；多 target →
-    prediction_plots/<target>.png。quantile 模式附 predict_q* 区间带。"""
+    prediction_plots/<target>.png。quantile 模式附 predict_q* 区间带；
+    提供历史帧时在预测起点前绘制 5×horizon 历史真实值参照段。"""
     targets = tuple(dict.fromkeys(str(target) for target in frame["target"]))
     if len(targets) == 1:
-        _plot_series_pair(
+        _plot_forecast_series(
             frame[frame["target"] == targets[0]],
             f"Forecast: {targets[0]}",
             output_dir / "forecast_prediction.png",
+            (
+                history_frame[history_frame["target"] == targets[0]]
+                if history_frame is not None
+                else None
+            ),
             dpi=300,
         )
         return
     plots_dir = output_dir / "prediction_plots"
     for target in targets:
-        _plot_series_pair(
+        _plot_forecast_series(
             frame[frame["target"] == target],
             f"Forecast: {target}",
             plots_dir / f"{_safe_plot_name(target)}.png",
+            (
+                history_frame[history_frame["target"] == target]
+                if history_frame is not None
+                else None
+            ),
             dpi=300,
         )
 
@@ -385,15 +527,53 @@ def write_backtest_results(
     cv_path = output_path / "cv_plot_df.csv"
     scores_path = output_path / "test_scores_df.csv"
     cv_plot_df.to_csv(cv_path, index=False, encoding="utf_8_sig")
-    test_scores_df.to_csv(scores_path, index=False, encoding="utf_8_sig")
+    # 分粒度拆分（2026-09-03 方案 B）：每窗汇总（target/aggregate）留在
+    # test_scores_df.csv；per-horizon 明细（horizon/aggregate_horizon）挪到
+    # test_scores_horizon_df.csv，恢复「一个回测窗口一行统计」的可读形态。
+    horizon_scopes = ("horizon", "aggregate_horizon")
+    if "scope" in test_scores_df.columns and (
+        set(test_scores_df["scope"].unique()) & set(horizon_scopes)
+    ):
+        horizon_scores_df = test_scores_df[
+            test_scores_df["scope"].isin(horizon_scopes)
+        ]
+        summary_scores_df = test_scores_df[
+            ~test_scores_df["scope"].isin(horizon_scopes)
+        ]
+        horizon_scores_df.to_csv(
+            output_path / "test_scores_horizon_df.csv",
+            index=False,
+            encoding="utf_8_sig",
+        )
+        summary_scores_df.to_csv(scores_path, index=False, encoding="utf_8_sig")
+    else:
+        test_scores_df.to_csv(scores_path, index=False, encoding="utf_8_sig")
     # 概率评估（2026-08-30 接线）：quantile 模式的 pinball/central 区间指标，
-    # tidy long schema，仅 quantile 模式产出；点评估文件保持原 schema 不变。
+    # tidy long schema，仅 quantile 模式产出；与点分数同拆分口径（2026-09-03
+    # 方案 B）：汇总（target/aggregate）留主文件，per-horizon 拆独立文件。
     if probabilistic_scores_df is not None:
         probabilistic_scores_df.to_csv(
             output_path / "test_scores_probabilistic_df.csv",
             index=False,
             encoding="utf_8_sig",
         )
+        if "scope" in probabilistic_scores_df.columns and (
+            set(probabilistic_scores_df["scope"].unique()) & set(horizon_scopes)
+        ):
+            probabilistic_scores_df[
+                probabilistic_scores_df["scope"].isin(horizon_scopes)
+            ].to_csv(
+                output_path / "test_scores_probabilistic_horizon_df.csv",
+                index=False,
+                encoding="utf_8_sig",
+            )
+            probabilistic_scores_df[
+                ~probabilistic_scores_df["scope"].isin(horizon_scopes)
+            ].to_csv(
+                output_path / "test_scores_probabilistic_df.csv",
+                index=False,
+                encoding="utf_8_sig",
+            )
     payload = {
         "result_schema_version": 2,
         "aggregate_weighting": {

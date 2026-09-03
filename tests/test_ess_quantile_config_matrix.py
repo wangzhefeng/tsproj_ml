@@ -103,8 +103,6 @@ class EssQuantileConfigMatrixTest(unittest.TestCase):
                 self.assertEqual(self._decomposition_method(linear), "linear")
                 self.assertEqual(self._decomposition_method(stl), "stl")
                 self.assertEqual(self._decomposition_method(mstl), "mstl")
-                self.assertEqual(stl.output["setting_suffix"], "-decomp-stl288")
-                self.assertEqual(mstl.output["setting_suffix"], "-decomp-mstl288-2016")
                 self.assertEqual(linear.features.datetime_features, ())
                 self.assertEqual(stl.features.datetime_features, ())
                 self.assertEqual(mstl.features.datetime_features, ())
@@ -216,11 +214,17 @@ class EssQuantileConfigMatrixTest(unittest.TestCase):
                     self.assertIn(cfg.strategy.name.value, {"recursive", "recmo"}, path)
 
     def test_strategy_features_use_c5_on_five_lightgbm_methods(self):
+        expected_layouts = {
+            "lgbm_usmd_mean_prob_horizon_conformal.yaml": "single_model_horizon",
+            "lgbm_usmd_prob_mean_conformal.yaml": "independent_models",
+            "lgbm_usmdp_prob_mean_conformal.yaml": "single_model_horizon",
+            "lgbm_usmdr_prob_mean_conformal.yaml": None,
+            "lgbm_usmr_prob_mean_conformal.yaml": None,
+        }
         for route in ("A", "B"):
             folder = CONFIG_ROOT / f"route_{route}" / "add_strategy_features"
             paths = sorted(folder.glob("*.yaml"))
             self.assertEqual({path.name for path in paths}, set(STRATEGY_FILES))
-            settings = set()
             for path in paths:
                 cfg = load_yaml_config(str(path))
                 self.assertIsNotNone(cfg.strategy, path)
@@ -237,15 +241,9 @@ class EssQuantileConfigMatrixTest(unittest.TestCase):
                 direct_layout = cfg.features.transformations.get("direct", {}).get(
                     "layout"
                 )
-                settings.add((path.name, direct_layout, cfg.output["setting_suffix"]))
-                if path.name == "lgbm_usmd_mean_prob_horizon_conformal.yaml":
-                    self.assertEqual(direct_layout, "single_model_horizon", path)
-                    self.assertEqual(cfg.output["setting_suffix"], "-horizon-conformal-strategy-c5", path)
-                else:
-                    self.assertEqual(cfg.output["setting_suffix"], "-conformal-strategy-c5", path)
+                self.assertEqual(direct_layout, expected_layouts[path.name], path)
                 if "usmdp" in path.name:
                     self.assertEqual(cfg.features.target_lags["value"], tuple(USMDP_SAFE_LAGS), path)
-            self.assertEqual(len(settings), 5)
 
     def test_usmdp_explicitly_enables_safe_lags(self):
         for route in ("A", "B"):

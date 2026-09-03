@@ -54,7 +54,7 @@ GOLDEN_WINDOW1_ACTUAL = [55.0, 55.5]
 GOLDEN_WINDOW1_PREDICT = [54.99999999999561, 55.49999999999552]
 GOLDEN_WINDOW1_MAE = 4.437339384821826e-12
 GOLDEN_WINDOW1_RMSE = float("4.437579734041818e-12")
-GOLDEN_FINGERPRINT = "1ecb00fe8808"
+GOLDEN_FINGERPRINT = "31ff73529e2f"
 GOLDEN_IDENTITY = "recursive-ridge-local-k1"
 
 # ---------------------------------------------------------------------------
@@ -97,7 +97,6 @@ def _base_problem() -> ForecastProblemSpec:
         freq="1h",
         horizon=2,
         targets=("load",),
-        information_mode="forecast",
         training_scope="local",
         series_id_cols=(),
     )

@@ -5,7 +5,6 @@ problem:
   horizon: 288
   targets:
   - ess_power
-  information_mode: forecast
   training_scope: local
   series_id_cols: []
 data:
@@ -76,7 +75,6 @@ validation:
   stride_steps: 288
 output:
   scenario_subpath: aidc_ess_selfuse_load/route_B/add_endogenous_actual_strategy/ensemble_members
-  setting_suffix: -recursive-member
   results_root: results
   directories:
     checkpoints: ./results/pretrained_models/

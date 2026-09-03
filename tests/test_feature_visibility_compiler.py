@@ -97,7 +97,6 @@ class FeatureVisibilityCompilerTest(unittest.TestCase):
                 freq="1h",
                 horizon=2,
                 targets=("load", "power"),
-                information_mode="forecast",
                 training_scope="global" if global_scope else "local",
                 series_id_cols=series_id_cols,
             ),
@@ -170,7 +169,6 @@ class FeatureVisibilityCompilerTest(unittest.TestCase):
             forecast_origin="2026-01-01 03:00",
             forecast_times=pd.date_range("2026-01-01 04:00", periods=2, freq="1h"),
             series_ids=("A", "B") if global_scope else (),
-            information_mode="forecast",
         )
 
     def materialize(self, config, request):
@@ -225,7 +223,6 @@ class FeatureVisibilityCompilerTest(unittest.TestCase):
                 freq="1h",
                 horizon=2,
                 targets=("load",),
-                information_mode="forecast",
                 training_scope="local",
                 series_id_cols=(),
             ),

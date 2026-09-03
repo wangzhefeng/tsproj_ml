@@ -111,7 +111,6 @@ _SHARED_PROBLEM_FIELDS = (
     "freq",
     "horizon",
     "targets",
-    "information_mode",
     "training_scope",
     "series_id_cols",
 )

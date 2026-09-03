@@ -11,6 +11,7 @@ from typing import Literal, get_type_hints
 
 import forecasting_core.specs as specs
 from forecasting_core.specs import ForecastProblemSpec
+from forecasting_core.specs.config import parse_problem_spec
 from forecasting_core.specs.problem import Frequency
 
 
@@ -23,7 +24,6 @@ class ForecastProblemSpecValidTest(unittest.TestCase):
                     freq=freq,
                     horizon=1,
                     targets="load",
-                    information_mode="forecast",
                     training_scope="local",
                 )
 
@@ -50,7 +50,6 @@ class ForecastProblemSpecValidTest(unittest.TestCase):
                         freq=freq,
                         horizon=1,
                         targets="load",
-                        information_mode="forecast",
                         training_scope="local",
                     )
 
@@ -71,7 +70,6 @@ class ForecastProblemSpecValidTest(unittest.TestCase):
                     freq=frequencies[0],
                     horizon=1,
                     targets="load",
-                    information_mode="forecast",
                     training_scope="local",
                 )
                 for freq in frequencies[1:]:
@@ -81,7 +79,6 @@ class ForecastProblemSpecValidTest(unittest.TestCase):
                             freq=freq,
                             horizon=1,
                             targets="load",
-                            information_mode="forecast",
                             training_scope="local",
                         )
 
@@ -96,7 +93,6 @@ class ForecastProblemSpecValidTest(unittest.TestCase):
             freq="15min",
             horizon=96,
             targets="load",
-            information_mode="forecast",
             training_scope="local",
         )
 
@@ -114,7 +110,6 @@ class ForecastProblemSpecValidTest(unittest.TestCase):
             horizon=7,
             targets=targets,
             series_id_cols=series_id_cols,
-            information_mode="nowcast",
             training_scope="global",
         )
         targets.append("humidity")
@@ -134,7 +129,6 @@ class ForecastProblemSpecValidTest(unittest.TestCase):
             horizon=1,
             targets=("load",),
             series_id_cols="site_id",
-            information_mode="oracle",
             training_scope="local",
         )
 
@@ -148,7 +142,6 @@ class ForecastProblemSpecValidTest(unittest.TestCase):
             horizon=16,
             targets=["load", "temperature"],
             series_id_cols=["site_id", "meter_id"],
-            information_mode="forecast",
             training_scope="global",
         )
 
@@ -158,7 +151,6 @@ class ForecastProblemSpecValidTest(unittest.TestCase):
             "horizon": 16,
             "targets": ["load", "temperature"],
             "series_id_cols": ["site_id", "meter_id"],
-            "information_mode": "forecast",
             "training_scope": "global",
         }
         first = spec.canonical_payload()
@@ -190,17 +182,9 @@ class ForecastProblemSpecValidTest(unittest.TestCase):
         self.assertEqual(field_hints["freq"], Frequency)
         self.assertEqual(init_hints["targets"], str | Sequence[str])
         self.assertEqual(init_hints["series_id_cols"], str | Sequence[str])
-        self.assertEqual(
-            init_hints["information_mode"],
-            Literal["forecast", "nowcast", "oracle"],
-        )
         self.assertEqual(init_hints["training_scope"], Literal["local", "global"])
         self.assertEqual(field_hints["targets"], tuple[str, ...])
         self.assertEqual(field_hints["series_id_cols"], tuple[str, ...])
-        self.assertEqual(
-            field_hints["information_mode"],
-            Literal["forecast", "nowcast", "oracle"],
-        )
         self.assertEqual(field_hints["training_scope"], Literal["local", "global"])
 
     def test_dataclass_and_import_surface_only_define_problem_fields(self):
@@ -211,7 +195,6 @@ class ForecastProblemSpecValidTest(unittest.TestCase):
                 "freq",
                 "horizon",
                 "targets",
-                "information_mode",
                 "training_scope",
                 "series_id_cols",
             ],
@@ -242,7 +225,6 @@ class ForecastProblemSpecValidTest(unittest.TestCase):
             freq="1D",
             horizon=1,
             targets=("load",),
-            information_mode="forecast",
             training_scope="local",
         )
 
@@ -258,7 +240,6 @@ class ForecastProblemSpecInvalidTest(unittest.TestCase):
             "horizon": 96,
             "targets": ("load",),
             "series_id_cols": (),
-            "information_mode": "forecast",
             "training_scope": "local",
         }
         values.update(overrides)
@@ -355,9 +336,18 @@ class ForecastProblemSpecInvalidTest(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     self.make_spec(**overrides)
 
-    def test_rejects_unknown_information_mode(self):
-        with self.assertRaises(ValueError):
-            self.make_spec(information_mode="hindcast")
+    def test_public_problem_mapping_rejects_information_mode(self):
+        payload = {
+            "time_col": "ts",
+            "freq": "15min",
+            "horizon": 96,
+            "targets": ["load"],
+            "training_scope": "local",
+        }
+        payload["information_mode"] = "forecast"
+
+        with self.assertRaisesRegex(ValueError, "Unknown fields in problem"):
+            parse_problem_spec(payload, "inline.yaml")
 
     def test_rejects_unknown_training_scope(self):
         with self.assertRaises(ValueError):

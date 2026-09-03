@@ -89,7 +89,6 @@ def _config(model_type: str = "mean_quantile") -> ForecastConfigSpec:
             freq="1h",
             horizon=2,
             targets=targets,
-            information_mode="forecast",
             training_scope="local",
             series_id_cols=(),
         ),

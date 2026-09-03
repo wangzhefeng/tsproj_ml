@@ -39,7 +39,6 @@ _PROBLEM_FIELDS = frozenset(
         "freq",
         "horizon",
         "targets",
-        "information_mode",
         "training_scope",
         "series_id_cols",
     }

@@ -34,7 +34,6 @@ def _build_request(origin: pd.Timestamp) -> InformationSetRequest:
             origin + pd.Timedelta(minutes=15), periods=96, freq="15min"
         ),
         series_ids=(),
-        information_mode="forecast",
     )
 
 

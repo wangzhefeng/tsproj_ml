@@ -58,7 +58,6 @@ class CanonicalTrainerForecasterMatrixTest(unittest.TestCase):
                 freq="1h",
                 horizon=4,
                 targets=targets,
-                information_mode="forecast",
                 training_scope="global" if global_scope else "local",
                 series_id_cols=series_id_cols,
             ),

@@ -420,6 +420,18 @@ def _payload(
     decomposition: str | None = None,
 ) -> dict[str, Any]:
     strategy, _ = _strategy_spec(scenario, strategy_variant)
+    validation = _validation(scenario)
+    if (
+        scenario == "aidc_load_15min_daily"
+        and output_route == "route_A"
+        and group == "baseline"
+        and model == "lgbm"
+        and strategy_variant == "recursive"
+    ):
+        validation["performance"] = {
+            "window_parallel_workers": 2,
+            "model_thread_count": 4,
+        }
     return {
         "schema_version": 2,
         "problem": {
@@ -427,7 +439,6 @@ def _payload(
             "freq": "15min",
             "horizon": SCENARIO_SPECS[scenario]["horizon"],
             "targets": list(targets),
-            "information_mode": "forecast",
             "training_scope": "local",
             "series_id_cols": [],
         },
@@ -447,10 +458,9 @@ def _payload(
             "params": {},
         },
         "probabilistic": {"mode": "point"},
-        "validation": _validation(scenario),
+        "validation": validation,
         "output": {
             "scenario_subpath": f"{scenario}/{output_route}/{group}",
-            "setting_suffix": "",
             "results_root": "results",
             "directories": {
                 "checkpoints": "./results/pretrained_models/",
@@ -493,7 +503,6 @@ def _ensemble_payload(
         "validation": copy.deepcopy(baseline["validation"]),
         "output": {
             "scenario_subpath": f"{scenario}/{route}/add_ensemble",
-            "setting_suffix": "",
             "results_root": "results",
             "directories": {
                 "checkpoints": "./results/pretrained_models/",

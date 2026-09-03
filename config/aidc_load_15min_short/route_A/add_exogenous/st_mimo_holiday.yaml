@@ -5,7 +5,6 @@ problem:
   horizon: 16
   targets:
   - value
-  information_mode: forecast
   training_scope: local
   series_id_cols: []
 data:
@@ -99,7 +98,6 @@ validation:
   stride_steps: 96
 output:
   scenario_subpath: aidc_load_15min_short/route_A/add_exogenous
-  setting_suffix: ''
   results_root: results
   directories:
     checkpoints: ./results/pretrained_models/

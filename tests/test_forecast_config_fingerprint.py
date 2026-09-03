@@ -25,7 +25,6 @@ class CanonicalConfigFingerprintTest(unittest.TestCase):
             freq="1h",
             horizon=4,
             targets=("load",),
-            information_mode="forecast",
             training_scope="local",
             series_id_cols=(),
         )
@@ -139,6 +138,19 @@ class CanonicalConfigFingerprintTest(unittest.TestCase):
         self.assertEqual(first.fingerprint(), second.fingerprint())
         self.assertRegex(first.result_identity(), r"^direct-ridge-local-k1-[0-9a-f]{12}$")
 
+    def test_omitted_and_only_nonsemantic_performance_have_same_fingerprint(self):
+        baseline = self.config()
+        with_performance = dict(baseline.validation)
+        with_performance["performance"] = {
+            "window_parallel_workers": 2,
+            "model_thread_count": 4,
+        }
+
+        configured = self.config(validation=with_performance)
+
+        self.assertEqual(baseline.fingerprint(), configured.fingerprint())
+        self.assertEqual(baseline.result_identity(), configured.result_identity())
+
     def test_data_probabilistic_transform_and_sample_weight_are_semantic(self):
         baseline = self.config()
         mutations = []
@@ -186,7 +198,6 @@ class CanonicalConfigFingerprintTest(unittest.TestCase):
                 "freq": "1h",
                 "horizon": 4,
                 "targets": ["load"],
-                "information_mode": "forecast",
                 "training_scope": "local",
                 "series_id_cols": [],
             },
@@ -234,7 +245,6 @@ class CanonicalConfigFingerprintTest(unittest.TestCase):
                 "freq": "1h",
                 "horizon": 4,
                 "targets": ["load"],
-                "information_mode": "forecast",
                 "training_scope": "local",
                 "series_id_cols": [],
             },

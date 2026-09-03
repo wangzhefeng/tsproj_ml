@@ -6,6 +6,7 @@ from pathlib import Path
 import pandas as pd
 
 from config.config_loader import load_yaml_config
+from forecasting_core.specs import ForecastConfigSpec
 from model_testing.validation import calendar_month_folds
 
 
@@ -22,6 +23,7 @@ class CalendarMonthHorizonTest(unittest.TestCase):
 
     def test_calendar_month_config_declares_complete_august_horizon(self):
         cfg = self._calendar_month_config()
+        self.assertIsInstance(cfg, ForecastConfigSpec)
 
         self.assertEqual(cfg.validation["horizon_mode"], "calendar_month")
         self.assertEqual(cfg.problem.horizon, 31)
@@ -30,7 +32,14 @@ class CalendarMonthHorizonTest(unittest.TestCase):
         forecast_end = forecast_start + pd.offsets.MonthBegin(1)
         self.assertEqual(forecast_start, pd.Timestamp("2026-08-01"))
         self.assertEqual(forecast_end, pd.Timestamp("2026-09-01"))
-        self.assertEqual(cfg.output["setting_suffix"], "-horizon-decomp-linear")
+        self.assertEqual(
+            cfg.features.transformations["target"]["decomposition"]["method"],
+            "linear",
+        )
+        self.assertEqual(
+            cfg.features.transformations["direct"]["layout"],
+            "single_model_horizon",
+        )
 
     def test_calendar_month_folds_are_month_aligned_with_fixed_training_rows(self):
         df_history = pd.DataFrame(

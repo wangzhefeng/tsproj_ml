@@ -70,7 +70,6 @@ class CompilerBatchDesignTest(unittest.TestCase):
                 freq="1h",
                 horizon=horizon,
                 targets=("load",),
-                information_mode="forecast",
                 training_scope="local",
                 series_id_cols=(),
             ),

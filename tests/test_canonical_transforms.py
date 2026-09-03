@@ -43,7 +43,6 @@ def _config(*, target_transform=None, feature_scaling=None):
             freq="1h",
             horizon=2,
             targets=targets,
-            information_mode="forecast",
             training_scope="local",
             series_id_cols=(),
         ),

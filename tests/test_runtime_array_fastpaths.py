@@ -35,6 +35,74 @@ class SampleSelectorTest(unittest.TestCase):
         self.assertEqual(_sample_selector((), n_series=3), ())
 
 
+class HoldoutProofSummaryTest(unittest.TestCase):
+    def test_groups_proofs_per_origin_feature_and_provider(self) -> None:
+        def timestamp(value: Any) -> pd.Timestamp:
+            return cast(pd.Timestamp, pd.Timestamp(value))
+
+        first_origin = timestamp("2026-01-01 00:00:00")
+        second_origin = timestamp("2026-01-02 00:00:00")
+        proofs = (
+            VisibilityProof(
+                feature_name="load__lag_2",
+                source_name="target_history",
+                role="target",
+                target_time=timestamp(first_origin + pd.Timedelta(hours=1)),
+                source_time=timestamp(first_origin - pd.Timedelta(hours=1)),
+                forecast_origin=first_origin,
+                horizon_step=1,
+                available_at=timestamp(first_origin - pd.Timedelta(hours=1)),
+            ),
+            VisibilityProof(
+                feature_name="load__lag_2",
+                source_name="target_history",
+                role="target",
+                target_time=timestamp(first_origin + pd.Timedelta(hours=2)),
+                source_time=first_origin,
+                forecast_origin=first_origin,
+                horizon_step=2,
+                available_at=first_origin,
+            ),
+            VisibilityProof(
+                feature_name="load__lag_2",
+                source_name="target_history",
+                role="target",
+                target_time=timestamp(second_origin + pd.Timedelta(hours=1)),
+                source_time=second_origin,
+                forecast_origin=second_origin,
+                horizon_step=1,
+                available_at=second_origin,
+                provider="persistence",
+            ),
+        )
+        compiled = CompiledFeatures(
+            frame=pd.DataFrame(),
+            schema=FeatureSchema((), ()),
+            source_lineage=(),
+            visibility_proof=proofs,
+        )
+
+        summary = _holdout_proof_summary((compiled,))
+
+        self.assertEqual(summary["schema_version"], 1)
+        self.assertEqual(summary["total_lookups"], 3)
+        self.assertEqual(summary["group_count"], 2)
+        self.assertEqual(
+            summary["group_by"],
+            ["forecast_origin", "feature_name", "source_name", "role", "provider"],
+        )
+        first = summary["groups"][0]
+        self.assertEqual(first["lookup_count"], 2)
+        self.assertEqual(first["horizon_step_min"], 1)
+        self.assertEqual(first["horizon_step_max"], 2)
+        self.assertEqual(first["source_time_count"], 2)
+        self.assertEqual(first["target_time_min"], "2026-01-01T01:00:00")
+        self.assertEqual(first["target_time_max"], "2026-01-01T02:00:00")
+        self.assertEqual(first["source_time_min"], "2025-12-31T23:00:00")
+        self.assertEqual(first["source_time_max"], "2026-01-01T00:00:00")
+        self.assertEqual(first["available_at_max"], "2026-01-01T00:00:00")
+
+
 class EstimatorInputFastPathTest(unittest.TestCase):
     def test_numeric_model_keeps_ndarray_input(self) -> None:
         estimator: Any = make_model_factory(

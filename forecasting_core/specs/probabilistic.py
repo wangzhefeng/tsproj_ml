@@ -24,10 +24,8 @@ from forecasting_core.probabilistic_spec import validate_quantile_grid
 PROBABILISTIC_FIELDS = frozenset(
     {
         "mode",
-        "schema_version",
         "quantiles",
         "point_quantile",
-        "recursive_propagation",
         "crossing",
         "intervals",
         "calibration",

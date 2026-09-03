@@ -5,7 +5,6 @@ problem:
   horizon: 288
   targets:
   - value
-  information_mode: forecast
   training_scope: local
   series_id_cols: []
 data:
@@ -205,7 +204,6 @@ probabilistic:
   - 0.5
   - 0.9
   point_quantile: 0.5
-  recursive_propagation: median_path
   crossing:
     method: median_preserving_isotonic
     report_raw: true
@@ -230,7 +228,6 @@ validation:
   stride_steps: 288
 output:
   scenario_subpath: aidc_ess_selfuse_load/route_A/add_strategy_features
-  setting_suffix: -conformal-strategy-c5
   results_root: results
   directories:
     checkpoints: ./results/pretrained_models/

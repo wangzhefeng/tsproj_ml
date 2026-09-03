@@ -33,7 +33,6 @@ SINGLE_MODEL = {
         "freq": "1h",
         "horizon": 2,
         "targets": ["load"],
-        "information_mode": "forecast",
         "training_scope": "local",
         "series_id_cols": [],
     },
@@ -177,6 +176,27 @@ class EnsembleLoaderTest(unittest.TestCase):
         config = load_ensemble_config(self.root / "top_mismatch.yaml")
         with self.assertRaises(EnsembleSpecError):
             resolve_members(config, base_dir=self.root)
+
+    def test_public_problem_rejects_information_mode(self):
+        import copy
+
+        doc = copy.deepcopy(ENSEMBLE_DOC)
+        doc["problem"]["information_mode"] = "forecast"
+
+        with self.assertRaisesRegex(ValueError, "Unknown fields in problem"):
+            parse_ensemble_document(doc, source_path="inline.yaml")
+
+    def test_output_changes_do_not_change_ensemble_fingerprint(self):
+        import copy
+
+        first_doc = copy.deepcopy(ENSEMBLE_DOC)
+        second_doc = copy.deepcopy(ENSEMBLE_DOC)
+        second_doc["output"] = {"scenario_subpath": "other-output"}
+
+        first = parse_ensemble_document(first_doc, source_path="first.yaml")
+        second = parse_ensemble_document(second_doc, source_path="second.yaml")
+
+        self.assertEqual(first.fingerprint(), second.fingerprint())
 
     def test_cycle_self_reference_raises(self):
         doc = dict(ENSEMBLE_DOC)

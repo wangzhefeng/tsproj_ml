@@ -5,7 +5,6 @@ problem:
   horizon: 34
   targets:
   - value
-  information_mode: forecast
   training_scope: local
   series_id_cols: []
 data:
@@ -77,7 +76,6 @@ validation:
   stride_steps: 34
 output:
   scenario_subpath: aidc_load_month/route_B
-  setting_suffix: ''
   results_root: results
   directories:
     checkpoints: ./results/pretrained_models/

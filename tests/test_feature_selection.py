@@ -139,7 +139,6 @@ def _config_doc(data_path: Path, *, mode: str, selection: dict | None) -> dict:
             "freq": "1h",
             "horizon": 2,
             "targets": ["load"],
-            "information_mode": "forecast",
             "training_scope": "local",
             "series_id_cols": [],
         },

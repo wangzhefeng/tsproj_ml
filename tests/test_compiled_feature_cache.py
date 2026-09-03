@@ -48,14 +48,25 @@ class CompiledFeatureCacheTest(unittest.TestCase):
             }
         ).to_csv(self.data_path, index=False)
 
-    def _config(self) -> ForecastConfigSpec:
+    def _config(
+        self,
+        performance: dict[str, int] | None = None,
+    ) -> ForecastConfigSpec:
+        validation = {
+            "forecast_origin": str(self.origin),
+            "history_steps": 32,
+            "train_window_steps": 16,
+            "fold_count": 1,
+            "stride_steps": 2,
+        }
+        if performance is not None:
+            validation["performance"] = performance
         return ForecastConfigSpec(
             problem=ForecastProblemSpec(
                 time_col="time",
                 freq="1h",
                 horizon=2,
                 targets=("load",),
-                information_mode="forecast",
                 training_scope="local",
                 series_id_cols=(),
             ),

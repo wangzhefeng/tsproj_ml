@@ -68,7 +68,6 @@ class CanonicalRuntimeSmokeTest(unittest.TestCase):
                 freq="1h",
                 horizon=horizon,
                 targets=("load",),
-                information_mode="forecast",
                 training_scope="local",
                 series_id_cols=(),
             ),
@@ -124,7 +123,7 @@ class CanonicalRuntimeSmokeTest(unittest.TestCase):
                 "fold_count": 1,
                 "stride_steps": horizon,
             },
-            output={"scenario_subpath": "smoke", "setting_suffix": ""},
+            output={"scenario_subpath": "smoke"},
         )
 
     def test_origin_frozen_direct_lags_require_origin_plus_history_rows(self):
@@ -156,7 +155,6 @@ class CanonicalRuntimeSmokeTest(unittest.TestCase):
                 freq="1h",
                 horizon=2,
                 targets=targets,
-                information_mode="forecast",
                 training_scope="local",
                 series_id_cols=(),
             ),
@@ -524,7 +522,6 @@ class CanonicalRuntimeSmokeTest(unittest.TestCase):
                     freq="1h",
                     horizon=2,
                     targets=("load", "power"),
-                    information_mode="forecast",
                     training_scope="local",
                     series_id_cols=(),
                 ),
@@ -613,7 +610,6 @@ class CanonicalRuntimeSmokeTest(unittest.TestCase):
                 output={
                     "identity": {
                         "scenario_subpath": "canonical/roles",
-                        "setting_suffix": "",
                     },
                     "directories": {
                         "checkpoints": str(root / "models"),
@@ -660,6 +656,21 @@ class CanonicalRuntimeSmokeTest(unittest.TestCase):
                 pd.Timestamp(weather_proof["available_at"]),
                 pd.Timestamp(weather_proof["forecast_origin"]),
             )
+            holdout_summary = resolved["runtime"]["holdout_visibility_proof"]
+            self.assertEqual(holdout_summary["schema_version"], 1)
+            self.assertGreater(
+                holdout_summary["total_lookups"],
+                holdout_summary["group_count"],
+            )
+            self.assertEqual(
+                holdout_summary["group_count"],
+                len(holdout_summary["groups"]),
+            )
+            for group in holdout_summary["groups"]:
+                self.assertLessEqual(
+                    pd.Timestamp(group["available_at_max"]).value,
+                    pd.Timestamp(group["forecast_origin"]).value,
+                )
 
     def test_recursive_designs_roll_target_lags_with_fixed_schema(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -881,7 +892,6 @@ class CanonicalRuntimeSmokeTest(unittest.TestCase):
                             freq="1h",
                             horizon=4,
                             targets=("load", "power"),
-                            information_mode="forecast",
                             training_scope="local",
                             series_id_cols=(),
                         ),
@@ -925,7 +935,6 @@ class CanonicalRuntimeSmokeTest(unittest.TestCase):
                         },
                         output={
                             "scenario_subpath": f"seven/{strategy}",
-                            "setting_suffix": "",
                         },
                     )
 

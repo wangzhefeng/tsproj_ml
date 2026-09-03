@@ -19,7 +19,6 @@ OUTPUT_FIELDS = frozenset(
         "directories",
         "overlay",
         "scenario_subpath",
-        "setting_suffix",
         "results_root",
         "checkpoints_dir",
         "test_results_dir",
@@ -28,7 +27,7 @@ OUTPUT_FIELDS = frozenset(
 )
 
 _OUTPUT_NESTED_FIELDS: dict[str, frozenset[str]] = {
-    "output.identity": frozenset({"scenario_subpath", "setting_suffix"}),
+    "output.identity": frozenset({"scenario_subpath"}),
     "output.directories": frozenset({"checkpoints", "tests", "forecast"}),
     "output.overlay": frozenset({"path", "column"}),
 }

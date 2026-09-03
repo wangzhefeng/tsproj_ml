@@ -74,7 +74,6 @@ problem:
   freq: 15min
   horizon: 96
   targets: [load]
-  information_mode: forecast
   training_scope: local
   series_id_cols: []
 data:
@@ -128,7 +127,6 @@ problem:
   freq: 1D
   horizon: 2
   targets: [load]
-  information_mode: forecast
   training_scope: local
   series_id_cols: []
 data:
@@ -182,7 +180,6 @@ problem:
   freq: 5min
   horizon: 288
   targets: [load]
-  information_mode: forecast
   training_scope: local
   series_id_cols: []
 data:
@@ -230,7 +227,6 @@ problem:
   freq: 5min
   horizon: 288
   targets: [load]
-  information_mode: forecast
   training_scope: local
   series_id_cols: []
 data:
@@ -286,7 +282,6 @@ problem:
   freq: 5min
   horizon: 288
   targets: [load]
-  information_mode: forecast
   training_scope: local
   series_id_cols: []
 data:
@@ -528,7 +523,6 @@ class Task27ExecutionMatrixTest(unittest.TestCase):
                 freq="1h",
                 horizon=4,
                 targets=targets,
-                information_mode="forecast",
                 training_scope=training_scope,
                 series_id_cols=("series_id",) if is_global else (),
             ),

@@ -115,6 +115,27 @@ class Load15minFullFactorialMatrixTest(unittest.TestCase):
                     sample["validation"]["schedule_mode"], schedule_mode
                 )
 
+    def test_profiled_lgbm_recursive_uses_bounded_window_thread_budget(self):
+        configs = matrix.build_expected_configs("aidc_load_15min_daily")
+        root = ROOT / "config/aidc_load_15min_daily"
+        target = configs[root / "route_A/baseline/lgbm_recursive.yaml"]
+
+        self.assertEqual(
+            target["validation"]["performance"],
+            {
+                "window_parallel_workers": 2,
+                "model_thread_count": 4,
+            },
+        )
+        self.assertNotIn(
+            "performance",
+            configs[root / "route_B/baseline/lgbm_recursive.yaml"]["validation"],
+        )
+        self.assertNotIn(
+            "performance",
+            configs[root / "route_A/baseline/lgbm_direct.yaml"]["validation"],
+        )
+
     def test_pointwise_variants_have_distinct_horizon_encoding(self):
         configs = matrix.build_expected_configs("aidc_load_15min_daily")
         baseline = ROOT / "config/aidc_load_15min_daily/route_A/baseline"

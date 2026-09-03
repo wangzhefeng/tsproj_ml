@@ -44,7 +44,6 @@ def _member_doc(
             "freq": "1h",
             "horizon": 2,
             "targets": ["load"],
-            "information_mode": "forecast",
             "training_scope": "local",
             "series_id_cols": [],
         },

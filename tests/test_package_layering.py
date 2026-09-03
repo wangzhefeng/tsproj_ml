@@ -69,6 +69,7 @@ ALLOWED_PACKAGES = {
         "model_evaluation",
         "model_forecasting",
         "model_testing",
+        "utils",
     },
 }
 
@@ -83,6 +84,7 @@ ALLOWED_ROOTS = {
         "model_forecasting.deployment",
         "model_forecasting.results",
         "model_testing.backtest",
+        "utils",
     },
 }
 

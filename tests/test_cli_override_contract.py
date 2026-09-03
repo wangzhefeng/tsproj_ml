@@ -35,7 +35,6 @@ class CliContractTest(unittest.TestCase):
                         "freq": "1h",
                         "horizon": 2,
                         "targets": ["load"],
-                        "information_mode": "forecast",
                         "training_scope": "local",
                         "series_id_cols": [],
                     },
@@ -80,7 +79,6 @@ class CliContractTest(unittest.TestCase):
                     "output": {
                         "identity": {
                             "scenario_subpath": "cli-contract",
-                            "setting_suffix": "",
                         }
                     },
                 },

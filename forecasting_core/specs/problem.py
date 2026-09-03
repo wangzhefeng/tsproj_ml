@@ -9,7 +9,6 @@ from pandas.tseries.frequencies import to_offset
 from pandas.tseries.offsets import Day, Hour, Minute, MonthBegin, MonthEnd
 
 
-_INFORMATION_MODES = frozenset({"forecast", "nowcast", "oracle"})
 _TRAINING_SCOPES = frozenset({"local", "global"})
 Frequency: TypeAlias = Literal["5min", "15min", "1h", "1D", "1ME", "1MS"]
 _CANONICAL_FIXED_FREQ_BY_NANOS: dict[int, Frequency] = {
@@ -111,7 +110,6 @@ class ForecastProblemSpec:
     freq: Frequency
     horizon: int
     targets: tuple[str, ...]
-    information_mode: Literal["forecast", "nowcast", "oracle"]
     training_scope: Literal["local", "global"]
     series_id_cols: tuple[str, ...] = ()
 
@@ -121,7 +119,6 @@ class ForecastProblemSpec:
         freq: str,
         horizon: int,
         targets: str | Sequence[str],
-        information_mode: Literal["forecast", "nowcast", "oracle"],
         training_scope: Literal["local", "global"],
         series_id_cols: str | Sequence[str] = (),
     ) -> None:
@@ -138,8 +135,6 @@ class ForecastProblemSpec:
             raise TypeError("horizon must be an integer")
         if horizon <= 0:
             raise ValueError("horizon must be positive")
-        if information_mode not in _INFORMATION_MODES:
-            raise ValueError(f"unknown information_mode: {information_mode!r}")
         if training_scope not in _TRAINING_SCOPES:
             raise ValueError(f"unknown training_scope: {training_scope!r}")
         if training_scope == "global" and not normalized_series_id_cols:
@@ -153,7 +148,6 @@ class ForecastProblemSpec:
         object.__setattr__(self, "freq", normalized_freq)
         object.__setattr__(self, "horizon", horizon)
         object.__setattr__(self, "targets", normalized_targets)
-        object.__setattr__(self, "information_mode", information_mode)
         object.__setattr__(self, "training_scope", training_scope)
         object.__setattr__(self, "series_id_cols", normalized_series_id_cols)
 
@@ -172,6 +166,5 @@ class ForecastProblemSpec:
             "horizon": self.horizon,
             "targets": list(self.targets),
             "series_id_cols": list(self.series_id_cols),
-            "information_mode": self.information_mode,
             "training_scope": self.training_scope,
         }

@@ -81,7 +81,6 @@ class ForecastModelBundleTest(unittest.TestCase):
                 "freq": "1h",
                 "horizon": 2,
                 "targets": ["load", "power"],
-                "information_mode": "forecast",
                 "training_scope": "global",
                 "series_id_cols": ["series_id"],
             },

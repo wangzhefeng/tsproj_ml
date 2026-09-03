@@ -49,7 +49,6 @@ def _holiday_request(start: str, end: str) -> InformationSetRequest:
         forecast_origin=times[0] - pd.Timedelta(days=1),
         forecast_times=times,
         series_ids=(),
-        information_mode="forecast",
     )
 
 
@@ -165,7 +164,6 @@ class HolidaySourceEndToEndTest(unittest.TestCase):
                 freq="1D",
                 horizon=5,
                 targets=("load",),
-                information_mode="forecast",
                 training_scope="local",
                 series_id_cols=(),
             ),

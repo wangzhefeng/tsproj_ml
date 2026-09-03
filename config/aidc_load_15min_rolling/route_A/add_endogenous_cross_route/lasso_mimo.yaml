@@ -5,7 +5,6 @@ problem:
   horizon: 96
   targets:
   - A_load
-  information_mode: forecast
   training_scope: local
   series_id_cols: []
 data:
@@ -107,7 +106,6 @@ validation:
   stride_steps: 96
 output:
   scenario_subpath: aidc_load_15min_rolling/route_A/add_endogenous_cross_route
-  setting_suffix: ''
   results_root: results
   directories:
     checkpoints: ./results/pretrained_models/

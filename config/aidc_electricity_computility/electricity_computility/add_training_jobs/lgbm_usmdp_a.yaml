@@ -5,7 +5,6 @@ problem:
   horizon: 288
   targets:
   - y
-  information_mode: forecast
   training_scope: local
   series_id_cols: []
 data:
@@ -74,7 +73,6 @@ estimator:
     force_col_wise: true
 probabilistic:
   mode: point
-  schema_version: 1
 validation:
   forecast_origin: '2026-01-14T00:00:00'
   schedule_mode: daily
@@ -120,7 +118,6 @@ validation:
 output:
   identity:
     scenario_subpath: ''
-    setting_suffix: ''
   directories:
     checkpoints: ./results/pretrained_models/
     tests: ./results/results_test/

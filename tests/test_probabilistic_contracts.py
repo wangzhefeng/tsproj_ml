@@ -135,10 +135,8 @@ class ProbabilisticSpecResolverTest(unittest.TestCase):
             enable_conformal_calibration=False,
             probabilistic={
                 "mode": "quantile",
-                "schema_version": 1,
                 "quantiles": [0.1, 0.5, 0.9],
                 "point_quantile": 0.5,
-                "recursive_propagation": "median_path",
                 "crossing": {
                     "method": "median_preserving_isotonic",
                     "report_raw": True,

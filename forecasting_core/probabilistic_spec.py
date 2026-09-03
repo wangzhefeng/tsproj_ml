@@ -24,10 +24,8 @@ _SUPPORTED_CALIBRATION_METHODS = {"cqr"}
 _SUPPORTED_CALIBRATION_GROUPINGS = {"pooled"}
 _TOP_LEVEL_KEYS = {
     "mode",
-    "schema_version",
     "quantiles",
     "point_quantile",
-    "recursive_propagation",
     "crossing",
     "intervals",
     "calibration",
@@ -393,7 +391,6 @@ def _new_spec(raw_mapping: Mapping[str, Any]) -> ProbabilisticSpec:
     mapping = copy.deepcopy(dict(raw_mapping))
     _validate_unknown_keys(mapping, _TOP_LEVEL_KEYS, "probabilistic")
     mode = str(mapping.get("mode", "point") or "point").lower()
-    schema_version = int(mapping.get("schema_version", 1))
     if mode == "point":
         forbidden = [key for key in ("intervals", "calibration") if mapping.get(key)]
         if forbidden:
@@ -402,12 +399,12 @@ def _new_spec(raw_mapping: Mapping[str, Any]) -> ProbabilisticSpec:
             mode="point",
             quantiles=(),
             point_quantile=float(mapping.get("point_quantile", 0.5)),
-            recursive_propagation=str(mapping.get("recursive_propagation", "median_path")),
+            recursive_propagation="median_path",
             crossing_method="none",
             crossing_report_raw=True,
             intervals=(),
             calibration=None,
-            schema_version=schema_version,
+            schema_version=1,
         )
     if mode != "quantile":
         raise ValueError(f"Unsupported probabilistic mode={mode}; expected point or quantile")
@@ -505,12 +502,12 @@ def _new_spec(raw_mapping: Mapping[str, Any]) -> ProbabilisticSpec:
         mode=mode,
         quantiles=levels,
         point_quantile=point_quantile,
-        recursive_propagation=str(mapping.get("recursive_propagation", "median_path")),
+        recursive_propagation="median_path",
         crossing_method=crossing_method,
         crossing_report_raw=crossing_report_raw,
         intervals=tuple(intervals),
         calibration=calibration,
-        schema_version=schema_version,
+        schema_version=1,
     )
 
 
@@ -519,8 +516,8 @@ def probabilistic_spec_from_mapping(
 ) -> ProbabilisticSpec:
     """从 canonical probabilistic mapping 构建部署态 spec（运行时唯一入口）。
 
-    只接受新版键集合（mode/quantiles/point_quantile/recursive_propagation/
-    crossing/intervals/calibration/schema_version）；legacy ``crossing_method``
+    只接受新版键集合（mode/quantiles/point_quantile/crossing/intervals/
+    calibration）；legacy ``crossing_method``
     与 ``conformal`` 键一律 RAISE（已于 2026-09-01 从全部现役 YAML 清扫）。
     """
     return _new_spec(raw_mapping)

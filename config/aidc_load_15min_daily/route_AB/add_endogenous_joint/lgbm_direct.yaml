@@ -95,6 +95,10 @@ validation:
   train_window_steps: 2784
   fold_count: 31
   stride_steps: 96
+  performance:
+    window_parallel_workers: 1
+    multi_output_n_jobs: 8
+    model_thread_count: 1
 output:
   scenario_subpath: aidc_load_15min_daily/route_AB/add_endogenous_joint
   results_root: results

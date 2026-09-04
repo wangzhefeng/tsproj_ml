@@ -107,10 +107,7 @@ validation:
     window_parallel_workers: 1
     multi_output_n_jobs: 1
     quantile_parallel_workers: 1
-    ensemble_parallel_workers: 1
     model_thread_count: 1
-    step_logging: false
-    forecast_log_interval: 24
   fold_count: 17
   stride_steps: 288
 output:

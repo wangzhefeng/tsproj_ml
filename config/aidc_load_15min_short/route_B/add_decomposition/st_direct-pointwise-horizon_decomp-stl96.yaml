@@ -53,7 +53,7 @@ features:
         periods:
         - 96
         robust: true
-        trend_forecast: seasonal_naive
+        trend_forecast: polynomial
         damping: 0.98
       scaling:
         method: none

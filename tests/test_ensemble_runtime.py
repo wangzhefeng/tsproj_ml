@@ -8,18 +8,25 @@ E0 function-level golden, and bundle-level contracts.
 
 from __future__ import annotations
 
+import json
 import tempfile
 import unittest
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from threading import Lock
+from time import sleep
+from unittest.mock import patch
 
 import numpy as np
 import pandas as pd
 import yaml
 
+from feature_engineering.cache import COMPILED_CACHE_DIR_NAME
 from model_ensemble.contracts import EnsembleRuntimeServices
 from model_ensemble.loader import load_ensemble_config
 from model_ensemble.runtime import run_ensemble_config
 from model_forecasting.runtime import CanonicalBaseModelRunner, persist_model_bundle
+from model_forecasting.resource_planner import plan_ensemble_resources
 
 from model_ensemble.methods.linear_blending import fit_nonnegative_stacking_weights
 from forecasting_core.specs.config import parse_model_config
@@ -28,6 +35,7 @@ from forecasting_core.specs.config import parse_model_config
 RUNTIME_SERVICES = EnsembleRuntimeServices(
     runner_factory=CanonicalBaseModelRunner,
     persist_bundle=persist_model_bundle,
+    plan_resources=plan_ensemble_resources,
 )
 
 
@@ -152,6 +160,24 @@ class EnsembleRuntimeTestBase(unittest.TestCase):
 class EnsembleRuntimeMatrixTest(EnsembleRuntimeTestBase):
     def test_averaging_point_end_to_end(self):
         result = self._run("averaging")
+        self.assertEqual(result["execution_plan"].selected_axis, "serial")
+        resolved = json.loads(
+            (result["forecast_dir"] / "resolved_config.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        self.assertEqual(
+            resolved["runtime"]["resources"]["execution_plan"]["selected_axis"],
+            "serial",
+        )
+        self.assertEqual(
+            resolved["runtime"]["resources"]["workload"]["member_count"],
+            2,
+        )
+        self.assertEqual(
+            set(resolved["runtime"]["resources"]["stage_wall_seconds"]),
+            {"raw_design", "ensemble_fit", "persist", "total"},
+        )
         combined = result["combined_values"]
         self.assertEqual(combined.shape, (1, 2, 1))
         members = result["member_final_values"]
@@ -182,13 +208,109 @@ class EnsembleRuntimeMatrixTest(EnsembleRuntimeTestBase):
                 self.assertTrue(np.isfinite(result["combined_values"]).all())
                 self.assertEqual(result["audit"]["method"], method)
 
-    def test_oof_cache_reused_across_runs(self):
-        first = self._run("linear_blending")
-        fingerprint = first["oof_fingerprint"]
-        second = self._run("linear_blending")
-        self.assertEqual(second["oof_fingerprint"], fingerprint)
+    def test_oof_cache_reused_across_fusion_methods(self):
+        results = tuple(
+            self._run(method)
+            for method in ("averaging", "weighted", "linear_blending", "stacking")
+        )
+        self.assertEqual(len({result["oof_fingerprint"] for result in results}), 1)
+        self.assertEqual(
+            [result["oof_cache_hit"] for result in results],
+            [False, True, True, True],
+        )
+        self.assertEqual(
+            len({result["bundle"].config_fingerprint for result in results}),
+            4,
+        )
+        fingerprint = results[0]["oof_fingerprint"]
         cache_root = self.root / "_ensemble_oof" / fingerprint
         self.assertTrue(cache_root.exists())
+
+    def test_member_config_alias_reuses_semantic_oof_cache(self):
+        first = self._run("averaging")
+        alias_path = self.root / "member_direct_alias.yaml"
+        alias_path.write_bytes((self.root / "member_direct.yaml").read_bytes())
+        doc = _ensemble_doc("averaging")
+        doc["ensemble"]["members"][0]["config_ref"] = alias_path.name
+        config_path = self.root / "ens_averaging_alias.yaml"
+        config_path.write_text(yaml.safe_dump(doc), encoding="utf-8")
+        second = run_ensemble_config(
+            load_ensemble_config(config_path),
+            output_root=self.root,
+            base_dir=self.root,
+            services=RUNTIME_SERVICES,
+        )
+
+        self.assertEqual(second["oof_fingerprint"], first["oof_fingerprint"])
+        self.assertTrue(second["oof_cache_hit"])
+        self.assertNotEqual(
+            second["bundle"].config_fingerprint,
+            first["bundle"].config_fingerprint,
+        )
+
+    def test_members_with_same_design_share_compiled_cache(self):
+        (self.root / "member_recursive.yaml").write_text(
+            yaml.safe_dump(_member_doc("direct", "lasso", "recursive")),
+            encoding="utf-8",
+        )
+        runners = []
+
+        def runner_factory(config, registry, origin, *, compiled_cache_root):
+            runner = CanonicalBaseModelRunner(
+                config,
+                registry,
+                origin,
+                compiled_cache_root=compiled_cache_root,
+            )
+            runners.append(runner)
+            return runner
+
+        services = EnsembleRuntimeServices(
+            runner_factory=runner_factory,
+            persist_bundle=persist_model_bundle,
+            plan_resources=plan_ensemble_resources,
+        )
+        self._run("averaging", services=services)
+
+        self.assertEqual(len(runners), 2)
+        self.assertFalse(runners[0].compiled_cache_hit)
+        self.assertTrue(runners[1].compiled_cache_hit)
+        self.assertEqual(
+            runners[0].compiled_cache_fingerprint,
+            runners[1].compiled_cache_fingerprint,
+        )
+        cache_parent = self.root / COMPILED_CACHE_DIR_NAME
+        self.assertEqual(len(tuple(cache_parent.iterdir())), 1)
+
+    def test_concurrent_fusion_methods_generate_oof_once(self):
+        fit_calls = 0
+        count_lock = Lock()
+        original_fit = CanonicalBaseModelRunner.fit
+
+        def slow_fit(runner, train_indices):
+            nonlocal fit_calls
+            with count_lock:
+                fit_calls += 1
+            sleep(0.05)
+            return original_fit(runner, train_indices)
+
+        with patch.object(CanonicalBaseModelRunner, "fit", slow_fit), patch(
+            "model_ensemble.runtime.write_forecast_results"
+        ):
+            with ThreadPoolExecutor(max_workers=2) as executor:
+                results = tuple(
+                    executor.map(self._run, ("averaging", "linear_blending"))
+                )
+
+        self.assertEqual(fit_calls, 4)
+        self.assertEqual(
+            len({result["oof_fingerprint"] for result in results}),
+            1,
+        )
+        self.assertEqual(
+            sorted(result["oof_cache_hit"] for result in results),
+            [False, True],
+        )
 
     def test_fused_oof_scores_point(self):
         """融合 OOF 评分（2026-08-30）：point 模式产出点指标，无概率分数。"""

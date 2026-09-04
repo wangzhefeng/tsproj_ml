@@ -64,6 +64,32 @@ class PresetExpansionTest(unittest.TestCase):
 
 
 class SpecFailFastTest(unittest.TestCase):
+    def test_trend_forecast_accepts_only_runtime_supported_modes(self):
+        for mode in ("polynomial", "damped"):
+            with self.subTest(mode=mode):
+                spec = resolve_decomposition_spec(
+                    _cfg(
+                        {
+                            "method": "stl",
+                            "periods": [96],
+                            "trend_forecast": mode,
+                        }
+                    )
+                )
+                assert spec.preset is not None
+                self.assertEqual(spec.preset.trend_forecast, mode)
+
+        with self.assertRaisesRegex(ValueError, "trend_forecast"):
+            resolve_decomposition_spec(
+                _cfg(
+                    {
+                        "method": "stl",
+                        "periods": [96],
+                        "trend_forecast": "seasonal_naive",
+                    }
+                )
+            )
+
     def test_custom_not_implemented(self):
         cfg = _cfg({"method": "custom", "extractor": "mstl", "composer": "additive"})
         with self.assertRaisesRegex(ValueError, "not implemented"):

@@ -56,6 +56,8 @@ class CanonicalRuntimeSmokeTest(unittest.TestCase):
         horizon=2,
         output_chunk_length=None,
         align_to_target=None,
+        direct_layout=None,
+        horizon_cyclical=False,
     ):
         target_lags = (
             (1, 2, 3)
@@ -90,11 +92,21 @@ class CanonicalRuntimeSmokeTest(unittest.TestCase):
                 transformations=(
                     {
                         "direct": {
-                            "layout": "independent_models",
+                            "layout": direct_layout or "independent_models",
                             "align_to_target": align_to_target,
+                            **(
+                                {
+                                    "horizon_feature": {
+                                        "name": "forecast_horizon_idx",
+                                        "cyclical": horizon_cyclical,
+                                    }
+                                }
+                                if direct_layout == "single_model_horizon"
+                                else {}
+                            ),
                         }
                     }
-                    if align_to_target is not None
+                    if align_to_target is not None or direct_layout is not None
                     else {}
                 ),
             ),
@@ -273,6 +285,79 @@ class CanonicalRuntimeSmokeTest(unittest.TestCase):
                 resolved["runtime"]["capability_probe"]["resolved"],
                 restored.estimator_spec["capabilities"],
             )
+
+    def test_single_model_horizon_runtime_persists_one_shared_model(self):
+        for mode in ("point", "quantile"):
+            for cyclical in (False, True):
+                with self.subTest(
+                    mode=mode,
+                    cyclical=cyclical,
+                ), tempfile.TemporaryDirectory() as temp_dir:
+                    root = Path(temp_dir)
+                    times = pd.date_range("2026-01-01", periods=48, freq="1h")
+                    values = 100.0 + np.arange(48, dtype=float) * 2.0
+                    data_path = root / "load.csv"
+                    pd.DataFrame({"time": times, "load": values}).to_csv(
+                        data_path,
+                        index=False,
+                    )
+                    config = self.build_config(
+                        data_path,
+                        mode=mode,
+                        strategy="direct",
+                        horizon=2,
+                        align_to_target=True,
+                        direct_layout="single_model_horizon",
+                        horizon_cyclical=cyclical,
+                    )
+
+                    result = run_canonical_config(config, output_root=root / "results")
+
+                    artifacts = (
+                        (result.bundle.model,)
+                        if mode == "point"
+                        else tuple(result.bundle.model.artifacts_by_level.values())
+                    )
+                    self.assertTrue(artifacts)
+                    self.assertTrue(
+                        all(artifact.model_count == 1 for artifact in artifacts)
+                    )
+                    expected_horizon_features = {
+                        "forecast_horizon_idx",
+                        *(
+                            (
+                                "forecast_horizon_idx_sin",
+                                "forecast_horizon_idx_cos",
+                            )
+                            if cyclical
+                            else ()
+                        ),
+                    }
+                    self.assertTrue(
+                        expected_horizon_features.issubset(
+                            set(result.bundle.selected_features)
+                        )
+                    )
+                    with (result.model_dir / "model.pkl").open("rb") as handle:
+                        loaded = pickle.load(handle)
+                    loaded_artifacts = (
+                        (loaded.model,)
+                        if mode == "point"
+                        else tuple(loaded.model.artifacts_by_level.values())
+                    )
+                    self.assertTrue(
+                        all(
+                            artifact.model_count == 1
+                            and len(
+                                getattr(
+                                    artifact.model_groups[0].predictor.adapter,
+                                    "estimators",
+                                )
+                            )
+                            == 1
+                            for artifact in loaded_artifacts
+                        )
+                    )
 
     def test_local_k2_rolling_backtest_writes_multiple_long_windows(self):
         with tempfile.TemporaryDirectory() as temp_dir:

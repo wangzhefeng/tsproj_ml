@@ -203,6 +203,7 @@ class EnsembleConfigSpec:
     def fingerprint(self) -> str:
         payload = self.canonical_payload()
         payload.pop("output", None)
+        payload["validation"] = self.validation.semantic_payload()
         encoded = json.dumps(
             payload,
             ensure_ascii=False,

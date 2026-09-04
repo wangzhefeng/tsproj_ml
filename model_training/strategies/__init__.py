@@ -7,6 +7,7 @@ from model_training.strategies.base import (
     StrategyModelGroupArtifact,
     StrategyTargetPlan,
     TargetCoordinate,
+    target_plan_for_config,
 )
 from model_training.strategies.direct import DirectExecutor
 from model_training.strategies.dirmo import DirMOExecutor
@@ -46,5 +47,6 @@ __all__ = [
     "StrategyModelGroupArtifact",
     "StrategyTargetPlan",
     "TargetCoordinate",
+    "target_plan_for_config",
     "get_standard_executor",
 ]

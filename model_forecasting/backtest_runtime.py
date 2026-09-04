@@ -6,6 +6,7 @@ import json
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 from pathlib import Path
+from time import perf_counter
 from typing import Any, Mapping
 
 import pandas as pd
@@ -49,6 +50,7 @@ def overwrite_calendar_month_backtest(
     *,
     runner_factory: Any,
 ) -> None:
+    backtest_started = perf_counter()
     backtest = config.validation.backtest
     if not isinstance(backtest, CalendarMonthBacktestSpec):
         raise TypeError(
@@ -160,19 +162,10 @@ def overwrite_calendar_month_backtest(
             )
         )
 
-    performance = config.validation.get("performance", {})
-    if not isinstance(performance, Mapping):
-        raise TypeError("validation.performance must be a mapping")
-    configured_workers = performance.get("window_parallel_workers", 1)
-    if (
-        isinstance(configured_workers, bool)
-        or not isinstance(configured_workers, int)
-        or configured_workers <= 0
-    ):
-        raise ValueError(
-            "validation.performance.window_parallel_workers must be positive"
-        )
-    window_workers = min(configured_workers, len(fold_contexts))
+    window_workers = min(
+        final_runner.execution_plan.window_workers,
+        len(fold_contexts),
+    )
 
     def fit_context(context):
         return context[1].fit(
@@ -264,7 +257,10 @@ def overwrite_calendar_month_backtest(
         pd.concat(cv_frames, ignore_index=True),
         pd.concat(score_frames, ignore_index=True),
         aggregate_weighting=aggregate_weights,
-        metadata={"backtest": metadata},
+        metadata={
+            "backtest": metadata,
+            "runtime_resources": final_runner.runtime_resources_payload(),
+        },
         probabilistic_scores_df=(
             pd.concat(probabilistic_frames, ignore_index=True)
             if probabilistic_frames
@@ -297,7 +293,16 @@ def overwrite_calendar_month_backtest(
                 target_coverage=calibration_tracker.target_coverage,
             )
             frame.to_csv(prediction_path, index=False, encoding="utf_8_sig")
+    final_runner.stage_wall_seconds["backtest"] = perf_counter() - backtest_started
+    final_runner.stage_wall_seconds["total"] = (
+        perf_counter() - final_runner.lifecycle_started
+    )
+    resolved["runtime"]["resources"] = final_runner.runtime_resources_payload()
     _write_json(resolved_path, resolved)
+    metadata_path = result.test_dir / "result_metadata.json"
+    result_metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+    result_metadata["runtime_resources"] = final_runner.runtime_resources_payload()
+    _write_json(metadata_path, result_metadata)
 
 
 __all__ = ["overwrite_calendar_month_backtest"]

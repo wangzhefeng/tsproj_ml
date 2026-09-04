@@ -17,6 +17,40 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class ModelYamlDetectionTest(unittest.TestCase):
+    def test_cli_rejects_unsupported_decomposition_trend_forecast(self):
+        source = (
+            ROOT
+            / "config/aidc_load_15min_short/route_A/add_decomposition/"
+            / "ridge_direct_decomp-linear.yaml"
+        )
+        payload = yaml.safe_load(source.read_text(encoding="utf-8"))
+        payload["features"]["transformations"]["target"]["decomposition"] = {
+            "method": "stl",
+            "periods": [96],
+            "robust": True,
+            "trend_forecast": "seasonal_naive",
+        }
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "bad-decomposition.yaml"
+            path.write_text(
+                yaml.safe_dump(payload, sort_keys=False),
+                encoding="utf-8",
+            )
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    str(ROOT / "scripts/check_model_configs.py"),
+                    str(path),
+                ],
+                cwd=ROOT,
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn("trend_forecast", result.stdout + result.stderr)
+
     def test_cli_counts_ensemble_semantic_problem_as_hard_failure(self):
         source = (
             ROOT

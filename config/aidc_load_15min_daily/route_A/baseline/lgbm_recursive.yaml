@@ -79,8 +79,8 @@ validation:
   fold_count: 31
   stride_steps: 96
   performance:
-    window_parallel_workers: 2
-    model_thread_count: 4
+    window_parallel_workers: 4
+    model_thread_count: 2
 output:
   scenario_subpath: aidc_load_15min_daily/route_A/baseline
   results_root: results

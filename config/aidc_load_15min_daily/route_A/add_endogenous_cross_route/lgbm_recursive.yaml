@@ -97,6 +97,9 @@ validation:
   train_window_steps: 2784
   fold_count: 31
   stride_steps: 96
+  performance:
+    window_parallel_workers: 2
+    model_thread_count: 4
 output:
   scenario_subpath: aidc_load_15min_daily/route_A/add_endogenous_cross_route
   results_root: results

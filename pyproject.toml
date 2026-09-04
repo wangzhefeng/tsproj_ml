@@ -13,11 +13,13 @@ dependencies = [
     "openpyxl>=3.1.5",
     "optuna>=4.7.0",
     "pandas>=2.3.3",
+    "psutil>=7.2.2",
     "pyyaml>=6.0.3",
     "scikit-learn>=1.7.2",
     "scipy>=1.15.3",
     "sklearn-pandas>=2.2.0",
     "statsmodels>=0.14.6",
+    "threadpoolctl>=3.6.0",
     "tqdm>=4.67.3",
     "xgboost>=3.2.0",
 ]

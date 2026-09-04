@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 """生产时间几何必须直接支持完整自然月折。"""
 
+import json
 import pickle
 import tempfile
 import threading
@@ -138,7 +139,7 @@ class CalendarMonthRuntimeGeometryTest(unittest.TestCase):
                         "stride_months": 1,
                         "performance": {
                             "window_parallel_workers": 2,
-                            "multi_output_n_jobs": 2,
+                            "multi_output_n_jobs": 1,
                         },
                     },
                     "output": {"scenario_subpath": "calendar-runtime"},
@@ -162,6 +163,17 @@ class CalendarMonthRuntimeGeometryTest(unittest.TestCase):
             cv = pd.read_csv(result.test_dir / "cv_plot_df.csv")
             horizons = cv.groupby("window")["time"].nunique().tolist()
             self.assertEqual(horizons, [28, 31, 30, 31, 30, 31])
+            resolved = json.loads(
+                (result.forecast_dir / "resolved_config.json").read_text(
+                    encoding="utf-8"
+                )
+            )
+            stage_wall = resolved["runtime"]["resources"]["stage_wall_seconds"]
+            self.assertEqual(
+                set(stage_wall),
+                {"raw_design", "backtest", "final_fit", "forecast_persist", "total"},
+            )
+            self.assertTrue(all(value >= 0.0 for value in stage_wall.values()))
             for _, frame in cv.groupby("window"):
                 month = pd.to_datetime(frame["time"]).dt.to_period("M")
                 self.assertEqual(month.nunique(), 1)

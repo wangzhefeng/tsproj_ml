@@ -19,6 +19,7 @@ __all__ = [
     "ComponentSpec",
     "DecompositionSpec",
     "RESERVED_METHODS",
+    "TREND_FORECAST_MODES",
     "PresetParams",
     "resolve_decomposition_spec",
 ]
@@ -65,6 +66,7 @@ RESERVED_METHODS = {
 }
 
 _VALID_PRESET_METHODS = {"none", "linear", "stl", "mstl"}
+TREND_FORECAST_MODES = frozenset({"polynomial", "damped"})
 
 # PresetParams 的字段默认值
 _PRESET_DEFAULTS = {
@@ -240,13 +242,19 @@ def _coerce_preset(raw: Mapping[str, Any], source: str) -> PresetParams:
         raise ValueError(f"decomposition method 'mstl' requires >= 2 periods; got {periods}.")
     if method in {"stl", "mstl"} and not periods:
         raise ValueError(f"decomposition method '{method}' requires 'periods'.")
+    trend_forecast = str(raw.get("trend_forecast", "polynomial")).lower()
+    if trend_forecast not in TREND_FORECAST_MODES:
+        raise ValueError(
+            "decomposition trend_forecast must be one of "
+            f"{sorted(TREND_FORECAST_MODES)}; got {trend_forecast!r}."
+        )
     return PresetParams(
         method=method,
         composition=composition,
         periods=periods,
         robust=bool(raw.get("robust", True)),
         trend_degree=int(raw.get("trend_degree", 1)),
-        trend_forecast=str(raw.get("trend_forecast", "polynomial")).lower(),
+        trend_forecast=trend_forecast,
         damping=float(raw.get("damping", 0.98)),
         trend_lookback=int(raw.get("trend_lookback", 28)),
         seasonal_cycles=int(raw.get("seasonal_cycles", 4)),

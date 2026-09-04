@@ -2,6 +2,7 @@
 """Fixed-step backtest window parallelism contracts."""
 from __future__ import annotations
 
+import json
 import tempfile
 import threading
 import time
@@ -145,7 +146,7 @@ class RuntimeWindowParallelismTest(unittest.TestCase):
                 "stride_steps": 2,
                 "performance": {
                     "window_parallel_workers": workers,
-                    "multi_output_n_jobs": 2,
+                    "multi_output_n_jobs": 1 if workers > 1 else 2,
                 },
             },
             output={"scenario_subpath": "window-parallel"},
@@ -175,6 +176,21 @@ class RuntimeWindowParallelismTest(unittest.TestCase):
         self.assertGreaterEqual(_TrackingRunner.max_active, 2)
         pd.testing.assert_frame_equal(parallel_cv, serial_cv, check_exact=True)
         self.assertEqual(parallel_cv["window"].drop_duplicates().tolist(), [1, 2, 3])
+        resolved = json.loads(
+            (parallel_result.forecast_dir / "resolved_config.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        resources = resolved["runtime"]["resources"]
+        self.assertEqual(resources["execution_plan"]["selected_axis"], "window")
+        self.assertIn(resources["cache"]["status"], {"disabled", "hit", "miss"})
+        self.assertEqual(
+            set(resources["stage_wall_seconds"]),
+            {"raw_design", "backtest", "final_fit", "forecast_persist", "total"},
+        )
+        self.assertTrue(
+            all(value >= 0.0 for value in resources["stage_wall_seconds"].values())
+        )
 
     def test_identity_parallel_windows_do_not_materialize_target_history(self) -> None:
         runner = self._runner(2)

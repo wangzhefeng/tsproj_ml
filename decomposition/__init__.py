@@ -15,6 +15,7 @@ from decomposition.residual_diagnostics import (
 from decomposition.periods import acf_periods, detect_periodicity, fft_dominant_period
 from decomposition.spec import (
     RESERVED_METHODS,
+    TREND_FORECAST_MODES,
     ComponentSpec,
     DecompositionSpec,
     PresetParams,
@@ -24,6 +25,7 @@ from decomposition.types import ComponentForecast, ComponentFrame
 
 __all__ = [
     "RESERVED_METHODS",
+    "TREND_FORECAST_MODES",
     "ComponentSpec",
     "ComponentForecast",
     "ComponentFrame",

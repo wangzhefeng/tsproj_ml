@@ -24,6 +24,9 @@ class BaseModelRunner(Protocol):
     supervised_origins: tuple[pd.Timestamp, ...]
     series_ids: tuple[Any, ...]
     feature_schema: tuple[str, ...]
+    workload: Any
+    resource_budget: Any
+    execution_plan: Any
 
     def fit(
         self, train_indices: tuple[int, ...]
@@ -83,12 +86,30 @@ class BaseModelRunner(Protocol):
         ...
 
 
+class BaseModelRunnerFactory(Protocol):
+    """Construct a member runner with the shared compiled-design cache root."""
+
+    def __call__(
+        self,
+        config: Any,
+        registry: Any,
+        origin: pd.Timestamp,
+        *,
+        compiled_cache_root: str | Path,
+    ) -> BaseModelRunner:
+        ...
+
+
 @dataclass(frozen=True, slots=True)
 class EnsembleRuntimeServices:
     """Concrete single-model capabilities injected by the application entrypoint."""
 
-    runner_factory: Callable[[Any, Any, pd.Timestamp], Any]
+    runner_factory: BaseModelRunnerFactory
     persist_bundle: Callable[[Any, str | Path], Any]
+    plan_resources: Callable[
+        [Any, Mapping[str, BaseModelRunner]],
+        tuple[Any, Any, Any],
+    ]
 
 
 @runtime_checkable

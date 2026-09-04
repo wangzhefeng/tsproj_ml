@@ -24,6 +24,7 @@ from model_forecasting.runtime import (
     persist_model_bundle,
     run_canonical_config,
 )
+from model_forecasting.resource_planner import plan_ensemble_resources
 from forecasting_core.specs import (
     ColumnSpec,
     DataSourceSpec,
@@ -46,6 +47,7 @@ CHECKER_PATH = ROOT / "scripts" / "check_model_configs.py"
 ENSEMBLE_RUNTIME_SERVICES = EnsembleRuntimeServices(
     runner_factory=CanonicalBaseModelRunner,
     persist_bundle=persist_model_bundle,
+    plan_resources=plan_ensemble_resources,
 )
 
 
@@ -506,7 +508,7 @@ class Task27ExecutionMatrixTest(unittest.TestCase):
         target_lags = self._target_lags(strategy)
         if adapter == "native":
             model_type = "rf"
-            params = {"n_estimators": 4, "max_depth": 3, "random_state": 0, "n_jobs": 1}
+            params = {"n_estimators": 4, "max_depth": 3, "random_state": 0}
         elif mode == "quantile":
             model_type = "qr"
             params = {"alpha": 0.0, "solver": "highs"}
@@ -584,6 +586,11 @@ class Task27ExecutionMatrixTest(unittest.TestCase):
                     "incomplete_series_policy": "raise",
                     "unknown_series_policy": "raise",
                 },
+                **(
+                    {"performance": {"model_thread_count": 1}}
+                    if adapter == "native"
+                    else {}
+                ),
             },
             output={"scenario_subpath": "task27"},
         )

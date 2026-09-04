@@ -22,6 +22,7 @@ from model_forecasting.fit_service import (
     _runtime_estimator_params,
     _runtime_fit_worker_plan,
     _runtime_model_workers,
+    _runtime_scalar_fit_count,
 )
 from model_training.estimators import make_model_factory, resolve_model_capabilities
 from model_training.trainer import CanonicalTrainer
@@ -35,6 +36,7 @@ def _config(
     horizon: int = 2,
     output_chunk_length: int | None = None,
     mode: str = "point",
+    direct_layout: str | None = None,
 ) -> ForecastConfigSpec:
     validation = {
         "forecast_origin": "2026-01-03T00:00:00",
@@ -70,7 +72,20 @@ def _config(
             target_lags={"load": (2,)},
             observed_past_lags={},
             datetime_features=(),
-            transformations={},
+            transformations=(
+                {}
+                if direct_layout is None
+                else {
+                    "direct": {
+                        "layout": direct_layout,
+                        "align_to_target": True,
+                        "horizon_feature": {
+                            "name": "forecast_horizon_idx",
+                            "cyclical": False,
+                        },
+                    }
+                }
+            ),
         ),
         strategy=ForecastStrategySpec(
             strategy,
@@ -122,14 +137,108 @@ class _ConcurrentEstimator:
         return np.full(len(X), self.value, dtype=float)
 
 
+class _RecordingEstimator:
+    created = []
+
+    def __init__(self):
+        self.fit_X = None
+        self.fit_y = None
+        self.fit_sample_weight = None
+        type(self).created.append(self)
+
+    @classmethod
+    def reset(cls) -> None:
+        cls.created = []
+
+    def fit(self, X, y, sample_weight=None):
+        self.fit_X = np.asarray(X, dtype=float).copy()
+        self.fit_y = np.asarray(y, dtype=float).copy()
+        self.fit_sample_weight = (
+            None
+            if sample_weight is None
+            else np.asarray(sample_weight, dtype=float).copy()
+        )
+        return self
+
+    def predict(self, X):
+        return np.zeros(len(X), dtype=float)
+
+
 class RuntimeEstimatorParamsTest(unittest.TestCase):
+    def test_single_model_horizon_uses_one_shared_fit_plan(self) -> None:
+        config = _config(
+            strategy="direct",
+            horizon=4,
+            direct_layout="single_model_horizon",
+        )
+        trainer = CanonicalTrainer(
+            config,
+            estimator_factory=_ConcurrentEstimator,
+            capabilities=resolve_model_capabilities("ridge"),
+            feature_schema=("x", "forecast_horizon_idx"),
+        )
+
+        self.assertEqual(trainer.target_plan.model_count, 1)
+        self.assertEqual(trainer.target_plan.model_indices, (0, 0, 0, 0))
+        self.assertEqual(_runtime_scalar_fit_count(config), 1)
+        self.assertEqual(_runtime_model_workers(config), 1)
+        self.assertGreaterEqual(_runtime_estimator_params(config)["n_jobs"], 1)
+
+    def test_single_model_horizon_pools_calls_in_time_major_order(self) -> None:
+        _RecordingEstimator.reset()
+        config = _config(
+            strategy="direct",
+            model_type="ridge",
+            horizon=4,
+            direct_layout="single_model_horizon",
+        )
+        designs = tuple(
+            np.column_stack(
+                (
+                    np.arange(3.0),
+                    np.full(3, float(step)),
+                )
+            )
+            for step in range(1, 5)
+        )
+        targets = np.stack(
+            tuple(100.0 * step + np.arange(3.0) for step in range(1, 5)),
+            axis=1,
+        )[:, :, None]
+        sample_weight = np.array([1.0, 2.0, 3.0])
+
+        artifact = CanonicalTrainer(
+            config,
+            estimator_factory=_RecordingEstimator,
+            capabilities=resolve_model_capabilities("ridge"),
+            feature_schema=("x", "forecast_horizon_idx"),
+        ).train(
+            designs,
+            targets,
+            sample_weight=sample_weight,
+            max_workers=4,
+        )
+
+        self.assertEqual(artifact.model_count, 1)
+        self.assertEqual(len(_RecordingEstimator.created), 1)
+        estimator = _RecordingEstimator.created[0]
+        np.testing.assert_array_equal(estimator.fit_X, np.concatenate(designs, axis=0))
+        np.testing.assert_array_equal(
+            estimator.fit_y,
+            np.concatenate(tuple(targets[:, step, 0] for step in range(4))),
+        )
+        np.testing.assert_array_equal(
+            estimator.fit_sample_weight,
+            np.tile(sample_weight, 4),
+        )
+
     def test_multi_model_lightgbm_defaults_to_one_thread(self) -> None:
         params = _runtime_estimator_params(_config(strategy="direct"))
         self.assertEqual(params["n_jobs"], 1)
 
-    def test_single_scalar_lightgbm_keeps_estimator_default(self) -> None:
+    def test_single_scalar_lightgbm_receives_resolved_model_threads(self) -> None:
         params = _runtime_estimator_params(_config(strategy="recursive"))
-        self.assertNotIn("n_jobs", params)
+        self.assertGreaterEqual(params["n_jobs"], 1)
 
     def test_mimo_lightgbm_uses_single_thread_per_output(self) -> None:
         params = _runtime_estimator_params(_config(strategy="mimo"))
@@ -228,7 +337,7 @@ class RuntimeEstimatorParamsTest(unittest.TestCase):
         config = _config(strategy="recursive", mode="quantile")
         self.assertEqual(_runtime_fit_worker_plan(config), (3, 1))
 
-    def test_explicit_quantile_workers_clamp_output_workers(self) -> None:
+    def test_explicit_quantile_and_output_workers_conflict_raises(self) -> None:
         config = _config(
             strategy="direct",
             mode="quantile",
@@ -237,7 +346,8 @@ class RuntimeEstimatorParamsTest(unittest.TestCase):
                 "multi_output_n_jobs": 2,
             },
         )
-        self.assertEqual(_runtime_fit_worker_plan(config), (2, 1))
+        with self.assertRaisesRegex(ValueError, "outer parallel axes"):
+            _runtime_fit_worker_plan(config)
 
     def test_single_scalar_fit_strategy_uses_one_worker(self) -> None:
         self.assertEqual(_runtime_model_workers(_config(strategy="recursive")), 1)

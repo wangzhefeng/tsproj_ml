@@ -11,6 +11,7 @@ from typing import Any, Mapping, Sequence, cast
 
 import numpy as np
 import pandas as pd
+from threadpoolctl import threadpool_limits
 
 from model_testing import validation
 from data_loading import (
@@ -76,6 +77,11 @@ from model_training.trainer import CanonicalTrainer
 from models.ModelFactory import ModelFactory
 from probabilistic.training import CanonicalMarginalQuantileTrainer
 from forecasting_core.artifacts import ForecastModelBundle, MarginalForecastDistribution
+from forecasting_core.runtime_resources import (
+    RuntimeExecutionPlan,
+    RuntimeResourceBudget,
+    RuntimeWorkload,
+)
 from model_forecasting.backtest_runtime import overwrite_calendar_month_backtest
 from model_forecasting.design import (
     _BacktestWindow,
@@ -95,6 +101,12 @@ from model_forecasting.fit_service import (
     _forecast_designs_with_scaler,
     _predict,
     _restore_prediction,
+    _runtime_execution_plan,
+)
+from model_forecasting.resource_planner import (
+    build_runtime_workload,
+    plan_runtime_execution,
+    runtime_budget_for_config,
 )
 
 # P3/D3：回测原语已公开化至 model_testing/backtest.py；保留私有别名转发（历史调用点零改动）。
@@ -411,19 +423,7 @@ def _output_paths(
 
 
 def _runtime_window_workers(config: ForecastConfigSpec) -> int:
-    performance = config.validation.get("performance", {})
-    if not isinstance(performance, Mapping):
-        raise TypeError("validation.performance must be a mapping")
-    configured = performance.get("window_parallel_workers", 1)
-    if (
-        isinstance(configured, bool)
-        or not isinstance(configured, int)
-        or configured <= 0
-    ):
-        raise ValueError(
-            "validation.performance.window_parallel_workers must be positive"
-        )
-    return configured
+    return _runtime_execution_plan(config).window_workers
 
 
 def _sample_selector(
@@ -455,6 +455,7 @@ class CanonicalBaseModelRunner:
         origin: pd.Timestamp,
         *,
         compiled_cache_root: str | Path | None = None,
+        resource_budget: RuntimeResourceBudget | None = None,
     ) -> None:
         if not isinstance(config, ForecastConfigSpec):
             raise TypeError("config must be a ForecastConfigSpec")
@@ -471,41 +472,66 @@ class CanonicalBaseModelRunner:
         self.supervised_origins: tuple[pd.Timestamp, ...]
         self.supervised_sample_origins: tuple[pd.Timestamp, ...]
         self.supervised_sample_series_ids: tuple[Any, ...]
+        design_started = perf_counter()
+        cache_status = "disabled"
         if compiled_cache_root is None:
             self._compile_supervised_arrays()
-            return
-
-        cache_root = Path(compiled_cache_root)
-        fingerprint = compiled_cache.compute_compiled_fingerprint(
-            config,
-            base_dir=registry._base_dir,
-            origin=origin,
-            generators=registry._generators,
-        )
-        self.compiled_cache_fingerprint = fingerprint
-        started = perf_counter()
-        try:
-            payload = compiled_cache.load_compiled_cache(cache_root, fingerprint)
-        except FileNotFoundError:
-            self._compile_supervised_arrays()
-            compiled_cache.save_compiled_cache(
-                cache_root,
-                fingerprint,
-                self._compiled_cache_payload(),
-            )
-            logger.info(
-                "[CompiledFeaturesCache] miss key=%s compile_seconds=%.3f",
-                fingerprint[:12],
-                perf_counter() - started,
-            )
         else:
-            self._restore_compiled_cache(payload)
-            self.compiled_cache_hit = True
-            logger.info(
-                "[CompiledFeaturesCache] hit key=%s load_seconds=%.3f",
-                fingerprint[:12],
-                perf_counter() - started,
+            cache_root = Path(compiled_cache_root)
+            fingerprint = compiled_cache.compute_raw_design_fingerprint(
+                config,
+                base_dir=registry._base_dir,
+                origin=origin,
+                generators=registry._generators,
             )
+            self.compiled_cache_fingerprint = fingerprint
+            started = perf_counter()
+            with compiled_cache.raw_design_cache_lock(cache_root, fingerprint):
+                try:
+                    payload = compiled_cache.load_compiled_cache(cache_root, fingerprint)
+                except FileNotFoundError:
+                    self._compile_supervised_arrays()
+                    cache_status = "miss"
+                    compiled_cache.save_compiled_cache(
+                        cache_root,
+                        fingerprint,
+                        self._compiled_cache_payload(),
+                    )
+                    logger.info(
+                        "[CompiledFeaturesCache] miss key=%s compile_seconds=%.3f",
+                        fingerprint[:12],
+                        perf_counter() - started,
+                    )
+                else:
+                    self._restore_compiled_cache(payload)
+                    self.compiled_cache_hit = True
+                    cache_status = "hit"
+                    logger.info(
+                        "[CompiledFeaturesCache] hit key=%s load_seconds=%.3f",
+                        fingerprint[:12],
+                        perf_counter() - started,
+                    )
+        self.workload = build_runtime_workload(
+            config,
+            training_rows=len(self.Y_all),
+            feature_count=len(self.builder.feature_schema),
+            design_bytes=sum(design.nbytes for design in self.X_all) + self.Y_all.nbytes,
+            series_count=self.builder.n_series,
+        )
+        self.resource_budget = runtime_budget_for_config(
+            config,
+            parent_budget=resource_budget,
+        )
+        self.execution_plan = plan_runtime_execution(
+            config,
+            self.workload,
+            budget=self.resource_budget,
+        )
+        self.cache_status = cache_status
+        self.lifecycle_started = design_started
+        self.stage_wall_seconds: dict[str, float] = {
+            "raw_design": perf_counter() - design_started,
+        }
 
     def _compile_supervised_arrays(self) -> None:
         (
@@ -579,6 +605,18 @@ class CanonicalBaseModelRunner:
     @property
     def feature_schema(self) -> tuple[str, ...]:
         return self.builder.feature_schema
+
+    def runtime_resources_payload(self) -> dict[str, Any]:
+        return {
+            "workload": self.workload.payload(),
+            "budget": self.resource_budget.payload(),
+            "execution_plan": self.execution_plan.payload(),
+            "cache": {
+                "status": self.cache_status,
+                "fingerprint": self.compiled_cache_fingerprint,
+            },
+            "stage_wall_seconds": dict(self.stage_wall_seconds),
+        }
 
     def backtest_windows(self) -> tuple[_BacktestWindow, ...]:
         if isinstance(self.config.validation.backtest, CalendarMonthBacktestSpec):
@@ -656,6 +694,7 @@ class CanonicalBaseModelRunner:
                 X_train_transformed,
                 Y_train_transformed,
                 n_series=self.builder.n_series,
+                execution_plan=self.execution_plan,
                 max_workers=1 if force_serial else None,
             )
         else:
@@ -665,6 +704,7 @@ class CanonicalBaseModelRunner:
                 X_train_transformed,
                 Y_train_transformed,
                 n_series=self.builder.n_series,
+                execution_plan=self.execution_plan,
                 worker_plan=(1, 1) if force_serial else None,
             )
         return (
@@ -855,6 +895,7 @@ class CanonicalBaseModelRunner:
                 X_transformed,
                 Y_transformed,
                 n_series=self.builder.n_series,
+                execution_plan=self.execution_plan,
             )
             capabilities = trainer.capabilities
         else:
@@ -864,6 +905,7 @@ class CanonicalBaseModelRunner:
                 X_transformed,
                 Y_transformed,
                 n_series=self.builder.n_series,
+                execution_plan=self.execution_plan,
             )
         return trainer, artifact, capabilities
 
@@ -951,11 +993,20 @@ class CanonicalBaseModelRunner:
         self,
         output_root: str | Path | None = None,
     ) -> CanonicalRuntimeResult:
+        """Execute with process-level BLAS/OpenMP limits set before any pool."""
+        with threadpool_limits(limits=self.execution_plan.model_threads):
+            return self._run(output_root)
+
+    def _run(
+        self,
+        output_root: str | Path | None = None,
+    ) -> CanonicalRuntimeResult:
         """Full single-model lifecycle: rolling backtest, final fit, persist."""
         builder = self.builder
         config = self.config
         origin = self.origin
         mode = self._mode()
+        backtest_started = perf_counter()
 
         fingerprint = config.fingerprint()
         run_dir, model_dir, test_dir, forecast_dir = _output_paths(
@@ -991,7 +1042,7 @@ class CanonicalBaseModelRunner:
         calibration_audits: list[dict[str, Any]] = []
         backtest_windows = self.backtest_windows()
         window_workers = min(
-            _runtime_window_workers(config),
+            self.execution_plan.window_workers,
             max(1, len(backtest_windows)),
         )
         parallel_fits = None
@@ -1136,7 +1187,10 @@ class CanonicalBaseModelRunner:
                 pd.concat(cv_frames, ignore_index=True),
                 pd.concat(score_frames, ignore_index=True),
                 aggregate_weighting=aggregate_weights,
-                metadata={"backtest": holdout_metadata},
+                metadata={
+                    "backtest": holdout_metadata,
+                    "runtime_resources": self.runtime_resources_payload(),
+                },
                 probabilistic_scores_df=(
                     pd.concat(prob_score_frames, ignore_index=True)
                     if prob_score_frames
@@ -1149,6 +1203,8 @@ class CanonicalBaseModelRunner:
                 "windows": [],
             }
 
+        self.stage_wall_seconds["backtest"] = perf_counter() - backtest_started
+        final_fit_started = perf_counter()
         (
             final_feature_scaler,
             final_target_transform,
@@ -1159,6 +1215,8 @@ class CanonicalBaseModelRunner:
             X_all_transformed,
             Y_all_transformed,
         )
+        self.stage_wall_seconds["final_fit"] = perf_counter() - final_fit_started
+        forecast_started = perf_counter()
 
         builder.reset_audit()
         final_designs, final_provider = self.forecast_designs(
@@ -1293,12 +1351,15 @@ class CanonicalBaseModelRunner:
             extra_columns=forecast_extra_columns,
             history=forecast_history,
         )
+        self.stage_wall_seconds["forecast_persist"] = perf_counter() - forecast_started
+        self.stage_wall_seconds["total"] = perf_counter() - self.lifecycle_started
         _write_json(
             forecast_dir / "resolved_config.json",
             {
                 **config.canonical_payload(),
                 "config_fingerprint": fingerprint,
                 "runtime": {
+                    "resources": self.runtime_resources_payload(),
                     "series_order": [
                         list(value) if isinstance(value, tuple) else value
                         for value in builder.series_ids
@@ -1332,6 +1393,11 @@ class CanonicalBaseModelRunner:
                 },
             },
         )
+        metadata_path = test_dir / "result_metadata.json"
+        if metadata_path.exists():
+            result_metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+            result_metadata["runtime_resources"] = self.runtime_resources_payload()
+            _write_json(metadata_path, result_metadata)
         return CanonicalRuntimeResult(
             run_dir=run_dir,
             model_dir=model_dir,

@@ -46,7 +46,14 @@ class CanonicalTrainerForecasterMatrixTest(unittest.TestCase):
     )
 
     @staticmethod
-    def build_config(strategy, chunk, targets, *, global_scope):
+    def build_config(
+        strategy,
+        chunk,
+        targets,
+        *,
+        global_scope,
+        single_model_horizon=False,
+    ):
         series_id_cols = ("series_id",) if global_scope else ()
         columns = []
         if global_scope:
@@ -78,7 +85,20 @@ class CanonicalTrainerForecasterMatrixTest(unittest.TestCase):
                 target_lags={},
                 observed_past_lags={},
                 datetime_features=(),
-                transformations={},
+                transformations=(
+                    {}
+                    if not single_model_horizon
+                    else {
+                        "direct": {
+                            "layout": "single_model_horizon",
+                            "align_to_target": True,
+                            "horizon_feature": {
+                                "name": "call_index",
+                                "cyclical": False,
+                            },
+                        }
+                    }
+                ),
             ),
             strategy=ForecastStrategySpec(strategy, chunk),
             estimator=EstimatorSpec(
@@ -180,6 +200,98 @@ class CanonicalTrainerForecasterMatrixTest(unittest.TestCase):
                     ("load", "power"),
                     global_scope=True,
                 )
+
+    def test_single_model_horizon_shares_one_model_for_local_and_global(self):
+        for global_scope, targets in (
+            (False, ("load",)),
+            (True, ("load", "power")),
+        ):
+            with self.subTest(global_scope=global_scope, targets=targets):
+                config = self.build_config(
+                    "direct",
+                    None,
+                    targets,
+                    global_scope=global_scope,
+                    single_model_horizon=True,
+                )
+                x_train = np.arange(1.0, 21.0)
+                y_train = self.target_values(x_train, len(targets))
+                call_designs = self.call_designs(x_train, 4)
+                artifact = CanonicalTrainer(
+                    config,
+                    estimator_factory=LinearRegression,
+                    capabilities=self.capabilities,
+                    feature_schema=("x", "call_index"),
+                ).train(
+                    call_designs,
+                    y_train,
+                    n_series=2 if global_scope else 1,
+                )
+
+                self.assertEqual(artifact.model_count, 1)
+                self.assertEqual(artifact.target_plan.model_indices, (0, 0, 0, 0))
+                expected_estimators = len(targets)
+                self.assertEqual(
+                    len(
+                        getattr(
+                            artifact.model_groups[0].predictor.adapter,
+                            "estimators",
+                        )
+                    ),
+                    expected_estimators,
+                )
+
+                x_predict = (
+                    np.array([100.0, 200.0])
+                    if global_scope
+                    else np.array([100.0])
+                )
+                prediction_designs = self.call_designs(x_predict, 4)
+                prediction = CanonicalForecaster(config, artifact).predict(
+                    prediction_designs[0],
+                    series_ids=("A", "B") if global_scope else ("__local__",),
+                    forecast_times=pd.date_range(
+                        "2026-09-01",
+                        periods=4,
+                        freq="1h",
+                    ),
+                    feature_provider=lambda call_index, *_: prediction_designs[
+                        call_index
+                    ],
+                )
+                np.testing.assert_allclose(
+                    prediction.values,
+                    self.target_values(x_predict, len(targets)),
+                    atol=1e-8,
+                )
+
+    def test_forecaster_rejects_artifact_from_different_direct_layout(self):
+        standard = self.build_config(
+            "direct",
+            None,
+            ("load",),
+            global_scope=False,
+        )
+        shared = self.build_config(
+            "direct",
+            None,
+            ("load",),
+            global_scope=False,
+            single_model_horizon=True,
+        )
+        x_train = np.arange(1.0, 21.0)
+        artifact = CanonicalTrainer(
+            standard,
+            estimator_factory=LinearRegression,
+            capabilities=self.capabilities,
+            feature_schema=("x", "call_index"),
+        ).train(
+            self.call_designs(x_train, 4),
+            self.target_values(x_train, 1),
+        )
+
+        with self.assertRaisesRegex(ValueError, "target plan"):
+            CanonicalForecaster(shared, artifact)
 
 
 if __name__ == "__main__":

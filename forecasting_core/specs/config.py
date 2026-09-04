@@ -74,28 +74,6 @@ _FEATURE_OPTIONAL_FIELDS = frozenset({"selection"})
 _STRATEGY_FIELDS = frozenset({"name", "output_chunk_length"})
 _ESTIMATOR_FIELDS = frozenset({"model_type", "target_adapter", "params"})
 _FORBIDDEN_FIELD_NAMES = frozenset({"base_config", "overrides", "pred_method"})
-_NONSEMANTIC_FIELD_TOKENS = ("parallel", "worker", "thread", "n_jobs", "log")
-_NONSEMANTIC_VALIDATION_FIELDS: frozenset[str] = frozenset({"performance"})
-
-
-def _semantic_mapping(value: Mapping[str, Any]) -> dict[str, Any]:
-    result = {}
-    for key, item in value.items():
-        normalized = str(key).lower()
-        if normalized in _NONSEMANTIC_VALIDATION_FIELDS or any(
-            token in normalized for token in _NONSEMANTIC_FIELD_TOKENS
-        ):
-            continue
-        if isinstance(item, Mapping):
-            result[str(key)] = _semantic_mapping(item)
-        elif isinstance(item, tuple):
-            result[str(key)] = [
-                _semantic_mapping(element) if isinstance(element, Mapping) else element
-                for element in item
-            ]
-        else:
-            result[str(key)] = item
-    return result
 
 
 def _validate_global_source_keys(problem: ForecastProblemSpec, data: DataSpec) -> None:
@@ -257,9 +235,7 @@ class ForecastConfigSpec:
     def semantic_payload(self) -> dict[str, object]:
         payload = self.canonical_payload()
         payload.pop("output")
-        payload["validation"] = _semantic_mapping(
-            self.validation.canonical_payload()
-        )
+        payload["validation"] = self.validation.semantic_payload()
         return payload
 
     def fingerprint(self) -> str:

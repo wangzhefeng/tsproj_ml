@@ -1,12 +1,13 @@
 """Shared canonical strategy target planning and prediction execution."""
 
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any, ClassVar
 
 import numpy as np
 import pandas as pd
 
+from forecasting_core.specs import ForecastConfigSpec
 from forecasting_core.specs.strategy import ForecastStrategySpec, StrategyName
 from forecasting_core.tensors import (
     PointForecastTensor,
@@ -101,6 +102,31 @@ class StrategyTargetPlan:
             model_indices=model_indices,
             model_count=resolved.model_count,
         )
+
+
+def target_plan_for_config(config: ForecastConfigSpec) -> StrategyTargetPlan:
+    """Resolve strategy calls plus config-driven Direct model sharing."""
+    if not isinstance(config, ForecastConfigSpec):
+        raise TypeError("config must be a ForecastConfigSpec")
+    if config.strategy is None:
+        raise ValueError("target plan requires a strategy config")
+    plan = StrategyTargetPlan.from_spec(
+        config.strategy,
+        config.problem.targets,
+        config.problem.horizon,
+    )
+    direct = config.features.transformations.get("direct")
+    if (
+        config.strategy.name is StrategyName.DIRECT
+        and isinstance(direct, Mapping)
+        and direct.get("layout") == "single_model_horizon"
+    ):
+        return replace(
+            plan,
+            model_indices=(0,) * len(plan.call_coordinates),
+            model_count=1,
+        )
+    return plan
 
 
 class AdapterPredictor:

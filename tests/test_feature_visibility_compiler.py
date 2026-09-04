@@ -5,6 +5,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 
 from data_loading import (
@@ -630,6 +631,50 @@ class FeatureVisibilityCompilerTest(unittest.TestCase):
         )
         with self.assertRaisesRegex(ValueError, "calendar normalization method"):
             FeatureCompiler(invalid)
+
+    def test_single_model_horizon_keeps_raw_index_and_optional_cyclical_encoding(self):
+        self.write_fixture()
+        request = self.request()
+        for cyclical in (False, True):
+            with self.subTest(cyclical=cyclical):
+                config = self.build_config(
+                    transformations={
+                        "direct": {
+                            "layout": "single_model_horizon",
+                            "align_to_target": True,
+                            "horizon_feature": {
+                                "name": "forecast_horizon_idx",
+                                "cyclical": cyclical,
+                            },
+                        }
+                    }
+                )
+                compiled = FeatureCompiler(config).compile(
+                    self.materialize(config, request),
+                    request,
+                )
+
+                np.testing.assert_array_equal(
+                    compiled.frame["forecast_horizon_idx"].to_numpy(),
+                    np.array([1.0, 2.0]),
+                )
+                cyclic_names = {
+                    "forecast_horizon_idx_sin",
+                    "forecast_horizon_idx_cos",
+                }
+                if not cyclical:
+                    self.assertTrue(cyclic_names.isdisjoint(compiled.frame.columns))
+                    continue
+                np.testing.assert_allclose(
+                    compiled.frame["forecast_horizon_idx_sin"].to_numpy(),
+                    np.sin(np.array([np.pi, 2.0 * np.pi])),
+                    atol=1e-15,
+                )
+                np.testing.assert_allclose(
+                    compiled.frame["forecast_horizon_idx_cos"].to_numpy(),
+                    np.array([-1.0, 1.0]),
+                    atol=1e-15,
+                )
 
     def test_legacy_datetime_aliases_are_rejected_for_canonical_configs(self):
         self.write_fixture()

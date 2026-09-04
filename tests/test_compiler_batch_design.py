@@ -6,11 +6,13 @@ import tempfile
 import unittest
 from pathlib import Path
 from typing import cast
+from unittest.mock import PropertyMock, patch
 
 import numpy as np
 import pandas as pd
 
 from data_loading import SourceRegistry
+from feature_engineering.compiler import FeatureCompiler
 from forecasting_core.specs import (
     ColumnSpec,
     DataSourceSpec,
@@ -21,7 +23,7 @@ from forecasting_core.specs import (
     ForecastProblemSpec,
     ForecastStrategySpec,
 )
-from model_forecasting.design import _RegistryDesignBuilder
+from model_forecasting.design import _RegistryDesignBuilder, _split_batch_designs
 
 
 class _CountingSourceRegistry(SourceRegistry):
@@ -46,9 +48,134 @@ class CompilerBatchDesignTest(unittest.TestCase):
                 "load": 100.0 + np.arange(len(self.times), dtype=float),
             }
         ).to_csv(self.data_path, index=False)
+        self.global_data_path = self.root / "panel.csv"
+        pd.concat(
+            [
+                pd.DataFrame(
+                    {
+                        "series_id": series_id,
+                        "time": self.times,
+                        "load": offset + np.arange(len(self.times), dtype=float),
+                        "power": offset * 2.0
+                        + np.arange(len(self.times), dtype=float),
+                    }
+                )
+                for series_id, offset in (("A", 100.0), ("B", 1000.0))
+            ],
+            ignore_index=True,
+        ).to_csv(self.global_data_path, index=False)
 
     def tearDown(self) -> None:
         self.temp_dir.cleanup()
+
+    def test_split_batch_designs_preserves_global_identity_major_order(self) -> None:
+        frame = pd.DataFrame(
+            {
+                "series_id": [10, 10, 20, 20],
+                "horizon_step": [1, 3, 1, 3],
+                "feature": [101.0, 103.0, 201.0, 203.0],
+            }
+        )
+
+        designs = _split_batch_designs(
+            frame,
+            schema=("series_id", "feature"),
+            call_steps=(1, 3),
+            n_series=2,
+        )
+
+        self.assertEqual(len(designs), 2)
+        np.testing.assert_array_equal(
+            designs[0],
+            np.asarray([[10.0, 101.0], [20.0, 201.0]]),
+        )
+        np.testing.assert_array_equal(
+            designs[1],
+            np.asarray([[10.0, 103.0], [20.0, 203.0]]),
+        )
+
+    def test_label_extraction_does_not_use_dataframe_row_access(self) -> None:
+        config = self._config("mimo")
+        builder = _RegistryDesignBuilder(
+            config,
+            SourceRegistry(config.data, self.root),
+        )
+        origin = cast(pd.Timestamp, pd.Timestamp(self.times.to_numpy()[20]))
+        request = builder.request(origin, target_access="supervised_labels")
+        information_set = builder.registry.materialize(request)
+
+        with patch.object(
+            pd.DataFrame,
+            "iloc",
+            new_callable=PropertyMock,
+            side_effect=AssertionError("label extraction used DataFrame.iloc"),
+        ):
+            values, trajectories = builder._labels_from_information_set(
+                request,
+                information_set,
+            )
+
+        np.testing.assert_array_equal(
+            values[0, :, 0],
+            np.asarray([121.0, 122.0, 123.0]),
+        )
+        self.assertEqual(
+            trajectories["__local__"]["load"],
+            (121.0, 122.0, 123.0),
+        )
+
+    def test_batch_training_validates_without_materializing_proofs(self) -> None:
+        config = self._config("direct")
+        builder = _RegistryDesignBuilder(
+            config,
+            SourceRegistry(config.data, self.root),
+        )
+        origins = tuple(
+            cast(pd.Timestamp, pd.Timestamp(value)) for value in self.times[12:18]
+        )
+
+        with patch(
+            "feature_engineering.compiler.VisibilityProof",
+            side_effect=AssertionError("batch training materialized VisibilityProof"),
+        ):
+            rows = builder.training_rows(origins)
+
+        self.assertEqual(len(rows), len(origins))
+
+    def test_batch_training_validate_only_rejects_late_availability(self) -> None:
+        config = self._config("direct")
+        builder = _RegistryDesignBuilder(
+            config,
+            SourceRegistry(config.data, self.root),
+        )
+        origins = tuple(
+            cast(pd.Timestamp, pd.Timestamp(value)) for value in self.times[12:18]
+        )
+        add_proof_column = FeatureCompiler._add_batch_proof_column
+
+        def inject_late_availability(*args, **kwargs) -> None:
+            add_proof_column(*args, **kwargs)
+            item = args[0]
+            feature_name = args[1]
+            source_name, role, source_times, available_at = item["proof_columns"][
+                feature_name
+            ]
+            item["proof_columns"][feature_name] = (
+                source_name,
+                role,
+                source_times,
+                tuple(
+                    pd.Timestamp(item["request"].forecast_origin) + pd.Timedelta(days=1)
+                    for _ in available_at
+                ),
+            )
+
+        with patch.object(
+            FeatureCompiler,
+            "_add_batch_proof_column",
+            side_effect=inject_late_availability,
+        ), self.assertRaisesRegex(ValueError, "available after forecast_origin"):
+            builder.training_rows(origins)
 
     def _config(
         self,
@@ -113,13 +240,81 @@ class CompilerBatchDesignTest(unittest.TestCase):
             ),
             probabilistic={"mode": "point"},
             validation={
-                "forecast_origin": self.times[-4].isoformat(),
+                "forecast_origin": cast(
+                    pd.Timestamp,
+                    pd.Timestamp(self.times.to_numpy()[-4]),
+                ).isoformat(),
                 "history_steps": 20,
                 "train_window_steps": 10,
                 "fold_count": 1,
                 "stride_steps": horizon,
             },
             output={"scenario_subpath": "compiler-batch-design"},
+        )
+
+    def _global_config(
+        self,
+        strategy: str,
+        output_chunk_length: int | None,
+    ) -> ForecastConfigSpec:
+        return ForecastConfigSpec(
+            problem=ForecastProblemSpec(
+                time_col="time",
+                freq="1h",
+                horizon=4,
+                targets=("load", "power"),
+                training_scope="global",
+                series_id_cols=("series_id",),
+            ),
+            data=DataSpec(
+                (
+                    DataSourceSpec(
+                        name="target_history",
+                        source_type="file",
+                        columns=(
+                            ColumnSpec("series_id", "key", categorical=True),
+                            ColumnSpec("load", "target"),
+                            ColumnSpec("power", "target"),
+                        ),
+                        history_path=str(self.global_data_path),
+                        time_col="time",
+                        series_id_cols=("series_id",),
+                        availability="source_time",
+                    ),
+                )
+            ),
+            features=FeatureSpec(
+                target_lags={"load": (4, 5, 6), "power": (4, 5, 6)},
+                observed_past_lags={},
+                datetime_features=("hour",),
+                transformations={},
+            ),
+            strategy=ForecastStrategySpec(
+                strategy,
+                output_chunk_length=output_chunk_length,
+            ),
+            estimator=EstimatorSpec(
+                model_type="ridge",
+                target_adapter="independent",
+                params={"alpha": 1e-6},
+            ),
+            probabilistic={"mode": "point"},
+            validation={
+                "forecast_origin": cast(
+                    pd.Timestamp,
+                    pd.Timestamp(self.times.to_numpy()[-5]),
+                ).isoformat(),
+                "history_steps": 20,
+                "train_window_steps": 10,
+                "fold_count": 1,
+                "stride_steps": 4,
+                "training_scope": {
+                    "series_order": ["A", "B"],
+                    "incomplete_series_policy": "raise",
+                    "unknown_series_policy": "raise",
+                },
+            },
+            output={"scenario_subpath": "compiler-batch-design-global"},
         )
 
     def _assert_rows_equal(
@@ -139,7 +334,9 @@ class CompilerBatchDesignTest(unittest.TestCase):
             output_chunk_length=output_chunk_length,
             safe_lags=safe_lags,
         )
-        origins = tuple(pd.Timestamp(value) for value in self.times[12:18])
+        origins = tuple(
+            cast(pd.Timestamp, pd.Timestamp(value)) for value in self.times[12:18]
+        )
         expected_builder = _RegistryDesignBuilder(
             config,
             SourceRegistry(config.data, self.root),
@@ -179,6 +376,17 @@ class CompilerBatchDesignTest(unittest.TestCase):
     def test_direct_expanding_training_rows_use_batch_and_match(self) -> None:
         self._assert_rows_equal("direct", expanding=True, expect_batch=True)
 
+    def test_mimo_training_rows_match_per_origin_compilation(self) -> None:
+        self._assert_rows_equal("mimo", expect_batch=True)
+
+    def test_dirmo_training_rows_match_per_origin_compilation(self) -> None:
+        self._assert_rows_equal(
+            "dirmo",
+            horizon=4,
+            output_chunk_length=2,
+            expect_batch=True,
+        )
+
     def test_recmo_safe_lags_use_batch_and_match(self) -> None:
         self._assert_rows_equal(
             "recmo",
@@ -215,6 +423,49 @@ class CompilerBatchDesignTest(unittest.TestCase):
             safe_lags=True,
             expect_batch=True,
         )
+
+    def test_global_k2_all_strategies_batch_match_row_without_series_mixing(self) -> None:
+        cases = (
+            ("recursive", None),
+            ("direct", None),
+            ("mimo", None),
+            ("recmo", 2),
+            ("dirrec", None),
+            ("dirmo", 2),
+            ("dirrecmo", 2),
+        )
+        origins = tuple(
+            cast(pd.Timestamp, pd.Timestamp(value)) for value in self.times[12:16]
+        )
+        for strategy, chunk in cases:
+            with self.subTest(strategy=strategy):
+                config = self._global_config(strategy, chunk)
+                row_builder = _RegistryDesignBuilder(
+                    config,
+                    SourceRegistry(config.data, self.root),
+                )
+                expected = tuple(
+                    row_builder.training_row(origin) for origin in origins
+                )
+                batch_builder = _RegistryDesignBuilder(
+                    config,
+                    SourceRegistry(config.data, self.root),
+                )
+                call_steps = tuple(
+                    coordinates[0].horizon_step
+                    for coordinates in batch_builder.plan.call_coordinates
+                )
+                self.assertTrue(batch_builder._can_batch_training(call_steps))
+                actual = batch_builder.training_rows(origins)
+
+                for actual_row, expected_row in zip(actual, expected):
+                    for actual_design, expected_design in zip(
+                        actual_row[0], expected_row[0]
+                    ):
+                        np.testing.assert_array_equal(actual_design, expected_design)
+                    np.testing.assert_array_equal(actual_row[1], expected_row[1])
+                self.assertEqual(batch_builder.series_ids, ("A", "B"))
+                self.assertEqual(batch_builder.feature_schema, row_builder.feature_schema)
 
     def test_training_row_does_not_retain_forecast_audit(self) -> None:
         config = self._config("recursive")

@@ -11,6 +11,12 @@ from forecasting_core.specs import ForecastConfigSpec
 from forecasting_core.specs.config import parse_model_config
 from model_ensemble.loader import parse_ensemble_document
 from model_ensemble.specs import EnsembleConfigSpec
+from model_forecasting.fit_service import (
+    _runtime_estimator_params,
+    _runtime_fit_worker_plan,
+    _runtime_scalar_fit_count,
+)
+from model_training.strategies import target_plan_for_config
 from scripts import generate_load_15min_matrix as matrix
 
 
@@ -115,26 +121,153 @@ class Load15minFullFactorialMatrixTest(unittest.TestCase):
                     sample["validation"]["schedule_mode"], schedule_mode
                 )
 
-    def test_profiled_lgbm_recursive_uses_bounded_window_thread_budget(self):
-        configs = matrix.build_expected_configs("aidc_load_15min_daily")
-        root = ROOT / "config/aidc_load_15min_daily"
-        target = configs[root / "route_A/baseline/lgbm_recursive.yaml"]
+    def test_stl_and_mstl_use_supported_polynomial_trend_forecast(self):
+        for scenario in matrix.SCENARIOS:
+            configs = matrix.build_expected_configs(scenario)
+            decomposition_payloads = [
+                payload["features"]["transformations"]["target"]["decomposition"]
+                for payload in configs.values()
+                if "target" in payload.get("features", {}).get("transformations", {})
+            ]
+            seasonal = [
+                payload
+                for payload in decomposition_payloads
+                if payload["method"] in {"stl", "mstl"}
+            ]
+            with self.subTest(scenario=scenario):
+                self.assertEqual(len(seasonal), 324)
+                self.assertEqual(
+                    {payload["trend_forecast"] for payload in seasonal},
+                    {"polynomial"},
+                )
 
+    def test_profiled_lgbm_topologies_use_verified_thread_budgets(self):
+        window_model = {
+            "window_parallel_workers": 4,
+            "model_thread_count": 2,
+        }
+        output_worker = {
+            "window_parallel_workers": 1,
+            "multi_output_n_jobs": 8,
+            "model_thread_count": 1,
+        }
+        expected_by_scenario = {
+            scenario: matrix.build_expected_configs(scenario)
+            for scenario in (
+                "aidc_load_15min_daily",
+                "aidc_load_15min_rolling",
+                "aidc_load_15min_short",
+            )
+        }
+        for scenario, configs in expected_by_scenario.items():
+            root = ROOT / "config" / scenario
+            for route in ("route_A", "route_B"):
+                for filename in (
+                    "lgbm_recursive.yaml",
+                    "lgbm_direct-pointwise.yaml",
+                    "lgbm_direct-pointwise-horizon.yaml",
+                ):
+                    with self.subTest(
+                        scenario=scenario,
+                        route=route,
+                        filename=filename,
+                    ):
+                        target = configs[root / route / "baseline" / filename]
+                        self.assertEqual(
+                            target["validation"]["performance"],
+                            window_model,
+                        )
+                for filename in ("lgbm_direct.yaml", "lgbm_mimo.yaml"):
+                    with self.subTest(
+                        scenario=scenario,
+                        route=route,
+                        filename=filename,
+                    ):
+                        target = configs[root / route / "baseline" / filename]
+                        self.assertEqual(
+                            target["validation"]["performance"],
+                            output_worker,
+                        )
+
+        daily = expected_by_scenario["aidc_load_15min_daily"]
+        daily_root = ROOT / "config/aidc_load_15min_daily"
+        for filename in (
+            "lgbm_dirrec.yaml",
+            "lgbm_dirmo.yaml",
+            "lgbm_dirrecmo.yaml",
+            "lgbm_recmo.yaml",
+        ):
+            path = daily_root / "route_A/baseline" / filename
+            with self.subTest(profile="p2", filename=filename):
+                self.assertEqual(
+                    daily[path]["validation"]["performance"],
+                    output_worker,
+                )
+        self.assertNotIn(
+            "performance",
+            daily[
+                daily_root / "route_B/baseline/lgbm_dirrec.yaml"
+            ]["validation"],
+        )
+
+        short = expected_by_scenario["aidc_load_15min_short"]
+        short_root = ROOT / "config/aidc_load_15min_short"
+        for route in ("route_A", "route_B"):
+            for filename in (
+                "lgbm_dirrec.yaml",
+                "lgbm_dirmo.yaml",
+                "lgbm_dirrecmo.yaml",
+            ):
+                path = short_root / route / "baseline" / filename
+                with self.subTest(profile="p3", route=route, filename=filename):
+                    self.assertEqual(
+                        short[path]["validation"]["performance"],
+                        output_worker,
+                    )
+            self.assertNotIn(
+                "performance",
+                short[
+                    short_root / route / "baseline/lgbm_recmo.yaml"
+                ]["validation"],
+            )
+
+        p4_paths = (
+            daily_root / "route_A/add_exogenous/lgbm_direct_holiday-weather.yaml",
+            daily_root / "route_A/add_endogenous_state/lgbm_direct.yaml",
+            daily_root / "route_AB/add_endogenous_joint/lgbm_direct.yaml",
+        )
+        for path in p4_paths:
+            with self.subTest(profile="p4", path=path):
+                payload = daily[path]
+                self.assertEqual(
+                    payload["validation"]["performance"],
+                    output_worker,
+                )
+                config = parse_model_config(payload, path)
+                self.assertEqual(_runtime_fit_worker_plan(config), (1, 8))
+                self.assertEqual(_runtime_estimator_params(config)["n_jobs"], 1)
+
+        cross_route_path = (
+            daily_root / "route_A/add_endogenous_cross_route/lgbm_recursive.yaml"
+        )
         self.assertEqual(
-            target["validation"]["performance"],
+            daily[cross_route_path]["validation"]["performance"],
             {
                 "window_parallel_workers": 2,
                 "model_thread_count": 4,
             },
         )
-        self.assertNotIn(
-            "performance",
-            configs[root / "route_B/baseline/lgbm_recursive.yaml"]["validation"],
+
+        p4_negative_controls = (
+            daily_root / "route_A/add_exogenous/lgbm_direct_holiday.yaml",
+            daily_root / "route_B/add_endogenous_state/lgbm_direct.yaml",
+            daily_root / "route_B/add_endogenous_cross_route/lgbm_recursive.yaml",
+            daily_root
+            / "route_A/add_decomposition/lgbm_direct-pointwise-horizon_decomp-linear.yaml",
         )
-        self.assertNotIn(
-            "performance",
-            configs[root / "route_A/baseline/lgbm_direct.yaml"]["validation"],
-        )
+        for path in p4_negative_controls:
+            with self.subTest(profile="p4-negative", path=path):
+                self.assertNotIn("performance", daily[path]["validation"])
 
     def test_pointwise_variants_have_distinct_horizon_encoding(self):
         configs = matrix.build_expected_configs("aidc_load_15min_daily")
@@ -147,6 +280,34 @@ class Load15minFullFactorialMatrixTest(unittest.TestCase):
         self.assertTrue(plain_direct["align_to_target"])
         self.assertFalse(plain_direct["horizon_feature"]["cyclical"])
         self.assertTrue(cyclic_direct["horizon_feature"]["cyclical"])
+
+    def test_pointwise_variants_resolve_one_shared_model(self):
+        configs = matrix.build_expected_configs("aidc_load_15min_daily")
+        baseline = ROOT / "config/aidc_load_15min_daily/route_A/baseline"
+
+        for filename, cyclical in (
+            ("lgbm_direct-pointwise.yaml", False),
+            ("lgbm_direct-pointwise-horizon.yaml", True),
+        ):
+            with self.subTest(filename=filename):
+                path = baseline / filename
+                config = parse_model_config(configs[path], path)
+                plan = target_plan_for_config(config)
+                direct = config.features.transformations["direct"]
+
+                self.assertEqual(plan.model_count, 1)
+                self.assertEqual(plan.model_indices, (0,) * config.problem.horizon)
+                self.assertEqual(_runtime_scalar_fit_count(config), 1)
+                self.assertEqual(
+                    direct["horizon_feature"]["cyclical"],
+                    cyclical,
+                )
+
+        standard_path = baseline / "lgbm_direct.yaml"
+        standard = parse_model_config(configs[standard_path], standard_path)
+        standard_plan = target_plan_for_config(standard)
+        self.assertEqual(standard_plan.model_count, standard.problem.horizon)
+        self.assertEqual(_runtime_scalar_fit_count(standard), standard.problem.horizon)
 
     def test_short_pointwise_uses_safe_target_lags(self):
         configs = matrix.build_expected_configs("aidc_load_15min_short")

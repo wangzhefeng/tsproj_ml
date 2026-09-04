@@ -320,7 +320,7 @@ def _decomposition_spec(variant: str) -> dict[str, Any]:
             "method": "stl",
             "periods": [96],
             "robust": True,
-            "trend_forecast": "seasonal_naive",
+            "trend_forecast": "polynomial",
             "damping": 0.98,
         }
     if variant == "mstl96-672":
@@ -328,7 +328,7 @@ def _decomposition_spec(variant: str) -> dict[str, Any]:
             "method": "mstl",
             "periods": [96, 672],
             "robust": True,
-            "trend_forecast": "seasonal_naive",
+            "trend_forecast": "polynomial",
             "damping": 0.98,
         }
     raise ValueError(f"unknown decomposition variant: {variant}")
@@ -421,16 +421,71 @@ def _payload(
 ) -> dict[str, Any]:
     strategy, _ = _strategy_spec(scenario, strategy_variant)
     validation = _validation(scenario)
-    if (
-        scenario == "aidc_load_15min_daily"
+    is_lgbm = model == "lgbm"
+    is_profiled_baseline = group == "baseline" and is_lgbm
+    source_names = {str(source.get("name", "")) for source in sources}
+    if is_profiled_baseline and strategy_variant in {
+        "recursive",
+        "direct-pointwise",
+        "direct-pointwise-horizon",
+    }:
+        validation["performance"] = {
+            "window_parallel_workers": 4,
+            "model_thread_count": 2,
+        }
+    elif is_profiled_baseline and (
+        strategy_variant in {"direct", "mimo"}
+        or (
+            scenario == "aidc_load_15min_short"
+            and strategy_variant in {"dirrec", "dirmo", "dirrecmo"}
+        )
+        or (
+            scenario == "aidc_load_15min_daily"
+            and output_route == "route_A"
+            and strategy_variant in {"dirrec", "dirmo", "dirrecmo", "recmo"}
+        )
+    ):
+        validation["performance"] = {
+            "window_parallel_workers": 1,
+            "multi_output_n_jobs": 8,
+            "model_thread_count": 1,
+        }
+    elif (
+        is_lgbm
+        and scenario == "aidc_load_15min_daily"
         and output_route == "route_A"
-        and group == "baseline"
-        and model == "lgbm"
+        and group == "add_endogenous_cross_route"
         and strategy_variant == "recursive"
     ):
         validation["performance"] = {
             "window_parallel_workers": 2,
             "model_thread_count": 4,
+        }
+    elif is_lgbm and (
+        (
+            scenario == "aidc_load_15min_daily"
+            and output_route == "route_A"
+            and group == "add_exogenous"
+            and strategy_variant == "direct"
+            and {"chinese_holiday", "weather"}.issubset(source_names)
+        )
+        or (
+            scenario == "aidc_load_15min_daily"
+            and output_route == "route_A"
+            and group == "add_endogenous_state"
+            and strategy_variant == "direct"
+        )
+        or (
+            scenario == "aidc_load_15min_daily"
+            and output_route == "route_AB"
+            and group == "add_endogenous_joint"
+            and strategy_variant == "direct"
+        )
+    ):
+        validation["performance"] = {
+            "window_parallel_workers": 1,
+            "multi_output_n_jobs": 8,
+            "model_thread_count": 1,
         }
     return {
         "schema_version": 2,

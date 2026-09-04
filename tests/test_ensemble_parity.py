@@ -31,6 +31,7 @@ from model_forecasting.runtime import (
     persist_model_bundle,
     run_canonical_config,
 )
+from model_forecasting.resource_planner import plan_ensemble_resources
 from forecasting_core.specs import (
     ColumnSpec,
     DataSourceSpec,
@@ -73,6 +74,7 @@ PARITY_ROOT = Path("/tmp/tsproj_parity_lock")
 RUNTIME_SERVICES = EnsembleRuntimeServices(
     runner_factory=CanonicalBaseModelRunner,
     persist_bundle=persist_model_bundle,
+    plan_resources=plan_ensemble_resources,
 )
 
 

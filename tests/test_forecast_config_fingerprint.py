@@ -118,7 +118,7 @@ class CanonicalConfigFingerprintTest(unittest.TestCase):
                 "stride_steps": 4,
                 "performance": {
                     "window_parallel_workers": 1,
-                    "step_logging": True,
+                    "total_thread_limit": 2,
                 },
             }
         )
@@ -129,8 +129,8 @@ class CanonicalConfigFingerprintTest(unittest.TestCase):
                 "train_window_steps": 24,
                 "history_steps": 48,
                 "performance": {
-                    "step_logging": False,
                     "window_parallel_workers": 8,
+                    "total_thread_limit": 8,
                 },
             }
         )

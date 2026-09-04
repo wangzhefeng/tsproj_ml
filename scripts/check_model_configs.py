@@ -31,6 +31,7 @@ from typing import Any
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from config.config_loader import is_model_yaml, load_yaml_config  # noqa: E402
+from decomposition import TREND_FORECAST_MODES  # noqa: E402
 from feature_engineering.compiler import FeatureCompiler  # noqa: E402
 from forecasting_core.specs import ForecastConfigSpec  # noqa: E402
 from model_ensemble.specs import EnsembleConfigSpec  # noqa: E402
@@ -168,10 +169,9 @@ _CANONICAL_NESTED_FIELDS = {
         "window_parallel_workers",
         "multi_output_n_jobs",
         "quantile_parallel_workers",
-        "ensemble_parallel_workers",
         "model_thread_count",
-        "step_logging",
-        "forecast_log_interval",
+        "total_thread_limit",
+        "memory_limit_bytes",
     },
     "output": {
         "identity",
@@ -438,6 +438,14 @@ def _check_target_transform(value: Any) -> list[str]:
             problems.append(f"{path}.decomposition stl 需要且只能配置一个周期")
         if method == "mstl" and len(periods) < 2:
             problems.append(f"{path}.decomposition mstl 至少需要两个周期")
+        trend_forecast = str(
+            decomposition.get("trend_forecast", "polynomial")
+        ).lower()
+        if trend_forecast not in TREND_FORECAST_MODES:
+            problems.append(
+                f"{path}.decomposition.trend_forecast 不合法: "
+                f"{trend_forecast!r}"
+            )
         if decomposition.get("periods"):
             problems.extend(
                 _check_positive_integer_sequence(

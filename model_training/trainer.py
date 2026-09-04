@@ -21,8 +21,8 @@ from model_training.strategies import (
     AdapterPredictor,
     CanonicalStrategyArtifact,
     StrategyModelGroupArtifact,
-    StrategyTargetPlan,
     TargetCoordinate,
+    target_plan_for_config,
 )
 
 # global variable
@@ -75,11 +75,7 @@ class CanonicalTrainer:
         self.capabilities = capabilities
         self.feature_schema = normalized_schema
         self.probabilistic_mode = mode
-        self.target_plan = StrategyTargetPlan.from_spec(
-            config.strategy,
-            config.problem.targets,
-            config.problem.horizon,
-        )
+        self.target_plan = target_plan_for_config(config)
 
     def train(
         self,

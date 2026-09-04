@@ -12,6 +12,7 @@ from model_training.strategies import (
     CanonicalStrategyArtifact,
     TargetCoordinate,
     get_standard_executor,
+    target_plan_for_config,
 )
 from forecasting_core.tensors import (
     MarginalQuantileForecastTensor,
@@ -33,13 +34,19 @@ class CanonicalForecaster:
             raise TypeError("config must be a ForecastConfigSpec")
         if not isinstance(artifact, CanonicalStrategyArtifact):
             raise TypeError("artifact must be a CanonicalStrategyArtifact")
-        if artifact.target_plan.strategy_name is not config.strategy.name:
+        strategy = config.strategy
+        if strategy is None:
+            raise ValueError("CanonicalForecaster requires a strategy config")
+        if artifact.target_plan.strategy_name is not strategy.name:
             raise ValueError("artifact strategy does not match canonical config")
         if artifact.H != config.problem.horizon:
             raise ValueError("artifact horizon does not match canonical config")
         if artifact.target_plan.targets != config.problem.targets:
             raise ValueError("artifact targets do not match canonical config")
+        if artifact.target_plan != target_plan_for_config(config):
+            raise ValueError("artifact target plan does not match canonical config")
         self.config = config
+        self.strategy = strategy
         self.artifact = artifact
 
     def predict(
@@ -71,9 +78,9 @@ class CanonicalForecaster:
             raise ValueError(
                 f"canonical forecast requires H={self.artifact.H} times"
             )
-        executor_type = get_standard_executor(self.config.strategy)
+        executor_type = get_standard_executor(self.strategy)
         executor = executor_type(
-            self.config.strategy,
+            self.strategy,
             self.artifact.target_plan,
             self.artifact.predictors,
         )

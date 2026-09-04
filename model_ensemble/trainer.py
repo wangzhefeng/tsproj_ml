@@ -32,6 +32,38 @@ METHOD_IMPLEMENTATIONS: dict[str, Any] = {
 }
 
 
+def _quantile_levels_for_config(
+    config: EnsembleConfigSpec,
+) -> tuple[float, ...] | None:
+    mode = str(config.probabilistic.get("mode", "point"))
+    if mode != "quantile":
+        return None
+    if config.method.name == "stacking":
+        raise ValueError(
+            "stacking is point-only in the first version; quantile "
+            "stacking directly RAISEs (v4 §3)"
+        )
+    return tuple(float(level) for level in config.probabilistic["quantiles"])
+
+
+def generate_oof_for_config(
+    config: EnsembleConfigSpec,
+    runners: Mapping[str, BaseModelRunner],
+    *,
+    outer_cutoff_origin: pd.Timestamp | None = None,
+) -> OOFPredictionArtifact:
+    """Generate member OOF predictions using one ensemble config contract."""
+    return generate_oof(
+        runners,
+        fold_count=config.oof.fold_count,
+        stride_steps=config.oof.stride_steps,
+        train_window_steps=config.oof.train_window_steps,
+        gap_steps=config.oof.gap_steps,
+        quantile_levels=_quantile_levels_for_config(config),
+        outer_cutoff_origin=outer_cutoff_origin,
+    )
+
+
 @dataclass(frozen=True, slots=True)
 class MemberAuditScores:
     """Per-member OOF quality: RMSE/MAE per target (v4 §8.1 audit outputs)."""
@@ -96,26 +128,12 @@ def fit_ensemble(
         raise ValueError("runners do not match the ensemble member references")
 
     first = runners[names[0]]
-    quantile_levels = None
-    mode = str(config.probabilistic.get("mode", "point"))
-    if mode == "quantile":
-        quantile_levels = tuple(
-            float(level) for level in config.probabilistic["quantiles"]
-        )
-        if method_name == "stacking":
-            raise ValueError(
-                "stacking is point-only in the first version; quantile "
-                "stacking directly RAISEs (v4 §3)"
-            )
+    quantile_levels = _quantile_levels_for_config(config)
 
     if oof is None:
-        oof = generate_oof(
+        oof = generate_oof_for_config(
+            config,
             runners,
-            fold_count=config.oof.fold_count,
-            stride_steps=config.oof.stride_steps,
-            train_window_steps=config.oof.train_window_steps,
-            gap_steps=config.oof.gap_steps,
-            quantile_levels=quantile_levels,
             outer_cutoff_origin=outer_cutoff_origin,
         )
     folds = oof.folds
@@ -207,4 +225,4 @@ def fit_ensemble(
     return ens_artifact, oof, final_values, member_bundles, audit
 
 
-__all__ = ["fit_ensemble", "MemberAuditScores"]
+__all__ = ["fit_ensemble", "generate_oof_for_config", "MemberAuditScores"]

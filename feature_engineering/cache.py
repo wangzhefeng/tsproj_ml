@@ -1,23 +1,75 @@
 """Content-addressed cache for compiled canonical training designs."""
 from __future__ import annotations
 
+import errno
 import hashlib
 import inspect
 import json
 import os
 import pickle
 import tempfile
+import threading
+from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Mapping
+from time import sleep
+from typing import Any, BinaryIO, Iterator, Mapping, cast
+
+if os.name == "nt":
+    import msvcrt as _process_lock_backend
+else:
+    import fcntl as _process_lock_backend
 
 from forecasting_core.specs import ForecastConfigSpec
 
 
-COMPILED_CACHE_SCHEMA_VERSION = 1
+COMPILED_CACHE_SCHEMA_VERSION = 2
 COMPILED_CACHE_DIR_NAME = "_compiled_features"
 COMPILED_PAYLOAD_FILE = "compiled.pkl"
 COMPILED_METADATA_FILE = "metadata.json"
 _REQUIRED_FILES = (COMPILED_PAYLOAD_FILE, COMPILED_METADATA_FILE)
+_PROCESS_LOCKS: dict[Path, threading.Lock] = {}
+_PROCESS_LOCKS_GUARD = threading.Lock()
+
+
+def _acquire_process_lock(lock_file: BinaryIO) -> None:
+    if os.name != "nt":
+        _process_lock_backend.flock(
+            lock_file.fileno(),
+            _process_lock_backend.LOCK_EX,
+        )
+        return
+    lock_file.seek(0, os.SEEK_END)
+    if lock_file.tell() == 0:
+        lock_file.write(b"\0")
+        lock_file.flush()
+    lock_file.seek(0)
+    while True:
+        try:
+            _process_lock_backend.locking(
+                lock_file.fileno(),
+                _process_lock_backend.LK_NBLCK,
+                1,
+            )
+            return
+        except OSError as exc:
+            if exc.errno not in {errno.EACCES, errno.EDEADLK}:
+                raise
+            sleep(0.05)
+
+
+def _release_process_lock(lock_file: BinaryIO) -> None:
+    if os.name != "nt":
+        _process_lock_backend.flock(
+            lock_file.fileno(),
+            _process_lock_backend.LOCK_UN,
+        )
+        return
+    lock_file.seek(0)
+    _process_lock_backend.locking(
+        lock_file.fileno(),
+        _process_lock_backend.LK_UNLCK,
+        1,
+    )
 
 
 def file_sha256(path: str | Path) -> str:
@@ -66,11 +118,29 @@ def _generator_hashes(
                 f"no generator registered for compiled cache source {source.name!r}"
             )
         try:
-            implementation = inspect.getsource(generator).encode("utf-8")
+            callable_implementation = inspect.getsource(generator)
         except (OSError, TypeError):
-            implementation = (
+            callable_implementation = (
                 f"{generator.__module__}.{generator.__qualname__}"
-            ).encode("utf-8")
+            )
+        try:
+            source_file = inspect.getsourcefile(generator)
+        except TypeError:
+            source_file = None
+        module_hash = (
+            file_sha256(source_file)
+            if source_file is not None and Path(source_file).is_file()
+            else None
+        )
+        implementation = json.dumps(
+            {
+                "callable": callable_implementation,
+                "module_sha256": module_hash,
+            },
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
         hashes[source.name] = hashlib.sha256(implementation).hexdigest()
     return hashes
 
@@ -84,7 +154,35 @@ def _environment_hashes(base_dir: Path) -> dict[str, str]:
     return hashes
 
 
-def compute_compiled_fingerprint(
+def _raw_feature_payload(config: ForecastConfigSpec) -> dict[str, object]:
+    payload = config.features.canonical_payload()
+    payload.pop("selection", None)
+    transformations = dict(
+        cast(Mapping[str, Any], payload["transformations"])
+    )
+    transformations.pop("feature_scaling", None)
+    transformations.pop("target", None)
+    payload["transformations"] = transformations
+    return payload
+
+
+def _raw_validation_payload(config: ForecastConfigSpec) -> dict[str, Any]:
+    validation = config.validation.canonical_payload()
+    raw_fields = (
+        "schedule_mode",
+        "horizon_mode",
+        "history_steps",
+        "train_window_steps",
+        "fold_count",
+        "stride_steps",
+        "train_window_days",
+        "stride_months",
+        "training_scope",
+    )
+    return {field: validation[field] for field in raw_fields if field in validation}
+
+
+def compute_raw_design_fingerprint(
     config: ForecastConfigSpec,
     *,
     base_dir: str | Path,
@@ -92,13 +190,16 @@ def compute_compiled_fingerprint(
     generators: Mapping[str, Any],
 ) -> str:
     root = Path(base_dir).resolve()
-    backtest_geometry = config.validation.canonical_payload()
-    backtest_geometry.pop("performance", None)
+    if config.strategy is None:
+        raise ValueError("raw design fingerprint requires a strategy")
     payload = {
         "schema_version": COMPILED_CACHE_SCHEMA_VERSION,
-        "config_fingerprint": config.fingerprint(),
+        "problem": config.problem.canonical_payload(),
+        "data": config.data.canonical_payload(),
+        "features": _raw_feature_payload(config),
+        "strategy": config.strategy.canonical_payload(),
         "forecast_origin": str(origin),
-        "backtest_geometry": backtest_geometry,
+        "validation": _raw_validation_payload(config),
         "source_hashes": _source_hashes(config, root),
         "generator_hashes": _generator_hashes(config, generators),
         "environment_hashes": _environment_hashes(root),
@@ -114,6 +215,25 @@ def compute_compiled_fingerprint(
 
 def cache_dir(results_root: str | Path, fingerprint: str) -> Path:
     return Path(results_root) / COMPILED_CACHE_DIR_NAME / fingerprint
+
+
+@contextmanager
+def raw_design_cache_lock(
+    results_root: str | Path,
+    fingerprint: str,
+) -> Iterator[None]:
+    """Serialize same-key cache misses across threads and processes."""
+    directory = cache_dir(results_root, fingerprint).resolve()
+    directory.mkdir(parents=True, exist_ok=True)
+    lock_path = directory / ".lock"
+    with _PROCESS_LOCKS_GUARD:
+        process_lock = _PROCESS_LOCKS.setdefault(lock_path, threading.Lock())
+    with process_lock, lock_path.open("a+b") as lock_file:
+        _acquire_process_lock(lock_file)
+        try:
+            yield
+        finally:
+            _release_process_lock(lock_file)
 
 
 def _atomic_write(path: Path, payload: bytes) -> None:
@@ -184,8 +304,9 @@ __all__ = [
     "COMPILED_CACHE_DIR_NAME",
     "COMPILED_CACHE_SCHEMA_VERSION",
     "cache_dir",
-    "compute_compiled_fingerprint",
+    "compute_raw_design_fingerprint",
     "file_sha256",
     "load_compiled_cache",
+    "raw_design_cache_lock",
     "save_compiled_cache",
 ]

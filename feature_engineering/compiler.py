@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from typing import Any, cast
+from typing import Any, Literal, cast
 import warnings
 
 import numpy as np
@@ -45,6 +45,9 @@ class VisibilityProof:
     horizon_step: int
     available_at: pd.Timestamp
     provider: str | None = None
+
+
+ProofMode = Literal["materialize", "validate_only"]
 
 
 class CompiledFeatures:
@@ -303,12 +306,15 @@ class FeatureCompiler:
         *,
         horizon_steps: Sequence[int] | None = None,
         visibility_cutoffs: Sequence[pd.Timestamp] | None = None,
+        proof_mode: ProofMode = "materialize",
     ) -> tuple[CompiledFeatures, ...]:
-        """批量编译无 provider 依赖的 origins，保持逐行审计合同不变。
+        """批量编译无 provider 依赖的 origins。
 
         lag/known-future 按时间数组定位，rolling/difference 只对共享历史计算
         一次，再广播到该 origin 的全部 horizon 行。依赖逐步 provider 的策略与
-        暂未批量化的历史变换显式回退 :meth:`compile`。
+        暂未批量化的历史变换显式回退 :meth:`compile`。默认 materialize 模式
+        保持逐行审计合同；内部监督训练可用 validate-only 做同边界列式校验而不
+        返回 proof 对象。
         """
         if len(information_sets) != len(requests):
             raise ValueError(
@@ -318,6 +324,8 @@ class FeatureCompiler:
             raise ValueError(
                 "compile_batch requires one visibility cutoff per request"
             )
+        if proof_mode not in {"materialize", "validate_only"}:
+            raise ValueError(f"unsupported proof_mode: {proof_mode!r}")
         batch_cutoffs = (
             tuple(visibility_cutoffs)
             if visibility_cutoffs is not None
@@ -342,6 +350,10 @@ class FeatureCompiler:
                 raise ValueError("feature compilation requires target_access='history_only'")
 
         if self._batch_requires_fallback(requests, selected_steps):
+            if proof_mode == "validate_only":
+                raise ValueError(
+                    "proof_mode='validate_only' requires vectorized batch compilation"
+                )
             warnings.warn(
                 "compile_batch is falling back to per-request compile because the "
                 "strategy or feature set requires sequential history/provider semantics",
@@ -387,6 +399,7 @@ class FeatureCompiler:
                         request,
                         steps,
                         cutoff,
+                        proof_mode,
                         role_frames=cached_frames[0],
                         static_frames=cached_frames[1],
                     )
@@ -476,6 +489,7 @@ class FeatureCompiler:
         request: InformationSetRequest,
         selected_steps: tuple[int, ...],
         visibility_cutoff: pd.Timestamp | None,
+        proof_mode: ProofMode,
         *,
         role_frames: dict[str, dict[str, Any]],
         static_frames: dict[str, pd.DataFrame],
@@ -517,6 +531,7 @@ class FeatureCompiler:
             "static_frames": static_frames,
             "columns": frame_data,
             "proof_columns": {},
+            "proof_mode": proof_mode,
             "visibility_cutoff": visibility_cutoff,
         }
 
@@ -1288,14 +1303,35 @@ class FeatureCompiler:
         normalized_source_times = (
             source_times
             if len(source_times) == 0 or source_times[0] is None
-            else tuple(pd.DatetimeIndex(source_times))
+            else pd.DatetimeIndex(source_times)
         )
         item["proof_columns"][feature_name] = (
             source_name,
             role,
             normalized_source_times,
-            tuple(pd.DatetimeIndex(available_at)),
+            pd.DatetimeIndex(available_at),
         )
+
+    @staticmethod
+    def _validate_batch_proof_columns(
+        proof_columns: Mapping[str, tuple[Any, Any, Any, Any]],
+        feature_names: Sequence[str],
+        forecast_origin: pd.Timestamp,
+    ) -> None:
+        """列式校验可见时间，不构造逐行 ``VisibilityProof``。"""
+        for feature_name in feature_names:
+            _source_name, _role, _source_times, available_at = proof_columns[
+                feature_name
+            ]
+            available_index = pd.DatetimeIndex(available_at)
+            if available_index.hasnans:
+                raise ValueError(
+                    f"visibility proof for {feature_name!r} requires available_at"
+                )
+            if bool((available_index > forecast_origin).any()):
+                raise ValueError(
+                    f"feature {feature_name!r} is available after forecast_origin"
+                )
 
     def _finish_batch_item(self, item: dict[str, Any]) -> CompiledFeatures:
         columns = cast(dict[str, Any], item["columns"])
@@ -1323,29 +1359,30 @@ class FeatureCompiler:
         proofs = []
         target_times = cast(pd.DatetimeIndex, item["target_times"])
         horizon_values = np.asarray(columns["horizon_step"], dtype=np.int64)
-        for row_index, (target_time, horizon_step) in enumerate(
-            zip(target_times, horizon_values)
-        ):
-            for feature_name in feature_names:
-                source_name, role, source_times, available_at = item[
-                    "proof_columns"
-                ][feature_name]
-                # compile() 的 derived proof 集合跨行累积，因此派生特征只在
-                # 第一行登记一次；批路径必须保留这一既有审计布局。
-                if role == "derived" and row_index > 0:
-                    continue
-                proofs.append(
-                    VisibilityProof(
-                        feature_name=feature_name,
-                        source_name=source_name,
-                        role=role,
-                        target_time=target_time,
-                        source_time=source_times[row_index],
-                        forecast_origin=request.forecast_origin,
-                        horizon_step=int(horizon_step),
-                        available_at=available_at[row_index],
+        if item["proof_mode"] == "materialize":
+            for row_index, (target_time, horizon_step) in enumerate(
+                zip(target_times, horizon_values)
+            ):
+                for feature_name in feature_names:
+                    source_name, role, source_times, available_at = item[
+                        "proof_columns"
+                    ][feature_name]
+                    # compile() 的 derived proof 集合跨行累积，因此派生特征只在
+                    # 第一行登记一次；批路径必须保留这一既有审计布局。
+                    if role == "derived" and row_index > 0:
+                        continue
+                    proofs.append(
+                        VisibilityProof(
+                            feature_name=feature_name,
+                            source_name=source_name,
+                            role=role,
+                            target_time=target_time,
+                            source_time=source_times[row_index],
+                            forecast_origin=request.forecast_origin,
+                            horizon_step=int(horizon_step),
+                            available_at=available_at[row_index],
+                        )
                     )
-                )
         normalized_cutoff = pd.Timestamp(
             request.forecast_origin
             if item["visibility_cutoff"] is None
@@ -1356,7 +1393,14 @@ class FeatureCompiler:
         cutoff = cast(pd.Timestamp, normalized_cutoff)
         if cutoff < request.forecast_origin:
             raise ValueError("visibility_cutoff must be at or after forecast_origin")
-        self._validate_visibility_proofs(proofs, cutoff)
+        if item["proof_mode"] == "materialize":
+            self._validate_visibility_proofs(proofs, cutoff)
+        else:
+            self._validate_batch_proof_columns(
+                item["proof_columns"],
+                feature_names,
+                cutoff,
+            )
         return CompiledFeatures(
             frame=frame,
             schema=FeatureSchema(

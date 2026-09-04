@@ -10,10 +10,12 @@ from __future__ import annotations
 import json
 from dataclasses import replace
 from pathlib import Path
+from time import perf_counter
 from typing import Any, Mapping
 
 import numpy as np
 import pandas as pd
+from threadpoolctl import threadpool_limits
 
 from model_ensemble import cache as oof_cache
 from model_ensemble.loader import (
@@ -25,7 +27,7 @@ from model_ensemble.contracts import BaseModelRunner, EnsembleRuntimeServices
 from model_ensemble.artifacts import method_artifact_audit_payload
 from model_ensemble.predictor import combine_members
 from model_ensemble.specs import EnsembleConfigSpec, EnsembleSpecError
-from model_ensemble.trainer import fit_ensemble
+from model_ensemble.trainer import fit_ensemble, generate_oof_for_config
 from model_testing.backtest import resolve_origin
 from data_loading import SourceRegistry
 from model_forecasting.results import backtest_tensors_to_long, write_forecast_results
@@ -179,11 +181,18 @@ def run_ensemble_config(
     services: EnsembleRuntimeServices,
 ) -> Any:
     """Execute one reference-based ensemble configuration end to end."""
+    lifecycle_started = perf_counter()
+    raw_design_started = perf_counter()
     member_root = Path(base_dir).resolve()
     source_root = (
         member_root
         if source_base_dir is None
         else Path(source_base_dir).resolve()
+    )
+    cache_root = Path(
+        output_root
+        if output_root is not None
+        else str(config.output.get("results_root", "results"))
     )
     resolved = resolve_members(config, base_dir=member_root)
     validate_member_sources(config, resolved)
@@ -206,6 +215,7 @@ def run_ensemble_config(
             member_config,
             registry,
             resolve_origin(registry, config.validation.get("forecast_origin")),
+            compiled_cache_root=cache_root,
         )
         for source in member_config.data.sources:
             if source.source_type != "file":
@@ -221,16 +231,23 @@ def run_ensemble_config(
                     f"{member.name}:{source.name}:{path_role}"
                 ] = oof_cache.file_sha256(source_root / raw_path)
 
-    ens_payload = {
-        "members": [member.payload() for member in config.members],
-        "method": config.method.payload(),
+    resource_workload, resource_budget, execution_plan = services.plan_resources(
+        config,
+        runners,
+    )
+    stage_wall_seconds = {
+        "raw_design": perf_counter() - raw_design_started,
+    }
+
+    oof_semantics_payload = {
+        "member_order": [member.name for member in config.members],
         "problem": config.problem.canonical_payload(),
         "probabilistic": config.probabilistic.canonical_payload(),
     }
     oof_payload = config.oof.payload()
     fingerprint = oof_cache.compute_oof_fingerprint(
         members=member_fingerprints,
-        ensemble_payload=ens_payload,
+        ensemble_payload=oof_semantics_payload,
         oof_payload=oof_payload,
         source_hashes=source_hashes,
     )
@@ -239,26 +256,28 @@ def run_ensemble_config(
         config,
         output_root,
     )
-    cache_root = Path(
-        output_root
-        if output_root is not None
-        else str(config.output.get("results_root", "results"))
-    )
+    ensemble_fit_started = perf_counter()
     oof = None
+    oof_cache_hit = False
     if use_oof_cache:
-        try:
-            oof = oof_cache.load_oof_cache(cache_root, fingerprint)
-        except FileNotFoundError:
-            oof = None
-        except ValueError:
-            raise
+        oof, oof_cache_hit = oof_cache.get_or_create_oof_cache(
+            cache_root,
+            fingerprint,
+            lambda: generate_oof_for_config(config, runners),
+        )
 
-    artifact, oof, final_values, member_bundles, audit = fit_ensemble(
-        config,
-        runners,
-        oof=oof,
-        outer_cutoff_origin=None,
+    member_model_threads = max(
+        runner.execution_plan.model_threads for runner in runners.values()
     )
+    with threadpool_limits(limits=member_model_threads):
+        artifact, oof, final_values, member_bundles, audit = fit_ensemble(
+            config,
+            runners,
+            oof=oof,
+            outer_cutoff_origin=None,
+        )
+    stage_wall_seconds["ensemble_fit"] = perf_counter() - ensemble_fit_started
+    persist_started = perf_counter()
     artifact = replace(
         artifact,
         oof_fingerprint=fingerprint,
@@ -268,10 +287,6 @@ def run_ensemble_config(
         },
         config_fingerprint=config.fingerprint(),
     )
-    if use_oof_cache:
-        oof_for_cache = replace(oof, oof_fingerprint=fingerprint)
-        oof_cache.save_oof_cache(cache_root, oof_for_cache)
-
     combined = combine_members(artifact, final_values)
     first_runner = runners[config.members[0].name]
     forecast_times = first_runner.forecast_times(first_runner.origin)
@@ -355,6 +370,22 @@ def run_ensemble_config(
         )
         forecast_history = None
     write_forecast_results(forecast_dir, forecast, history=forecast_history)
+    stage_wall_seconds["persist"] = perf_counter() - persist_started
+    stage_wall_seconds["total"] = perf_counter() - lifecycle_started
+    runtime_resources = {
+        "workload": resource_workload.payload(),
+        "budget": resource_budget.payload(),
+        "execution_plan": execution_plan.payload(),
+        "member_execution_plans": {
+            name: runner.execution_plan.payload()
+            for name, runner in runners.items()
+        },
+        "cache": {
+            "oof_hit": oof_cache_hit,
+            "oof_fingerprint": fingerprint,
+        },
+        "stage_wall_seconds": stage_wall_seconds,
+    }
     forecast_dir.mkdir(parents=True, exist_ok=True)
     (forecast_dir / "resolved_config.json").write_text(
         json.dumps(
@@ -362,7 +393,9 @@ def run_ensemble_config(
                 **config.canonical_payload(),
                 "config_fingerprint": config.fingerprint(),
                 "runtime": {
+                    "resources": runtime_resources,
                     "oof_fingerprint": fingerprint,
+                    "oof_cache_hit": oof_cache_hit,
                     "member_order": list(artifact.member_order),
                     "folds": list(oof.folds),
                 },
@@ -399,7 +432,9 @@ def run_ensemble_config(
                 "result_schema_version": 2,
                 "method": config.method.name,
                 "oof_fingerprint": fingerprint,
+                "oof_cache_hit": oof_cache_hit,
                 "folds": list(oof.folds),
+                "runtime_resources": runtime_resources,
             },
             ensure_ascii=False,
             indent=2,
@@ -416,6 +451,10 @@ def run_ensemble_config(
         "forecast_dir": forecast_dir,
         "oof": oof,
         "oof_fingerprint": fingerprint,
+        "oof_cache_hit": oof_cache_hit,
+        "resource_workload": resource_workload,
+        "resource_budget": resource_budget,
+        "execution_plan": execution_plan,
         "member_bundles": member_bundles,
         "member_final_values": final_values,
         "combined_values": combined,

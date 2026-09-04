@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
-from typing import Any, Mapping
+from typing import Any
 
 import numpy as np
 import pandas as pd
 
 from forecasting_core.artifacts import MarginalForecastDistribution
+from forecasting_core.runtime_resources import RuntimeExecutionPlan
 from forecasting_core.specs import ForecastConfigSpec, TargetAdapter
 from forecasting_core.tensors import PointForecastTensor
 from model_forecasting.design import _RegistryDesignBuilder
@@ -23,6 +24,11 @@ from model_training.estimators import (
     supports_native_multi_quantile,
 )
 from model_training.trainer import CanonicalTrainer
+from model_forecasting.resource_planner import (
+    build_runtime_workload,
+    plan_runtime_execution,
+    runtime_estimator_params as _planned_estimator_params,
+)
 from probabilistic.training import CanonicalMarginalQuantileTrainer
 
 
@@ -108,127 +114,38 @@ def _restore_prediction(
     raise TypeError(f"unsupported canonical prediction type: {type(prediction).__name__}")
 
 
-_THREAD_PARAM_BY_MODEL = {
-    "lgb": "n_jobs",
-    "lightgbm": "n_jobs",
-    "xgb": "n_jobs",
-    "xgboost": "n_jobs",
-    "rf": "n_jobs",
-    "randomforest": "n_jobs",
-    "cat": "thread_count",
-    "catboost": "thread_count",
-}
-
-
-_DEFAULT_OUTPUT_WORKERS_BY_MODEL = {
-    "lgb": 4,
-    "lightgbm": 4,
-    "xgb": 4,
-    "xgboost": 4,
-    "cat": 2,
-    "catboost": 2,
-    "rf": 2,
-    "randomforest": 2,
-    "ridge": 4,
-    "enet": 4,
-    "elasticnet": 4,
-    "lasso": 4,
-    "qr": 2,
-    "quantileregressor": 2,
-}
-
-
 def _runtime_scalar_fit_count(config: ForecastConfigSpec) -> int:
-    if config.strategy is None:
-        return 1
-    resolved = config.strategy.resolve(config.problem.horizon)
-    count = resolved.model_count
-    if config.estimator.target_adapter is TargetAdapter.INDEPENDENT:
-        count *= resolved.steps_per_call * len(config.problem.targets)
-    return count
+    """Compatibility probe: logical scalar positions in one point fit."""
+    return build_runtime_workload(
+        config,
+        training_rows=0,
+        feature_count=1,
+        design_bytes=0,
+    ).logical_output_count
+
+
+def _runtime_execution_plan(config: ForecastConfigSpec) -> RuntimeExecutionPlan:
+    """Compatibility helper for tests and narrow callers without loaded arrays."""
+    workload = build_runtime_workload(
+        config,
+        training_rows=0,
+        feature_count=1,
+        design_bytes=0,
+    )
+    return plan_runtime_execution(config, workload)
 
 
 def _runtime_estimator_params(config: ForecastConfigSpec) -> dict[str, Any]:
-    """Resolve non-semantic estimator threading controls for one fit."""
-    params = dict(config.estimator.params)
-    performance = config.validation.get("performance", {})
-    if not isinstance(performance, Mapping):
-        raise TypeError("validation.performance must be a mapping")
-    configured = performance.get("model_thread_count")
-    normalized_model = config.estimator.model_type.strip().lower()
-    thread_param = _THREAD_PARAM_BY_MODEL.get(normalized_model)
-
-    if configured is None:
-        if (
-            _runtime_scalar_fit_count(config) > 1
-            and thread_param is not None
-            and thread_param not in params
-        ):
-            # 多输出/多 horizon 策略由外层保序任务池并行；每个子模型
-            # 固定单线程，避免 estimator 内外层线程乘法放大。
-            params[thread_param] = 1
-        return params
-
-    if isinstance(configured, bool) or not isinstance(configured, int) or configured <= 0:
-        raise ValueError("validation.performance.model_thread_count must be positive")
-    if thread_param is None:
-        raise ValueError(
-            "validation.performance.model_thread_count is unsupported for "
-            f"model_type {normalized_model!r}"
-        )
-    existing = params.get(thread_param)
-    if existing is not None and existing != configured:
-        raise ValueError(
-            f"estimator.params.{thread_param} conflicts with "
-            "validation.performance.model_thread_count"
-        )
-    params[thread_param] = configured
-    return params
+    return _planned_estimator_params(config, _runtime_execution_plan(config))
 
 
 def _runtime_model_workers(config: ForecastConfigSpec) -> int:
-    """Resolve workers for independent strategy estimator fit tasks."""
-    if config.strategy is None:
-        return 1
-    task_count = _runtime_scalar_fit_count(config)
-    performance = config.validation.get("performance", {})
-    if not isinstance(performance, Mapping):
-        raise TypeError("validation.performance must be a mapping")
-    configured = performance.get("multi_output_n_jobs")
-    if configured is None:
-        normalized_model = config.estimator.model_type.strip().lower()
-        default_workers = _DEFAULT_OUTPUT_WORKERS_BY_MODEL.get(normalized_model, 1)
-        return min(default_workers, task_count)
-    if isinstance(configured, bool) or not isinstance(configured, int) or configured <= 0:
-        raise ValueError("validation.performance.multi_output_n_jobs must be positive")
-    return min(configured, task_count)
+    return _runtime_execution_plan(config).output_workers
 
 
 def _runtime_fit_worker_plan(config: ForecastConfigSpec) -> tuple[int, int]:
-    """Resolve mutually exclusive quantile-level and estimator-output workers."""
-    output_workers = _runtime_model_workers(config)
-    if str(config.probabilistic.get("mode", "point")) != "quantile":
-        return 1, output_workers
-    if supports_native_multi_quantile(config.estimator.model_type):
-        return 1, 1
-
-    levels = tuple(config.probabilistic.get("quantiles", ()))
-    if not levels:
-        raise ValueError("quantile worker planning requires a nonempty quantile grid")
-    performance = config.validation.get("performance", {})
-    if not isinstance(performance, Mapping):
-        raise TypeError("validation.performance must be a mapping")
-    configured = performance.get("quantile_parallel_workers")
-    if configured is not None:
-        if isinstance(configured, bool) or not isinstance(configured, int) or configured <= 0:
-            raise ValueError(
-                "validation.performance.quantile_parallel_workers must be positive"
-            )
-        level_workers = min(configured, len(levels))
-        return level_workers, 1 if level_workers > 1 else output_workers
-    if output_workers > 1:
-        return 1, output_workers
-    return min(4, len(levels)), 1
+    execution_plan = _runtime_execution_plan(config)
+    return execution_plan.quantile_workers, execution_plan.output_workers
 
 
 def _fit_point(
@@ -238,9 +155,11 @@ def _fit_point(
     Y: np.ndarray,
     *,
     n_series: int,
+    execution_plan: RuntimeExecutionPlan | None = None,
     max_workers: int | None = None,
 ):
-    runtime_params = _runtime_estimator_params(config)
+    resolved_plan = execution_plan or _runtime_execution_plan(config)
+    runtime_params = _planned_estimator_params(config, resolved_plan)
     capabilities = resolve_model_capabilities(
         config.estimator.model_type,
         runtime_params,
@@ -262,7 +181,7 @@ def _fit_point(
         Y,
         n_series=n_series,
         max_workers=(
-            _runtime_model_workers(config)
+            resolved_plan.output_workers
             if max_workers is None
             else max_workers
         ),
@@ -276,9 +195,11 @@ def _fit_quantile(
     Y: np.ndarray,
     *,
     n_series: int,
+    execution_plan: RuntimeExecutionPlan | None = None,
     worker_plan: tuple[int, int] | None = None,
 ):
-    runtime_params = _runtime_estimator_params(config)
+    resolved_plan = execution_plan or _runtime_execution_plan(config)
+    runtime_params = _planned_estimator_params(config, resolved_plan)
     capabilities = resolve_model_capabilities(
         config.estimator.model_type,
         runtime_params,
@@ -327,7 +248,7 @@ def _fit_quantile(
         feature_schema=feature_schema,
     )
     level_workers, output_workers = (
-        _runtime_fit_worker_plan(config)
+        (resolved_plan.quantile_workers, resolved_plan.output_workers)
         if worker_plan is None
         else worker_plan
     )

@@ -26,7 +26,10 @@ from forecasting_core.tensors import PointForecastTensor
 from model_forecasting.transforms import CanonicalTargetTransform
 from model_testing import validation
 from model_testing.backtest import actual_tensor as _actual_tensor
-from model_training.strategies import StrategyTargetPlan, TargetCoordinate
+from model_training.strategies import (
+    TargetCoordinate,
+    target_plan_for_config,
+)
 
 
 class _PredictedTargetProvider:
@@ -122,17 +125,38 @@ class TrainingDesignProbe:
     feature_names: tuple[str, ...]
 
 
+def _split_batch_designs(
+    frame: pd.DataFrame,
+    *,
+    schema: Sequence[str],
+    call_steps: Sequence[int],
+    n_series: int,
+) -> tuple[np.ndarray, ...]:
+    """按 compiler 的 identity-major / call-minor 行序拆分设计矩阵。"""
+    normalized_steps = tuple(int(step) for step in call_steps)
+    expected_rows = n_series * len(normalized_steps)
+    if len(frame) != expected_rows:
+        raise ValueError(
+            "batch compilation returned an unexpected row count per strategy call"
+        )
+    actual_steps = frame["horizon_step"].to_numpy(copy=False)
+    expected_steps = np.tile(np.asarray(normalized_steps), n_series)
+    if not np.array_equal(actual_steps, expected_steps):
+        raise ValueError(
+            "batch compilation violated identity-major / call-minor row order"
+        )
+    matrix = frame.loc[:, list(schema)].to_numpy(copy=True)
+    shaped = matrix.reshape(n_series, len(normalized_steps), matrix.shape[1])
+    return tuple(shaped[:, call_index, :] for call_index in range(len(normalized_steps)))
+
+
 class _RegistryDesignBuilder:
     def __init__(self, config: ForecastConfigSpec, registry: SourceRegistry) -> None:
         self.config = config
         self.registry = registry
         self.compiler = FeatureCompiler(config)
         self.offset = pd.tseries.frequencies.to_offset(config.problem.freq)
-        self.plan = StrategyTargetPlan.from_spec(
-            config.strategy,
-            config.problem.targets,
-            config.problem.horizon,
-        )
+        self.plan = target_plan_for_config(config)
         self.feature_schema: tuple[str, ...] = ()
         self.categorical_schema: tuple[str, ...] = ()
         self._audit: list[CompiledFeatures] = []
@@ -398,7 +422,6 @@ class _RegistryDesignBuilder:
                     if self.is_global
                     else frame
                 )
-                target_values = []
                 # 性能（2026-08-30 方案 A）：与特征编译共用 information_set 的
                 # 时间→行位置映射；未注册时登记一次。语义不变：非恰好一行即 RAISE。
                 try:
@@ -414,19 +437,28 @@ class _RegistryDesignBuilder:
                     _frames, time_lookup = information_set.row_position_lookup(
                         source.name
                     )
-                for step_index, target_time in enumerate(request.forecast_times):
-                    position = time_lookup.get(
-                        pd.Timestamp(target_time).value, -1
+                positions = np.fromiter(
+                    (
+                        time_lookup.get(int(timestamp_ns), -1)
+                        for timestamp_ns in request.forecast_times.asi8
+                    ),
+                    dtype=np.int64,
+                    count=len(request.forecast_times),
+                )
+                invalid = (positions < 0) | (positions >= len(series_frame))
+                if bool(invalid.any()):
+                    missing = int(np.flatnonzero(invalid)[0])
+                    raise ValueError(
+                        f"target label {target!r} requires one row for "
+                        f"series {series_id!r} at {request.forecast_times[missing]}"
                     )
-                    if position < 0 or position >= len(series_frame):
-                        raise ValueError(
-                            f"target label {target!r} requires one row for "
-                            f"series {series_id!r} at {target_time}"
-                        )
-                    value = float(series_frame.iloc[position][target])
-                    values[series_index, step_index, target_index] = value
-                    target_values.append(value)
-                trajectories[series_id][target] = tuple(target_values)
+                target_column = np.asarray(
+                    pd.to_numeric(series_frame[target], errors="raise"),
+                    dtype=float,
+                )
+                selected_values = target_column.take(positions)
+                values[series_index, :, target_index] = selected_values
+                trajectories[series_id][target] = tuple(selected_values.tolist())
         return values, trajectories
 
     def _compile_call(
@@ -563,22 +595,17 @@ class _RegistryDesignBuilder:
                 pd.Timestamp(request.forecast_times[-1])
                 for request in training_requests
             ),
+            proof_mode="validate_only",
         )
         rows = []
         for compiled, values in zip(compiled_items, target_values):
             schema = self._update_feature_schema(compiled)
-            frame = compiled.frame
-            designs = tuple(
-                frame.loc[
-                    frame["horizon_step"] == call_step,
-                    list(schema),
-                ].to_numpy(copy=True)
-                for call_step in call_steps
+            designs = _split_batch_designs(
+                compiled.frame,
+                schema=schema,
+                call_steps=call_steps,
+                n_series=self.n_series,
             )
-            if any(len(design) != self.n_series for design in designs):
-                raise ValueError(
-                    "batch compilation returned an unexpected row count per strategy call"
-                )
             rows.append(
                 (
                     designs,

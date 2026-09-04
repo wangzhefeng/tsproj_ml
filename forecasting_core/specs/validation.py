@@ -56,6 +56,62 @@ class CalendarMonthBacktestSpec:
 
 BacktestSpec = FixedStepBacktestSpec | CalendarMonthBacktestSpec
 
+
+@dataclass(frozen=True, slots=True)
+class RuntimePerformanceSpec(FrozenMappingSpec):
+    """Typed non-semantic execution controls accepted from model YAML."""
+
+    window_parallel_workers: int | None
+    multi_output_n_jobs: int | None
+    quantile_parallel_workers: int | None
+    model_thread_count: int | None
+    total_thread_limit: int | None
+    memory_limit_bytes: int | None
+
+    @classmethod
+    def from_mapping(
+        cls,
+        value: Mapping[str, Any] | "RuntimePerformanceSpec",
+        *,
+        source: str = "<constructor>",
+    ) -> "RuntimePerformanceSpec":
+        if isinstance(value, cls):
+            return value
+        allowed = frozenset(
+            {
+                "window_parallel_workers",
+                "multi_output_n_jobs",
+                "quantile_parallel_workers",
+                "model_thread_count",
+                "total_thread_limit",
+                "memory_limit_bytes",
+            }
+        )
+        payload = strict_mapping(
+            value,
+            path="validation.performance",
+            source=source,
+            allowed=allowed,
+        )
+        for field_name, field_value in payload.items():
+            if (
+                isinstance(field_value, bool)
+                or not isinstance(field_value, int)
+                or field_value <= 0
+            ):
+                raise ValueError(
+                    f"validation.performance.{field_name} must be a positive integer"
+                )
+        return cls(
+            freeze_json_value(payload, "validation.performance"),
+            window_parallel_workers=payload.get("window_parallel_workers"),
+            multi_output_n_jobs=payload.get("multi_output_n_jobs"),
+            quantile_parallel_workers=payload.get("quantile_parallel_workers"),
+            model_thread_count=payload.get("model_thread_count"),
+            total_thread_limit=payload.get("total_thread_limit"),
+            memory_limit_bytes=payload.get("memory_limit_bytes"),
+        )
+
 VALIDATION_FIELDS = frozenset(
     {
         "forecast_origin",
@@ -123,10 +179,9 @@ _VALIDATION_NESTED_FIELDS: dict[str, frozenset[str]] = {
             "window_parallel_workers",
             "multi_output_n_jobs",
             "quantile_parallel_workers",
-            "ensemble_parallel_workers",
             "model_thread_count",
-            "step_logging",
-            "forecast_log_interval",
+            "total_thread_limit",
+            "memory_limit_bytes",
         }
     ),
 }
@@ -137,6 +192,13 @@ class RuntimeValidationSpec(FrozenMappingSpec):
     """Strict validation section plus one unambiguous typed backtest geometry."""
 
     backtest: BacktestSpec | None
+    performance: RuntimePerformanceSpec | None
+
+    def semantic_payload(self) -> dict[str, Any]:
+        """Validation geometry/semantics without execution-only controls."""
+        payload = self.canonical_payload()
+        payload.pop("performance", None)
+        return payload
 
     @classmethod
     def from_mapping(
@@ -175,7 +237,19 @@ class RuntimeValidationSpec(FrozenMappingSpec):
             source=source,
             required=require_geometry,
         )
-        return cls(freeze_json_value(payload, "validation"), backtest)
+        performance = (
+            RuntimePerformanceSpec.from_mapping(
+                payload["performance"],
+                source=source,
+            )
+            if "performance" in payload
+            else None
+        )
+        return cls(
+            freeze_json_value(payload, "validation"),
+            backtest,
+            performance,
+        )
 
 
 def _parse_backtest_geometry(
@@ -235,6 +309,7 @@ __all__ = [
     "BacktestSpec",
     "CalendarMonthBacktestSpec",
     "FixedStepBacktestSpec",
+    "RuntimePerformanceSpec",
     "RuntimeValidationSpec",
     "VALIDATION_FIELDS",
 ]

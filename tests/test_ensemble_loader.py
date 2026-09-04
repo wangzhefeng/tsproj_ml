@@ -198,6 +198,20 @@ class EnsembleLoaderTest(unittest.TestCase):
 
         self.assertEqual(first.fingerprint(), second.fingerprint())
 
+    def test_performance_changes_do_not_change_ensemble_fingerprint(self):
+        import copy
+
+        first_doc = copy.deepcopy(ENSEMBLE_DOC)
+        second_doc = copy.deepcopy(ENSEMBLE_DOC)
+        first_doc["validation"]["performance"] = {"total_thread_limit": 2}
+        second_doc["validation"]["performance"] = {"total_thread_limit": 8}
+
+        first = parse_ensemble_document(first_doc, source_path="first.yaml")
+        second = parse_ensemble_document(second_doc, source_path="second.yaml")
+
+        self.assertEqual(first.fingerprint(), second.fingerprint())
+        self.assertEqual(first.result_identity(), second.result_identity())
+
     def test_cycle_self_reference_raises(self):
         doc = dict(ENSEMBLE_DOC)
         doc["ensemble"] = {

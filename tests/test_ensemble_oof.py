@@ -3,10 +3,15 @@
 
 from __future__ import annotations
 
+import ast
+import multiprocessing
 import tempfile
 import unittest
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 from pathlib import Path
+from threading import Lock
+from time import sleep
 
 import numpy as np
 import pandas as pd
@@ -134,6 +139,31 @@ def _artifact(fingerprint: str = "f" * 64) -> OOFPredictionArtifact:
     )
 
 
+def _get_or_create_oof_cache_in_process(
+    cache_root: str,
+    counter,
+    attempting,
+    entered_factory,
+    release_factory,
+    result_queue,
+) -> None:
+    def factory():
+        with counter.get_lock():
+            counter.value += 1
+        entered_factory.set()
+        if not release_factory.wait(timeout=10.0):
+            raise TimeoutError("test process did not receive factory release")
+        return _artifact()
+
+    attempting.set()
+    _artifact_result, cache_hit = oof_cache.get_or_create_oof_cache(
+        cache_root,
+        "f" * 64,
+        factory,
+    )
+    result_queue.put(cache_hit)
+
+
 class OOFArtifactContractTest(unittest.TestCase):
     def test_shape_mismatch_raises(self):
         with self.assertRaises(ValueError):
@@ -201,6 +231,91 @@ class OOFCacheTest(unittest.TestCase):
             len(list((self.root / "_ensemble_oof").iterdir())), 1
         )
 
+    def test_concurrent_same_key_miss_generates_once(self):
+        calls = 0
+        count_lock = Lock()
+
+        def factory():
+            nonlocal calls
+            with count_lock:
+                calls += 1
+            sleep(0.1)
+            return _artifact()
+
+        def get_or_create(_index: int):
+            return oof_cache.get_or_create_oof_cache(
+                self.root,
+                "f" * 64,
+                factory,
+            )
+
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            results = tuple(executor.map(get_or_create, range(2)))
+
+        self.assertEqual(calls, 1)
+        self.assertEqual(sorted(cache_hit for _, cache_hit in results), [False, True])
+        for artifact, _cache_hit in results:
+            self.assertEqual(artifact.oof_fingerprint, "f" * 64)
+
+    def test_same_key_miss_generates_once_across_spawn_processes(self):
+        context = multiprocessing.get_context("spawn")
+        counter = context.Value("i", 0)
+        first_attempting = context.Event()
+        second_attempting = context.Event()
+        entered_factory = context.Event()
+        release_factory = context.Event()
+        result_queue = context.Queue()
+        first = context.Process(
+            target=_get_or_create_oof_cache_in_process,
+            args=(
+                str(self.root),
+                counter,
+                first_attempting,
+                entered_factory,
+                release_factory,
+                result_queue,
+            ),
+        )
+        second = context.Process(
+            target=_get_or_create_oof_cache_in_process,
+            args=(
+                str(self.root),
+                counter,
+                second_attempting,
+                entered_factory,
+                release_factory,
+                result_queue,
+            ),
+        )
+        first.start()
+        try:
+            self.assertTrue(first_attempting.wait(timeout=5.0))
+            self.assertTrue(entered_factory.wait(timeout=5.0))
+            second.start()
+            self.assertTrue(second_attempting.wait(timeout=5.0))
+            sleep(0.2)
+            self.assertEqual(counter.value, 1)
+            release_factory.set()
+        finally:
+            release_factory.set()
+            first.join(timeout=10.0)
+            if first.is_alive():
+                first.terminate()
+                first.join(timeout=5.0)
+            if second.pid is not None:
+                second.join(timeout=10.0)
+                if second.is_alive():
+                    second.terminate()
+                    second.join(timeout=5.0)
+
+        self.assertEqual(first.exitcode, 0)
+        self.assertEqual(second.exitcode, 0)
+        self.assertEqual(counter.value, 1)
+        self.assertEqual(
+            sorted((result_queue.get(timeout=2.0), result_queue.get(timeout=2.0))),
+            [False, True],
+        )
+
     def test_missing_cache_raises_file_not_found(self):
         with self.assertRaises(FileNotFoundError):
             oof_cache.load_oof_cache(self.root, "0" * 64)
@@ -230,8 +345,20 @@ class OOFCacheTest(unittest.TestCase):
         directory = oof_cache.cache_dir(self.root, artifact.oof_fingerprint)
         directory.mkdir(parents=True)
         (directory / oof_cache.OOF_PREDICTIONS_FILE).write_text("member,v0\n", "utf-8")
-        with self.assertRaises(FileNotFoundError):
-            oof_cache.load_oof_cache(self.root, artifact.oof_fingerprint)
+        factory_called = False
+
+        def factory():
+            nonlocal factory_called
+            factory_called = True
+            return artifact
+
+        with self.assertRaises(ValueError):
+            oof_cache.get_or_create_oof_cache(
+                self.root,
+                artifact.oof_fingerprint,
+                factory,
+            )
+        self.assertFalse(factory_called)
 
     def test_source_hash_changes_fingerprint(self):
         fp1 = oof_cache.compute_oof_fingerprint(
@@ -247,6 +374,86 @@ class OOFCacheTest(unittest.TestCase):
             source_hashes={"data.csv": "deadbeef0"},  # content changed
         )
         self.assertNotEqual(fp1, fp2)
+
+    def test_oof_semantic_inputs_change_fingerprint(self):
+        baseline = oof_cache.compute_oof_fingerprint(
+            members={"a": "sha-a", "b": "sha-b"},
+            ensemble_payload={
+                "member_order": ["a", "b"],
+                "problem": {"horizon": 2, "targets": ["load"]},
+                "probabilistic": {"mode": "point"},
+            },
+            oof_payload={"fold_count": 2, "stride_steps": 1},
+            source_hashes={"a:data:history_path": "deadbeef"},
+        )
+        variants = (
+            {
+                "members": {"a": "sha-a-changed", "b": "sha-b"},
+            },
+            {
+                "ensemble_payload": {
+                    "member_order": ["b", "a"],
+                    "problem": {"horizon": 2, "targets": ["load"]},
+                    "probabilistic": {"mode": "point"},
+                },
+            },
+            {
+                "ensemble_payload": {
+                    "member_order": ["a", "b"],
+                    "problem": {"horizon": 3, "targets": ["load"]},
+                    "probabilistic": {"mode": "point"},
+                },
+            },
+            {
+                "ensemble_payload": {
+                    "member_order": ["a", "b"],
+                    "problem": {"horizon": 2, "targets": ["load"]},
+                    "probabilistic": {
+                        "mode": "quantile",
+                        "quantiles": [0.1, 0.5, 0.9],
+                    },
+                },
+            },
+            {
+                "oof_payload": {"fold_count": 3, "stride_steps": 1},
+            },
+        )
+        defaults = {
+            "members": {"a": "sha-a", "b": "sha-b"},
+            "ensemble_payload": {
+                "member_order": ["a", "b"],
+                "problem": {"horizon": 2, "targets": ["load"]},
+                "probabilistic": {"mode": "point"},
+            },
+            "oof_payload": {"fold_count": 2, "stride_steps": 1},
+            "source_hashes": {"a:data:history_path": "deadbeef"},
+        }
+        for index, changed in enumerate(variants):
+            with self.subTest(index=index):
+                self.assertNotEqual(
+                    baseline,
+                    oof_cache.compute_oof_fingerprint(
+                        **{**defaults, **changed},
+                    ),
+                )
+
+    def test_cache_module_does_not_import_posix_lock_unconditionally(self):
+        cache_module = Path(__file__).parents[1] / "model_ensemble/cache.py"
+        module = ast.parse(cache_module.read_text(encoding="utf-8"))
+        self.assertFalse(
+            any(
+                (
+                    isinstance(statement, ast.ImportFrom)
+                    and statement.module == "fcntl"
+                )
+                or (
+                    isinstance(statement, ast.Import)
+                    and any(alias.name == "fcntl" for alias in statement.names)
+                )
+                for statement in module.body
+            ),
+            "OOF cache module must remain importable on platforms without fcntl",
+        )
 
     def test_file_sha256_stable(self):
         path = self.root / "f.bin"

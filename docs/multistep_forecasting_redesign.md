@@ -38,7 +38,7 @@ MO 策略严格要求 `1 < B < H` 且 `H % B == 0`；不满足时在配置解析
 | 维度 | 配置字段 | 取值 | 行为作用层 | 代码入口 |
 |---|---|---|---|---|
 | 策略 | `strategy.name`（+MO 的 `output_chunk_length`） | recursive / direct / mimo / recmo / dirrec / dirmo / dirrecmo | H 步输出如何在模型调用间分配、是否消费自身预测 | `forecasting_core/specs/strategy.py` 规则表；`model_training/strategies/` 执行 |
-| Direct layout | `features.transformations.direct.layout` | independent_models（H 个独立模型）/ single_model_horizon（共享单模型=pointwise，必配 horizon_feature） | 同一 Direct 策略下训练样本的行×列组织 | `feature_engineering/compiler.py`；`estimators/multi_target.py` |
+| Direct layout | `features.transformations.direct.layout` | independent_models（H 个独立模型）/ single_model_horizon（共享单模型=pointwise，必配 horizon_feature） | 同一 Direct 策略下训练样本的行×列组织 | `model_training/strategies/base.py::target_plan_for_config`；`feature_engineering/compiler.py`；`estimators/multi_target.py` |
 | 训练 scope | `problem.training_scope` | local（逐序列独立建模）/ global（panel 池化共享模型，series_id 作 key 特征） | 序列间是否共享参数 | `forecasting_core/specs/problem.py` |
 | 估计器耦合 | `estimator.target_adapter` | independent（标量模型组）/ regressor_chain（标量组+前序输出作输入，不支持 quantile）/ native（单实例多输出） | 语义输出块到物理估计器实例的映射 | `model_training/estimators/multi_target.py` |
 
@@ -154,7 +154,7 @@ calendar normalization → decomposition → target scaling
 - `linear_blending`
 - `stacking`
 
-成员必须引用现役单模型 YAML，并共享 problem/data/probabilistic/origin 合同。OOF cache 对 `(member, source, path_role, file_sha256)` 内容寻址；损坏或输入内容变化必须失效。
+成员必须引用现役单模型 YAML，并共享 problem/data/probabilistic/origin 合同。OOF cache 按有序成员语义 fingerprint、OOF geometry 与 `(member, source, path_role, file_sha256)` 内容寻址；fusion method 和 `config_ref` 路径不进入 OOF key，同一成员集跨方法共享。并发同 key miss 由线程锁与跨进程文件锁保证 single-flight，损坏或输入内容变化必须 RAISE/失效；成员 runner 与单模型共用 RawDesign cache。
 
 Quantile linear blending 按 target 最小化 simplex pooled pinball，一组 target 权重跨 Q 共享。最终 Ensemble bundle 内嵌全部成员 bundle 和 method artifact；部署预测不读取成员 YAML 或 OOF cache。
 
@@ -168,6 +168,14 @@ Quantile linear blending 按 target 最小化 simplex pooled pinball，一组 ta
 - legacy `crossing_method`/`conformal` 键已于 2026-09-01 从全部 YAML 清扫（379 个文件：`crossing_method: isotonic` → `crossing:` 块；`conformal: {method: none}` 删除；146 个 `method: cqr` 迁入 `intervals:` + `calibration:`），spec 层对 legacy 键一律 RAISE。注意 fingerprint 随之变化，存量 results 沿用旧 identity 前缀；
 - quantile 训练优化（2026-09-01）：逐 level 训练默认线程并行（数值与串行一致）；xgboost≥2.0 自动走原生多分位共享 booster（训练成本 ≈1× 而非 Q×，与并行互斥；现役 YAML 零 xgb quantile 配置）；
 - 仍不支持 joint sample generator、联合路径概率或 ensemble-of-ensemble。
+
+### 7.1 统一运行资源规划（2026-09-04）
+
+- `RuntimeWorkload` 描述策略布局、H/B/K/Q/N、fold/member、model group、logical/scalar/physical fit、可并行 output task、训练行数、特征宽度和设计体积；`RuntimeResourceBudget` 记录物理/逻辑核、总线程、可用内存和父级并发；`RuntimeExecutionPlan` 固化唯一外层并行轴及 config/member/window/quantile/output/model 预算。
+- fixed-step、calendar-month、point、quantile 和 Ensemble 统一从 `resource_planner` 获取 plan。除 typed parser 与 planner 外，生产代码不得读取原始 `validation.performance`；显式多外层轴、线程乘积超预算、设计体积超内存或 estimator 线程冲突均直接 RAISE，不静默压制。
+- LightGBM/XGBoost/RandomForest/CatBoost 的线程参数由 plan 唯一写入；HistGradientBoosting、NumPy/SciPy 的 BLAS/OpenMP 限额由 `threadpoolctl` 在任何线程池创建前应用。XGBoost shared multi-quantile 当前只允许串行共享位置训练，不宣称 output/quantile 并行。
+- `validation.performance` 是非语义运行控制，不进入 canonical fingerprint/result identity。`resolved_config.json` 与 `result_metadata.json` 必须记录 workload、budget、execution plan、cache 状态、阶段 wall、profile 来源和 fallback/rejection 原因。
+- 死字段 `step_logging`、`forecast_log_interval`、未接线的 `ensemble_parallel_workers` 已删除；未来 OPT-015 若引入 Ensemble member 并行，必须通过 typed contract 和同一 planner 重新接线，不能恢复分散读取。
 
 ## 8. 结果与产物合同
 
@@ -222,6 +230,7 @@ C7 的命令、计数和七类产物核验结果只在 `docs/architecture_conver
 - 18 个旧 MDR 配置因 `H % B != 0` 于 2026-08-29 获批映射为 `recursive`：14 个 `aidc_power_month`、4 个 `aidc_load_month`。`validation.legacy_origin` 已删除，本条是批准记录。
 - 旧 Direct/Recursive Blend 已迁入 Ensemble，不再作为 strategy。
 - decomposition `forecasters.py/composers.py` 曾被误判为死链；包内消费者复核证明它们属于 `DecompositionPipeline` 活路径，因此保留。
+- 2026-09-04 修正 AIDC 15min STL/MSTL 的趋势外推合同：972 份活动配置原误写 `trend_forecast: seasonal_naive`，而季节分量本就由内部 phase-template 独立外推；经裁决统一迁为 `polynomial`。公共值域严格为 `polynomial|damped`，非法值在配置解析/审计阶段 RAISE，不再延迟到首个 fold。迁移改变相关 canonical fingerprint/result identity，但不改变独立的 RawDesign cache key。
 - 缺失日期类型未来资产时不伪造数据；受影响配置移除该 source。
 - legacy runtime 曾在 `FeatureEngineering.extend_weather_feature()` 内由 `rt_tt2`/`rt_dt` 现场计算 `cal_rh`，随后线性插值、双向填充；canonical 删除隐式数据改写后，2026-08-31 经批准将同一公式迁到离线入口 `config/aidc_electricity_computility/derive_cal_rh.py`，为 23 个天气 CSV/27,180 行追加派生列，原有单元格 SHA 全部保持不变。
 - 3 个 `add_training_inference_pod` 配置声明 `*_all_jobs_*` 列，但物理资产使用另一列族；经批准按字节原样迁至 `docs/archived_configs/`，活动模型数由 848 调整为 845。
@@ -314,7 +323,37 @@ fit/backtest/forecast、融合 OOF 或 bundle smoke。配置结构与资产合�
   `failures=[]`；package layering 17 项通过；全量 unittest 741 项、1167.647 秒、OK；
   compileall 与 `git diff --check` 通过。
 
-## 15. 历史溯源
+## 15. Direct pointwise 共享模型接线（2026-09-03）
+
+真实运行发现 `single_model_horizon` 此前只在 FeatureCompiler 中增加 horizon feature，
+训练计划仍沿用标准 Direct 的 `model_count=H`，导致
+`lgbm_direct-pointwise.yaml` 实际保存 96 个模型、执行 3,072 次 scalar fit，违背
+§2.2.1 的共享单模型合同。现已增加 config-aware `target_plan_for_config()`：
+
+- 标准 `independent_models` Direct 继续使用 H 个模型；
+- `single_model_horizon` 保留 H 个 call，但全部 `model_indices` 指向 model 0；训练按
+  horizon 顺序纵向拼接 H 组 X/Y，K=1 时每个 fold 只 fit 一个 estimator；
+- `lgbm_direct-pointwise.yaml` 使用原始 `forecast_horizon_idx`；
+  `lgbm_direct-pointwise-horizon.yaml` 在原始索引之外增加 sin/cos 周期编码，两者只在
+  horizon 编码上不同，训练/预测共享模型算法完全相同；
+- Local/Global、K1/K2、point/quantile 共用同一计划；Forecaster 校验 artifact 的完整
+  target plan，旧 96 模型 bundle 在新 layout 下明确 RAISE，不能静默按错误语义部署；
+- 两份 route_A baseline LightGBM 配置经实测使用
+  `window_parallel_workers=2 + model_thread_count=4`，性能字段不进入 canonical
+  fingerprint，生成器再次检查 4,689 份矩阵零漂移。
+
+真实完整验收不缩短 6,336 origins、31 folds、H=96：plain cache-hit physical run
+179.72s；cyclical 冷运行 236.38s，其中 compile 53.11s、非编译阶段 183.27s。
+plain bundle 从错误布局的 80,127,265 bytes 降至 1,605,994 bytes（缩小 98.00%）；
+cyclical bundle 为 1,648,584 bytes。两份bundle均为 1 model group / 1 estimator，分别
+保留 36/38 个特征；回测 2,976 行、汇总评分 62 行、horizon 评分 5,952 行、正式预测
+96 行，visibility proof 与 bundle reload 均通过。
+
+该修复改变模型训练语义但不改变配置文本的语义 fingerprint；旧 pointwise 结果不可与
+新结果做数值 exact，也不能继续当作 pointwise 结果使用。当前仅重跑上述两份明确目标
+配置，其他 `single_model_horizon` 存量结果需在使用前重训。
+
+## 16. 历史溯源
 
 - 2026-08-24：概率预测专项方案，现保留为历史参考。
 - 2026-08-27 至 29：预测问题正交化、schema-2 迁移、legacy 删除。

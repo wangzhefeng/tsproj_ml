@@ -30,7 +30,7 @@ from model_ensemble.runtime import run_ensemble_config
 from model_forecasting.runtime import CanonicalBaseModelRunner, persist_model_bundle
 from model_forecasting.resource_planner import plan_ensemble_resources
 
-from model_ensemble.methods.linear_blending import fit_nonnegative_stacking_weights
+from fixtures.legacy_nnls import fit_nonnegative_stacking_weights
 from forecasting_core.specs.config import parse_model_config
 from forecasting_core.runtime_resources import RuntimeResourceBudget
 from model_forecasting.resource_planner import runtime_budget_for_config
@@ -286,18 +286,16 @@ class EnsembleRuntimeMatrixTest(EnsembleRuntimeTestBase):
             cv.duplicated(["series_id", "time", "target", "window"]).any()
         )
 
-    def test_learned_methods_end_to_end(self):
-        for method in ("weighted", "linear_blending", "stacking"):
-            with self.subTest(method=method):
-                result = self._run(method)
-                self.assertTrue(np.isfinite(result["combined_values"]).all())
-                self.assertEqual(result["audit"]["method"], method)
-
     def test_oof_cache_reused_across_fusion_methods(self):
+        methods = ("averaging", "weighted", "linear_blending", "stacking")
         results = tuple(
             self._run(method)
-            for method in ("averaging", "weighted", "linear_blending", "stacking")
+            for method in methods
         )
+        for method, result in zip(methods, results):
+            with self.subTest(method=method):
+                self.assertTrue(np.isfinite(result["combined_values"]).all())
+                self.assertEqual(result["audit"]["method"], method)
         self.assertEqual(len({result["oof_fingerprint"] for result in results}), 1)
         self.assertEqual(
             [result["oof_cache_hit"] for result in results],

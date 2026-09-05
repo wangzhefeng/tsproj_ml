@@ -14,6 +14,7 @@ import numpy as np
 import pandas as pd
 import yaml
 from sklearn.linear_model import Ridge
+from sklearn.ensemble import RandomForestRegressor
 
 from model_ensemble.contracts import EnsembleRuntimeServices
 from model_ensemble.loader import load_ensemble_config
@@ -653,7 +654,7 @@ class Task27ExecutionMatrixTest(unittest.TestCase):
                 ["predict_q10", "predict_q50", "predict_q90"],
             )
 
-    def _assert_chain_case(self, config, data_path):
+    def _assert_adapter_case(self, config, data_path):
         frame = pd.read_csv(data_path)
         targets = list(config.problem.targets)
         values = frame[targets].to_numpy(dtype=float)
@@ -679,7 +680,7 @@ class Task27ExecutionMatrixTest(unittest.TestCase):
         capabilities = EstimatorCapabilities(
             scalar_target=True,
             scalar_quantile=False,
-            native_multi_target_point=False,
+            native_multi_target_point=config.estimator.target_adapter == "native",
             native_multi_target_quantile=False,
             sample_weight=True,
             categorical=False,
@@ -692,7 +693,13 @@ class Task27ExecutionMatrixTest(unittest.TestCase):
         )
         artifact = CanonicalTrainer(
             config,
-            estimator_factory=lambda: Ridge(alpha=1e-6),
+            estimator_factory=(
+                lambda: RandomForestRegressor(
+                    n_estimators=4, max_depth=3, random_state=0, n_jobs=1,
+                )
+            ) if config.estimator.target_adapter == "native" else (
+                lambda: Ridge(alpha=1e-6)
+            ),
             capabilities=capabilities,
             feature_schema=feature_schema,
         ).train(designs, target_values, n_series=1)
@@ -716,7 +723,8 @@ class Task27ExecutionMatrixTest(unittest.TestCase):
         )
 
         self.assertEqual(prediction.shape, (1, horizon, len(targets)))
-        self.assertEqual(artifact.estimator_coupling, "regressor_chain")
+        self.assertEqual(artifact.estimator_coupling, config.estimator.target_adapter)
+        self.assertTrue(np.isfinite(prediction.values).all())
 
     def test_task27_full_execution_matrix_reports_exact_counts(self):
         case_count = 0
@@ -765,8 +773,10 @@ class Task27ExecutionMatrixTest(unittest.TestCase):
                             adapter=adapter,
                             mode="point",
                         )
-                        if adapter == "regressor_chain":
-                            self._assert_chain_case(config, local_path)
+                        # 七策略的 K2 adapter 组合在训练/推理层验证；
+                        # Direct 保留两个真实后端的完整 runtime 接线。
+                        if adapter == "regressor_chain" or strategy != "direct":
+                            self._assert_adapter_case(config, local_path)
                         else:
                             self._assert_runtime_case(
                                 config,

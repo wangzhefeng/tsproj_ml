@@ -66,6 +66,19 @@ def _fold_frame(day: int, *, bias: float = 0.0, targets=("load",)) -> pd.DataFra
 
 
 class TrackerGatingTest(unittest.TestCase):
+    def test_inverted_interval_rejected_before_collecting_any_records(self):
+        tracker = ConformalCalibrationTracker(_spec(), freq_offset=to_offset("1h"))
+        frame = _fold_frame(1)
+        frame.loc[1, "predict_q10"] = 120.0
+        with self.assertRaisesRegex(ValueError, "q_low <= q_high"):
+            tracker.collect_from_frame(
+                frame, forecast_origin=pd.Timestamp("2026-01-01"), window=1
+            )
+        _, audit = tracker.apply_to_frame(
+            _fold_frame(2), forecast_origin=pd.Timestamp("2026-01-02")
+        )
+        self.assertEqual(audit["selected_scores"], 0)
+
     def test_apply_before_collect_and_double_gate(self):
         tracker = ConformalCalibrationTracker(
             _spec(min_windows=2, min_scores=2), freq_offset=to_offset("1h")

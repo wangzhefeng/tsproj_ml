@@ -18,11 +18,11 @@ from forecasting_core.specs import (
     ForecastProblemSpec,
     ForecastStrategySpec,
 )
-from model_forecasting.fit_service import (
-    _runtime_estimator_params,
-    _runtime_fit_worker_plan,
-    _runtime_model_workers,
-    _runtime_scalar_fit_count,
+from fixtures.runtime_planning import (
+    estimator_params as _runtime_estimator_params,
+    fit_worker_plan as _runtime_fit_worker_plan,
+    model_workers as _runtime_model_workers,
+    scalar_fit_count as _runtime_scalar_fit_count,
 )
 from model_training.estimators import make_model_factory, resolve_model_capabilities
 from model_training.trainer import CanonicalTrainer

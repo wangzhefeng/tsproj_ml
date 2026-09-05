@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import unittest
+from unittest.mock import patch
 
 import numpy as np
 
@@ -13,6 +14,8 @@ from model_ensemble.methods import (
     stacking,
     weighted,
 )
+from model_ensemble.artifacts import EnsembleArtifact, EqualWeightsArtifact, PerTargetWeightsArtifact
+from model_ensemble.predictor import combine_members
 
 
 def _two_member_oof():
@@ -22,6 +25,36 @@ def _two_member_oof():
     member_a = actual * 0.95
     member_b = actual * 1.10
     return member_a, member_b, actual
+
+
+class PredictorDelegationTest(unittest.TestCase):
+    def test_production_combiner_delegates_and_preserves_point_quantile_values(self):
+        for shape in ((2, 3, 2), (2, 3, 2, 3)):
+            a = np.arange(np.prod(shape), dtype=float).reshape(shape)
+            b = a * 3 + 5
+            for name, combine in (
+                ("averaging", averaging.combine_averaging),
+                ("weighted", weighted.combine_weighted),
+                ("linear_blending", linear_blending.combine_linear_blending),
+            ):
+                with self.subTest(shape=shape, method=name):
+                    method = (EqualWeightsArtifact() if name == "averaging" else
+                              PerTargetWeightsArtifact(name, {"target_0": (0.25, 0.75),
+                                                              "target_1": (0.75, 0.25)}))
+                    artifact = EnsembleArtifact(
+                        method, ("a", "b"), ("load", "power"), 3,
+                        (0.1, 0.5, 0.9) if len(shape) == 4 else None, "test",
+                    )
+                    expected = (a + b) / 2 if name == "averaging" else np.empty_like(a)
+                    if name != "averaging":
+                        expected[:, :, 0] = 0.25 * a[:, :, 0] + 0.75 * b[:, :, 0]
+                        expected[:, :, 1] = 0.75 * a[:, :, 1] + 0.25 * b[:, :, 1]
+                    with patch(f"model_ensemble.predictor.combine_{name}", wraps=combine) as call:
+                        actual = combine_members(artifact, {"a": a, "b": b})
+                        call.assert_called_once()
+                    np.testing.assert_array_equal(actual, expected)
+                    with self.assertRaisesRegex(ValueError, "member_order"):
+                        combine_members(artifact, {"b": b, "a": a})
 
 
 class AveragingTest(unittest.TestCase):

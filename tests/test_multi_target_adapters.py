@@ -693,7 +693,8 @@ class MultiTargetAdapterTests(unittest.TestCase):
 
 
 class ImportBoundaryTests(unittest.TestCase):
-    def test_new_core_does_not_import_legacy_models_package(self):
+    def test_training_core_only_imports_approved_model_infrastructure(self):
+        approved = {"models.catalog", "models.ModelFactory"}
         for path in (
             Path("forecasting_core/specs/estimator.py"),
             Path("model_training/estimators/capabilities.py"),
@@ -708,12 +709,12 @@ class ImportBoundaryTests(unittest.TestCase):
                         imported_modules.extend(alias.name for alias in node.names)
                     elif isinstance(node, ast.ImportFrom) and node.module is not None:
                         imported_modules.append(node.module)
-                self.assertFalse(
-                    any(
-                        module == "models" or module.startswith("models.")
-                        for module in imported_modules
-                    )
-                )
+                model_imports = {
+                    module
+                    for module in imported_modules
+                    if module == "models" or module.startswith("models.")
+                }
+                self.assertLessEqual(model_imports, approved)
 
 
 if __name__ == "__main__":

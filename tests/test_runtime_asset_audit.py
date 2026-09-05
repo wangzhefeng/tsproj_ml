@@ -5,8 +5,10 @@ import json
 import importlib.util
 import subprocess
 import sys
+import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -50,10 +52,19 @@ class RuntimeAssetAuditTest(unittest.TestCase):
                 ],
             }
             actual = {"time", "value", "optional_physical_column"}
-            self.assertEqual(
-                MODULE._missing_required_columns(source, actual),
-                ["needed"],
-            )
+            with tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                (root / "model.yaml").write_text("schema_version: 2\n")
+                (root / "source.csv").write_text(",".join(sorted(actual)) + "\n")
+                source.update(name="target", history_path="source.csv")
+                with patch.object(MODULE, "is_model_yaml", return_value=True), \
+                     patch.object(MODULE, "load_yaml_config", return_value=None), \
+                     patch.object(MODULE, "_config_sources", return_value=(source,)):
+                    report = MODULE.audit_runtime_assets(root, repository_root=root)
+                self.assertEqual(report["missing_declared_column_reference_count"], 1)
+                missing = report["missing_declared_columns"][0]
+                self.assertEqual(missing["path"], "source.csv")
+                self.assertEqual(missing["references"][0]["missing_columns"], ["needed"])
 
 
 if __name__ == "__main__":

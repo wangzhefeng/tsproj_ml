@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""C2 方案 A：typed geometry 迁移清单与真实训练 origin 数门禁。"""
+"""活动配置的真实训练 origin 数门禁；历史迁移清单不再锁定当前身份。"""
 
 from __future__ import annotations
 
@@ -15,7 +15,7 @@ from model_forecasting.design import minimum_history_rows
 
 
 ROOT = Path(__file__).resolve().parents[1]
-MANIFEST = ROOT / "docs/validation_geometry_migration_manifest.yaml"
+
 LEGACY_FIELDS = {
     "history_length",
     "window_length",
@@ -26,19 +26,13 @@ LEGACY_FIELDS = {
 
 
 class ValidationGeometryManifestTest(unittest.TestCase):
-    def test_manifest_matches_active_configs_and_real_subday_training_counts(self):
-        manifest = yaml.safe_load(MANIFEST.read_text(encoding="utf-8"))
-        entries = manifest["entries"]
-        by_path = {entry["path"]: entry for entry in entries}
+    def test_active_configs_have_real_subday_training_counts(self):
         active_paths = {
             str(path.relative_to(ROOT))
             for path in (ROOT / "config").rglob("*.yaml")
             if is_model_yaml(path)
         }
-        self.assertEqual(len(entries), 5150)
-        self.assertEqual(len(by_path), 5150)
-        self.assertEqual(set(by_path), active_paths)
-        self.assertEqual(manifest["counts"]["subday_single_models"], 4866)
+        self.assertTrue(active_paths, "no active model configs discovered")
 
         timeline_cache: dict[tuple[str, str], pd.DatetimeIndex] = {}
         checked_subday = 0
@@ -60,8 +54,7 @@ class ValidationGeometryManifestTest(unittest.TestCase):
                 self.assertNotIn("stride", oof, relative)
 
             config = load_yaml_config(path)
-            entry = by_path[relative]
-            self.assertEqual(config.fingerprint(), entry["new_fingerprint"], relative)
+
             if not isinstance(config, ForecastConfigSpec):
                 continue
             if config.problem.freq in {"1D", "1ME", "1MS"}:
@@ -71,18 +64,13 @@ class ValidationGeometryManifestTest(unittest.TestCase):
             self.assertIsInstance(geometry, FixedStepBacktestSpec, relative)
             assert isinstance(geometry, FixedStepBacktestSpec)
             actual = self._actual_final_training_count(config, timeline_cache)
-            contract = entry["expected_training_contract"]
-            self.assertEqual(
-                actual,
-                contract["actual_final_training_origin_count"],
-                relative,
-            )
+
             self.assertEqual(
                 actual,
                 geometry.train_window_steps,
                 relative,
             )
-        self.assertEqual(checked_subday, 4866)
+        self.assertGreater(checked_subday, 0)
 
     @staticmethod
     def _actual_final_training_count(

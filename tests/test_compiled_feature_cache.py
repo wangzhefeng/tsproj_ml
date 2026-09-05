@@ -140,6 +140,26 @@ class CompiledFeatureCacheTest(unittest.TestCase):
             compiled_cache_root=self.cache_root,
         )
 
+    def test_compiler_source_change_invalidates_raw_design(self) -> None:
+        from feature_engineering import cache
+
+        def fingerprint():
+            return compute_raw_design_fingerprint(
+                self.config, base_dir=self.root, origin=self.origin, generators={}
+            )
+
+        original = cache.file_sha256
+        before = fingerprint()
+
+        def changed(path):
+            if Path(path).name == "compiler.py":
+                return "changed-compiler-implementation"
+            return original(path)
+
+        with patch.object(cache, "file_sha256", side_effect=changed):
+            self.assertNotEqual(before, fingerprint())
+        self.assertEqual(before, fingerprint())
+
     def test_cache_hit_is_fast_and_source_change_invalidates(self) -> None:
         first = self._runner()
         self.assertFalse(first.compiled_cache_hit)

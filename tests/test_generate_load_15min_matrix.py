@@ -11,10 +11,10 @@ from forecasting_core.specs import ForecastConfigSpec
 from forecasting_core.specs.config import parse_model_config
 from model_ensemble.loader import parse_ensemble_document
 from model_ensemble.specs import EnsembleConfigSpec
-from model_forecasting.fit_service import (
-    _runtime_estimator_params,
-    _runtime_fit_worker_plan,
-    _runtime_scalar_fit_count,
+from fixtures.runtime_planning import (
+    estimator_params as _runtime_estimator_params,
+    fit_worker_plan as _runtime_fit_worker_plan,
+    scalar_fit_count as _runtime_scalar_fit_count,
 )
 from model_training.strategies import target_plan_for_config
 from scripts import generate_load_15min_matrix as matrix
@@ -232,10 +232,7 @@ class Load15minFullFactorialMatrixTest(unittest.TestCase):
             )
 
         catboost_path = short_root / "route_A/baseline/cab_direct-pointwise.yaml"
-        self.assertEqual(
-            short[catboost_path]["validation"]["performance"],
-            {"profile_ref": "opt017-catboost-short-a-pointwise-v1"},
-        )
+        self.assertNotIn("performance", short[catboost_path]["validation"])
         from config.config_loader import load_yaml_config
         physical = load_yaml_config(catboost_path)
         generated = parse_model_config(short[catboost_path], catboost_path)
@@ -248,7 +245,7 @@ class Load15minFullFactorialMatrixTest(unittest.TestCase):
             if payload.get("estimator", {}).get("model_type") == "catboost"
             and "performance" in payload["validation"]
         ]
-        self.assertEqual(profiled_catboost, [catboost_path])
+        self.assertEqual(profiled_catboost, [])
         self.assertNotIn(
             "performance",
             short[

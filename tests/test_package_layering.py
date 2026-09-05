@@ -13,8 +13,12 @@
 """
 
 import ast
+from importlib.util import resolve_name
+import sys
+import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -47,7 +51,7 @@ ALLOWED_PACKAGES = {
         "data_loading",
         "decomposition",
     },
-    "model_training": {"forecasting_core"},
+    "model_training": {"forecasting_core", "models"},
     "model_testing": {"forecasting_core"},
     "model_evaluation": {"forecasting_core"},
     "model_forecasting": {
@@ -84,12 +88,25 @@ ALLOWED_ROOTS = {
         "model_forecasting.deployment",
         "model_forecasting.results",
         "model_testing.backtest",
+        "model_testing.validation",  # 共享标签安全合同，不暴露 runner 执行面
         "utils",
     },
 }
 
 
-def _iter_imports(tree):
+def _iter_imports(tree, package=""):
+    importlib_names = {"importlib"}
+    loaders = {"__import__"}
+    constants = {}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            importlib_names.update(alias.asname or alias.name for alias in node.names if alias.name == "importlib")
+        elif isinstance(node, ast.ImportFrom) and node.module == "importlib":
+            loaders.update(alias.asname or alias.name for alias in node.names if alias.name == "import_module")
+        elif isinstance(node, ast.Assign) and isinstance(node.value, ast.Constant) and isinstance(node.value.value, str):
+            for target in node.targets:
+                if isinstance(target, ast.Name):
+                    constants[target.id] = node.value.value
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
             for alias in node.names:
@@ -98,7 +115,19 @@ def _iter_imports(tree):
             module = node.module or ""
             if node.level:
                 module = "." * node.level + module
+                module = resolve_name(module, package) if package else module
             yield module, node.lineno
+        elif isinstance(node, ast.Call):
+            function = node.func
+            dynamic = (
+                isinstance(function, ast.Name) and function.id in loaders
+                or isinstance(function, ast.Attribute) and function.attr == "import_module"
+                and isinstance(function.value, ast.Name) and function.value.id in importlib_names
+            )
+            if dynamic:
+                argument = node.args[0] if node.args else next((item.value for item in node.keywords if item.arg in {"name", "module"}), None)
+                value = argument.value if isinstance(argument, ast.Constant) else constants.get(argument.id) if isinstance(argument, ast.Name) else None
+                yield value if isinstance(value, str) else "<unresolved_dynamic_import>", node.lineno
 
 
 def _package_edges() -> dict[str, set[str]]:
@@ -109,7 +138,7 @@ def _package_edges() -> dict[str, set[str]]:
             continue
         for path in package_dir.rglob("*.py"):
             tree = ast.parse(path.read_text(encoding="utf-8"))
-            for module, _ in _iter_imports(tree):
+            for module, _ in _iter_imports(tree, ".".join(path.parent.relative_to(ROOT).parts)):
                 target = module.split(".")[0].lstrip(".")
                 if target in PROJECT_PACKAGES and target != package:
                     edges[package].add(target)
@@ -151,25 +180,25 @@ def _function_local_project_imports() -> list[str]:
         for path in sorted(package_dir.rglob("*.py")):
             tree = ast.parse(path.read_text(encoding="utf-8"))
             relative = path.relative_to(ROOT)
+            imports = tuple(_iter_imports(tree, ".".join(path.parent.relative_to(ROOT).parts)))
             for function in ast.walk(tree):
                 if not isinstance(function, (ast.FunctionDef, ast.AsyncFunctionDef)):
                     continue
-                for node in ast.walk(function):
-                    modules: list[str] = []
-                    if isinstance(node, ast.Import):
-                        modules = [alias.name for alias in node.names]
-                    elif isinstance(node, ast.ImportFrom):
-                        modules = [node.module or ""]
-                    for module in modules:
-                        target = module.split(".")[0].lstrip(".")
-                        if target in PROJECT_PACKAGES:
-                            found.append(
-                                f"{relative}:{getattr(node, 'lineno', 0)} imports {module}"
-                            )
+                for module, lineno in imports:
+                    if function.lineno <= lineno <= function.end_lineno and module.split(".")[0] in PROJECT_PACKAGES:
+                        found.append(f"{relative}:{lineno} imports {module}")
     return sorted(set(found))
 
 
 class InterPackageLayeringTest(unittest.TestCase):
+    def test_relative_imports_resolve_against_the_owning_package(self):
+        self.assertEqual(list(_iter_imports(ast.parse("from ..trainer import Trainer"), "model_training.estimators")), [("model_training.trainer", 1)])
+
+    def test_dynamic_aliases_and_constants_are_visible(self):
+        tree = ast.parse('import importlib as il\nfrom importlib import import_module as load\nTARGET = "models.ModelFactory"\nil.import_module(TARGET)\nload("model_forecasting.runtime")\n__import__("forecasting_core.specs")\n')
+        modules = {module for module, _ in _iter_imports(tree)}
+        self.assertTrue({"models.ModelFactory", "model_forecasting.runtime", "forecasting_core.specs"} <= modules)
+
     def _violations(self, pkg: str) -> list[str]:
         pkg_dir = ROOT / pkg
         if not pkg_dir.is_dir():
@@ -178,7 +207,10 @@ class InterPackageLayeringTest(unittest.TestCase):
         for py in sorted(pkg_dir.rglob("*.py")):
             tree = ast.parse(py.read_text(encoding="utf-8"))
             rel = str(py.relative_to(ROOT))
-            for module, lineno in _iter_imports(tree):
+            for module, lineno in _iter_imports(tree, ".".join(py.parent.relative_to(ROOT).parts)):
+                if module == "<unresolved_dynamic_import>":
+                    found.append(f"{rel}:{lineno} unresolved dynamic import")
+                    continue
                 top = module.split(".")[0].lstrip(".")
                 if top == pkg or top not in PROJECT_PACKAGES:
                     continue
@@ -233,6 +265,21 @@ class InterPackageLayeringTest(unittest.TestCase):
 
     def test_ensemble_stays_clean(self):
         self.assertEqual(self._violations("model_ensemble"), [])
+
+    def test_ensemble_time_contract_does_not_allow_runtime_imports(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            package = root / "model_ensemble"
+            package.mkdir()
+            (package / "probe.py").write_text(
+                "from model_testing.validation import is_label_safe\n"
+                "from model_forecasting.runtime import CanonicalBaseModelRunner\n",
+                encoding="utf-8",
+            )
+            with patch.object(sys.modules[__name__], "ROOT", root):
+                violations = self._violations("model_ensemble")
+            self.assertEqual(len(violations), 1)
+            self.assertIn("model_forecasting.runtime", violations[0])
 
     def test_package_graph_is_acyclic(self):
         self.assertEqual(_find_cycle(_package_edges()), [])

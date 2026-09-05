@@ -7,11 +7,11 @@ from pathlib import Path
 from config.config_loader import load_yaml_config
 from forecasting_core.specs import EstimatorSpec, ForecastConfigSpec
 from probabilistic.objectives import (
-    inject_quantile_objective,
     supports_quantile_objective,
     validate_quantile_model_support,
 )
 from forecasting_core.probabilistic_spec import ProbabilisticSpec, resolve_probabilistic_spec
+from models.catalog import quantile_parameters
 
 
 class QuantileObjectiveMappingTest(unittest.TestCase):
@@ -19,13 +19,11 @@ class QuantileObjectiveMappingTest(unittest.TestCase):
         cases = {
             "lightgbm": {
                 "objective": "quantile",
-                "metric": "quantile",
                 "alpha": 0.2,
             },
             "xgb": {
                 "objective": "reg:quantileerror",
                 "quantile_alpha": 0.2,
-                "eval_metric": "quantile",
             },
             "catboost": {"loss_function": "Quantile:alpha=0.2"},
             "histgradientboosting": {"loss": "quantile", "quantile": 0.2},
@@ -34,16 +32,19 @@ class QuantileObjectiveMappingTest(unittest.TestCase):
         for model_type, expected in cases.items():
             with self.subTest(model_type=model_type):
                 original = {"keep": 1}
-                actual = inject_quantile_objective(model_type, original, 0.2)
+                actual = quantile_parameters(model_type, original, 0.2)
                 self.assertEqual(actual, {"keep": 1, **expected})
                 self.assertEqual(original, {"keep": 1})
                 self.assertTrue(supports_quantile_objective(model_type))
 
     def test_unsupported_model_and_invalid_level_fail_fast(self):
-        with self.assertRaisesRegex(ValueError, "does not support native quantile"):
-            inject_quantile_objective("randomforest", {}, 0.5)
+        with self.assertRaisesRegex(ValueError, "does not declare scalar quantile support"):
+            quantile_parameters("randomforest", {}, 0.5)
         with self.assertRaisesRegex(ValueError, "inside \(0, 1\)"):
-            inject_quantile_objective("lightgbm", {}, 1.0)
+            quantile_parameters("lightgbm", {}, 1.0)
+        with self.assertRaisesRegex(ValueError, "unknown model_type"):
+            quantile_parameters("unknown", {}, 0.5)
+        self.assertFalse(supports_quantile_objective("unknown"))
 
     def test_point_spec_does_not_require_quantile_capability(self):
         point_spec = ProbabilisticSpec(

@@ -19,7 +19,7 @@ import pandas as pd
 from model_ensemble import cache as oof_cache
 from model_ensemble.artifacts import OOFPredictionArtifact
 from model_ensemble.oof import oof_fold_origins
-from model_ensemble.specs import EnsembleSpecError, OOFSpec
+
 
 from model_testing import validation
 
@@ -102,26 +102,6 @@ class OOFFoldOriginsTest(unittest.TestCase):
                 stride_steps=1,
                 train_window_steps=4,
             )
-
-
-class CalendarMonthOOFBoundaryTest(unittest.TestCase):
-    def test_multi_fold_calendar_month_raises(self):
-        with self.assertRaises(EnsembleSpecError):
-            OOFSpec(
-                train_window_steps=8,
-                fold_count=2,
-                stride_steps=1,
-                calendar_month=True,
-            )
-
-    def test_single_fold_calendar_month_allowed(self):
-        oof = OOFSpec(
-            train_window_steps=8,
-            fold_count=1,
-            stride_steps=1,
-            calendar_month=True,
-        )
-        self.assertEqual(oof.fold_count, 1)
 
 
 def _artifact(fingerprint: str = "f" * 64) -> OOFPredictionArtifact:

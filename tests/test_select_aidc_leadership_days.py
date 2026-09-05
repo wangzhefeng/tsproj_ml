@@ -4,6 +4,7 @@ import math
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 
 import pandas as pd
@@ -31,7 +32,6 @@ from select_aidc_leadership_days import (  # noqa: E402
     load_day_curve,
     resolve_report_font,
     run_selection,
-    select_best_scenario_day,
 )
 
 
@@ -330,7 +330,7 @@ class SelectAidcLeadershipDaysTest(unittest.TestCase):
         self.assertIn("tail_MAE", pool.columns)
         self.assertIn("plot_nan", pool.columns)
 
-    def test_select_best_scenario_day_uses_tail_rule_for_a1_01a(self):
+    def test_run_selection_uses_tail_rule_for_a1_01a(self):
         score_defaults = {
             "R2": 0.5,
             "MSE": 100.0,
@@ -380,7 +380,12 @@ class SelectAidcLeadershipDaysTest(unittest.TestCase):
                 self._make_day_curve("2026-05-15", 4000.0, pred_shift=4.0, tail_shift=10.0),
             )
 
-            selection = select_best_scenario_day(Path(tmpdir), "A1_01a", candidate_top_k=2)
+            with patch("select_aidc_leadership_days.SCENARIOS", ("A1_01a",)):
+                summary = run_selection(
+                    Path(tmpdir), Path(tmpdir) / "output", candidate_top_k=2,
+                    archive_previous=False,
+                )
+            selection = summary.iloc[0].to_dict()
 
         self.assertEqual(selection["selected_date"], "2026-05-24")
         self.assertEqual(selection["selection_reason"], "lower_tail_error_than_metric_best")

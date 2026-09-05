@@ -24,10 +24,8 @@ from forecasting_core.specs import (
     ForecastProblemSpec,
     ForecastStrategySpec,
 )
-from model_forecasting.runtime import (
-    CanonicalBaseModelRunner,
-    _runtime_window_workers,
-)
+from fixtures.runtime_planning import plan_for_config
+from model_forecasting.runtime import CanonicalBaseModelRunner
 
 
 class _TrackingRunner(CanonicalBaseModelRunner):
@@ -161,7 +159,7 @@ class RuntimeWindowParallelismTest(unittest.TestCase):
         )
 
     def test_worker_resolver_reads_explicit_positive_value(self) -> None:
-        self.assertEqual(_runtime_window_workers(self._config(2)), 2)
+        self.assertEqual(plan_for_config(self._config(2)).window_workers, 2)
 
     def test_parallel_windows_overlap_fit_and_match_serial_results(self) -> None:
         serial = self._runner(1)

@@ -22,7 +22,7 @@ class PerformanceProfileTest(unittest.TestCase):
         payload["validation"]["performance"] = {"profile_ref": PROFILE_REF}
         return parse_model_config(payload, CONFIG)
 
-    def test_adopted_profile_matches_real_shape_and_preserves_fold_boundary(self):
+    def test_historical_profile_fails_closed_after_intraday_schedule_change(self):
         from model_forecasting.performance_profiles import (
             adopted_catboost_profile, resolve_performance_profile,
         )
@@ -35,21 +35,16 @@ class PerformanceProfileTest(unittest.TestCase):
             workload = build_runtime_workload(
                 config, training_rows=5072, feature_count=29, design_bytes=19476480,
             )
-            result = resolve_performance_profile(
-                config, workload,
-                budget=RuntimeResourceBudget(
-                    physical_cores=8, logical_cores=8, total_thread_limit=8,
-                    memory_limit_bytes=4 * 1024**3,
-                ),
-                base_dir=ROOT, feature_schema=evidence["signature"]["feature_schema"],
-            )
-            self.assertEqual(result["kind"], "adopted_benchmark_profile")
-            self.assertEqual(result["controls"]["model_thread_count"], 8)
-            self.assertEqual(result["benchmark_fold_count"], 5)
-            self.assertEqual(result["actual_fold_count"], folds)
-            self.assertEqual(result["benchmark_geometry_match"], folds == 5)
-            self.assertFalse(result["formal_benchmark_verified"])
-            self.assertEqual(result["signature"], evidence["signature"])
+            with self.assertRaisesRegex(ValueError, "semantic_sha256_at_5fold"):
+                resolve_performance_profile(
+                    config, workload,
+                    budget=RuntimeResourceBudget(
+                        physical_cores=8, logical_cores=8, total_thread_limit=8,
+                        memory_limit_bytes=4 * 1024**3,
+                    ),
+                    base_dir=ROOT,
+                    feature_schema=evidence["signature"]["feature_schema"],
+                )
 
     def _resolve(self, *, config=None, workload_changes=None, budget_changes=None, schema=None, base_dir: str | Path = ROOT):
         from model_forecasting.performance_profiles import adopted_catboost_profile, resolve_performance_profile
@@ -158,10 +153,8 @@ class PerformanceProfileTest(unittest.TestCase):
         workload = build_runtime_workload(config, training_rows=5072, feature_count=29, design_bytes=19476480)
         budget = RuntimeResourceBudget(physical_cores=8, logical_cores=8, total_thread_limit=8, memory_limit_bytes=4 * 1024**3)
         context: dict[str, Any] = {"base_dir": ROOT, "feature_schema": adopted_catboost_profile()["signature"]["feature_schema"]}
-        plan = plan_runtime_execution(config, workload, budget=budget, **context)
-        self.assertEqual(plan.model_threads, 8)
-        self.assertEqual(plan.selected_axis, "serial")
-        self.assertEqual(plan.profile_source, f"benchmark_profile:{PROFILE_REF}")
+        with self.assertRaisesRegex(ValueError, "semantic_sha256_at_5fold"):
+            plan_runtime_execution(config, workload, budget=budget, **context)
         with self.assertRaisesRegex(ValueError, "signature mismatch"):
             plan_runtime_execution(config, replace(workload, training_rows=5000), budget=budget, **context)
         with self.assertRaisesRegex(ValueError, "requires actual"):
@@ -175,8 +168,8 @@ class PerformanceProfileTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "unknown performance profile_ref"):
             plan_runtime_execution(parse_model_config(payload, CONFIG), workload, budget=budget, **context)
 
-    def test_metadata_rejects_a_plan_replaced_after_profile_resolution(self):
-        from model_forecasting.performance_profiles import adopted_catboost_profile, resolve_performance_profile
+    def test_stale_profile_cannot_emit_resolved_metadata(self):
+        from model_forecasting.performance_profiles import adopted_catboost_profile
         from model_forecasting.resource_planner import build_runtime_workload, plan_runtime_execution
         from forecasting_core.runtime_resources import RuntimeResourceBudget
 
@@ -184,12 +177,8 @@ class PerformanceProfileTest(unittest.TestCase):
         workload = build_runtime_workload(config, training_rows=5072, feature_count=29, design_bytes=19476480)
         budget = RuntimeResourceBudget(physical_cores=8, logical_cores=8, total_thread_limit=8, memory_limit_bytes=4 * 1024**3)
         context: dict[str, Any] = {"budget": budget, "base_dir": ROOT, "feature_schema": adopted_catboost_profile()["signature"]["feature_schema"]}
-        plan = plan_runtime_execution(config, workload, **context)
-        result = resolve_performance_profile(config, workload, execution_plan=plan, **context)
-        self.assertEqual(result["resolved_execution_plan"], plan.payload())
-        changed = replace(plan, model_threads=4, budget_product=4)
-        with self.assertRaisesRegex(ValueError, "profile.*execution plan"):
-            resolve_performance_profile(config, workload, execution_plan=changed, **context)
+        with self.assertRaisesRegex(ValueError, "semantic_sha256_at_5fold"):
+            plan_runtime_execution(config, workload, **context)
 
     def test_typed_profile_reference_is_nonsemantic(self):
         config = load_yaml_config(CONFIG)

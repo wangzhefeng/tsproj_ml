@@ -19,6 +19,8 @@
 
 ## 当前架构
 
+可靠性收口的当前实现、运行证据布局及受限验证状态见 [权威设计 §6.3](docs/multistep_forecasting_redesign.md#63-可靠性收口实现与受限验证)。代码接线完成不代表真实模型/部署验收完成。
+
 ```text
 入口/分派
   main.py / run.py / config/config_loader.py
@@ -113,10 +115,11 @@ uv sync
 单配置本地入口：
 
 ```bash
-env -u PYTHONPATH UV_CACHE_DIR=.uv_cache uv run --no-sync python main.py
+env -u PYTHONPATH UV_CACHE_DIR=.uv_cache uv run --no-sync python main.py \
+  --config-yaml config/aidc_load_15min_short/route_A/baseline/st_recursive.yaml
 ```
 
-CLI：
+必须显式指定单模型配置；`main.py` 不提供硬编码默认值。单模型或引用式融合均可使用 CLI：
 
 ```bash
 env -u PYTHONPATH UV_CACHE_DIR=.uv_cache uv run --no-sync \
@@ -150,9 +153,13 @@ results/<scenario>/<result_identity>/
 ## 验证
 
 ```bash
-# 全量测试
+# 日常快测；同时补跑本次修改涉及的定向测试
 env -u PYTHONPATH UV_CACHE_DIR=.uv_cache uv run --no-sync \
-  python -m unittest discover -s tests -p "test_*.py"
+  python tests/run_suite.py fast
+
+# 全量收口（与原生 unittest discover 同一全集）
+env -u PYTHONPATH UV_CACHE_DIR=.uv_cache uv run --no-sync \
+  python tests/run_suite.py all
 
 # 配置、数据资产与 Ensemble 审计
 env -u PYTHONPATH UV_CACHE_DIR=.uv_cache uv run --no-sync python scripts/check_model_configs.py
@@ -166,5 +173,7 @@ env -u PYTHONPATH UV_CACHE_DIR=.uv_cache uv run --no-sync python -m compileall -
   decomposition data_process utils config scripts tests main.py run.py
 git diff --check
 ```
+
+测试分组、按 ID 过滤和精简覆盖映射见 [`tests/README.md`](tests/README.md)。
 
 当前实现与整改状态见 [`docs/architecture_convergence_plan.md`](docs/architecture_convergence_plan.md)。历史方案文档仅用于 Git/决策溯源，不作为当前实现事实源。

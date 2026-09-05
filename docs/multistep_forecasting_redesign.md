@@ -158,6 +158,87 @@ calendar normalization → decomposition → target scaling
 
 Quantile linear blending 按 target 最小化 simplex pooled pinball，一组 target 权重跨 Q 共享。最终 Ensemble bundle 内嵌全部成员 bundle 和 method artifact；部署预测不读取成员 YAML 或 OOF cache。
 
+### 6.1 OOF 标签隔离 gap 合同
+
+`ensemble.oof.gap_steps` 是训练标签与 holdout 标签之间的隔离步数，规则为
+`training_label_end < validation_label_start - gap_steps * freq_offset`。
+gap 不平移预测 origin/标签时间，也不改变 outer cutoff 的原有筛选含义；月频使用
+calendar offset，不转换为固定 Timedelta。单模型切折、holdout 审计和 OOF 共用
+`model_testing.validation.is_label_safe`；两类选折策略仍各自保留，不能声称 OOF
+直接调用了 `rolling_origin_folds`。
+
+正 gap 使用内部 `label_embargo_v1` 语义标识参与 Ensemble fingerprint 和 OOF cache key，
+避免读取旧版“正 gap 放宽标签边界”的缓存；该标识不是 YAML 开关。
+OOF 逐折审计保存 `gap_steps/gap_semantics/training_label_end_max` 并随缓存持久化。
+零 gap 的配置身份、OOF key 和选折保持不变，存量结果不删除、不自动重跑。
+
+实施完成证据：2026-09-06 定向回归 **123 项、16.157 秒、OK**；覆盖小时/15min/月末
+边界、等号排除、outer cutoff、历史不足、旧正 gap 缓存 miss 且文件保留、零 gap
+golden，以及 point/quantile 小样本 OOF→final fit→预测表→缓存重用→bundle 重载推理。
+读取现役全部 **78** 份 Ensemble YAML：全部 gap=0，修复前后配置 fingerprint 零变化，
+无需 YAML 迁移；这不是存量生产结果重跑证明。未执行全量测试或生产配置训练。
+
+验证命令：
+
+```bash
+env -u PYTHONPATH UV_CACHE_DIR=.uv_cache uv run --no-sync python -c 'import unittest; names=("test_oof_gap_*.py","test_ensemble_oof.py","test_ensemble_specs.py","test_ensemble_loader.py","test_ensemble_runtime.py","test_ensemble_parity.py","test_ensemble_persistence.py","test_canonical_base_model_runner.py","test_package_layering.py","test_compiled_feature_cache.py"); suite=unittest.TestSuite(unittest.defaultTestLoader.discover("tests",pattern=name) for name in names); result=unittest.TextTestRunner(verbosity=1).run(suite); raise SystemExit(not result.wasSuccessful())'
+```
+
+日志与逐配置核对清单分别为 `.hermes/plans/oof-gap-regression.log`、
+`.hermes/plans/oof-gap-config-audit.json`（本地实施证据，长期合同以本节和测试为准）。
+
+### 6.2 原生模型参数校验（2026-09-06）
+
+模型工厂拒绝未知参数，不把合法原生别名当作跨模型残留清扫：
+
+- LightGBM 使用已安装 native alias 表校验名称；原生查询不可用即报错，不静默跳过。
+- CatBoost 显式参数先按原生同义组归一化，再合并 wrapper 默认值；保留合法 `num_leaves`，不以默认 seed 覆盖 `random_state`，冲突的显式迭代别名报错。
+- XGBoost 在 `models/xgb_validation.py` 的独立子进程中配置无数据 Booster，不调用训练；按真实参数、维度、特征名与版本做进程内有界 single-flight 缓存，未知/未使用参数报错。预检强制诊断开关，不修改父模型配置，也不在父线程捕获全局 warnings。RNG 使用副本，避免参数读取额外抽取 seed。wrapper 保存预检与实际拟合后的 native config，重载预测不依赖子进程；统一运行证据落盘仍属后续任务。
+
+验收：**85 项定向测试，12.486 秒，OK**，含 point/quantile 训练、CatBoost 原生数值 parity、XGBoost RNG parity、并发校验复用、预检故障显式失败、wrapper 序列化重载预测、分层与编译缓存门禁。
+
+```bash
+env -u PYTHONPATH UV_CACHE_DIR=.uv_cache uv run --no-sync python -c 'import unittest; names=("test_native_parameter_validation.py","test_xgb_parameter_preflight.py","test_package_layering.py","test_probabilistic_objectives.py","test_quantile_training_optimization.py","test_model_thread_runtime.py","test_runtime_array_fastpaths.py","test_model_parameter_validation.py","test_compiled_feature_cache.py"); groups=[unittest.defaultTestLoader.discover("tests",pattern=name) for name in names]; assert all(group.countTestCases() for group in groups); result=unittest.TextTestRunner(verbosity=1).run(unittest.TestSuite(groups)); raise SystemExit(not result.wasSuccessful())'
+```
+
+配置审计严格解析 5,072 份单模型和 78 份 Ensemble；其中 1,910 份原生模型归并为 7 组参数，构造/参数名预检全部通过。现役配置未发现受上述 CatBoost `num_leaves` 或非 42 `random_state` 覆盖修复影响的声明。审计没有启动训练，XGBoost 全集参数名检查使用两列占位维度，不能替代真实数据拟合预检。命令为 `env -u PYTHONPATH UV_CACHE_DIR=.uv_cache uv run --no-sync python .hermes/plans/audit-native-parameters.py`；本地证据为 `.hermes/plans/native-parameter-audit.json` 与 `.hermes/plans/native-preflight-regression.log`。
+
+范围与代价：没有生产重跑、YAML 迁移或旧结果删除；未测量完整运行时中子进程预检的性能成本，不沿用旧性能基准宣称零开销。日内切折、目标变换窗口、统一运行元数据及自然月生命周期仍是独立待办，本项测试不构成这些事项的完成证据。
+
+### 6.3 可靠性收口实现与受限验证
+
+本节接续 §6.2 的历史待办。用户要求不运行配置完整生命周期和模型 fit/predict 测试；工程接线与运行验收分开记录。
+
+| 项目 | 当前实现 | 验证边界 |
+|---|---|---|
+| intraday 调度 | 单模型/OOF 使用正式原点 stride 网格；保持标签 embargo/outer cutoff；批验收检查真实时间网格 | 纯时间几何通过，真实回测未执行 |
+| 目标拟合窗口 | scaler 按唯一训练标签时间拟合；分解默认同窗，可声明 `features.transformations.target.decomposition.fit_history_steps`；确定性日历归一化没有虚构拟合状态 | 窗口选择通过，数值恢复/部署 parity 未执行 |
+| 模型描述 | `models/catalog.py` 统一别名、quantile 类型、线程及能力字段，原 wrapper 路径保留 | 描述表/静态接线通过，原生模型数值 parity 未重跑 |
+| 生命周期 | 自然月回测/CQR 收集先于 final fit；final bundle 与预测不再在 run 返回后重写；单模型完成状态由 runtime 写、批验收读 | 静态顺序/状态合同通过，真实训练失败恢复未执行 |
+| 运行证据 | fixed-step/calendar-month 逐折和 Ensemble OOF/final 成员均接入公开 `execution_evidence`；final 和成员汇总写 readable JSON | 元数据 I/O/JSON 快照/静态接线通过，真实模型参数覆盖未执行验收 |
+
+适用日内调度和 target decomposition/scaling 的配置语义分别包含 `formal_origin_grid_v1`、`unique_training_labels_v1` 内部版本。旧结果不删除、不自动重跑。上一实施轮严格解析全部活动配置，并对季节分解声明做规则网格窗口审计，未发现需增加独立上下文的配置；该审计不等于真实资产/分解验证，本次未重跑全仓配置检查。
+
+运行证据约定：
+- 单模型逐折证据在 holdout metadata；final 证据为 `run_evidence`。记录 config/实现摘要、依赖版本、目标变换窗口和已存在模型的参数；实现摘要沿用 checkpoint 实现文件集合，不是整个 Git 仓库快照。
+- Ensemble 的 `run_evidence.member_oof` 与 `member_final` 分开；OOF 证据单独保存在 `OOFPredictionArtifact.execution_evidence` 和缓存 JSON，不进入 OOF 预测或配置语义指纹。缓存命中保留历史证据，并标记 cache_hit；旧缓存/自定义 runner 缺证据明确 unavailable，不补造也不为此重跑。
+- NumPy 参数转为普通 JSON 值；合法 NaN/Infinity 参数哨兵显式标成 `nonfinite_float`，其他无法序列化对象标成 `unserialized_type`，不宣称这些字段可直接重建模型。证据采集不调用 fit/predict。
+- 评估公式不变：point aggregate 是逐 target 指标加权，aggregate_horizon 和 marginal aggregate 是有效点池化，metadata 显式区分。
+- `run_state.json` 的 completed 不是全目录原子事务；外部直接 pickle 读取不受它约束。本轮不扩展模型加载入口。
+
+受限验证命令：
+
+```bash
+env -u PYTHONPATH UV_CACHE_DIR=.uv_cache uv run --no-sync python -B .hermes/plans/verify-architecture-no-models.py
+git diff --check
+```
+
+本轮最终复验：**44 项通过，0 failures/errors/skips，模型调用拦截记录为空；52 个修改/新增 Python 文件 AST 解析通过，git diff --check 通过，命令退出码 0**。日志及 JSON 位于 `.hermes/plans/architecture-no-model-verification.*`。只运行纯逻辑/静态测试及临时元数据 I/O，真实训练、预测、CQR 数值、bundle 重载和失败恢复仍未验证，不能用这些检查替代。新增负向测试先复现原生 NaN 参数无法写严格 JSON，修复后通过；拦截器对 sklearn.base._fit_context 的导入期装饰器构造误报经源码核实修正，未放行实际 fit/predict。
+
+提交收口另以 `tests/run_suite.py all` 执行完整仓库测试：发现 890 项（fast 283 / integration 482 / audit 125），**890 项全部通过，耗时 1265.407 秒**。该全集包含现有 runtime smoke、配置与资产审计，但仍不等于逐份活动配置的完整生产 fit/backtest/forecast 重跑；上表对生产级数值和资源验收的限制继续有效。
+
+文档同步：首次 AGENTS.md 审批超时后未绕道写入；用户明确要求重启审批后，通过受保护 patch 入口成功追加“可靠性收口合同”，文档阻塞已解除。原补丁清单保留在 `.hermes/plans/agent-rules-pending.md` 供溯源；CLAUDE.md 仍为原有指针。此文档更新不改变上述运行验收边界。
+
 ## 7. 概率边界
 
 生产能力覆盖 point、边际 quantile 与可选 CQR 校准区间（2026-09-01 激活）：
@@ -190,6 +271,8 @@ Quantile linear blending 按 target 最小化 simplex pooled pinball，一组 ta
 - 非 LightGBM 九类模型各完成三轮 profile。仅 short Route A baseline CatBoost Direct pointwise 的 `model_thread_count=8` 达到门槛并写入生成器/YAML（median 改善 19.56%）；其余保留默认。RandomForest 8 线程虽快 58.73%，但出现最大 `7.28e-12` 的跨轮并行归约差异，因 deterministic gate 不采用。profile 不跨 H/K/Q/rows/features/scope 外推。
 
 2026-09-05 签名收口：上述唯一 CatBoost YAML 与生成器使用 `profile_ref: opt017-catboost-short-a-pointwise-v1`。`performance_profiles` 校验真实 raw workload、特征内容与顺序、数据 SHA256、CatBoost 版本/默认参数、训练窗口和预算；runtime/batch 必须传实际 base_dir 与 feature_schema，后续调度不能改写已标定计划后仍保留原 claim。resolved resources 区分 adopted_benchmark_profile、explicit_performance_override、automatic_default；签名/provenance 和其余 performance 一样不进入 semantic fingerprint。原实验为 5-fold，物理配置仍为 31-fold，metadata 明确 `formal_benchmark_verified=false`，不能将采用配置表述为已经测得正式 31-fold 收益。当前批次最终验证与正式产物验收进度见 `TODO_OPTIM.md`，上面的旧吞吐数字不作为新增 checkpoint 开销的复测结果。
+
+2026-09-06 intraday 回测改为正式 forecast origin 的 stride 网格后，该历史 profile 的训练折语义已改变。活动 YAML 与确定性生成器撤下 `profile_ref`，旧签名保留并必须以 `semantic_sha256_at_5fold` mismatch fail-closed；不能只更新 SHA 冒充重测。未来如需恢复，必须按新时间网格重新执行 benchmark 与数值/资源验收。
 
 2026-09-05 本批验收收口：新增预算/产物/checkpoint/profile及自然月门禁的统一定向回归为267项、225.300秒、OK（精确命令及日志见`TODO_OPTIM.md`本批新增证据）；5150配置checker通过、4689矩阵生成计划零漂移。原正式24份清单全部通过31fold/final/forecast/摘要/身份/几何和历史四CSV及reload exact复验，其中22份新运行、2份复用。其后linear/STL96/MSTL96-672以独立5fold完成三拓扑各三轮，共27次运行；verifier独立回读108份CSV及27个bundle并复算统计一致。三个分解代表全部保持默认1x8：linear/STL最佳median改善仅9.867%/5.376%，MSTL候选更慢；未新增分解性能配置或扩大收益结论。记录到系统swap-out活动，不能宣称全局无swap。统计与验收证据在`results/_optimization_closeout/decomposition/`，完整实验产物在原`/tmp`隔离目录。最后收口遵照用户要求不跑全量测试、不重跑上述267项回归；完成证据验收、生成器13项定向测试、两次只读幂等和文档检查。OPT-001至OPT-019均已完成；历史测量、no-op与证据覆盖边界继续保留。
 
@@ -377,3 +460,61 @@ cyclical bundle 为 1,648,584 bytes。两份bundle均为 1 model group / 1 estim
 - 2026-08-30 至 31：包级 DAG、时间几何、配置资产、产物和文档收敛；完整执行记录见 `docs/architecture_convergence_plan.md`。
 
 未经 wangzf 明确指示，不 commit、不 push；模型效果消融不属于本架构验收。
+
+## 17. 测试执行分层与重复生命周期精简
+
+状态：completed（2026-09-06，测试与文档范围，不修改生产算法）。
+
+- `tests/run_suite.py` 提供互斥的 fast/integration/audit 集合与 all 全集，保留原生 unittest discovery；未分类新测试进入 integration，发现失败、重复 ID、空选择均非零退出。分组和覆盖映射以 `tests/README.md` 为准。
+- OOFSpec 两个完全重复测试仅保留 specs 版本；融合有限值/method 断言并入跨方法 cache 测试，减少三次重复生命周期。
+- TASK27 保留 46 场景：单模型完整 runtime 从 35 次降至 23 次，trainer/forecaster 从 7 次增至 19 次；仅下沉 Local K2 非 Direct 的 independent/native 组合。对应十二组合不再各自验收落盘；Direct 两 adapter 接线、七策略其余 runtime 轴及精确策略/adapter 测试保留。
+- 历史 geometry migration manifest 不再锁定当前配置 fingerprint 和路径全集；现役配置旧字段拒绝及真实时间轴训练窗计数检查保留。未删除 manifest 或冻结分解 fixture。
+- 暂不迁移目录或全面抽取跨测试 fixture；避免仅为文件数引入测试框架重构。
+
+完成证据：启动时发现的 **866 项**全部执行，**1260.613 秒，OK，零跳过**。独立 fast 入口 **282 项通过**；最后一次发现快照为 **873 项**（fast 282 / integration 466 / audit 125），差额为其他并发改动新增的 5 项原生参数测试及 2 项日内调度测试，单独补验 **7 项 / 3.669 秒 / OK**。这是一次全量快照加增量验证，不是最新工作树重新执行 873 项全量的声明。单项设计审计 802.182 秒、矩阵 21.511 秒；存在外部并发任务，不作为隔离性能基准。逐测试时间不包括类级 setup/teardown，不能把其求和当作完整 wall time。
+
+```bash
+env -u PYTHONPATH UV_CACHE_DIR=.uv_cache uv run --no-sync python -B tests/run_suite.py all --report .hermes/plans/test-suite-all-report.json
+env -u PYTHONPATH UV_CACHE_DIR=.uv_cache uv run --no-sync python -B tests/run_suite.py fast --report .hermes/plans/test-suite-fast-report.json
+git diff --check
+```
+
+本地证据：`.hermes/plans/test-suite-all.log`、`test-suite-all-report.json`、`test-suite-fast.log`、`test-suite-fast-report.json`。长期契约不依赖这些本地日志。
+
+### 17.1 休眠 DataFrame 概率后处理链退出
+
+状态：completed。经用户批准，删除 `probabilistic/pipeline.py`、`probabilistic/postprocessing.py` 及 `tests/test_probabilistic_pipeline.py`、`tests/test_probabilistic_postprocessing.py`，同步测试分组与包职责说明。仓库 Python 源码中旧模块/函数引用为零；历史设计文档中的旧验收记录保留，不代表现役 API。此项移除旧 DataFrame API，不提供兼容 shim；仓库外直接导入者须迁移。现役 `repair_marginal_quantile_crossing` 和 CQR calibration 内核未修改。
+
+验证：删除前后 discovery 差集精确为上述两份测试中的 3 个用例，无意外丢失。定向 **96 tests / 59.279s / OK**，覆盖 `test_crossing_method_config`、`test_multitarget_probabilistic`、`test_conformal`、`test_conformal_tracker`、`test_probabilistic_eval_wiring`、`test_probabilistic_contracts`、`test_package_layering`、`test_suite_runner`、`test_canonical_runtime_smoke`、`test_calendar_month_runtime`；`git diff --check` 通过。未再运行全量或生产配置重跑。运行证据为 `.hermes/plans/retired-probability-verification.log`；可用原生 unittest 按上述模块构造 TestSuite 复验。
+
+### 17.2 测试专用生产接口退出与算法测试接线
+
+状态：completed（2026-09-06，定向回归范围；不是全量生产配置数值验收）。
+
+- runtime/fit service 的五个测试专用资源探针退出；测试通过 `tests/fixtures/runtime_planning.py` 调用公开 workload/planner/参数解析接口。仍有真实调用的 `_runtime_execution_plan` 回退保留。
+- `calibration_runtime_kwargs`、`validate_probabilistic_args` 和旧一维 `ForecastDistribution` 退出。旧空间/stage 枚举随旧类型退出；张量形状、时间、point-quantile 绑定、轴一致性及区间边界断言继续覆盖。`resolve_probabilistic_spec` 等现存消费者所需接口不扩大删除。
+- 旧 NNLS 黄金参照迁入 `tests/fixtures/legacy_nnls.py`，不再从生产融合模块导出。剔除 docstring 后与 HEAD 原函数的 AST 完全一致；保留独立数值参照，不委托新实现。
+- `combine_members` 校验成员顺序后调用三个 combine 函数；weighted/linear blending 共享预测期加权运算，权重学习仍独立。新增生产委托及多目标 point/quantile 逐值测试，四方法运行与 bundle 重载部署测试通过。
+- `inject_quantile_objective` 及其重复 alias/injector 表退出。支持性查询复用训练层从 catalog 派生的 registry；参数注入唯一入口为 `models.catalog.quantile_parameters`。
+- CQR tracker 整批调用 `compute_nonconformity_scores` 后追加记录，拒绝有效有限值行中的倒置区间且不留半批状态；原有非有限值/掩码筛选不变。
+- 资产缺列测试改走真实 CSV 审计报告后删除 `_missing_required_columns`；选日尾部误差测试改走 `run_selection` 后删除 `select_best_scenario_day`，不改正式选日规则。
+- 保留公开部署/缓存 API、性能证据、provider 工厂、joint-sample unsupported 边界，以及尚未裁决退出的离线分解/crossing 诊断能力。动态注册的七策略和节假日 generator 不作为死代码处理。
+
+实施差异与兼容边界：
+
+| 项目 | 实施裁决与影响 |
+|---|---|
+| 旧 objective 测试额外设置 metric/eval_metric | 不将旧规则迁入生产；保留现役参数覆盖语义。合法 quantile 的 objective 映射不变；直接调用 catalog 的非法分位点及未知模型改为明确 ValueError |
+| CQR score 合并 | 倒置区间由原来的直接计算变为报错，属于错误输入语义收紧，不宣称完全零行为变化；新增负向测试先复现失败再修复 |
+| 旧 API 退出 | 仓库外旧函数 import 及旧 ForecastDistribution pickle 不提供兼容 shim；未修改 canonical bundle schema、配置 fingerprint 或存量结果 |
+| 验证范围 | 不重跑正式模型配置、不清理结果、不重跑全量套件；运行链测试产物位于临时目录 |
+
+验证证据：修改前 fast **282 项通过**；最终 fast **283 项 / 2.822 秒 / OK**；定向 **203 项 / 90.833 秒 / OK**，均零失败、零错误、零跳过。两组按 ID 去重覆盖 **379 项**（重叠 107 项），不是相加后声称完整全集通过。最终 discovery **890 项**（fast 283 / integration 482 / audit 125）。定向包括融合四方法运行、point/quantile bundle 脱离 YAML/OOF 的重载部署、CQR fixed/calendar checkpoint replay、全仓资产审计、选日输出及包层级门禁；`git diff --check` 通过。
+
+```bash
+env -u PYTHONPATH UV_CACHE_DIR=.uv_cache uv run --no-sync python .hermes/plans/verify-test-only-cleanup.py
+env -u PYTHONPATH UV_CACHE_DIR=.uv_cache uv run --no-sync python tests/run_suite.py fast --report .hermes/plans/test-only-fast.json
+git diff --check
+```
+
+定向选择及逐项结果记录于 `.hermes/plans/verify-test-only-cleanup.py`、`test-only-targeted.json`；基线和 fast 结果分别为 `test-only-baseline.json`、`test-only-fast.json`。运行日志为 `/tmp/tsproj-test-only-targeted.log` 与 `/tmp/tsproj-test-only-fast.log`，只作本地执行证据；覆盖迁移的长期映射见 `tests/README.md`。

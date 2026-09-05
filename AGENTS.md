@@ -6,6 +6,13 @@ The general coding guidelines (Karpathy: think before coding, simplicity, surgic
 
 ## Project Conventions
 
+### 可靠性收口合同
+- intraday 回测和 OOF 使用正式 forecast origin 的 stride 网格；批产物检查真实时间网格。scaler 按唯一训练标签时间拟合，分解默认限训练标签窗；仅显式 `features.transformations.target.decomposition.fit_history_steps` 可延长上下文。适用语义进入内部 fingerprint，不自动重跑/清理旧结果。
+- 模型静态描述唯一入口为 `models/catalog.py`，工厂、能力描述与资源规划共用，wrapper 原导入路径不变。
+- 逐折及 Ensemble 成员证据通过公开 runner 接口采集，OOF 证据独立于语义 fingerprint 并随缓存保存。缓存命中保留历史证据；缺证据显式 unavailable，不以当前环境伪造历史证据，不为补证据重跑。
+- 自然月先完成回测/CQR 收集，再 final fit 与 final 持久化。单模型完成状态只由 runtime 写入，批验收检查；不构成目录事务，也不约束外部 pickle 读取。
+- 当前实施与受限验证边界、精确证据见 `docs/multistep_forecasting_redesign.md` §6.3。实现接线与数值/部署/失败恢复验收分开记录。
+
 ### 配置系统
 - **现役模型配置统一为 canonical schema**：仓库内 5,150 个活动模型 YAML 均以 `schema_version: 2` 声明（5,072 个 `ForecastConfigSpec` + 78 个引用式 `EnsembleConfigSpec`，另有 41 个数据工具 YAML 不计模型数）；三个 AIDC 15min 负荷场景共 4,689 份（4,617 个六组全因子单模型 + 72 个引用式 Ensemble），不维护重复的 `ensemble_members/`。每路 baseline 为 9 模型 × 9 策略共 81 份，其中 ST/LightGBM/Ridge × Direct/Recursive/MIMO 九个普通成员供 `add_ensemble/` 的三组 Latin-square × 四方法直接引用。3 个数据列族错配配置已于 2026-08-31 经批准从活动集移除，历史内容由 Git 保留，不计入活动集。`load_yaml_config()` 按互斥字段集合分派返回 `ForecastConfigSpec | EnsembleConfigSpec`，未知字段、重复 YAML key、角色冲突和非法 strategy/chunk 均 RAISE。
 - **公共配置不暴露内部固定值或死参数**：`problem.information_mode`、`output.setting_suffix`、`probabilistic.recursive_propagation`、`probabilistic.schema_version` 已删除，重新声明一律 RAISE。预测输入始终执行严格 as-of；监督训练仅通过内部 `target_access=supervised_labels` 放开预测期 target 标签，不放开 known-future 或历史 target revision 的时间边界。递归 quantile 内部固定走 `median_path`；概率部署产物仍独立保存并校验其内部 schema 版本。
@@ -17,6 +24,7 @@ The general coding guidelines (Karpathy: think before coding, simplicity, surgic
 - **`schedule_mode`**（`RuntimeConfig`，默认 `daily`）：`daily` = 日界对齐（`floor("1D") + 1day` → 次日 00:00，预测下一完整自然日）；`intraday` = 保留调度时刻（从 `now_time` 起 `predict_steps` 步）。日志/文件名的时间戳仍按 `now_time` 原值
 - 内部分界点 = `schedule_mode=daily` 时 `floor("1D") + 1day` = 次日 00:00:00；`intraday` 时 = `now_time` 本身
 - fixed-step 的 `validation.history_steps/train_window_steps/fold_count/stride_steps` 统一以监督 origin steps 计。calendar-month 使用独立的 `train_window_days/fold_count/stride_months`；其中训练窗按原始日数计、折间距按自然月计。
+- **OOF gap 隔离合同**：`ensemble.oof.gap_steps` 为训练标签结束与验证标签开始之间的隔离步数，要求 `training_label_end < validation_label_start - gap_steps * freq_offset`。单模型和 OOF 共用 `model_testing.validation.is_label_safe`，选折方式各自保留；gap 不平移预测时刻，不改变 outer cutoff 的原有含义。正 gap 的融合实验身份及 OOF cache key 必须带内部语义版本，零 gap 保持原身份；不删除或自动重跑存量产物。
 - **`predict_steps` 以 `freq` 为单位计步**（取代旧 `predict_days`）：15min 下 1 天 = 96、4 小时 = 16；5min 下 1 天 = 288；日频下 = 天数。`horizon = predict_steps`，不再经 `n_per_day` 换算
 - `pd.date_range` 使用 `inclusive="left"`，end 为排除边界——所以终日 23:55 是最后一个被包含的点
 
@@ -33,6 +41,8 @@ The general coding guidelines (Karpathy: think before coding, simplicity, surgic
 - **无 legacy 层**：旧 YAML/旧 pkl/旧宽表在本仓库不再可读；`ModelSaveLoad.load_model()` 直接返回加载对象，`CanonicalResultReader` 只接受 canonical long schema，非 canonical 输入直接 RAISE。
 
 ### 模型工厂（ModelFactory）
+- **构造参数严格校验**：RF、HistGB 与线性模型按底层构造签名拒绝未知参数，不静默丢弃。含原生 `**kwargs` 透传的模型不能用签名白名单误删参数；其原生校验单独处理。
+- LightGBM 参数名按已安装原生 alias 表校验，查询失败报错而不跳过；CatBoost 先对显式参数按原生规则归一化，再合并默认值，不删除跨模型同名的合法参数，也不以默认 seed 覆盖显式 seed。XGBoost 原生参数预检须隔离在子进程，不在并行拟合父进程捕获全局 warnings；预检不训练，未使用参数报错。
 - **支持的模型类型**：LightGBM（`lgb`/`lightgbm`）、XGBoost（`xgb`/`xgboost`）、CatBoost（`cat`/`catboost`）、RandomForest（`rf`/`randomforest`）、HistGradientBoosting（`histgb`/`histgradientboosting`）、Ridge（`ridge`）、ElasticNet（`enet`/`elasticnet`）、Lasso（`lasso`）、QuantileRegressor（`qr`/`quantileregressor`）、SeasonalTemplate（`st`/`seasonaltemplate`，工作日/周末分组建模板 + NNLS 学权重）
 - **融合训练数据一致性**：所有融合方法的成员 final fit 与对应单模型使用同一显式训练窗口；禁止某方法只训练部分历史或与回测窗口采用不同隐式策略。
 - **多文件外生来源**（2026-09-01 文档漂移清理：legacy `custom_features`/`ExogenousFeatureConfig` 与 `plot_overlay_path`/`plot_overlay_col` 已随 canonical 收口删除，canonical 代码与全部现役 YAML 零引用）：多文件外生一律走 `data.sources` 多 source 声明——历史有真值、预测期无值的列挂 `observed_past` 角色 + 显式 provider 三选一（`persistence`/`auxiliary`/`provided_scenario`，禁止隐式 persistence）；未来可知的列（天气预报/计划表）挂 `known_future` 角色并用 `history_path + backtest_path + future_path` 三段路径。测试图叠加参考曲线需求未迁移，如需恢复按 canonical OutputConfig 重新设计。
@@ -54,6 +64,7 @@ The general coding guidelines (Karpathy: think before coding, simplicity, surgic
 - **datetime 派生剔除子日粒度**：低频下 `datetime_features` 去掉 `minute`/`hour`，`datetime_categorical_features` 同步去对应 `dt_*` 项
 
 ### Canonical 运行边界
+- raw-design 缓存同时绑定源内容、生成器、依赖清单与普通编译链实现内容；修改 compiler/registry/design/策略几何后不得命中旧原始设计。配置 fingerprint 与缓存身份分离，缓存变更不删除存量正式结果。
 - canonical rolling backtest、final training 和 forecast 均由 `model_forecasting/runtime.py` 顶层编排，design/fit/calendar-backtest/persistence 分别委托给同包窄模块；不得重新接入已删除的 `ModelTesting` 或旧 executor。
 - estimator 并行能力必须由 `model_training/estimators/capabilities.py` 显式探测；不支持时 RAISE，不静默降级。
 - 运行并行统一由 `model_forecasting/resource_planner.py` 生成 `RuntimeExecutionPlan`；fixed-step、calendar-month、point/quantile 与 Ensemble 不得自行读取 `validation.performance`。每次最多一个外层并行轴大于 1，线程/内存冲突直接 RAISE；performance 不进入 semantic fingerprint，resolved metadata 必须记录 workload、budget、plan、cache 与阶段 wall。
@@ -72,7 +83,7 @@ The general coding guidelines (Karpathy: think before coding, simplicity, surgic
 - 结果输出目录（2026-09-01 收口）：**全部模型配置统一写 `results/{pretrained_models,results_test,results_forecast}/<scenario_subpath>/<result_identity>/`** 三顶层目录；单模型与引用式 ensemble YAML 的 `output.directories` 均显式声明 `checkpoints: ./results/pretrained_models/`、`tests: ./results/results_test/`、`forecast: ./results/results_forecast/`（ensemble 路径分支在 `model_ensemble/runtime.py::_ensemble_output_paths`，`output_root` 显式覆写仍最优先）。`result_identity`：单模型 = `<strategy>-<model>-<scope>-k<K>-<fingerprint[:12]>`；ensemble = `ensemble-<method>-<scope>-k<K>-<fp[:12]>`。兼容形态：未声明 `directories` 时 runtime 回退 `results/<scenario>/<identity>/` 同 identity 三子树；OOF cache 仍写在 `results/_ensemble_oof/`。
 - `prediction.csv` / `cv_plot_df.csv` 使用 `(series_id,time,target[,window])` long 唯一键；`test_scores_df.csv` 写 per-target 与 aggregate 行；**quantile 模式追加 `test_scores_probabilistic_df.csv`**（tidy long：mae/逐 level pinball/central 区间覆盖率·宽度·winkler·coverage gap，eval_mask 口径与点评估共用 `build_eval_mask_payload`，aggregate 行跨 target 按有效点池化）。ensemble 的无泄漏质量证据是**融合 OOF 评分**（`model_ensemble/evaluation.py`，复用同一评估实现）：结果挂在 `run_ensemble_config` 返回的 `fused_oof_scores` / audit，run.py 日志输出 aggregate MAE/RMSE/MAPE。
 - 目标训练变换顺序固定为 `calendar normalization → decomposition → target scaling`，point/quantile 严格逆序恢复；状态按 `(series_id,target)` 隔离并随 bundle 保存。
-- 本地入口只接受 canonical schema YAML：修改 `main.py::CONFIG_YAML` 后运行 `env -u PYTHONPATH UV_CACHE_DIR=.uv_cache uv run --no-sync python main.py`。非 canonical YAML 一律 RAISE。
+- 本地入口只接受 canonical 单模型 schema YAML：运行 `env -u PYTHONPATH UV_CACHE_DIR=.uv_cache uv run --no-sync python main.py --config-yaml <path>`。必须显式指定配置，无硬编码默认值；非 canonical YAML 一律 RAISE。引用式 Ensemble 使用 `run.py`。
 - `run.py` 只对 canonical payload 应用 CLI override；非 canonical 配置明确 RAISE（不再指向已删除的迁移脚本）。
 
 - 日志目录：`logs/main/`（直接运行 `main.py`）
@@ -84,6 +95,6 @@ The general coding guidelines (Karpathy: think before coding, simplicity, surgic
 
 ### 仓库维护注意
 - **Agent 工作文档分流**：Hermes Agent 生成的实施计划只放 `.hermes/plans/`；Codex/Superpowers 生成的设计与计划只放 `.agents/superpowers/{specs,plans}/`。不再使用 `docs/plans/` 或 `docs/superpowers/` 保存 Agent 过程文档；`docs/` 只保留面向项目使用者的长期有效文档。
-- **`tests/` 已纳入版本控制**（2026-08-15 起移出 `.gitignore`）：改动被测模块时必须同步修复测试导入与接口断言，并运行 `env -u PYTHONPATH UV_CACHE_DIR=.uv_cache uv run python -m unittest discover -s tests -p "test_*.py"`；预测架构的最新精确计数与命令只在 `docs/multistep_forecasting_redesign.md` 维护。AIDC 专项脚本目录路径含日期段、不是合法 Python 包，相关测试用 `sys.path.insert` 引导后按模块名导入。
+- **`tests/` 已纳入版本控制**（2026-08-15 起移出 `.gitignore`）：改动被测模块时必须同步修复测试导入与接口断言。常规修改运行 `env -u PYTHONPATH UV_CACHE_DIR=.uv_cache uv run --no-sync python tests/run_suite.py fast` 并补相关定向测试；`integration` 为真实后端/运行链，`audit` 为全仓配置/资产及场景数据链，收口使用 `all`（与原生 `unittest discover -s tests -p "test_*.py"` 同一全集）。新测试默认纳入 integration，不得通过遗漏发现或 skip 提速；执行及覆盖映射见 `tests/README.md`。预测架构的最新精确计数只在 `docs/multistep_forecasting_redesign.md` 维护。AIDC 专项脚本目录路径含日期段、不是合法 Python 包，相关测试用 `sys.path.insert` 引导后按模块名导入。
 - `docs/feature_engineering/`（fft/wavelet/statistical/holiday/periodicity/weather 等）是实验性特征脚本集合，**未接入主流程**，2026-08-29 从 `features/feature_engineering/` 移入 `docs/` 归档，后续再决定处置
 - `utils/`（L0）只保留 frequency/log_util/runtime_env 三个无领域语义工具；`utils/metrics.py`、`utils/cv_plot.py`、`utils/eval_mask.py` 已删除（指标在 `model_evaluation/`（point.py/marginal.py/metrics.py），评估掩码在 `model_evaluation/mask.py::build_eval_mask`）

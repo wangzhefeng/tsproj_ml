@@ -1012,6 +1012,8 @@ RawDesign 内存共享、transform single-flight、同 batch 锁、普通两配�
 
 上段为签名实现前的诊断，保留历史证据。`model_forecasting/performance_profiles.py`现为唯一profile实现；物理YAML和生成器只为原CatBoost采用项声明`profile_ref`，不扩大配置范围。planner消费实际base_dir、workload和feature_schema，核验来源内容、模型版本、语义签名与最终执行计划；无profile的人工线程设置标为显式override。新机制不进入semantic fingerprint，也不把历史5-fold标定升级为正式31-fold收益。`tests.test_performance_profiles`已纳入页首267项定向回归；5150配置checker通过、4689生成计划零漂移。AGENTS.md和权威设计文档§7.2已同步。
 
+2026-09-06 后续可靠性收口将 intraday 回测改为正式 forecast origin 的 stride 网格，原 5-fold benchmark 的折语义因此失效。活动 CatBoost YAML 和生成器已撤下 `profile_ref`；旧签名保留作为 fail-closed 历史证据，重新 benchmark 前不得更新 SHA 或恢复活动引用。
+
 ---
 
 ## OPT-018：补齐 compiler batch fallback 可观测性并按证据优化剩余冷路径

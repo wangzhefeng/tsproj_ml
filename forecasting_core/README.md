@@ -9,6 +9,8 @@
 - `probabilistic_spec.py`：point/quantile、quantile grid、interval/calibration 配置合同。
 - `artifacts.py`：`ForecastModelBundle`、`MarginalForecastDistribution`、`QuantileGrid`。
 
+旧一维 `ForecastDistribution` 与无消费者的 `calibration_runtime_kwargs` / `validate_probabilistic_args` 已退出；使用现役张量分布及概率 spec 解析接口。不提供旧类型 import/pickle 兼容。`PredictionIntervalForecast`、`QuantileGrid` 和明确 unsupported 的 joint-sample 边界保留。
+
 ## 依赖规则
 
 本包不得 import 任何其他项目包。`tests/test_package_layering.py` 对所有 Python 文件做 AST 门禁，包括函数内 import。

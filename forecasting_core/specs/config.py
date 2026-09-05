@@ -236,6 +236,11 @@ class ForecastConfigSpec:
         payload = self.canonical_payload()
         payload.pop("output")
         payload["validation"] = self.validation.semantic_payload()
+        if self.validation.get("schedule_mode") == "intraday":
+            payload["intraday_schedule_semantics"] = "formal_origin_grid_v1"
+        target = self.features.transformations.get("target", {})
+        if any(target.get(name, {}).get("method", "none") != "none" for name in ("decomposition", "scaling")):
+            payload["target_fit_window_semantics"] = "unique_training_labels_v1"
         return payload
 
     def fingerprint(self) -> str:

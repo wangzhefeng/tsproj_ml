@@ -11,6 +11,7 @@
 
 """Canonical forecasting entrypoint."""
 
+import argparse
 import os
 import sys
 import warnings
@@ -88,13 +89,17 @@ def build_model(args: ForecastConfigSpec) -> CanonicalModel:
     return CanonicalModel(args)
 
 
-CONFIG_YAML = "config/aidc_load_15min_short/route_A/baseline/st_usmr_mean.yaml"
-
-
 def main() -> None:
     """Load one canonical schema YAML and execute the canonical runtime."""
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--config-yaml",
+        required=True,
+        help="Canonical schema-2 single-model YAML config path.",
+    )
+    cli_args = parser.parse_args()
     ensure_runtime_environment()
-    args = load_yaml_config(CONFIG_YAML)
+    args = load_yaml_config(cli_args.config_yaml)
     model = build_model(args)
     try:
         model.run()

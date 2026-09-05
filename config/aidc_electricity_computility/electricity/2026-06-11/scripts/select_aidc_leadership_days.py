@@ -372,25 +372,6 @@ def _selection_note(scenario: str, row: pd.Series) -> str:
     return "selected after metric prescreen and visual proxy review"
 
 
-def select_best_scenario_day(
-    results_root: Path,
-    scenario: str,
-    candidate_top_k: int = DEFAULT_CANDIDATE_TOP_K,
-    tail_points: int = DEFAULT_TAIL_POINTS,
-) -> dict:
-    candidate_df = build_candidate_pool(results_root, scenario, candidate_top_k, tail_points)
-    metric_best_row = candidate_df.sort_values(["MAPE", "MAE", "RMSE", "time_range"]).iloc[0]
-    selected_row = sorted(
-        [row for _, row in candidate_df.iterrows()],
-        key=lambda row: _selection_tuple(scenario, row),
-    )[0]
-
-    selection = selected_row.to_dict()
-    selection["selection_reason"] = _selection_reason(scenario, selected_row, metric_best_row)
-    selection["note"] = _selection_note(scenario, selected_row)
-    return {column: selection[column] for column in FINAL_SUMMARY_COLUMNS}
-
-
 def _plot_title(selection: dict) -> str:
     return (
         f"{selection['scenario']} | {selection['selected_model']} | {selection['selected_date']} | "

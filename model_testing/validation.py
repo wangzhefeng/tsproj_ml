@@ -10,7 +10,7 @@ reuse the exact same semantics.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Iterable
+from typing import Any, Iterable, Protocol
 
 import pandas as pd
 
@@ -34,9 +34,18 @@ def is_label_safe(
     offset: pd.tseries.frequencies.BaseOffset,
     horizon: int,
     holdout_label_start: pd.Timestamp,
+    *,
+    gap_steps: int = 0,
 ) -> bool:
-    """True when a training sample never overlaps the holdout labels."""
-    return label_end(origin, offset, horizon) < holdout_label_start
+    """Require label_end strictly before the holdout's embargo boundary.
+
+    A positive gap excludes grid steps before the first holdout label; it
+    never shifts the forecast itself. Calendar offsets stay calendar offsets.
+    """
+    if isinstance(gap_steps, bool) or not isinstance(gap_steps, int) or gap_steps < 0:
+        raise ValueError("gap_steps must be a non-negative integer")
+    cutoff = holdout_label_start - gap_steps * offset if gap_steps else holdout_label_start
+    return label_end(origin, offset, horizon) < cutoff
 
 
 @dataclass(frozen=True, slots=True)
@@ -51,6 +60,16 @@ class TimeGeometry:
 
     def label_end(self, origin: pd.Timestamp) -> pd.Timestamp:
         return label_end(origin, self.offset, self.horizon)
+
+
+class OriginTimeline(Protocol):
+    """Read-only time geometry required for selecting supervised folds."""
+
+    @property
+    def geometry(self) -> TimeGeometry: ...
+
+    @property
+    def supervised_origins(self) -> tuple[pd.Timestamp, ...]: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -171,6 +190,33 @@ def _positive_int(source: dict[str, Any], field: str, default: int) -> int:
     return value
 
 
+def scheduled_origin_indices(
+    origins: tuple[pd.Timestamp, ...],
+    geometry: TimeGeometry,
+    schedule_origin: pd.Timestamp,
+    stride_steps: int,
+) -> tuple[int, ...]:
+    """Select the formal schedule grid, newest first, from complete origins."""
+    if isinstance(stride_steps, bool) or not isinstance(stride_steps, int) or stride_steps <= 0:
+        raise ValueError("stride_steps must be a positive integer")
+    if not origins:
+        return ()
+    positions = {pd.Timestamp(origin): index for index, origin in enumerate(origins)}
+    if len(positions) != len(origins) or tuple(sorted(positions)) != origins:
+        raise ValueError("scheduled origins must be ordered and unique")
+    current = pd.Timestamp(schedule_origin)
+    stride = stride_steps * geometry.offset
+    selected = []
+    while current >= origins[0]:
+        if current in positions:
+            selected.append(positions[current])
+        previous = current - stride
+        if previous >= current:
+            raise ValueError("schedule stride must move backwards")
+        current = previous
+    return tuple(selected)
+
+
 def rolling_origin_folds(
     origins: tuple[pd.Timestamp, ...],
     geometry: TimeGeometry,
@@ -179,6 +225,7 @@ def rolling_origin_folds(
     train_window_steps: int,
     fold_count: int,
     stride_steps: int,
+    schedule_origin: pd.Timestamp | None = None,
 ) -> tuple[RollingOriginFold, ...]:
     """Rolling-origin folds with an explicit supervised-origin-step contract.
 
@@ -191,9 +238,14 @@ def rolling_origin_folds(
         history_steps = len(origins)
     history_steps = min(len(origins), history_steps)
     history_start = len(origins) - history_steps
-    candidates = tuple(
-        range(len(origins) - 1, history_start - 1, -stride_steps)
+    candidates = (
+        tuple(range(len(origins) - 1, history_start - 1, -stride_steps))
+        if schedule_origin is None
+        else tuple(index for index in scheduled_origin_indices(origins, geometry, schedule_origin, stride_steps)
+                   if index >= history_start)
     )[:fold_count]
+    if not candidates:
+        raise ValueError("no complete supervised origin matches the forecast schedule")
     folds = []
     for window, origin_index in enumerate(reversed(candidates), start=1):
         holdout_origin = origins[origin_index]
@@ -201,7 +253,7 @@ def rolling_origin_folds(
         train_indices = tuple(
             index
             for index in range(history_start, origin_index)
-            if geometry.label_end(origins[index]) < holdout_label_start
+            if is_label_safe(origins[index], geometry.offset, geometry.horizon, holdout_label_start)
         )[-train_window_steps:]
         if not train_indices:
             raise ValueError(
@@ -252,7 +304,10 @@ def validate_no_overlap(
     training_label_end_max = max(
         geometry.label_end(origins[index]) for index in train_indices
     )
-    if training_label_end_max >= holdout_label_start:
+    if not all(
+        is_label_safe(origins[index], geometry.offset, geometry.horizon, holdout_label_start)
+        for index in train_indices
+    ):
         raise ValueError("training labels must not overlap holdout labels")
     return {
         "origin": holdout_origin.isoformat(),

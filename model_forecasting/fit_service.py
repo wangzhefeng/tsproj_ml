@@ -18,6 +18,7 @@ from model_forecasting.forecaster import (
     CanonicalMarginalQuantileForecaster,
 )
 from model_forecasting.transforms import CanonicalFeatureScaler, CanonicalTargetTransform
+from model_forecasting.transform_windows import select_transform_history
 from model_training.estimators import (
     SharedMultiQuantilePool,
     make_model_factory,
@@ -72,11 +73,15 @@ def _fit_runtime_transforms(
     if target_transform.is_identity:
         target_transform.fit_identity(builder.series_ids, config.problem.targets)
     else:
-        target_transform.fit_transform(
+        context, scaling_times, window_audit = select_transform_history(
             target_history
             if target_history is not None
-            else builder.target_history(history_cutoff)
+            else builder.target_history(history_cutoff),
+            origins, horizon=config.problem.horizon, freq=config.problem.freq,
+            decomposition_history_steps=target_transform.transformations["decomposition"].get("fit_history_steps"),
         )
+        target_transform.fit_transform(context, scaling_times=scaling_times)
+        target_transform.fit_window_metadata = window_audit
     transformed_Y = target_transform.transform_training(
         Y,
         origins,
@@ -115,18 +120,8 @@ def _restore_prediction(
     raise TypeError(f"unsupported canonical prediction type: {type(prediction).__name__}")
 
 
-def _runtime_scalar_fit_count(config: ForecastConfigSpec) -> int:
-    """Compatibility probe: logical scalar positions in one point fit."""
-    return build_runtime_workload(
-        config,
-        training_rows=0,
-        feature_count=1,
-        design_bytes=0,
-    ).logical_output_count
-
-
 def _runtime_execution_plan(config: ForecastConfigSpec) -> RuntimeExecutionPlan:
-    """Compatibility helper for tests and narrow callers without loaded arrays."""
+    """未显式传入执行计划的拟合调用方使用的回退计划。"""
     workload = build_runtime_workload(
         config,
         training_rows=0,
@@ -134,19 +129,6 @@ def _runtime_execution_plan(config: ForecastConfigSpec) -> RuntimeExecutionPlan:
         design_bytes=0,
     )
     return plan_runtime_execution(config, workload)
-
-
-def _runtime_estimator_params(config: ForecastConfigSpec) -> dict[str, Any]:
-    return _planned_estimator_params(config, _runtime_execution_plan(config))
-
-
-def _runtime_model_workers(config: ForecastConfigSpec) -> int:
-    return _runtime_execution_plan(config).output_workers
-
-
-def _runtime_fit_worker_plan(config: ForecastConfigSpec) -> tuple[int, int]:
-    execution_plan = _runtime_execution_plan(config)
-    return execution_plan.quantile_workers, execution_plan.output_workers
 
 
 def _fit_point(

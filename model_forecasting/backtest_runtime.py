@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import json
+
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 from pathlib import Path
@@ -24,32 +24,21 @@ from model_evaluation.point import (
     resolve_aggregate_weighting,
 )
 from model_forecasting.results import backtest_tensors_to_long, write_backtest_results
-from model_forecasting.persistence import persist_model_bundle
+
 from model_testing import validation
 from pandas.tseries.frequencies import to_offset
-from probabilistic.calibration import (
-    ConformalCalibrationTracker,
-    attach_cqr_interval_columns,
-)
+from probabilistic.calibration import ConformalCalibrationTracker
 from forecasting_core.probabilistic_spec import probabilistic_spec_from_mapping
 
 
-def _write_json(path: Path, payload: Mapping[str, Any]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(
-        json.dumps(payload, ensure_ascii=False, indent=2, default=str),
-        encoding="utf-8",
-    )
-
-
-def overwrite_calendar_month_backtest(
+def run_calendar_month_backtest(
     config: ForecastConfigSpec,
     registry: SourceRegistry,
     final_runner: Any,
-    result: Any,
+    test_dir: Path,
     *,
     runner_factory: Any,
-) -> None:
+) -> tuple[dict[str, Any], ConformalCalibrationTracker | None]:
     backtest_started = perf_counter()
     backtest = config.validation.backtest
     if not isinstance(backtest, CalendarMonthBacktestSpec):
@@ -242,6 +231,7 @@ def overwrite_calendar_month_backtest(
             {
                 **fold.metadata,
                 "training_label_end_max": training_label_end_max.isoformat(),
+                "execution_evidence": runner.execution_evidence(artifact, transform),
             }
         )
 
@@ -255,7 +245,7 @@ def overwrite_calendar_month_backtest(
     if calibration_audits:
         metadata["calibration"] = calibration_audits
     write_backtest_results(
-        result.test_dir,
+        test_dir,
         pd.concat(cv_frames, ignore_index=True),
         pd.concat(score_frames, ignore_index=True),
         aggregate_weighting=aggregate_weights,
@@ -269,42 +259,8 @@ def overwrite_calendar_month_backtest(
             else None
         ),
     )
-    resolved_path = result.forecast_dir / "resolved_config.json"
-    resolved = json.loads(resolved_path.read_text(encoding="utf-8"))
-    resolved.setdefault("runtime", {})["holdout"] = metadata
-    if calibration_tracker is not None:
-        # CQR final：calendar_month 的 fixed-step 折为空，最终修正量在这里
-        # 由 calendar 折池计算，冻结进 bundle 并重写 prediction.csv。
-        final_correction, final_calibration_audit = (
-            calibration_tracker.final_correction(final_runner.origin)
-        )
-        calibration_state = {"method": "cqr", **final_calibration_audit}
-        result.bundle.calibration_state = calibration_state
-        persist_model_bundle(result.bundle, result.model_dir)
-        resolved["runtime"]["calibration"] = calibration_state
-        if final_correction.status == "applied":
-            prediction_path = result.forecast_dir / "prediction.csv"
-            frame = pd.read_csv(prediction_path)
-            correction = float(final_correction.correction)
-            frame = attach_cqr_interval_columns(
-                frame,
-                lower=frame[calibration_tracker.lower_column].to_numpy(dtype=float)
-                - correction,
-                upper=frame[calibration_tracker.upper_column].to_numpy(dtype=float)
-                + correction,
-                target_coverage=calibration_tracker.target_coverage,
-            )
-            frame.to_csv(prediction_path, index=False, encoding="utf_8_sig")
     final_runner.stage_wall_seconds["backtest"] = perf_counter() - backtest_started
-    final_runner.stage_wall_seconds["total"] = (
-        perf_counter() - final_runner.lifecycle_started
-    )
-    resolved["runtime"]["resources"] = final_runner.runtime_resources_payload()
-    _write_json(resolved_path, resolved)
-    metadata_path = result.test_dir / "result_metadata.json"
-    result_metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
-    result_metadata["runtime_resources"] = final_runner.runtime_resources_payload()
-    _write_json(metadata_path, result_metadata)
+    return metadata, calibration_tracker
 
 
-__all__ = ["overwrite_calendar_month_backtest"]
+__all__ = ["run_calendar_month_backtest"]

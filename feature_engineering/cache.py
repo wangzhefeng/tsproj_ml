@@ -154,6 +154,21 @@ def _environment_hashes(base_dir: Path) -> dict[str, str]:
     return hashes
 
 
+def _compilation_implementation_hashes() -> dict[str, str]:
+    """绑定原始设计的代码来源，不导入运行层，也不绑定无关模型实现。"""
+    root = Path(__file__).resolve().parents[1]
+    paths = [root / "model_forecasting" / "design.py"]
+    for package in (
+        "forecasting_core", "data_loading", "feature_engineering",
+        "model_training/strategies", "model_testing", "decomposition",
+    ):
+        paths.extend((root / package).rglob("*.py"))
+    return {
+        path.relative_to(root).as_posix(): file_sha256(path)
+        for path in sorted(set(paths))
+    }
+
+
 def _raw_feature_payload(config: ForecastConfigSpec) -> dict[str, object]:
     payload = config.features.canonical_payload()
     payload.pop("selection", None)
@@ -182,13 +197,13 @@ def _raw_validation_payload(config: ForecastConfigSpec) -> dict[str, Any]:
     return {field: validation[field] for field in raw_fields if field in validation}
 
 
-def compute_raw_design_fingerprint(
+def raw_design_provenance(
     config: ForecastConfigSpec,
     *,
     base_dir: str | Path,
     origin: Any,
     generators: Mapping[str, Any],
-) -> str:
+) -> dict[str, Any]:
     root = Path(base_dir).resolve()
     if config.strategy is None:
         raise ValueError("raw design fingerprint requires a strategy")
@@ -203,9 +218,20 @@ def compute_raw_design_fingerprint(
         "source_hashes": _source_hashes(config, root),
         "generator_hashes": _generator_hashes(config, generators),
         "environment_hashes": _environment_hashes(root),
+        "compilation_implementation_hashes": _compilation_implementation_hashes(),
     }
+    return payload
+
+
+def compute_raw_design_fingerprint(
+    config: ForecastConfigSpec,
+    *,
+    base_dir: str | Path,
+    origin: Any,
+    generators: Mapping[str, Any],
+) -> str:
     encoded = json.dumps(
-        payload,
+        raw_design_provenance(config, base_dir=base_dir, origin=origin, generators=generators),
         sort_keys=True,
         ensure_ascii=False,
         separators=(",", ":"),

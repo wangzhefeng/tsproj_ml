@@ -27,7 +27,7 @@ from data_loading import BUILTIN_GENERATORS, SourceRegistry
 from feature_engineering.cache import compute_raw_design_fingerprint
 from forecasting_core.runtime_resources import RuntimeResourceBudget
 from forecasting_core.specs import ForecastConfigSpec
-from model_forecasting.backtest_runtime import overwrite_calendar_month_backtest
+
 from model_forecasting.batch_artifacts import (
     artifact_paths, artifact_digests, artifacts_complete, validate_artifacts,
 )
@@ -575,22 +575,12 @@ def _run_canonical_batch_locked(
         def execute(item: tuple[_BatchTask, CanonicalBaseModelRunner]):
             task, runner = item
             try:
+                runner.calendar_runner_factory = dynamic_runner_factory
                 result = (
                     runner.run(root)
                     if effective_workers == 1
                     else runner.run_prelimited(root)
                 )
-                if (
-                    str(task.config.validation.get("horizon_mode", "fixed_steps"))
-                    == "calendar_month"
-                ):
-                    overwrite_calendar_month_backtest(
-                        task.config,
-                        task.registry,
-                        runner,
-                        result,
-                        runner_factory=dynamic_runner_factory,
-                    )
                 return result, None
             except Exception as exc:
                 return None, exc

@@ -77,6 +77,11 @@ def normalize_target_transformations(value: Any) -> dict[str, dict[str, Any]]:
     if not isinstance(decomposition, Mapping):
         raise TypeError("transformations.target.decomposition must be a mapping")
     decomposition_payload = dict(decomposition)
+    fit_history_steps = decomposition_payload.pop("fit_history_steps", None)
+    if fit_history_steps is not None and (
+        isinstance(fit_history_steps, bool) or not isinstance(fit_history_steps, int) or fit_history_steps < 1
+    ):
+        raise ValueError("decomposition.fit_history_steps must be a positive integer")
     decomposition_method = str(
         decomposition_payload.get("method", "none") or "none"
     ).lower()
@@ -104,6 +109,10 @@ def normalize_target_transformations(value: Any) -> dict[str, dict[str, Any]]:
     resolve_decomposition_spec(
         SimpleNamespace(decomposition=dict(decomposition_payload))
     )
+    if fit_history_steps is not None:
+        if decomposition_method == "none":
+            raise ValueError("decomposition.fit_history_steps requires an enabled decomposition")
+        decomposition_payload["fit_history_steps"] = fit_history_steps
 
     scaling = value.get("scaling", {})
     if not isinstance(scaling, Mapping):

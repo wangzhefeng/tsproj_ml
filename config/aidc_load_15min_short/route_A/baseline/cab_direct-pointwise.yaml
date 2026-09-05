@@ -80,8 +80,6 @@ validation:
   train_window_steps: 1424
   fold_count: 31
   stride_steps: 96
-  performance:
-    profile_ref: opt017-catboost-short-a-pointwise-v1
 output:
   scenario_subpath: aidc_load_15min_short/route_A/baseline
   results_root: results

@@ -38,9 +38,11 @@ class _CanonicalPipelineFactory:
     def __call__(self) -> TargetTransformPipeline:
         target = self.transformations
         scaling = target["scaling"]
+        decomposition = dict(target["decomposition"])
+        decomposition.pop("fit_history_steps", None)
         args = SimpleNamespace(
             target_calendar_normalization=target["calendar_normalization"]["method"],
-            decomposition=dict(target["decomposition"]),
+            decomposition=decomposition,
             scale_target=scaling["method"] != "none",
             inverse_target=bool(scaling["inverse"]),
             target_scaler_type=scaling["method"],
@@ -54,6 +56,7 @@ class CanonicalTargetTransform:
     def __init__(self, transformations: Mapping[str, Any], *, freq: str) -> None:
         self.transformations = normalize_target_transformations(transformations)
         self.freq = str(freq)
+        self.fit_window_metadata: dict[str, Any] = {}
         self.is_identity = all(
             self.transformations[name]["method"] == "none"
             for name in ("calendar_normalization", "decomposition", "scaling")
@@ -85,13 +88,13 @@ class CanonicalTargetTransform:
             return {key: () for key in self.fitted_keys}
         return self._pipeline.training_steps
 
-    def fit_transform(self, history: PointForecastTensor) -> PointForecastTensor:
+    def fit_transform(self, history: PointForecastTensor, *, scaling_times: pd.DatetimeIndex | None = None) -> PointForecastTensor:
         if self.is_identity:
             if not isinstance(history, PointForecastTensor):
                 raise TypeError("history must be a PointForecastTensor")
             self.fit_identity(history.series_ids, history.targets)
             return history
-        return self._pipeline.fit_transform(history)
+        return self._pipeline.fit_transform(history, scaling_times=scaling_times)
 
     def fit_identity(
         self,
@@ -795,7 +798,7 @@ class PerSeriesTargetTransformPipeline:
             for key, pipeline in self._pipelines.items()
         }
 
-    def fit_transform(self, history: PointForecastTensor) -> PointForecastTensor:
+    def fit_transform(self, history: PointForecastTensor, *, scaling_times: pd.DatetimeIndex | None = None) -> PointForecastTensor:
         if not isinstance(history, PointForecastTensor):
             raise TypeError("history must be a PointForecastTensor")
         transformed = np.empty(history.shape, dtype=float)
@@ -819,9 +822,15 @@ class PerSeriesTargetTransformPipeline:
                     time_col="time",
                     target_col="y",
                 )
-                target_transformed = pipeline.fit_transform_targets(
-                    history_transformed[["y"]]
+                scaling_rows = (
+                    history_transformed if scaling_times is None
+                    else history_transformed.loc[history_transformed["time"].isin(scaling_times)]
                 )
+                if scaling_rows.empty:
+                    raise ValueError("target scaler has no training label rows")
+                target_transformed = pipeline.fit_transform_targets(scaling_rows[["y"]])
+                if scaling_times is not None:
+                    target_transformed = pipeline.target_scaler.transform(history_transformed[["y"]])
                 target_array = np.asarray(target_transformed, dtype=float)
                 if target_array.shape != (history.n_steps, 1):
                     raise ValueError(

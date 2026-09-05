@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from functools import cached_property
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict, dataclass, replace
 from pathlib import Path
@@ -90,7 +91,9 @@ from forecasting_core.runtime_resources import (
     RuntimeResourceBudget,
     RuntimeWorkload,
 )
-from model_forecasting.backtest_runtime import overwrite_calendar_month_backtest
+from model_forecasting.backtest_runtime import run_calendar_month_backtest
+from model_forecasting.evidence import collect_model_evidence, dependency_versions, json_evidence
+from model_forecasting.lifecycle import write_run_state
 from model_forecasting.design import (
     _BacktestWindow,
     _RegistryDesignBuilder,
@@ -109,7 +112,6 @@ from model_forecasting.fit_service import (
     _forecast_designs_with_scaler,
     _predict,
     _restore_prediction,
-    _runtime_execution_plan,
 )
 from model_forecasting.resource_planner import (
     build_runtime_workload,
@@ -431,10 +433,6 @@ def _output_paths(
     )
 
 
-def _runtime_window_workers(config: ForecastConfigSpec) -> int:
-    return _runtime_execution_plan(config).window_workers
-
-
 def _sample_selector(
     origin_indices: tuple[int, ...],
     *,
@@ -476,6 +474,7 @@ class CanonicalBaseModelRunner:
         if config.strategy is None:
             raise ValueError("CanonicalBaseModelRunner requires a strategy")
         self.config = config
+        self.calendar_runner_factory: Any = CanonicalBaseModelRunner
         self.registry = registry
         self.origin = origin
         self.builder = _RegistryDesignBuilder(config, registry)
@@ -721,7 +720,10 @@ class CanonicalBaseModelRunner:
     def backtest_windows(self) -> tuple[_BacktestWindow, ...]:
         if isinstance(self.config.validation.backtest, CalendarMonthBacktestSpec):
             return ()
-        return _rolling_backtest_windows(self.builder, self.supervised_origins)
+        return _rolling_backtest_windows(
+            self.builder, self.supervised_origins,
+            schedule_origin=(self.origin if self.config.validation.get("schedule_mode") == "intraday" else None),
+        )
 
     def _fit_or_reuse_runtime_transforms(
         self,
@@ -1154,7 +1156,39 @@ class CanonicalBaseModelRunner:
         """Execute under a parent-owned process-level threadpool limit."""
         return self._run(output_root)
 
+    @cached_property
+    def _execution_evidence_context(self) -> dict[str, Any]:
+        return {"config_fingerprint": self.config.fingerprint(),
+                "implementation_fingerprint": implementation_fingerprint(),
+                "dependency_versions": dependency_versions()}
+
+    def execution_evidence(self, artifact: Any, target_transform: Any) -> dict[str, Any]:
+        """Snapshot one existing fitted unit without fitting or predicting."""
+        models = collect_model_evidence(artifact)
+        return json_evidence({
+            "status": "recorded" if models else "unavailable",
+            "reason": None if models else "no_supported_model_wrapper_found",
+            **self._execution_evidence_context,
+            "target_transform_window": target_transform.fit_window_metadata,
+            "fitted_models": models,
+        })
+
     def _run(
+        self,
+        output_root: str | Path | None = None,
+    ) -> CanonicalRuntimeResult:
+        fingerprint = self.config.fingerprint()
+        _, model_dir, _, _ = _output_paths(self.config, fingerprint, output_root)
+        write_run_state(model_dir, fingerprint, "running")
+        try:
+            result = self._execute_lifecycle(output_root)
+            write_run_state(model_dir, fingerprint, "completed")
+            return result
+        except BaseException:
+            write_run_state(model_dir, fingerprint, "failed")
+            raise
+
+    def _execute_lifecycle(
         self,
         output_root: str | Path | None = None,
     ) -> CanonicalRuntimeResult:
@@ -1184,6 +1218,7 @@ class CanonicalBaseModelRunner:
             else None
         )
         holdout_audits = []
+        holdout_execution_evidence = []
         # CQR（2026-09-01 激活）：quantile 且声明 calibration 时启用 as-of
         # 校准追踪器；回测逐折 apply-before-collect，final 用全部合格历史折。
         calibration_tracker = None
@@ -1321,6 +1356,11 @@ class CanonicalBaseModelRunner:
                     )
                 )
             holdout_audits.extend(builder.audit)
+            holdout_execution_evidence.append({
+                "window": backtest_window.window,
+                "origin": backtest_window.origin.isoformat(),
+                **self.execution_evidence(holdout_artifact, holdout_target_transform),
+            })
         holdout_audit = tuple(holdout_audits)
         _log_provider_usage(holdout_audit)
         if cv_frames:
@@ -1336,6 +1376,7 @@ class CanonicalBaseModelRunner:
                 "fold_count": backtest.fold_count,
                 "stride_steps": backtest.stride_steps,
                 "windows": [window.metadata for window in windows],
+                "execution_evidence": holdout_execution_evidence,
             }
             if calibration_audits:
                 holdout_metadata["calibration"] = calibration_audits
@@ -1355,10 +1396,10 @@ class CanonicalBaseModelRunner:
                 ),
             )
         else:
-            holdout_metadata = {
-                "mode": "calendar_month",
-                "windows": [],
-            }
+            holdout_metadata, calibration_tracker = run_calendar_month_backtest(
+                config, self.registry, self, test_dir,
+                runner_factory=self.calendar_runner_factory,
+            )
 
         self.stage_wall_seconds["backtest"] = perf_counter() - backtest_started
         final_fit_started = perf_counter()
@@ -1510,12 +1551,23 @@ class CanonicalBaseModelRunner:
         )
         self.stage_wall_seconds["forecast_persist"] = perf_counter() - forecast_started
         self.stage_wall_seconds["total"] = perf_counter() - self.lifecycle_started
+        run_evidence = {
+            **self.execution_evidence(final_artifact, final_target_transform),
+            "raw_design_provenance": compiled_cache.raw_design_provenance(
+                config, base_dir=self.registry._base_dir, origin=origin,
+                generators=self.registry._generators,
+            ),
+
+        }
         _write_json(
             forecast_dir / "resolved_config.json",
             {
                 **config.canonical_payload(),
                 "config_fingerprint": fingerprint,
                 "runtime": {
+                    "lifecycle_schema_version": 1,
+                    "forecast_origin": origin.isoformat(),
+                    "run_evidence": run_evidence,
                     "resources": self.runtime_resources_payload(),
                     "series_order": [
                         list(value) if isinstance(value, tuple) else value
@@ -1554,6 +1606,7 @@ class CanonicalBaseModelRunner:
         if metadata_path.exists():
             result_metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
             result_metadata["runtime_resources"] = self.runtime_resources_payload()
+            result_metadata["run_evidence"] = run_evidence
             _write_json(metadata_path, result_metadata)
         return CanonicalRuntimeResult(
             run_dir=run_dir,
@@ -1602,12 +1655,7 @@ def run_canonical_config(
         compiled_cache_root=compiled_cache_root,
         checkpoint_root=checkpoint_root,
     )
-    result = runner.run(output_root)
-    if str(config.validation.get("horizon_mode", "fixed_steps")) == "calendar_month":
-        overwrite_calendar_month_backtest(
-            config, registry, runner, result, runner_factory=CanonicalBaseModelRunner
-        )
-    return result
+    return runner.run(output_root)
 
 
 __all__ = [

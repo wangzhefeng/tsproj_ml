@@ -45,14 +45,6 @@ def _required_columns(source: Mapping[str, Any]) -> set[str]:
     return required
 
 
-def _missing_required_columns(
-    source: Mapping[str, Any],
-    actual_columns: set[str],
-) -> list[str]:
-    """返回投影视图中缺失的非 ignored 列；物理额外列不属于错误。"""
-    return sorted(_required_columns(source) - actual_columns)
-
-
 def _config_sources(config: Any) -> tuple[Mapping[str, Any], ...]:
     if not isinstance(config, (ForecastConfigSpec, EnsembleConfigSpec)):
         raise TypeError(f"unsupported model config type: {type(config).__name__}")

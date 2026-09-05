@@ -22,7 +22,7 @@ sys.path.insert(0, str(ROOT))
 from config.config_loader import load_yaml_config  # noqa: E402
 from forecasting_core.specs import ForecastConfigSpec  # noqa: E402
 from model_ensemble.specs import EnsembleConfigSpec  # noqa: E402
-from model_forecasting.performance_profiles import CATBOOST_PROFILE_REF  # noqa: E402
+
 
 MODEL_TYPES = {
     "st": "st",
@@ -425,16 +425,7 @@ def _payload(
     is_lgbm = model == "lgbm"
     is_profiled_baseline = group == "baseline" and is_lgbm
     source_names = {str(source.get("name", "")) for source in sources}
-    if (
-        model == "cab"
-        and scenario == "aidc_load_15min_short"
-        and output_route == "route_A"
-        and group == "baseline"
-        and strategy_variant == "direct-pointwise"
-    ):
-        # 引用绑定真实 design/data/version；runtime 失配 RAISE，不能按文件名外推。
-        validation["performance"] = {"profile_ref": CATBOOST_PROFILE_REF}
-    elif is_profiled_baseline and strategy_variant in {
+    if is_profiled_baseline and strategy_variant in {
         "recursive",
         "direct-pointwise",
         "direct-pointwise-horizon",

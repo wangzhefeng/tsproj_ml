@@ -947,6 +947,8 @@ class _BacktestWindow:
 def _rolling_backtest_windows(
     builder: _RegistryDesignBuilder,
     supervised_origins: tuple[pd.Timestamp, ...],
+    *,
+    schedule_origin: pd.Timestamp | None = None,
 ) -> tuple[_BacktestWindow, ...]:
     backtest = builder.config.validation.backtest
     if not isinstance(backtest, FixedStepBacktestSpec):
@@ -962,6 +964,7 @@ def _rolling_backtest_windows(
         train_window_steps=backtest.train_window_steps,
         fold_count=backtest.fold_count,
         stride_steps=backtest.stride_steps,
+        schedule_origin=schedule_origin,
     )
     return tuple(
         _BacktestWindow(

@@ -15,6 +15,8 @@ import numpy as np
 import pandas as pd
 
 from forecasting_core.artifacts import ForecastModelBundle, QuantileGrid
+from model_testing.validation import TimeGeometry, scheduled_origin_indices
+from model_forecasting.lifecycle import require_completed_state
 
 
 REQUIRED_ARTIFACTS = frozenset({
@@ -36,6 +38,8 @@ def artifact_paths(result: Any) -> dict[str, str]:
     }
     if result.bundle.probabilistic_spec.mode == "quantile":
         paths["probabilistic_scores"] = result.test_dir / "test_scores_probabilistic_df.csv"
+    if (result.model_dir / "run_state.json").exists():
+        paths["lifecycle"] = result.model_dir / "run_state.json"
     return {key: str(path.resolve()) for key, path in paths.items()}
 
 
@@ -48,6 +52,12 @@ def artifact_digests(artifacts: Mapping[str, str]) -> dict[str, str]:
                 digest.update(block)
         result[key] = digest.hexdigest()
     return result
+
+
+def validate_time_grid(frame: pd.DataFrame, times: pd.DatetimeIndex, *, rows_per_time: int) -> None:
+    observed = pd.to_datetime(frame["time"], errors="raise").value_counts().sort_index()
+    if not observed.index.equals(times) or not (observed == rows_per_time).all():
+        raise ValueError("batch prediction time grid mismatch")
 
 
 def validate_artifacts(task: Mapping[str, Any], *, require_digests: bool = True) -> None:
@@ -86,6 +96,10 @@ def validate_artifacts(task: Mapping[str, Any], *, require_digests: bool = True)
     if not isinstance(metadata, dict):
         raise ValueError("batch result metadata must be a mapping")
     runtime = resolved["runtime"]
+    if runtime.get("lifecycle_schema_version") == 1:
+        if "lifecycle" not in paths:
+            raise ValueError("batch artifacts missing run completion state")
+        require_completed_state(json.loads(paths["lifecycle"].read_text()), fingerprint)
     holdout = runtime["holdout"]
     windows = holdout["windows"]
     expected_folds = int(resolved["validation"]["fold_count"])
@@ -114,6 +128,14 @@ def validate_artifacts(task: Mapping[str, Any], *, require_digests: bool = True)
     if backtest["window"].nunique() != expected_folds:
         raise ValueError("batch backtest CSV fold count mismatch")
     expected_counts = {}
+    offset = pd.tseries.frequencies.to_offset(resolved["problem"]["freq"])
+    formal_origin = runtime.get("forecast_origin", resolved["validation"].get("forecast_origin"))
+    if formal_origin is not None:
+        formal_origin = pd.Timestamp(formal_origin)
+        validate_time_grid(
+            forecast, pd.date_range(formal_origin + offset, periods=horizon, freq=offset),
+            rows_per_time=n_series * n_targets,
+        )
     for window in windows:
         window_horizon = horizon
         if holdout.get("mode") == "calendar_month":
@@ -123,6 +145,21 @@ def validate_artifacts(task: Mapping[str, Any], *, require_digests: bool = True)
                                   freq=offset, inclusive="left")
             window_horizon = len(times)
         expected_counts[int(window["window"])] = n_series * n_targets * window_horizon
+        if "label_start" in window and "label_end" in window:
+            times = pd.date_range(window["label_start"], window["label_end"], freq=offset)
+            validate_time_grid(
+                backtest.loc[backtest["window"] == window["window"]], times,
+                rows_per_time=n_series * n_targets,
+            )
+        if resolved["validation"].get("schedule_mode") == "intraday":
+            if formal_origin is None:
+                raise ValueError("intraday artifacts require resolved forecast_origin")
+            window_origin = pd.Timestamp(window["origin"])
+            if not scheduled_origin_indices(
+                (window_origin,), TimeGeometry(offset=offset, horizon=horizon), formal_origin,
+                stride_steps=int(resolved["validation"]["stride_steps"]),
+            ):
+                raise ValueError("batch intraday backtest schedule mismatch")
     actual_counts = {int(key): int(value) for key, value in backtest.groupby("window").size().items()}
     if expected_counts != actual_counts:
         raise ValueError("batch backtest per-window geometry mismatch")

@@ -391,6 +391,12 @@ class ConformalCalibrationTracker:
         sub = frame.loc[finite].sort_values("time")
         if sub.empty:
             return 0
+        # 整批校验后再写记录，非法区间不能留下半批校准状态。
+        sub["cqr_score"] = compute_nonconformity_scores(
+            sub["cqr_actual"].to_numpy(),
+            sub["cqr_lower"].to_numpy(),
+            sub["cqr_upper"].to_numpy(),
+        )
         # horizon_step：每个 (series_id, target) 内按 time 的排名（1 起）
         sub["cqr_hstep"] = (
             sub.groupby(["series_id", "target"], sort=False).cumcount() + 1
@@ -410,9 +416,7 @@ class ConformalCalibrationTracker:
                     lower=float(row.cqr_lower),
                     upper=float(row.cqr_upper),
                     y_true=float(row.cqr_actual),
-                    score=float(
-                        max(row.cqr_lower - row.cqr_actual, row.cqr_actual - row.cqr_upper)
-                    ),
+                    score=float(row.cqr_score),
                     stage=stage,
                     series_id=str(row.series_id),
                     target=str(row.target),

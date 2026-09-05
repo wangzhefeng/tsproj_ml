@@ -36,6 +36,8 @@ ENSEMBLE_ALLOWED_FIELDS = frozenset({"members", "oof", "method"})
 OOF_ALLOWED_FIELDS = frozenset(
     {"train_window_steps", "fold_count", "stride_steps", "gap_steps"}
 )
+# 内部算法语义标识，不是可配置字段；仅正 gap 改变历史执行语义。
+OOF_GAP_SEMANTICS = "label_embargo_v1"
 METHOD_NAMES = frozenset(
     {"averaging", "weighted", "linear_blending", "stacking"}
 )
@@ -204,6 +206,8 @@ class EnsembleConfigSpec:
         payload = self.canonical_payload()
         payload.pop("output", None)
         payload["validation"] = self.validation.semantic_payload()
+        if self.oof.gap_steps > 0:
+            payload["oof_gap_semantics"] = OOF_GAP_SEMANTICS
         encoded = json.dumps(
             payload,
             ensure_ascii=False,

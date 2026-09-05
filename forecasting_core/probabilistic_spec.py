@@ -273,26 +273,6 @@ class ProbabilisticSpec:
         return self.interval_by_name(self.calibration.interval_name)
 
 
-def calibration_runtime_kwargs(spec: ProbabilisticSpec) -> dict[str, Any]:
-    """把 canonical calibration spec 转成 evaluator/final 共享运行参数。"""
-    calibration = spec.calibration
-    interval = spec.calibration_interval
-    if calibration is None or interval is None:
-        return {"enable_cqr": False}
-    return {
-        "enable_cqr": True,
-        "alpha": round(1.0 - calibration.target_coverage, 15),
-        "calibration_windows": calibration.calibration_windows,
-        "min_windows": calibration.min_windows,
-        "min_scores": calibration.min_scores,
-        "label_availability_delay_steps": calibration.label_availability_delay_steps,
-        "interval_name": interval.name,
-        "lower_quantile": interval.lower_quantile,
-        "upper_quantile": interval.upper_quantile,
-        "allow_interval_shrink": calibration.allow_interval_shrink,
-    }
-
-
 def _quantile_token(level: float) -> str:
     percent = float(level) * 100.0
     if _is_close(percent, round(percent)):
@@ -570,8 +550,3 @@ def apply_probabilistic_spec_to_args(args: Any, spec: ProbabilisticSpec) -> None
         calibration.label_availability_delay_steps
     )
     args.conformal_allow_interval_shrink = calibration.allow_interval_shrink
-
-
-def validate_probabilistic_args(args: Any) -> Tuple[float, ...]:
-    """主流程兼容入口：解析完整 spec 并返回 quantile grid。"""
-    return resolve_probabilistic_spec(args).quantiles

@@ -17,7 +17,9 @@ from model_ensemble.artifacts import (
     PerTargetWeightsArtifact,
 )
 from model_ensemble.methods.stacking import combine_stacking
-from model_ensemble.methods.weighted import weight_matrix
+from model_ensemble.methods.averaging import combine_averaging
+from model_ensemble.methods.linear_blending import combine_linear_blending
+from model_ensemble.methods.weighted import combine_weighted
 
 
 def combine_members(
@@ -31,26 +33,13 @@ def combine_members(
         )
     method_artifact = ens_artifact.method_artifact
     if isinstance(method_artifact, PerTargetWeightsArtifact):
-        stacked = np.stack(
-            [np.asarray(member_values[name], dtype=float) for name in member_values],
-            axis=0,
-        )
-        weights = weight_matrix(
-            method_artifact, stacked.shape[3], len(member_values)
-        )
-        if stacked.ndim == 4:
-            return np.einsum("km,mnhk->nhk", weights, stacked)
-        if stacked.ndim == 5:
-            return np.einsum("km,mnhkq->nhkq", weights, stacked)
-        raise ValueError("member predictions must have shape (N,H,K[,Q])")
+        if method_artifact.method_name == "linear_blending":
+            return combine_linear_blending(method_artifact, member_values)
+        return combine_weighted(method_artifact, member_values)
     if isinstance(method_artifact, PerTargetMetaArtifact):
         return combine_stacking(method_artifact, member_values)
     # EqualWeightsArtifact
-    stacked = np.stack(
-        [np.asarray(member_values[name], dtype=float) for name in member_values],
-        axis=0,
-    )
-    return stacked.mean(axis=0)
+    return combine_averaging(method_artifact, member_values)
 
 
 __all__ = ["combine_members"]

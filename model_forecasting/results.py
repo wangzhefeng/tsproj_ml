@@ -16,6 +16,7 @@ matplotlib.use("Agg")
 
 from forecasting_core.tensors import PointForecastTensor, require_matching_point_axes
 from forecasting_core.artifacts import MarginalForecastDistribution, QuantileGrid
+from model_evaluation.point import EVALUATION_AGGREGATION
 
 
 _CANONICAL_KEY_COLUMNS = ["series_id", "time", "target"]
@@ -579,6 +580,7 @@ def write_backtest_results(
             )
     payload = {
         "result_schema_version": 2,
+        "aggregation_semantics": dict(EVALUATION_AGGREGATION),
         "aggregate_weighting": {
             str(target): float(weight)
             for target, weight in aggregate_weighting.items()

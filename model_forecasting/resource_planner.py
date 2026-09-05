@@ -16,34 +16,17 @@ from forecasting_core.specs import ForecastConfigSpec, TargetAdapter
 from model_training.estimators import supports_native_multi_quantile
 from model_training.strategies import target_plan_for_config
 from model_forecasting.performance_profiles import resolve_performance_profile
+from models.catalog import MODEL_CATALOG
 
 
 _THREAD_PARAM_BY_MODEL = {
-    "lgb": "n_jobs",
-    "lightgbm": "n_jobs",
-    "xgb": "n_jobs",
-    "xgboost": "n_jobs",
-    "rf": "n_jobs",
-    "randomforest": "n_jobs",
-    "cat": "thread_count",
-    "catboost": "thread_count",
+    name: descriptor.thread_param for name, descriptor in MODEL_CATALOG.items()
+    if descriptor.thread_param is not None
 }
 
 _DEFAULT_OUTPUT_WORKERS_BY_MODEL = {
-    "lgb": 4,
-    "lightgbm": 4,
-    "xgb": 4,
-    "xgboost": 4,
-    "cat": 2,
-    "catboost": 2,
-    "rf": 2,
-    "randomforest": 2,
-    "ridge": 4,
-    "enet": 4,
-    "elasticnet": 4,
-    "lasso": 4,
-    "qr": 2,
-    "quantileregressor": 2,
+    name: descriptor.output_workers for name, descriptor in MODEL_CATALOG.items()
+    if descriptor.output_workers is not None
 }
 
 

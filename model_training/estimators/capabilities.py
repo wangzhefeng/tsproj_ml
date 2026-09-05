@@ -16,6 +16,8 @@ from sklearn.base import clone
 
 from forecasting_core.checkpoints import FitCheckpoint
 from forecasting_core.specs.estimator import EstimatorCapabilities
+from models.catalog import MODEL_CATALOG, quantile_parameters
+from models.ModelFactory import ModelFactory
 
 __all__ = ["EstimatorCapabilities"]  # 合同类型自 specs 再导出（向后兼容）
 
@@ -153,9 +155,7 @@ class _ModelFactoryEstimator:
         params: Mapping[str, object],
         feature_names: Sequence[str] | None,
     ) -> None:
-        model_factory_type = importlib.import_module(
-            "models.ModelFactory"
-        ).ModelFactory
+        model_factory_type = ModelFactory
         self.model_type = _normalize_model_type(model_type)
         self.feature_names = tuple(feature_names or ())
         self.model = model_factory_type(log_prefix="CanonicalModelFactory").create_model(
@@ -173,12 +173,7 @@ class _ModelFactoryEstimator:
         )
         if len(columns) != values.shape[1]:
             raise ValueError("feature_names width does not match estimator input")
-        if self.model_type in {
-            "seasonaltemplate",
-            "st",
-            "lightgbm",
-            "lgb",
-        }:
+        if MODEL_CATALOG[self.model_type].dataframe_input:
             frame = pd.DataFrame(values)
             frame.columns = list(columns)
             return frame
@@ -246,68 +241,19 @@ def _fit_ridge_independent_outputs(
     )
 
 
-_SCALAR_QUANTILE_MODEL_TYPES = frozenset(
-    {
-        "lightgbm",
-        "lgb",
-        "xgboost",
-        "xgb",
-        "catboost",
-        "cat",
-        "histgb",
-        "histgradientboosting",
-        "quantileregressor",
-        "qr",
-    }
-)
-_CATEGORICAL_MODEL_TYPES = frozenset(
-    {"lightgbm", "lgb", "catboost", "cat", "histgb", "histgradientboosting"}
-)
-_NAN_MODEL_TYPES = frozenset(
-    {
-        "lightgbm",
-        "lgb",
-        "xgboost",
-        "xgb",
-        "catboost",
-        "cat",
-        "histgb",
-        "histgradientboosting",
-    }
-)
-_NO_SAMPLE_WEIGHT_MODEL_TYPES = frozenset({"seasonaltemplate", "st"})
-_MODEL_FACTORY_TYPES = (
-    "lightgbm",
-    "lgb",
-    "xgboost",
-    "xgb",
-    "catboost",
-    "cat",
-    "randomforest",
-    "rf",
-    "histgb",
-    "histgradientboosting",
-    "ridge",
-    "elasticnet",
-    "enet",
-    "lasso",
-    "quantileregressor",
-    "qr",
-    "seasonaltemplate",
-    "st",
-)
+_MODEL_FACTORY_TYPES = tuple(MODEL_CATALOG)
 
 
 MODEL_FACTORY_CAPABILITY_REGISTRY = CapabilityRegistry(
     {
         model_type: EstimatorCapabilities(
             scalar_target=True,
-            scalar_quantile=model_type in _SCALAR_QUANTILE_MODEL_TYPES,
+            scalar_quantile=MODEL_CATALOG[model_type].quantile_style is not None,
             native_multi_target_point=False,
             native_multi_target_quantile=False,
-            sample_weight=model_type not in _NO_SAMPLE_WEIGHT_MODEL_TYPES,
-            categorical=model_type in _CATEGORICAL_MODEL_TYPES,
-            nan_support=model_type in _NAN_MODEL_TYPES,
+            sample_weight=MODEL_CATALOG[model_type].sample_weight,
+            categorical=MODEL_CATALOG[model_type].categorical,
+            nan_support=MODEL_CATALOG[model_type].nan_support,
         )
         for model_type in _MODEL_FACTORY_TYPES
     }
@@ -319,22 +265,7 @@ def _quantile_params(
     params: Mapping[str, object],
     quantile: float,
 ) -> dict[str, object]:
-    resolved = dict(params)
-    if model_type in {"lightgbm", "lgb"}:
-        resolved.update(objective="quantile", alpha=quantile)
-    elif model_type in {"xgboost", "xgb"}:
-        resolved.update(objective="reg:quantileerror", quantile_alpha=quantile)
-    elif model_type in {"catboost", "cat"}:
-        resolved["loss_function"] = f"Quantile:alpha={quantile}"
-    elif model_type in {"histgb", "histgradientboosting"}:
-        resolved.update(loss="quantile", quantile=quantile)
-    elif model_type in {"quantileregressor", "qr"}:
-        resolved["quantile"] = quantile
-    else:
-        raise ValueError(
-            f"model_type {model_type!r} does not declare scalar quantile support"
-        )
-    return resolved
+    return quantile_parameters(model_type, dict(params), quantile)
 
 
 def make_model_factory(
@@ -401,7 +332,9 @@ def resolve_model_capabilities(
     )
 
 
-_NATIVE_MULTI_QUANTILE_MODEL_TYPES = frozenset({"xgboost", "xgb"})
+_NATIVE_MULTI_QUANTILE_MODEL_TYPES = frozenset(
+    name for name, descriptor in MODEL_CATALOG.items() if descriptor.native_multi_quantile
+)
 
 
 def supports_native_multi_quantile(model_type: str) -> bool:

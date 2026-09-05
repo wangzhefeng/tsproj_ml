@@ -7,6 +7,8 @@ single-model canonical runtime so downstream tooling stays uniform (v4 §8).
 
 from __future__ import annotations
 
+from model_evaluation.point import EVALUATION_AGGREGATION
+
 import json
 from dataclasses import replace
 from pathlib import Path
@@ -309,6 +311,8 @@ def run_ensemble_config(
             member_workers=execution_plan.member_workers,
         )
     stage_wall_seconds["ensemble_fit"] = perf_counter() - ensemble_fit_started
+    audit["run_evidence"]["member_oof"]["cache_hit"] = oof_cache_hit
+    audit["run_evidence"]["source_hashes"] = dict(source_hashes)
     persist_started = perf_counter()
     artifact = replace(
         artifact,
@@ -429,6 +433,7 @@ def run_ensemble_config(
                 **config.canonical_payload(),
                 "config_fingerprint": config.fingerprint(),
                 "runtime": {
+                    "run_evidence": audit["run_evidence"],
                     "resources": runtime_resources,
                     "oof_fingerprint": fingerprint,
                     "oof_cache_hit": oof_cache_hit,
@@ -466,6 +471,8 @@ def run_ensemble_config(
         json.dumps(
             {
                 "result_schema_version": 2,
+                "aggregation_semantics": dict(EVALUATION_AGGREGATION),
+                "run_evidence": audit["run_evidence"],
                 "method": config.method.name,
                 "oof_fingerprint": fingerprint,
                 "oof_cache_hit": oof_cache_hit,

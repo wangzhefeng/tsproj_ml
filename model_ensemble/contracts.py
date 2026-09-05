@@ -13,15 +13,15 @@ from pathlib import Path
 from typing import Any, Callable, Mapping, Protocol, runtime_checkable
 
 import pandas as pd
+from model_testing.validation import OriginTimeline
 
 
 @runtime_checkable
-class BaseModelRunner(Protocol):
+class BaseModelRunner(OriginTimeline, Protocol):
     """Narrow member interface — mirrors CanonicalBaseModelRunner."""
 
     config: Any
     origin: pd.Timestamp
-    supervised_origins: tuple[pd.Timestamp, ...]
     series_ids: tuple[Any, ...]
     feature_schema: tuple[str, ...]
     workload: Any
@@ -118,6 +118,19 @@ class EnsembleRuntimeServices:
     persist_bundle: Callable[[Any, str | Path], Any]
     plan_resources: Callable[..., tuple[Any, Any, Any]]
     resolve_budget: Callable[[Any], Any] | None = None
+
+
+def member_execution_evidence(runner: Any, artifact: Any, transform: Any) -> dict[str, Any]:
+    """Optional public runner capability; never fabricate missing historical evidence."""
+    provider = getattr(runner, "execution_evidence", None)
+    if provider is None:
+        return {"status": "unavailable", "reason": "runner_has_no_execution_evidence_provider"}
+    if not callable(provider):
+        raise TypeError("runner.execution_evidence must be callable")
+    payload = provider(artifact, transform)
+    if not isinstance(payload, Mapping):
+        raise TypeError("runner execution evidence must be a mapping")
+    return dict(payload)
 
 
 @runtime_checkable

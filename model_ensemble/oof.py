@@ -1,7 +1,7 @@
 """OOF generation: shared rolling-origin folds, per-member fit/predict/restore.
 
-The fold geometry reuses `model_testing.validation.rolling_origin_folds` so the
-single-model outer backtest and the ensemble OOF share one time contract.
+Label eligibility reuses `model_testing.validation.is_label_safe`; the
+single-model backtest and ensemble retain their own fold-selection policies.
 Fusion methods never see this module — they only consume the produced
 `OOFPredictionArtifact` (v4 §7.1).
 """
@@ -15,47 +15,61 @@ import numpy as np
 import pandas as pd
 
 from forecasting_core.artifacts import MarginalForecastDistribution
+from model_testing.validation import OriginTimeline, is_label_safe, scheduled_origin_indices
 
 from model_ensemble.artifacts import OOFPredictionArtifact
-from model_ensemble.contracts import BaseModelRunner
+from model_ensemble.contracts import BaseModelRunner, member_execution_evidence
+from model_ensemble.specs import OOF_GAP_SEMANTICS
 
 
 def oof_fold_origins(
-    runner: BaseModelRunner,
+    runner: OriginTimeline,
     *,
     fold_count: int,
     stride_steps: int,
     train_window_steps: int,
     gap_steps: int = 0,
     outer_cutoff_origin: pd.Timestamp | None = None,
+    schedule_origin: pd.Timestamp | None = None,
 ):
     """Compute OOF holdout folds from the member's supervised origin timeline.
 
     Folds are the last ``fold_count`` eligible origins spaced ``stride`` apart
     (chronological order), each training on the preceding origins whose labels
-    end before the fold label start (same contract as the outer backtest).
+    end before the fold label start minus ``gap_steps`` frequency offsets.
+    The gap embargoes training labels; forecast timestamps are not shifted.
     When ``outer_cutoff_origin`` is given, folds whose label range touches or
     crosses it are excluded — the outer backtest never sees labels at/after
     its holdout.
     """
     geometry = runner.geometry
     origins = runner.supervised_origins
-    if gap_steps < 0:
-        raise ValueError("gap_steps must be non-negative")
+    runner_config = getattr(runner, "config", None)
+    if schedule_origin is None and getattr(runner_config, "validation", {}).get("schedule_mode") == "intraday":
+        schedule_origin = pd.Timestamp(getattr(runner, "origin"))
+    scheduled = (
+        set(scheduled_origin_indices(origins, geometry, schedule_origin, stride_steps))
+        if schedule_origin is not None else None
+    )
+    if isinstance(gap_steps, bool) or not isinstance(gap_steps, int) or gap_steps < 0:
+        raise ValueError("gap_steps must be a non-negative integer")
 
     # candidate fold origins: every origin with at least one safe training
     # sample behind it (label_end < label_start), enforcing the strict
     # non-overlap contract; newest-first, then reversed to chronological order
     candidates = []
     for index in range(len(origins) - 1, 0, -1):
+        if scheduled is not None and index not in scheduled:
+            continue
         holdout_origin = origins[index]
-        holdout_label_start = geometry.label_start(holdout_origin) + (
-            gap_steps * geometry.offset if gap_steps else pd.Timedelta(0)
-        )
+        holdout_label_start = geometry.label_start(holdout_origin)
         train_indices = tuple(
             candidate
             for candidate in range(0, index)
-            if geometry.label_end(origins[candidate]) < holdout_label_start
+            if is_label_safe(
+                origins[candidate], geometry.offset, geometry.horizon,
+                holdout_label_start, gap_steps=gap_steps,
+            )
         )[-train_window_steps:]
         if not train_indices:
             continue
@@ -64,14 +78,14 @@ def oof_fold_origins(
             if geometry.label_end(holdout_origin) >= cutoff_label_start:
                 continue
         candidates.append((index, holdout_origin, train_indices))
-        if len(candidates) == fold_count * stride_steps:
+        if len(candidates) == (fold_count if scheduled is not None else fold_count * stride_steps):
             break
     if not candidates:
         raise ValueError(
             "ensemble OOF requires at least one fold with non-overlapping "
             "training samples"
         )
-    chosen = list(reversed(candidates))[::stride_steps][-fold_count:]
+    chosen = list(reversed(candidates))[::(1 if scheduled is not None else stride_steps)][-fold_count:]
     folds = []
     for fold_number, (index, origin, train_indices) in enumerate(chosen, start=1):
         folds.append(
@@ -132,9 +146,10 @@ def generate_oof(
 
     per_fold = {name: [] for name in names}
     fold_summaries = []
+    execution_evidence = []
     for fold in folds:
         times = first.forecast_times(fold["origin"])
-        def fit_member(name: str) -> np.ndarray:
+        def fit_member(name: str) -> tuple[np.ndarray, dict[str, Any]]:
             runner = runners[name]
             try:
                 if member_workers > 1:
@@ -164,7 +179,7 @@ def generate_oof(
                         "OOF generation expects Local members (N=1); Global "
                         "panel members must be split per series before OOF"
                     )
-                return values[0]
+                return values[0], member_execution_evidence(runner, artifact, transform)
             except Exception as exc:
                 raise RuntimeError(
                     f"OOF fold={fold['fold']} member={name!r} failed"
@@ -175,8 +190,12 @@ def generate_oof(
                 fold_values = tuple(executor.map(fit_member, names))
         else:
             fold_values = tuple(fit_member(name) for name in names)
-        for name, values in zip(names, fold_values):
+        for name, (values, _evidence) in zip(names, fold_values):
             per_fold[name].append(values)  # (H,K[,Q]) per OOF sample
+        execution_evidence.append({
+            "fold": fold["fold"], "origin": fold["origin"].isoformat(),
+            "members": {name: evidence for name, (_values, evidence) in zip(names, fold_values)},
+        })
         fold_summaries.append(
             {
                 "fold": fold["fold"],
@@ -186,6 +205,15 @@ def generate_oof(
                 "training_sample_count": len(fold["train_indices"]),
             }
         )
+        if gap_steps > 0:
+            fold_summaries[-1].update({
+                "gap_steps": gap_steps,
+                "gap_semantics": OOF_GAP_SEMANTICS,
+                "training_label_end_max": max(
+                    first.geometry.label_end(first.supervised_origins[index])
+                    for index in fold["train_indices"]
+                ).isoformat(),
+            })
 
     values_by_member = {
         name: _stack(per_fold[name]) for name in names
@@ -215,6 +243,7 @@ def generate_oof(
         oof_fingerprint=oof_fingerprint,
         folds=tuple(fold_summaries),
         series_ids=tuple(first.series_ids),
+        execution_evidence=tuple(execution_evidence),
     )
 
 

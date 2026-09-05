@@ -13,6 +13,7 @@
 # python libraries
 import copy
 import inspect
+import json
 import re
 from abc import ABC, abstractmethod
 from pathlib import Path
@@ -21,6 +22,7 @@ from typing import Any, Dict, Optional
 import numpy as np
 import pandas as pd
 import xgboost as xgb
+from xgboost.data import pandas_feature_info
 import lightgbm as lgb
 import catboost as cab
 from scipy.optimize import nnls
@@ -28,6 +30,8 @@ from sklearn.ensemble import RandomForestRegressor, HistGradientBoostingRegresso
 from sklearn.linear_model import Ridge, ElasticNet, Lasso, QuantileRegressor
 
 from utils.log_util import logger
+from models.xgb_validation import validate_xgb_parameters
+from models.catalog import MODEL_CATALOG
 
 # global variable
 LOGGING_LABEL = Path(__file__).name[:-3]
@@ -145,7 +149,7 @@ class BaseModel(ABC):
 
 def _filter_valid_params(params: Dict[str, Any], estimator_cls) -> Dict[str, Any]:
     """
-    按估计器 ``__init__`` 签名过滤模型参数，仅保留该估计器显式声明的合法参数。
+    按估计器 ``__init__`` 签名校验模型参数，未知参数直接报错。
 
     对于通过 ``**kwargs`` 透传原生参数的封装（签名含 VAR_KEYWORD），
     无法用显式签名做白名单，直接原样返回，避免误删合法配置。
@@ -157,7 +161,10 @@ def _filter_valid_params(params: Dict[str, Any], estimator_cls) -> Dict[str, Any
         return dict(params)
     valid = set(signature.parameters.keys())
     valid.discard("self")
-    return {k: v for k, v in params.items() if k in valid}
+    unknown = sorted(set(params) - valid)
+    if unknown:
+        raise ValueError(f"Unknown {estimator_cls.__name__} parameters: {unknown}")
+    return dict(params)
 
 def _filter_fit_params(model, fit_params: Dict[str, Any]) -> Dict[str, Any]:
     """
@@ -167,26 +174,23 @@ def _filter_fit_params(model, fit_params: Dict[str, Any]) -> Dict[str, Any]:
     supported = set(inspect.signature(model.fit).parameters.keys())
     return {k: v for k, v in fit_params.items() if k in supported}
 
-def _warn_unrecognized_lgbm_params(params: Dict[str, Any], log_prefix: str) -> None:
+def _validate_lgbm_params(params: Dict[str, Any]) -> None:
     """
-    对 LightGBM 参数做弱校验（仅告警、不拦截）。
+    按已安装 LightGBM 原生参数及别名表做严格参数名校验。
 
     LGBMRegressor 通过 ``**kwargs`` 透传原生 booster 参数，签名白名单对其无效，
     拼写错误的参数会被静默忽略。合法名全集 = sklearn 封装显式参数 +
-    原生参数及其别名（``_ConfigAliases``）。内省失败（如 lightgbm 版本差异）时安全跳过。
+    原生参数及其别名（``_ConfigAliases``）。内省失败必须显式报错。
     """
     try:
         explicit = {p for p in inspect.signature(lgb.LGBMRegressor.__init__).parameters if p != "self"}
         alias_map = lgb.basic._ConfigAliases._get_all_param_aliases()
         valid = explicit | set(alias_map) | {a for aliases in alias_map.values() for a in aliases}
-    except Exception:
-        return
+    except Exception as exc:
+        raise RuntimeError("LightGBM parameter validation is unavailable") from exc
     unknown = sorted(k for k in params if k not in valid)
     if unknown:
-        logger.warning(
-            f"{log_prefix} 以下 LightGBM 参数无法识别（可能存在拼写错误），"
-            f"将原样透传给原生 booster: {unknown}"
-        )
+        raise ValueError(f"Unknown LightGBM parameters: {unknown}")
 
 # ##############################
 # 具体模型实现
@@ -225,8 +229,7 @@ class LightGBMModel(BaseModel):
         merged_params = {**copy.deepcopy(self.DEFAULT_PARAMS), **(params or {})}
         # 模型参数
         self.params = merged_params
-        # 弱校验：**kwargs 透传导致拼写错误静默生效，仅告警不拦截
-        _warn_unrecognized_lgbm_params(self.params, log_prefix)
+        _validate_lgbm_params(self.params)
         if self.log_params:
             logger.info(f"{log_prefix} model parameters: \n{self.params}")
         # 模型构建
@@ -355,8 +358,25 @@ class XGBoostModel(BaseModel):
             fit_params["sample_weight"] = sample_weight
         # 兼容不同 xgboost 版本的 sklearn API 参数差异
         fit_params = _filter_fit_params(self.model, fit_params)
+        feature_names = None
+        if isinstance(X, pd.DataFrame):
+            names, _ = pandas_feature_info(
+                X, meta=None, feature_names=None, feature_types=self.model.feature_types,
+                enable_categorical=self.model.enable_categorical,
+            )
+            feature_names = tuple(names) if names is not None else None
+        targets = np.asarray(y)
+        # get_xgb_params 会从 RNG 对象抽取 seed；预检不得额外推进真实模型的 RNG。
+        validation_model = copy.copy(self.model)
+        validation_model.random_state = copy.deepcopy(self.model.random_state)
+        self.parameter_validation = validate_xgb_parameters(
+            validation_model.get_xgb_params(), num_features=X.shape[1],
+            num_targets=targets.shape[1] if targets.ndim > 1 else 1,
+            feature_names=feature_names,
+        )
         # 模型训练
         self.model.fit(X, y, **fit_params)
+        self.parameter_validation["fitted_config"] = json.loads(self.model.get_booster().save_config())
         self.is_fitted = True
 
         return self
@@ -395,20 +415,14 @@ class CatBoostModel(BaseModel):
 
     def __init__(self, params: Dict[str, Any], log_prefix: str="CatBoostModel", log_params: bool = True):
         super().__init__(params, log_prefix=log_prefix, log_params=log_params)
-        merged_params = {**copy.deepcopy(self.DEFAULT_PARAMS), **(params or {})}
-        # CatBoost 的 iterations / n_estimators / num_boost_round / num_trees 是同义参数，只能保留一个
-        iteration_aliases = ["n_estimators", "num_boost_round", "num_trees"]
-        for alias in iteration_aliases:
-            if alias in merged_params:
-                merged_params["iterations"] = merged_params.pop(alias)
-        # CatBoost 的 random_seed / random_state 是同义参数，只能保留一个
-        if "random_seed" in merged_params and "random_state" in merged_params:
-            merged_params.pop("random_state", None)
-        # 清理从其他树模型配置复用过来的不兼容参数
-        incompatible_params = ["num_leaves", "feature_fraction", "bagging_fraction", "bagging_freq", "force_col_wise"]
-        for param in incompatible_params:
-            merged_params.pop(param, None)
-        # 模型参数
+        supplied = _filter_valid_params(copy.deepcopy(params or {}), cab.CatBoostRegressor)
+        defaults = copy.deepcopy(self.DEFAULT_PARAMS)
+        # 原生同义参数规则先作用于用户输入，避免默认值压过显式别名。
+        cab.core._process_synonyms(supplied)
+        cab.core._process_synonyms(defaults)
+        if "logging_level" in supplied:
+            defaults.pop("verbose", None)
+        merged_params = {**defaults, **supplied}
         self.params = _filter_valid_params(merged_params, cab.CatBoostRegressor)
         if self.log_params:
             logger.info(f"{log_prefix} model parameters: \n{self.params}")
@@ -906,24 +920,8 @@ class ModelFactory:
     """
     # 支持的模型映射
     _models = {
-        "lightgbm": LightGBMModel,
-        "lgb": LightGBMModel,
-        "xgboost": XGBoostModel,
-        "xgb": XGBoostModel,
-        "catboost": CatBoostModel,
-        "cat": CatBoostModel,
-        "randomforest": RandomForestModel,
-        "rf": RandomForestModel,
-        "histgb": HistGBModel,
-        "histgradientboosting": HistGBModel,
-        "ridge": RidgeModel,
-        "elasticnet": ElasticNetModel,
-        "enet": ElasticNetModel,
-        "lasso": LassoModel,
-        "quantileregressor": QuantileRegressorModel,
-        "qr": QuantileRegressorModel,
-        "seasonaltemplate": SeasonalTemplateModel,
-        "st": SeasonalTemplateModel,
+        alias: globals()[descriptor.wrapper]
+        for alias, descriptor in MODEL_CATALOG.items()
     }
 
     def __init__(self, log_prefix: str = "ModelFactory"):

@@ -18,7 +18,7 @@ from model_ensemble.artifacts import (
     MethodArtifact,
     OOFPredictionArtifact,
 )
-from model_ensemble.contracts import BaseModelRunner
+from model_ensemble.contracts import BaseModelRunner, member_execution_evidence
 from model_ensemble.evaluation import evaluate_fused_oof
 from model_ensemble.methods import averaging, linear_blending, stacking, weighted
 from model_ensemble.oof import actual_for_folds, generate_oof
@@ -199,7 +199,7 @@ def fit_ensemble(
                 artifact,
                 capabilities,
             )
-            return values, bundle
+            return values, bundle, member_execution_evidence(runner, artifact, transform)
         except Exception as exc:
             raise RuntimeError(f"final refit member={name!r} failed") from exc
 
@@ -209,10 +209,10 @@ def fit_ensemble(
     else:
         final_results = tuple(final_refit(name) for name in names)
     final_values = {
-        name: values for name, (values, _bundle) in zip(names, final_results)
+        name: values for name, (values, _bundle, _evidence) in zip(names, final_results)
     }
     member_bundles = {
-        name: bundle for name, (_values, bundle) in zip(names, final_results)
+        name: bundle for name, (_values, bundle, _evidence) in zip(names, final_results)
     }
 
     member_scores = _member_oof_scores(oof, actual)
@@ -234,7 +234,18 @@ def fit_ensemble(
         actual,
         point_level=float(config.probabilistic.get("point_quantile", 0.5)),
     )
+    evidence_complete = bool(oof.execution_evidence) and len(oof.execution_evidence) == len(folds) and all(
+        set(row.get("members", {})) == set(names)
+        and all(item.get("status") == "recorded" for item in row["members"].values())
+        for row in oof.execution_evidence
+    )
     audit = {
+        "run_evidence": {
+            "member_final": {name: evidence for name, (_values, _bundle, evidence) in zip(names, final_results)},
+            "member_oof": {"status": "recorded" if evidence_complete else "unavailable",
+                           "reason": None if evidence_complete else "missing_or_incomplete_historical_member_evidence",
+                           "folds": list(oof.execution_evidence)},
+        },
         "member_scores": member_scores,
         "fused_oof_scores": fused_scores,
         "method": method_name,

@@ -25,6 +25,7 @@ class OOFPredictionArtifact:
     oof_fingerprint: str
     folds: tuple[dict[str, Any], ...] = ()
     series_ids: tuple[Any, ...] = ()
+    execution_evidence: tuple[dict[str, Any], ...] = ()
 
     def __post_init__(self) -> None:
         if tuple(self.values_by_member) != self.member_order:

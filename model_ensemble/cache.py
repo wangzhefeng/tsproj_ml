@@ -30,6 +30,7 @@ import numpy as np
 import pandas as pd
 
 from model_ensemble.artifacts import OOFPredictionArtifact
+from model_ensemble.specs import OOF_GAP_SEMANTICS
 
 OOF_SCHEMA_VERSION = 2
 
@@ -104,6 +105,8 @@ def compute_oof_fingerprint(
         "oof": dict(oof_payload),
         "source_hashes": {name: source_hashes[name] for name in sorted(source_hashes)},
     }
+    if oof_payload.get("gap_steps", 0) > 0:
+        payload["oof_gap_semantics"] = OOF_GAP_SEMANTICS
     blob = json.dumps(payload, sort_keys=True, ensure_ascii=False).encode("utf-8")
     return hashlib.sha256(blob).hexdigest()
 
@@ -173,6 +176,7 @@ def _save_oof_cache_unlocked(
         "series_ids": [list(s) if isinstance(s, tuple) else s for s in artifact.series_ids],
         "folds": list(artifact.folds),
         **(dict(extra_metadata) if extra_metadata else {}),
+        "execution_evidence": list(artifact.execution_evidence),
     }
     _atomic_write_bytes(
         directory / OOF_METADATA_FILE,
@@ -271,6 +275,7 @@ def _load_oof_cache_unlocked(
         oof_fingerprint=oof_fingerprint,
         folds=tuple(metadata.get("folds", ())),
         series_ids=tuple(metadata.get("series_ids", ())),
+        execution_evidence=tuple(metadata.get("execution_evidence", ())),
     )
 
 

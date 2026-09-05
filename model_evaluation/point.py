@@ -17,6 +17,14 @@ from model_evaluation.mask import build_eval_mask
 from forecasting_core.tensors import PointForecastTensor, require_matching_point_axes
 
 
+EVALUATION_AGGREGATION = {
+    "point.aggregate": "weighted_mean_of_per_target_metrics",
+    "point.aggregate_horizon": "pool_valid_points_across_targets_at_horizon",
+    "marginal.aggregate": "pool_valid_points_across_targets",
+    "mask": "configured_eval_mask_only; training_data_unchanged",
+}
+
+
 def resolve_aggregate_weighting(
     targets: tuple[str, ...],
     aggregate_weighting: Mapping[str, float] | None,

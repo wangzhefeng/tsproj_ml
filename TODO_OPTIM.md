@@ -12,6 +12,45 @@
 
 ---
 
+## 当前待办总览（2026-09-05 实现核对）
+
+初次复核重新打开 OPT-010、OPT-016、OPT-017；经本次获准实施及最终证据验收，19个条目全部完成，当前无未完成项。历史事实和测量保留，新增证据另记，不将历史基准冒充当前代码重测。最后收口遵守用户“不进行全量测试”的要求，没有重跑已通过的267项定向回归。
+
+| 条目 | 当前状态 | 剩余工作 | 执行边界 |
+| --- | --- | --- | --- |
+| OPT-010 | 已完成 | 正式24份及27次分解标定均通过证据验收；三个分解代表保留默认 | 正式31fold与开发5fold证据分开，串行排队 |
+| OPT-016 | 已完成 | 预算/完整性/checkpoint通过统一定向回归，规范已同步 | 估算内存准入+有限缓存+采样RSS，不宣称OS硬内存隔离 |
+| OPT-017 | 已完成 | 唯一CatBoost签名、metadata/checker接线通过 | 不扩大采用范围；原5fold证据不冒充31fold性能 |
+
+**执行顺序**：用户已确认完整实施方案和正式长跑。预算/产物/checkpoint/profile先通过门禁；正式24份清单验收完成后才开始分解标定，最后汇总产物及文档。不启动互抢CPU的并行性能实验。
+
+**不重新打开**：OPT-009、OPT-015、OPT-018 的 no-op 是有证据的结论，不是漏做；OPT-019 的配置/运行合同修复已完成，不因尚未重新标定 LightGBM 分解性能而回退。未测 route、K2、宽特征或其他模型拓扑只是证据覆盖边界，不自动扩展为本批次必须全量重跑的任务。旧 identity 产物清理仍需单独授权。
+
+### 初次核对证据与限制（以下为实施前快照）
+
+- 接手实查 `git status --short`、`git diff --stat`：`dev`，22 modified + 6 untracked；保留全部已有更改，本次只修改本文档。
+- `env -u PYTHONPATH UV_CACHE_DIR=.uv_cache uv run --no-sync python -m unittest tests.test_batch_runtime tests.test_decomposition_spec tests.test_generate_load_15min_matrix tests.test_package_layering`：57 项、9.273 秒、全部通过。通过的是既有测试，不代表新增缺口已修复。
+- 用项目 `.venv` 执行最小故障探针：`_artifacts_complete({"artifacts": {}})` 实际返回 `True`；将该空字典放入一项 completed task 后，`verify_batch_results()` 实际返回 `verified_count=1`。此为人工构造的故障输入，不是真实模型产物。
+- 父预算探针：8 核、`parent_concurrency=4` 时 `available_threads=2`；按 batch 当前做法替换为 `parent_concurrency=2` 后变为 4，证明嵌套父预算可被放大。该探针验证预算运算，不宣称已经实测造成 CPU 超卖。
+- 本次没有重跑 222 项统一回归、全配置审计、三轮性能基准或正式 31-fold 模型；下文原有数字仍是对应历史批次证据，不能标注为本次新验证。
+
+### 2026-09-05 获准实施后的新增证据（已收口）
+
+- 最新统一定向回归：267 tests / 225.300s / OK，日志 `/tmp/tsproj-opt-final-regression.log`。与历史222项不是同一次运行；覆盖原21模块，加 artifact/resource/checkpoint/profile/calendar-batch/decomposition-spec 六模块。命令如下，统一使用项目根 `.venv`：
+
+```bash
+env -u PYTHONPATH UV_CACHE_DIR=.uv_cache uv run --no-sync python -m unittest tests.test_runtime_resource_planner tests.test_ensemble_oof tests.test_ensemble_quantile_blending tests.test_ensemble_runtime tests.test_audit_ensemble_configs tests.test_ensemble_loader tests.test_ensemble_specs tests.test_ensemble_methods tests.test_ensemble_parity tests.test_ensemble_persistence tests.test_compiler_batch_design tests.test_compiler_batch_equivalence tests.test_feature_visibility_compiler tests.test_compiled_feature_cache tests.test_batch_eligibility_audit tests.test_batch_runtime tests.test_generate_load_15min_matrix tests.test_config_entrypoints tests.test_canonical_runtime_smoke tests.test_runtime_window_parallelism tests.test_package_layering tests.test_batch_artifact_gate tests.test_batch_resource_limits tests.test_runtime_checkpoints tests.test_performance_profiles tests.test_batch_calendar_checkpoint tests.test_decomposition_spec
+```
+
+- 全配置 checker：同一前缀运行 `scripts/check_model_configs.py`，`checked=5150 passed=5150 hard_failures=0 warnings=0`；日志 `/tmp/tsproj-opt-final-config-audit.log`。
+- OPT-016：父预算组合、全批preflight、bounded cache、采样RSS、严格产物摘要/身份门禁和完成拟合单元checkpoint已接通。自然月factory关键字透传通过RED→GREEN；真实自然月quantile batch又复现验收错误使用最终月horizon，改为逐折label范围后完成/resume测试通过。checkpoint覆盖scalar/native/multi-RHS/chain/shared-quantile，CQR按时间重放，不保存未完成fit。合同细节见权威设计文档§7.2。
+- OPT-017：`profile_ref`绑定实际H/K/Q、rows/features/schema、scope、源数据SHA256、CatBoost版本/默认参数、训练窗和资源预算；runtime/batch以真实设计解析，metadata区分benchmark profile与普通override。唯一physical31fold配置真实runner规划探针通过，`formal_benchmark_verified=false`；没有重新跑九模型实验。
+- 正式清单24份现已全部验收：2份复用、22份新运行。单队列 `/tmp/tsproj-opt-formal-closeout.py` 按原physical YAML跑31fold/final/forecast并做reload及历史四CSV对照；`results/_optimization_closeout/summary.json`为24/24，另起只读进程全量复核通过。分解5fold标定在正式队列结束后启动。
+- 根`AGENTS.md`同步首次审批超时后没有绕过；用户随后明确“审批：AGENTS.md 的同步补丁”，两条规则已通过受保护patch正常落盘。权威设计文档同步完成。
+- 分解三拓扑各三轮全部完成，共27次5fold运行；独立verifier回读108份CSV、27个bundle，并复算统计一致。三个代表均不采用新performance，完整证据归档到`results/_optimization_closeout/decomposition/`；不是用no-op代替未运行实验。
+
+---
+
 ## OPT-001：移除公共配置中的 `problem.information_mode`
 
 - **状态**：已完成
@@ -521,6 +560,44 @@
 
 ---
 
+### 2026-09-05 完成边界复核与剩余待办
+
+原 Direct/MIMO 采用实验及已完成的扩面配置保持验收通过；本项后续纳入 P2/P3/P4 后，正式产物和分解标定没有全部收口，因此总状态改为进行中，不撤销已经完成的 profile。
+
+1. **剩余正式产物验收（阻塞：待用户恢复长跑授权）**：历史清单为 24 份、已验收 2 份、剩余 22 份。本次回读 `/tmp/tsproj-configured-p234-20260904/`，仍只有 `lgbm_dirrec` 与 `lgbm_dirmo` 两份 `result.json`，状态均为 `passed`；这证明原断点没有新增验收记录，不等于已全盘证明其他位置不存在产物。恢复前先按当前 fingerprint/identity 逐配置清点正式 results，已有完整产物先验收，不盲目重跑。验收须包含实际 fold 数、final fit、预测、resolved plan、语义 CSV 与 bundle reload；5-fold 开发产物不替代正式 31-fold 证据。
+2. **分解代表性能标定（待处理）**：linear 断点有 `run-01` 至 `run-06`，对应三个拓扑各两轮，不能充作各三轮。STL/MSTL 的 `seasonal_naive` 冲突已由 OPT-019 的 `polynomial` 合同修复，技术阻塞解除；但 OPT-019 验证的是 Ridge linear/STL/MSTL 的正确性，不是 LightGBM 性能。后续用当前实现及最多 5-fold 派生配置重建同口径三轮交错证据，不把旧 31-fold 与新 5-fold 计时混合计算；只有 median 改善至少 10%、p95 不恶化、parity 与 RSS/swap 达标才采用，否则记录 no-op。
+
+**风险**：沿用旧 identity 或不一致验证几何会导致误验收；以 5-fold 延迟推断正式 31-fold 收益亦不成立。禁止为补证据临时截断 tracked YAML，禁止未经确认启动正式长跑。
+
+- [x] 将原剩余22份逐项核对并获准重跑，全部补齐正式31fold产物；原有2份通过复验，没有取消项。
+- [x] 完成linear/STL/MSTL代表三轮标定，独立验收后全部保留默认；没有新采用项，生成器及物理YAML未改，无需新增正式运行。
+
+### 2026-09-05 正式产物补齐验收
+
+本节正式产物与下节分解5fold性能实验是两个独立证据层级。
+
+用户确认恢复长跑后，`/tmp/tsproj-opt-formal-closeout.py`按24份清单单队列执行，在正式`results/{pretrained_models,results_test,results_forecast}`写入/验收。`results/_optimization_closeout/summary.json`记录`expected=processed=passed=24`，其中2份复用、22份新运行。全部保持物理YAML的31fold，final bundle、forecast和回测CSV齐全，4类语义CSV和bundle reload预测对历史对照均exact；未删除旧产物。队列结束后另起只读进程逐条加载当前YAML、核对fingerprint/fold_count，调用`model_forecasting.batch_artifacts.validate_artifacts(record['task'])`复核全部摘要/身份/几何，输出`independently_verified=24`。cross-route对照使用实际P4-window基准路径与2x4拓扑，而不是缺失对照时跳过parity。上段“待授权”是此前诊断断点，本记录替代其当前状态。
+
+---
+
+### 2026-09-05 分解三轮标定最终裁决
+
+三个daily Route A LightGBM Direct pointwise-horizon代表各用独立5fold派生配置，按`2x4→4x2→1x8`交错三轮，共27个独立子进程。compiler cache在计时外预热，物理31fold YAML未改，不混入旧31fold计时。拓扑记号为window workers × model threads。
+
+| 分解 | 1x8 median / p95 秒 | 2x4 median / p95 秒 | 4x2 median / p95 秒 | 裁决 |
+| --- | --- | --- | --- | --- |
+| linear | 38.952 / 42.428 | 35.109 / 35.757 | 35.867 / 38.129 | 最佳改善9.867%，不足10%，保留默认 |
+| STL96 | 81.734 / 82.990 | 77.340 / 77.806 | 78.136 / 78.929 | 最佳改善5.376%，不足10%，保留默认 |
+| MSTL96-672 | 697.125 / 701.506 | 706.339 / 731.867 | 707.539 / 720.344 | 两候选分别变慢1.322%/1.494%，保留默认 |
+
+所有组的四类语义CSV及reload prediction均exact；内存bundle与重载bundle预测逐值相等，CSV十进制往返仅使用`rtol=0, atol=2e-12`。每次记录CPU、最大RSS及swap；进程swap计数、系统swap-used增长为0，但系统swap-out有增加，不能声称全局无swap，也不能把全局计数归因于单个模型。没有候选满足全套采用门槛，因此不改生成器/YAML，不触发额外正式31fold重跑。
+
+独立验收命令：`env -u PYTHONPATH UV_CACHE_DIR=.uv_cache uv run --no-sync python /tmp/tsproj-opt-decomposition-closeout/verify_evidence.py`。真实返回`status=passed, variants=3, runs=27, csv_files_verified=108, bundles_reloaded=27, each_run_folds=5, canonical_physical_yaml_unchanged=true, summary_recomputed_exact=true`；全部运行代码签名相同。逐次指标、汇总、fixtures及verification共33份JSON已复制到`results/_optimization_closeout/decomposition/`并逐文件核对SHA256；完整实验模型/CSV保留在原`/tmp`隔离目录。原始summary中的`benchmark_complete_adoption_pending`是控制器阶段标签，最终no-adoption裁决见归档README，不改写原始测量。
+
+最后收口按用户要求不运行全量测试、不重跑267项定向回归；本阶段仅新增统计与文档，没有新的模型配置或运行代码改动。子任务另完成`tests.test_generate_load_15min_matrix`定向13项（0.684s、OK），两次只读`generate_load_15min_matrix.py --json`均为4689 unchanged、create/rewrite/delete=0；日志和`validation-checks.json`均已回读并归档。最终机器状态`closeout.json`为`completed_no_adoption`。此前5150配置审计、Ensemble/eligibility审计及统一定向回归证据保持独立记录。
+
+---
+
 ## OPT-011：批量提取监督标签，消除逐时点pandas取值
 
 - **状态**：已完成
@@ -738,7 +815,7 @@
 
 ## OPT-015：在统一预算下实现 Ensemble 成员与 final refit 并行
 
-- **状态**：待处理
+- **状态**：已完成
 - **优先级**：P1
 - **类型**：Ensemble 热运行性能 / 单层并行
 - **依赖**：OPT-013、OPT-014
@@ -765,22 +842,25 @@
 
 ### 验收标准
 
-- [ ] OOF 同 fold 成员与 final refit 确实并发，成员内部 worker/线程预算与 `RuntimeExecutionPlan` 一致，总预算不超限。
-- [ ] 串行/并行的 OOF tensor、fold/member order、四种融合 artifact、四类语义 CSV、成员 bundle 和 ensemble bundle reload prediction 保持既定等价合同。
-- [ ] worker 异常包含 fold/member 坐标，无 silent fallback；CQR、outer cutoff 和时间顺序门禁全部通过。
-- [ ] 代表性 point/quantile Ensemble 完成至少三轮交错独占基准；采用项 median wall 改善至少 10%、p95 不恶化、无 swap/OOM，并报告 CPU 总时间与峰值 RSS。
-- [ ] `ensemble_parallel_workers` 在 resolved metadata 中记录配置值、有效值、selected axis 和降级/拒绝原因；全量活动配置不存在“声明但不消费”。
-- [ ] Ensemble runtime/oof/parity/persistence、资源规划、package layering、静态检查和 `git diff --check` 通过。
+- [x] OOF 同 fold 成员与 final refit 确实并发，成员内部 worker/线程预算与 `RuntimeExecutionPlan` 一致，总预算不超限。
+- [x] 串行/并行的 OOF tensor、fold/member order、四种融合 artifact、四类语义 CSV、成员 bundle 和 ensemble bundle reload prediction 保持既定等价合同。
+- [x] worker 异常包含 fold/member 坐标，无 silent fallback；CQR、outer cutoff 和时间顺序门禁全部通过。
+- [x] 代表性 point/quantile Ensemble 完成至少三轮交错独占基准；无候选达到采用门槛，已如实记录 no-op 裁决、CPU/RSS/swap 与 parity。
+- [x] `ensemble_parallel_workers` 在 resolved metadata 中记录配置值、有效值、selected axis 和降级/拒绝原因；全量活动配置不存在“声明但不消费”。
+- [x] Ensemble runtime/oof/parity/persistence、资源规划、package layering、静态检查和 `git diff --check` 通过。
 
 ### 实施记录
 
-尚未实施。OPT-014 的缓存复用收益必须先独立测量，不能把缓存命中和成员并行的收益混成一个数字。
+- `RuntimePerformanceSpec` 重新以 typed 非语义字段接入 `ensemble_parallel_workers`；planner 选择 `ensemble_member` 时按父预算生成成员子计划，成员内部 window/quantile/output 轴固定为 1，剩余预算分配给 estimator thread。显式超成员数、线程或保守内存门槛直接 RAISE。
+- OOF 保持 fold 串行，只在同 fold 内并行成员；final refit 同样并行。主线程按配置 member order 重组结果与自包含 bundle，worker 异常写入 fold/member 坐标；OOF cache miss 与 final fit 均在成员 pool 创建前的同一 `threadpool_limits` 内执行。serial Ensemble 保留成员各自已标定的最大 native thread，不再统一压成 1；单模型 YAML 声明 `ensemble_parallel_workers` 会在 planner 直接 RAISE。resolved metadata 同时持久化 Ensemble plan 与各 member workload/budget/plan/cache/training-compile。
+- `/tmp/tsproj-opt015-benchmark/` 使用显式派生且最多 5-fold 的配置、关闭 OOF cache 并复用 RawDesign cache，按 `serial→parallel` 三轮交错。point median/p95 为 `12.483/12.547s → 54.598/60.080s`；quantile 为 `3.012/3.076s → 14.721/15.305s`，两类 member 并行均显著变慢。原因是异构成员不均衡且 member 轴会压制已标定的 output/quantile 内部并行，因此活动 YAML 保持串行，不为“必须采用”写负收益 profile。
+- 两组全部运行 swap 增量为 0；各自语义 CSV、combined prediction 与 bundle reload hash 唯一，reload 最大绝对差为 0。最终统一定向回归 222 项、123.089 秒通过，TASK27 为 46/46。
 
 ---
 
 ## OPT-016：建立跨配置 RawDesignGroup 批调度器
 
-- **状态**：待处理
+- **状态**：已完成
 - **优先级**：P1
 - **类型**：catalog throughput / 跨配置 DAG / 断点续跑
 - **依赖**：OPT-013；复用已完成的 OPT-007
@@ -813,23 +893,65 @@
 
 ### 验收标准
 
-- [ ] 分组键逐项覆盖 RawDesign 与 fold-time transform 的全部语义输入；改变任一输入会分组，只有 estimator/output/performance 等非 raw 字段变化时才安全复用。
-- [ ] 同一设计组只加载/物化一次 raw payload，相同 fold transform branch 只拟合一次；调用计数测试与运行 metadata 可审计。
-- [ ] 父级预算约束所有 config/model task，总 CPU 乘积和 resident design/RSS 不超限，无嵌套占满机器。
-- [ ] 中断后可按 task 状态续跑；最终 verifier 断言结果数等于输入清单数、config 唯一且每套核心产物完整。
-- [ ] 批路径与逐 YAML 路径的四类语义 CSV、bundle reload prediction、resolved config 和 identity 一致；不减少 fold/horizon/quantile/model 数。
-- [ ] 至少选择一个真实多模型设计组做三轮独占对照；批路径 median 总 wall 改善至少 10%、p95 不恶化、无 swap/OOM，并报告 CPU 时间和峰值 RSS。
-- [ ] 单配置入口回归、批调度定向测试、package layering、配置审计、静态检查和 `git diff --check` 通过。
+- [x] 分组键逐项覆盖 RawDesign 与 fold-time transform 的全部语义输入；改变任一输入会分组，只有 estimator/output/performance 等非 raw 字段变化时才安全复用。
+- [x] 同一设计组只加载/物化一次 raw payload，相同 fold transform branch 只拟合一次；调用计数测试与运行 metadata 可审计。
+- [x] 按本次获准方案约束父级CPU乘积、估算工作集准入与有限缓存，记录执行期采样RSS，无嵌套预算放大；不把进程内native模型宣称为OS硬内存隔离（验收边界澄清见新增收口记录）。
+- [x] 中断后可按完成的fold/model拟合单元续跑；最终verifier验证清单数量、唯一配置与必需产物的内容/身份/几何，不仅检查文件存在。
+- [x] 批路径与逐 YAML 路径的语义 CSV、bundle reload prediction、canonical config 和 identity 一致；运行时不改写 fold/horizon/quantile/model 数。
+- [x] 真实多模型设计组完成三轮独占对照；最终复验 batch median 改善 15.990%、p95 改善、无 swap 增量/OOM，并记录 CPU 与峰值 RSS。
+- [x] 单配置入口回归、批调度定向测试、package layering、配置审计、静态检查和 `git diff --check` 通过。
 
 ### 实施记录
 
-尚未实施。该项优先级高于继续微调单个 compiler 函数，但必须在统一资源 planner 之后实施。
+- 新增独立入口 `batch_run.py` 与 L2 `model_forecasting/batch_runtime.py`。物理 YAML 先按 `RawDesignFingerprint` 分组；首个 runner 编译/加载 raw X/Y，组内后续 runner 直接共享同一内存 payload。precompiled payload 必须由 runner 重新计算 fingerprint 并校验匹配。`FoldTransformCache` 的键包含 raw fingerprint、训练 origin indices、problem 轴和完整 transformation 语义；不同 scaling/decomposition 不会误命中。
+- DAG 执行为 `RawDesignGroup → FoldTransformBranch → ModelFitTask → PerConfigPersist`。每组只驻留一份 raw design；父 `RuntimeResourceBudget` 通过 `parent_concurrency` 分配给 config worker，线程乘积机械受限。并行配置在父级 `threadpool_limits` 内调用 prelimited runtime，避免 worker 竞态修改进程级 BLAS/OpenMP；文件绘图固定使用非交互 `Agg` backend。
+- task state 以 JSON 临时文件 + 原子替换落盘，并由同 batch ID 的线程锁 + OS 文件锁串行化；batch ID 与输入路径顺序无关。中断后只跳过产物完整的 completed task，失败项单独重跑；resume 只更新本轮实际执行任务的 batch provenance，不覆盖历史 completed task。`verify_batch_results()` 校验输入/task 数、路径唯一和五类核心产物；resolved config 追加 batch id、group、父预算、transform cache、RSS provenance。单配置 `run.py` 未被替代。
+- calendar-month 的动态 horizon runner 通过 `_SharedBatchRunnerFactory` 继承批子预算、compiled cache root 和 fold-transform cache；动态 raw fingerprint 不同则不复用 payload。组 metadata 的 raw load 数按真实成功构造计数，构造全失败时记录 0。
+- 真实采用组为 short Route A baseline 的 XGBoost + CatBoost、H=16、Direct pointwise，二者都显式限制 `model_thread_count=1`，父 `config_workers=2` 的总模型线程乘积为 2；按开发协议仅派生 `fold_count=5`，其余模型/数据/特征/horizon 不变，目录 `/tmp/tsproj-opt016-benchmark/`。门禁修复后最终三轮 sequential median/p95 为 `40.470/41.867s`，batch 为 `33.999/35.087s`，median 改善 15.990%（此前为 19.502%，本轮覆盖旧性能结论）；CPU median `40.032→42.580s`，最大 RSS `469,909,504→489,439,232 bytes`，六次 swap used 增量均为 0。每轮 batch raw payload 只加载一次、transform cache `6 miss + 6 hit`；两模型三类 CSV hash 唯一，identity 一致，bundle reload 最大绝对差 `1.8189894035458565e-12`。证据为 `metrics/closeout-xc1-{sequential,batch}-{1,2,3}.json` 与 `metrics/closeout-summary.json`，收益仅指 wall，CPU 与 RSS 本轮略升。
+- 子预算门禁收口：runner 先按父预算构造，当前组全部 runnable 的显式计划在任何模型执行/线程池创建前统一检查，再重新解析子预算计划；避免构造期超预算被捕获成 task failed，以及 available 被重复分割。测试使用 H=8、安全 lag、固定 8-thread 父预算，保留真实 compile，并断言 `run/run_prelimited` 均未调用；validation 变体从 mapping 重建，避免 typed 字段与序列化 payload 脱节。真实 LGBM+Ridge 5-fold 夹具得到 `budget_product=8, available=4 (config_workers=2)`、执行次数 0；Ridge 单独成功，reload 最大差同上。
+- 仅把 `/tmp/tsproj-opt016-benchmark/lgbm_direct_5fold.yaml` 的 `multi_output_n_jobs` 从 8 改为 4，未修改正式 YAML。该 LGBM+Ridge 组最终三轮 median `29.725→29.591s`（改善 0.453%）、p95 `29.782→29.624s`；未达 10% 门槛，不作为性能采用组。六次运行无 swap 增量、三类 CSV hash 唯一、identity 一致，reload 最大差同上；两模型 scaling 不同，transform cache 为 `12 miss + 0 hit`。证据为 `metrics/closeout-lr4-{sequential,batch}-{1,2,3}.json`。
+- 最终统一定向回归 222 项、123.089 秒通过，TASK27 为 46/46；完整命令与逐门禁退出码记录于 `/tmp/tsproj-opt016-benchmark/metrics/closeout-verification.json`。两组每次实际回读均为每模型 5 fold、80 行回测、16 行预测，并完成 bundle reload；5-fold 只用于开发性能与 parity 证据，不宣称正式 31-fold 结果已落盘。
+
+---
+
+### 2026-09-05 实现偏差与剩余待办
+
+RawDesign 内存共享、transform single-flight、同 batch 锁、普通两配置子预算和 XGBoost+CatBoost 三轮收益均保留。重新打开本项是因为通用调度验收大于当前实现，不是推翻 15.990% 的历史基准。
+
+#### A. 父预算与内存限流（P1，待处理）
+
+- **事实**：`model_forecasting/batch_runtime.py:416-420,507-510` 用 `effective_workers` 覆盖已有 `parent_concurrency`，没有组合上层并发约束；`RuntimeResourceBudget.available_threads`（`forecasting_core/runtime_resources.py:108-111`）又把不足一线程的除法结果抬到 1，不能单独证明父层总乘积合法。普通 `parent_concurrency=1/config_workers=2` 的既有测试不覆盖这些输入。
+- **事实**：`resource_planner.py:289-294` 校验单 runner 的 raw design 估计，而 batch 在 `batch_runtime.py:428-463` 先构造全部 pending runner；`FoldTransformCache._values` 和动态 `_SharedBatchRunnerFactory._payloads` 都没有容量/淘汰约束。动态月份可能驻留多个不同 fingerprint，故“每组只驻留一份 raw design”仅适用于当前 fixed-step 共享路径。`peak_rss_bytes` 在构造后和整组结束采样，不是持续峰值测量或内存硬限制。
+- **影响/方向**：嵌套调用可能放大 CPU 预算；长窗口、多 transform 分支和动态月份可能累积内存。补齐父预算组合及最小并发可行性校验；按共享 raw、transform branch 与并发任务估计做组级 admission/缓存限额，并明确实测 RSS 与估计预算的区别。不能用一次无 swap 的窄基准证明所有 catalog 不超限。
+- **风险**：计数不能重复计算共享 raw；回收仍被模型使用的 transform 会破坏结果。先写超预算拒绝、缓存生命周期和动态月份测试，再实施。
+- [x] 嵌套父并发、可用线程少于 config worker 时拒绝或按显式合同限流；任何路径不得放大父预算。
+- [x] 有限内存下多分支/动态月份不无界缓存；峰值指标与实际测量方法一致，并验证 batch-vs-single parity。
+
+#### B. completed 产物真实性门禁（P1，待处理）
+
+- **事实**：`_core_artifacts()` 声明五类文件，但 `_artifacts_complete()`（`batch_runtime.py:277-291`）只遍历调用方提供的值检查 `is_file()`，没有验证必需键、非空内容、hash 或模型身份。本次空 `artifacts={}` 探针通过 helper，进一步通过 `verify_batch_results()`，返回 `verified_count=1`。空文件/被替换的内容也不会仅因存在性检查而被拒绝。
+- **影响/方向**：resume 可跳过伪 completed 任务，最终 verifier 可误报完整。先强制验证必需字段和非空有效文件，再核对配置身份、CSV schema/唯一键/期望几何及 bundle 合同；记录可复核摘要或 hash。按 point/quantile 等配置补充必要产物，不把空字典当完整结果。
+- **风险**：hash 写入时机须晚于 metadata 最终更新；加强状态 schema 后旧 state 如何重验收必须明确，不能静默继续相信旧 completed 标记。
+- [x] 空/缺键 manifest、缺文件、空文件、损坏 CSV/bundle、错误 identity 都不能通过 verifier 或被 resume 跳过。
+- [x] 正常完成/恢复后输入清单与真实完整产物一一对应，损坏项按明确策略拒绝或重新执行。
+
+#### C. 失败状态与恢复粒度（P2，待处理）
+
+- **事实**：task ID 仅取物理 YAML 路径（`batch_runtime.py:117-118`），每次 `execute()` 调用完整 `runner.run/run_prelimited`，所以恢复粒度是**配置**，不是 fold/scalar model 的持久化 checkpoint。异常 state 目前记录 config task 下的 type/message，没有统一结构化 fold/model 坐标。
+- **事实**：显式预算检查发生在当前 group 构造后、执行前（`batch_runtime.py:399-523`），不是全 batch 开始前；后续组拒绝时，前面的组可能已经完成。预算拒绝、异构线程拒绝位于 task 执行异常捕获之外，已写入 `running` 的任务不会在本轮统一转为 failed 并记录原因；下次可重试，不应把它说成不可恢复。
+- **方向/风险**：补齐 preflight 失败的原子终态和结构化坐标。对原目标中的 model-task 粒度恢复，需要明确实施 fold/model checkpoint，或经用户裁决将合同收窄为配置级恢复；不能仅因配置级 resume 测试通过就勾选更强能力。细粒度 checkpoint 涉及模型状态、CQR 顺序及缓存有效性，不能当文档任务顺手实施。
+- [x] 后续组预算拒绝/异构线程拒绝后，state保留准确失败原因且无遗留伪running；本次已实现全批preflight后才执行模型。
+- [x] 原子恢复单位、异常坐标和验收用例一致；补齐原model-task合同，没有收窄为仅配置级resume。
+
+### 2026-09-05 新增收口记录
+
+上面A/B/C事实为修复前诊断，保留溯源；对应缺口已由`for_children`、全批preflight、bounded cache、batch_artifacts和FitCheckpoint修复。用户确认的方案明确区分“资源估算/准入/缓存限制”和“操作系统硬内存隔离”，因此替换原无法由线程池保证的RSS绝不超限表述，而不是宣称一次窄基准证明全catalog硬内存安全。最新统一定向267项及5150配置checker证据见页首；自然月quantile batch完成/resume、损坏manifest及checkpoint、嵌套预算、后续组提前拒绝、final故障后复用fold均有真实测试。生成器4689项零漂移、Ensemble审计无失败、eligibility仍为4265/807；静态compileall与diff检查通过。AGENTS.md和权威设计文档§7.2已同步。原吞吐三轮数字属于新增checkpoint之前的历史实测，不将其改写成checkpoint开销复测。
 
 ---
 
 ## OPT-017：标定非 LightGBM 模型的资源策略
 
-- **状态**：待处理
+- **状态**：已完成
 - **优先级**：P2
 - **类型**：模型感知性能 profile / 线程与内存标定
 - **依赖**：OPT-013
@@ -861,21 +983,40 @@
 
 ### 验收标准
 
-- [ ] 九类非 LightGBM 模型均有至少一个真实代表拓扑基准；未达到收益门槛的模型明确记录保留默认值，不为“必须有改动”强行写 profile。
-- [ ] 每个采用项三轮 median wall 改善至少 10%、p95 不恶化、无 swap/OOM，并同时报告 CPU 总时间、平均核和峰值 RSS。
-- [ ] 同一模型不同 H/K/Q/rows/features 超出签名范围时不会错误命中 profile；所有 resolved 计划可从 metadata 审计。
-- [ ] 串行/候选的四类语义 CSV和 bundle reload prediction 保持既定等价合同；仅线程字段变化时不要求 pickle 字节一致。
-- [ ] 生成器/YAML 只写入已验证范围，幂等检查零漂移；模型线程、量化训练、adapter、配置审计和静态检查通过。
+- [x] 九类非 LightGBM 模型均有至少一个真实代表拓扑基准；未达到收益门槛的模型明确记录保留默认值，不为“必须有改动”强行写 profile。
+- [x] 采用项三轮 median wall 改善至少 10%、p95 不恶化、无 swap/OOM，并同时报告 CPU 总时间、平均核和峰值 RSS。
+- [x] 同一模型不同H/K/Q/rows/features超出签名范围时不会错误命中profile；真实上下文、版本、source内容与调度后计划均可核验，metadata不再仅为来源标签。
+- [x] 串行/候选的语义 CSV和 bundle reload prediction 保持既定等价合同；RandomForest 因 exact deterministic gate 失败未采用。
+- [x] 生成器/YAML 只写入已验证范围，幂等检查零漂移；模型线程、量化训练、adapter、配置审计和静态检查通过。
 
 ### 实施记录
 
-尚未实施。该项以真实测量裁决，允许最终结论为某模型“保留现状”。
+- `/tmp/tsproj-opt017-benchmark/` 对九类模型各完成 `A→B` 三轮交错，共 54 个独立进程。八类活动模型使用 short Route A、H=16、5-fold 派生配置；仓库活动集没有 QuantileRegressor YAML，故 QR 明确以现役月频数据/geometry 构造 H=1、3-fold quantile 代表，不把结果推广为活动 profile。全部运行 swap 增量为 0，resolved metadata 回读的 worker/thread 与候选一致。
+- median wall（A→B）与裁决：XGBoost `40.166→39.162s`（+2.50%，保留）；CatBoost `44.191→35.546s`（+19.56%，采用 `model_thread_count=8`）；RandomForest `81.393→33.593s`（+58.73%，但 n_jobs=8 在不同轮产生最多 `7.28e-12` 的预测归约差异，违反 deterministic gate，保留）；HistGB `27.350→35.536s`、ElasticNet `23.655→23.744s`、Lasso `23.710→23.739s`、QR `0.935→0.988s` 均变慢；Ridge `18.283→18.215s`、ST `18.247→18.176s` 均不足 1%，全部保留默认。
+- CatBoost p95 `44.197→35.667s`，CPU median `40.454→54.738s`、平均核 `0.919→1.547`、最大 RSS `417,988,608→451,936,256 bytes`；三类语义 CSV hash 和 bundle reload prediction 保持 exact。只为 `aidc_load_15min_short/route_A/baseline/cab_direct-pointwise.yaml` 及唯一生成器规则写入该非语义 profile，不推广 route_B、其他 H/K/Q/features/scope。
+- 生成器写盘前 `rewrite=1/create=0/delete=0`，写盘后 4,689 份矩阵为 `rewrite=0/delete=0`。全量 checker 为 `checked=5150 passed=5150 hard_failures=0 warnings=0`；最终统一定向测试 222 项、123.089 秒通过。
+
+---
+
+### 2026-09-05 适用签名复核与剩余待办
+
+- **已完成边界**：九模型三轮实验、CatBoost 单份 YAML/生成器采用规则、其他模型保留默认的裁决保持有效；不重新跑 54 个进程，也不把 RF 的浮点差异改成容忍后强行采用。
+- **当前事实**：`scripts/generate_load_15min_matrix.py:427-434` 仅按 model/scenario/route/group/strategy_variant 写 `model_thread_count=8`，不比较 H/K/Q、rows/features、scope、数据版本或 estimator 版本。`resource_planner.py` 的 `profile_source` 仅区分 `automatic_default`、`validation.performance` 等来源，当前无 benchmark signature 匹配器。元数据能审计实际 workload，不等于能拒绝超出已测签名的性能采用规则。
+- **影响**：原验收“超出签名不会错误命中”尚无实现；在相同命名场景下改变 horizon、特征或数据规模后，生成器仍可能沿用旧规则。这是性能适用性证据缺口，不是已经证明当前 CatBoost 预测错误。
+- **建议方向**：为已采用规则绑定最小、可核验的 benchmark provenance 与适用签名，生成或执行时机械检查；签名失配时不自动复用已标定规则。用户显式 performance override 与“系统已验证 profile”须区分，不建立无需求的自动调参系统。如果只保留按物理场景人工维护，需要用户明确同意收窄原签名验收合同，不能直接勾选。
+- **风险**：过细签名使数据更新后频繁失配，过粗签名仍会错误外推；签名与性能 provenance 不得进入 semantic fingerprint。五折标定和正式 31-fold 是不同证据层级，不能补写不存在的正式产物验收。
+- [x] 对唯一采用的 CatBoost 规则，改变 H/K/Q/rows/features/scope/版本时，测试证明不会自动宣称命中原已验证 profile；保留用户显式 override 的明确边界。
+- [x] 采用签名、实验来源与 resolved workload 可互相核对；生成器幂等、模型线程与配置审计通过，没有收窄为人工维护合同。
+
+### 2026-09-05 新增收口记录
+
+上段为签名实现前的诊断，保留历史证据。`model_forecasting/performance_profiles.py`现为唯一profile实现；物理YAML和生成器只为原CatBoost采用项声明`profile_ref`，不扩大配置范围。planner消费实际base_dir、workload和feature_schema，核验来源内容、模型版本、语义签名与最终执行计划；无profile的人工线程设置标为显式override。新机制不进入semantic fingerprint，也不把历史5-fold标定升级为正式31-fold收益。`tests.test_performance_profiles`已纳入页首267项定向回归；5150配置checker通过、4689生成计划零漂移。AGENTS.md和权威设计文档§7.2已同步。
 
 ---
 
 ## OPT-018：补齐 compiler batch fallback 可观测性并按证据优化剩余冷路径
 
-- **状态**：待处理
+- **状态**：已完成
 - **优先级**：P3
 - **类型**：冷路径可观测 / fallback 治理 / 选择性向量化
 - **依赖**：无；若由批调度统一采集阶段指标，可在 OPT-016 后实施
@@ -902,15 +1043,19 @@
 
 ### 验收标准
 
-- [ ] 每次监督设计构造明确记录 batch/row、reason code、origin/call 数和阶段 wall；合法 fallback 无 silent path，批量汇总不产生逐 origin 日志洪泛。
-- [ ] inventory 能列出全部活动配置的 eligibility/fallback 原因，并与实际运行路径一致；改变相关 transformation/lag/provider 时 reason 正确变化。
-- [ ] 新增 batch 算法（若实施）与 row reference 在 Local/Global、K1/K2、七策略上逐值/逐字段等价，故障注入继续 RAISE。
-- [ ] 只有剩余阶段占端到端达到 10% 且候选三轮 median 改善至少 10%、p95 不恶化时才接线；否则记录 no-op 裁决并保留现状。
-- [ ] compiler/design/cache 定向测试、package layering、静态检查和 `git diff --check` 通过。
+- [x] 每次监督设计构造明确记录 batch/row、reason code、origin/call 数和阶段 wall；合法 fallback 无 silent path，批量汇总不产生逐 origin 日志洪泛。
+- [x] inventory 能列出全部活动配置的 eligibility/fallback 原因，并与实际运行路径一致；改变相关 transformation/lag/provider 时 reason 正确变化。
+- [x] 未新增无证据 batch 算法；既有 batch/row reference 的 Local/Global、K1/K2、七策略等价与故障注入继续 RAISE。
+- [x] 剩余 row 阶段虽超过端到端 10%，但全部属于 provider-dependent lag 的顺序语义，已记录 no-op 裁决并保留现状。
+- [x] compiler/design/cache 定向测试、package layering、静态检查和 `git diff --check` 通过。
 
 ### 实施记录
 
-尚未实施。优先目标是让慢路径可观测；是否继续向量化由新基线决定，不预设必须改算法。
+- 新增 immutable `BatchEligibility`，结构化记录 `eligible/reason_codes/trigger_fields/origin_count/call_count/estimated_origin_call_count`。`FeatureCompiler.compile_batch()` 与 `_RegistryDesignBuilder.training_rows()` 改为消费同一判定，修复 Recursive 配置含 `direct.align_to_target=false` 时 builder 错误绕过浅 lag fallback 的双事实源问题。
+- runtime metadata 与每 runner 单条聚合日志记录 `materialize/labels/compile_batch/compile_row/batch_prepare/batch_feature_columns/finish_and_proof_validation/split_concatenate`，RawDesign cache 另记 load/compile/write；cache hit 明确为 `mode=cache_hit`，不伪造上次 miss 的 timing。Ensemble 顶层 metadata 同步写每个 member 的完整资源/编译摘要。
+- 新增 `scripts/audit_batch_eligibility.py`。全量结果：5,150 canonical YAML = 5,072 Forecast + 78 Ensemble；4,265 个单模型 batch eligible，807 个 fallback，reason 全部为 `provider_dependent_lag`，活动集没有 percent-change/time-since/EWM fallback。最终 inventory 在 `/tmp/tsproj-opt018-batch-eligibility-final.json`。
+- `/tmp/tsproj-opt018-quantile-row-evidence/` 的真实 quantile Ensemble cold run 验证 Direct 为 batch（245 origins×31 calls，compile_batch `0.755s`），Recursive 为 row（同规模，reason=`provider_dependent_lag`，compile_row `10.545s`），端到端 `14.698s`、reload exact、swap 增量 0。该 row 热点必须逐步消费 provider，不能透明 batch 化；因此本项按设计作算法 no-op，而不是用信息语义变化换加速。
+- compiler/design/cache 定向回归已并入最终统一收口 222 项、123.089 秒通过，compileall 与 `git diff --check` 通过。
 
 ---
 

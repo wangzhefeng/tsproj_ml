@@ -73,6 +73,14 @@ from model_training.strategies import (
 )
 from forecasting_core.tensors import PointForecastTensor
 from model_forecasting.transforms import CanonicalFeatureScaler, CanonicalTargetTransform
+from model_forecasting.checkpoints import (
+    FileFitCheckpoint, implementation_fingerprint, runtime_checkpoint_errors,
+)
+from model_forecasting.performance_profiles import resolve_performance_profile
+from model_forecasting.transform_cache import (
+    FoldTransformCache,
+    fold_transform_fingerprint,
+)
 from model_training.trainer import CanonicalTrainer
 from models.ModelFactory import ModelFactory
 from probabilistic.training import CanonicalMarginalQuantileTrainer
@@ -105,6 +113,7 @@ from model_forecasting.fit_service import (
 )
 from model_forecasting.resource_planner import (
     build_runtime_workload,
+    ensemble_member_execution_plan,
     plan_runtime_execution,
     runtime_budget_for_config,
 )
@@ -448,6 +457,7 @@ class CanonicalBaseModelRunner:
     private helpers.
     """
 
+    @runtime_checkpoint_errors
     def __init__(
         self,
         config: ForecastConfigSpec,
@@ -456,6 +466,10 @@ class CanonicalBaseModelRunner:
         *,
         compiled_cache_root: str | Path | None = None,
         resource_budget: RuntimeResourceBudget | None = None,
+        precompiled_payload: Mapping[str, Any] | None = None,
+        precompiled_fingerprint: str | None = None,
+        fold_transform_cache: FoldTransformCache | None = None,
+        checkpoint_root: str | Path | None = None,
     ) -> None:
         if not isinstance(config, ForecastConfigSpec):
             raise TypeError("config must be a ForecastConfigSpec")
@@ -465,6 +479,17 @@ class CanonicalBaseModelRunner:
         self.registry = registry
         self.origin = origin
         self.builder = _RegistryDesignBuilder(config, registry)
+        self.checkpoint_root = checkpoint_root
+        self.checkpoint: FileFitCheckpoint | None = None
+        if checkpoint_root is not None:
+            self.checkpoint = FileFitCheckpoint(checkpoint_root, {
+                "config": config.fingerprint(),
+                "raw_design": compiled_cache.compute_raw_design_fingerprint(
+                    config, base_dir=registry._base_dir, origin=origin,
+                    generators=registry._generators),
+                "implementation": implementation_fingerprint(),
+            })
+        self.fold_transform_cache = fold_transform_cache
         self.compiled_cache_hit = False
         self.compiled_cache_fingerprint: str | None = None
         self.X_all: tuple[np.ndarray, ...]
@@ -474,8 +499,37 @@ class CanonicalBaseModelRunner:
         self.supervised_sample_series_ids: tuple[Any, ...]
         design_started = perf_counter()
         cache_status = "disabled"
-        if compiled_cache_root is None:
+        self.cache_stage_wall_seconds = {
+            "load": 0.0,
+            "compile": 0.0,
+            "write": 0.0,
+        }
+        if precompiled_payload is not None:
+            if not precompiled_fingerprint:
+                raise ValueError(
+                    "precompiled_fingerprint is required with precompiled_payload"
+                )
+            expected_fingerprint = compiled_cache.compute_raw_design_fingerprint(
+                config,
+                base_dir=registry._base_dir,
+                origin=origin,
+                generators=registry._generators,
+            )
+            if precompiled_fingerprint != expected_fingerprint:
+                raise ValueError(
+                    "precompiled fingerprint mismatch: "
+                    f"got {precompiled_fingerprint}, expected {expected_fingerprint}"
+                )
+            self._restore_compiled_cache(precompiled_payload)
+            self.compiled_cache_hit = True
+            self.compiled_cache_fingerprint = precompiled_fingerprint
+            cache_status = "memory_hit"
+        elif compiled_cache_root is None:
+            compile_started = perf_counter()
             self._compile_supervised_arrays()
+            self.cache_stage_wall_seconds["compile"] = (
+                perf_counter() - compile_started
+            )
         else:
             cache_root = Path(compiled_cache_root)
             fingerprint = compiled_cache.compute_raw_design_fingerprint(
@@ -487,15 +541,27 @@ class CanonicalBaseModelRunner:
             self.compiled_cache_fingerprint = fingerprint
             started = perf_counter()
             with compiled_cache.raw_design_cache_lock(cache_root, fingerprint):
+                load_started = perf_counter()
                 try:
                     payload = compiled_cache.load_compiled_cache(cache_root, fingerprint)
                 except FileNotFoundError:
+                    self.cache_stage_wall_seconds["load"] = (
+                        perf_counter() - load_started
+                    )
+                    compile_started = perf_counter()
                     self._compile_supervised_arrays()
+                    self.cache_stage_wall_seconds["compile"] = (
+                        perf_counter() - compile_started
+                    )
                     cache_status = "miss"
+                    write_started = perf_counter()
                     compiled_cache.save_compiled_cache(
                         cache_root,
                         fingerprint,
                         self._compiled_cache_payload(),
+                    )
+                    self.cache_stage_wall_seconds["write"] = (
+                        perf_counter() - write_started
                     )
                     logger.info(
                         "[CompiledFeaturesCache] miss key=%s compile_seconds=%.3f",
@@ -503,6 +569,9 @@ class CanonicalBaseModelRunner:
                         perf_counter() - started,
                     )
                 else:
+                    self.cache_stage_wall_seconds["load"] = (
+                        perf_counter() - load_started
+                    )
                     self._restore_compiled_cache(payload)
                     self.compiled_cache_hit = True
                     cache_status = "hit"
@@ -526,8 +595,21 @@ class CanonicalBaseModelRunner:
             config,
             self.workload,
             budget=self.resource_budget,
+            base_dir=registry._base_dir,
+            feature_schema=self.builder.feature_schema,
         )
         self.cache_status = cache_status
+        self.training_compile = self.builder.training_compile_summary()
+        if self.compiled_cache_hit:
+            self.training_compile["mode"] = "cache_hit"
+        logger.info(
+            "[TrainingCompile] mode=%s origins=%s calls=%s reasons=%s wall=%s",
+            self.training_compile["mode"],
+            self.training_compile["origin_count"],
+            self.training_compile["call_count"],
+            self.training_compile["reason_codes"],
+            self.training_compile["stage_wall_seconds"],
+        )
         self.lifecycle_started = design_started
         self.stage_wall_seconds: dict[str, float] = {
             "raw_design": perf_counter() - design_started,
@@ -552,6 +634,10 @@ class CanonicalBaseModelRunner:
             "feature_schema": self.builder.feature_schema,
             "categorical_schema": self.builder.categorical_schema,
         }
+
+    def raw_design_payload(self) -> dict[str, Any]:
+        """Expose one group's raw arrays for in-memory batch reuse."""
+        return self._compiled_cache_payload()
 
     def _restore_compiled_cache(self, payload: Mapping[str, Any]) -> None:
         required = {
@@ -608,21 +694,77 @@ class CanonicalBaseModelRunner:
 
     def runtime_resources_payload(self) -> dict[str, Any]:
         return {
+            "performance_profile": resolve_performance_profile(
+                self.config, self.workload, budget=self.resource_budget,
+                base_dir=self.registry._base_dir, feature_schema=self.feature_schema,
+                execution_plan=self.execution_plan,
+            ),
             "workload": self.workload.payload(),
             "budget": self.resource_budget.payload(),
             "execution_plan": self.execution_plan.payload(),
             "cache": {
                 "status": self.cache_status,
                 "fingerprint": self.compiled_cache_fingerprint,
+                "stage_wall_seconds": dict(self.cache_stage_wall_seconds),
             },
+            "training_compile": dict(self.training_compile),
             "stage_wall_seconds": dict(self.stage_wall_seconds),
         }
+
+    def apply_ensemble_member_plan(self, parent_plan: RuntimeExecutionPlan) -> None:
+        """Apply one parent-budgeted serial plan before Ensemble member pools start."""
+        self.execution_plan = ensemble_member_execution_plan(
+            parent_plan,
+            self.workload,
+        )
 
     def backtest_windows(self) -> tuple[_BacktestWindow, ...]:
         if isinstance(self.config.validation.backtest, CalendarMonthBacktestSpec):
             return ()
         return _rolling_backtest_windows(self.builder, self.supervised_origins)
 
+    def _fit_or_reuse_runtime_transforms(
+        self,
+        *,
+        origin_indices: tuple[int, ...],
+        X_values: tuple[np.ndarray, ...],
+        Y_values: np.ndarray,
+        training_origins: tuple[pd.Timestamp, ...],
+        training_series_ids: tuple[Any, ...],
+        history_cutoff: pd.Timestamp,
+        target_history: PointForecastTensor | None = None,
+    ) -> tuple[
+        CanonicalFeatureScaler,
+        CanonicalTargetTransform,
+        tuple[np.ndarray, ...],
+        np.ndarray,
+    ]:
+        def factory():
+            return _fit_runtime_transforms(
+                self.config,
+                self.builder,
+                X_values,
+                Y_values,
+                training_origins,
+                training_series_ids,
+                history_cutoff,
+                target_history=target_history,
+            )
+
+        if self.fold_transform_cache is None or target_history is not None:
+            return factory()
+        if self.compiled_cache_fingerprint is None:
+            raise ValueError(
+                "fold transform cache requires a raw design fingerprint"
+            )
+        key = fold_transform_fingerprint(
+            self.config,
+            raw_design_fingerprint=self.compiled_cache_fingerprint,
+            origin_indices=origin_indices,
+        )
+        return self.fold_transform_cache.get_or_create(key, factory)
+
+    @runtime_checkpoint_errors
     def fit(
         self,
         train_indices: tuple[int, ...],
@@ -671,14 +813,13 @@ class CanonicalBaseModelRunner:
             target_transform,
             X_train_transformed,
             Y_train_transformed,
-        ) = _fit_runtime_transforms(
-            self.config,
-            self.builder,
-            X_train,
-            Y_train,
-            training_origins,
-            training_series_ids,
-            training_history_cutoff,
+        ) = self._fit_or_reuse_runtime_transforms(
+            origin_indices=train_indices,
+            X_values=X_train,
+            Y_values=Y_train,
+            training_origins=training_origins,
+            training_series_ids=training_series_ids,
+            history_cutoff=training_history_cutoff,
             target_history=target_history,
         )
         # 监督特征选择（2026-08-30 专项）：有监督步骤挂在训练 fit 边界，
@@ -696,6 +837,8 @@ class CanonicalBaseModelRunner:
                 n_series=self.builder.n_series,
                 execution_plan=self.execution_plan,
                 max_workers=1 if force_serial else None,
+                checkpoint=(self.checkpoint.child(fold=list(train_indices))
+                            if self.checkpoint is not None else None),
             )
         else:
             _, artifact, _ = _fit_quantile(
@@ -706,6 +849,8 @@ class CanonicalBaseModelRunner:
                 n_series=self.builder.n_series,
                 execution_plan=self.execution_plan,
                 worker_plan=(1, 1) if force_serial else None,
+                checkpoint=(self.checkpoint.child(fold=list(train_indices))
+                            if self.checkpoint is not None else None),
             )
         return (
             feature_scaler,
@@ -867,17 +1012,17 @@ class CanonicalBaseModelRunner:
             target_transform,
             X_all_transformed,
             Y_all_transformed,
-        ) = _fit_runtime_transforms(
-            self.config,
-            self.builder,
-            X_window,
-            Y_window,
-            sample_origins,
-            sample_series_ids,
-            history_cutoff,
+        ) = self._fit_or_reuse_runtime_transforms(
+            origin_indices=origin_indices,
+            X_values=X_window,
+            Y_values=Y_window,
+            training_origins=sample_origins,
+            training_series_ids=sample_series_ids,
+            history_cutoff=history_cutoff,
         )
         return feature_scaler, target_transform, X_all_transformed, Y_all_transformed
 
+    @runtime_checkpoint_errors
     def fit_final(
         self,
         X_transformed: tuple[np.ndarray, ...],
@@ -896,6 +1041,8 @@ class CanonicalBaseModelRunner:
                 Y_transformed,
                 n_series=self.builder.n_series,
                 execution_plan=self.execution_plan,
+                checkpoint=(self.checkpoint.child(fold="final")
+                            if self.checkpoint is not None else None),
             )
             capabilities = trainer.capabilities
         else:
@@ -906,6 +1053,8 @@ class CanonicalBaseModelRunner:
                 Y_transformed,
                 n_series=self.builder.n_series,
                 execution_plan=self.execution_plan,
+                checkpoint=(self.checkpoint.child(fold="final")
+                            if self.checkpoint is not None else None),
             )
         return trainer, artifact, capabilities
 
@@ -989,6 +1138,7 @@ class CanonicalBaseModelRunner:
             selector.selected_names_,
         )
 
+    @runtime_checkpoint_errors
     def run(
         self,
         output_root: str | Path | None = None,
@@ -996,6 +1146,13 @@ class CanonicalBaseModelRunner:
         """Execute with process-level BLAS/OpenMP limits set before any pool."""
         with threadpool_limits(limits=self.execution_plan.model_threads):
             return self._run(output_root)
+
+    def run_prelimited(
+        self,
+        output_root: str | Path | None = None,
+    ) -> CanonicalRuntimeResult:
+        """Execute under a parent-owned process-level threadpool limit."""
+        return self._run(output_root)
 
     def _run(
         self,
@@ -1416,11 +1573,13 @@ class CanonicalBaseModelRunner:
         return mode
 
 
+@runtime_checkpoint_errors
 def run_canonical_config(
     config: ForecastConfigSpec,
     output_root: str | Path | None = None,
     *,
     generators: Mapping[str, Any] | None = None,
+    checkpoint_root: str | Path | None = None,
 ) -> CanonicalRuntimeResult:
     """Train, backtest, forecast, and persist one canonical config."""
     if not isinstance(config, ForecastConfigSpec):
@@ -1441,6 +1600,7 @@ def run_canonical_config(
         registry,
         origin,
         compiled_cache_root=compiled_cache_root,
+        checkpoint_root=checkpoint_root,
     )
     result = runner.run(output_root)
     if str(config.validation.get("horizon_mode", "fixed_steps")) == "calendar_month":

@@ -198,6 +198,23 @@ def run_ensemble_config(
     validate_member_sources(config, resolved)
     if len(resolved) < 2:
         raise EnsembleSpecError("ensemble requires at least two valid members")
+    parent_budget = (
+        services.resolve_budget(config)
+        if services.resolve_budget is not None
+        else None
+    )
+    member_budget = (
+        replace(
+            parent_budget,
+            memory_limit_bytes=max(
+                1,
+                parent_budget.memory_limit_bytes // len(resolved),
+            ),
+            source=f"{parent_budget.source}+ensemble_member_share",
+        )
+        if parent_budget is not None
+        else None
+    )
 
     member_configs: dict[str, Any] = {}
     runners: dict[str, BaseModelRunner] = {}
@@ -211,12 +228,21 @@ def run_ensemble_config(
         member_fingerprints[member.name] = member_config.fingerprint()
         registry = SourceRegistry(member_config.data, source_root)
         registry_by_member[member.name] = registry
+        runner_kwargs = {"compiled_cache_root": cache_root}
+        if member_budget is not None:
+            runner_kwargs["resource_budget"] = member_budget
         runners[member.name] = services.runner_factory(
             member_config,
             registry,
             resolve_origin(registry, config.validation.get("forecast_origin")),
-            compiled_cache_root=cache_root,
+            **runner_kwargs,
         )
+        if parent_budget is not None and sum(
+            runner.workload.design_bytes for runner in runners.values()
+        ) > parent_budget.memory_limit_bytes:
+            raise ValueError(
+                "ensemble member designs exceed the parent memory budget"
+            )
         for source in member_config.data.sources:
             if source.source_type != "file":
                 raise EnsembleSpecError(
@@ -231,10 +257,15 @@ def run_ensemble_config(
                     f"{member.name}:{source.name}:{path_role}"
                 ] = oof_cache.file_sha256(source_root / raw_path)
 
+    plan_kwargs = {"budget": parent_budget} if parent_budget is not None else {}
     resource_workload, resource_budget, execution_plan = services.plan_resources(
         config,
         runners,
+        **plan_kwargs,
     )
+    if execution_plan.selected_axis == "ensemble_member":
+        for runner in runners.values():
+            runner.apply_ensemble_member_plan(execution_plan)
     stage_wall_seconds = {
         "raw_design": perf_counter() - raw_design_started,
     }
@@ -259,22 +290,23 @@ def run_ensemble_config(
     ensemble_fit_started = perf_counter()
     oof = None
     oof_cache_hit = False
-    if use_oof_cache:
-        oof, oof_cache_hit = oof_cache.get_or_create_oof_cache(
-            cache_root,
-            fingerprint,
-            lambda: generate_oof_for_config(config, runners),
-        )
-
-    member_model_threads = max(
-        runner.execution_plan.model_threads for runner in runners.values()
-    )
-    with threadpool_limits(limits=member_model_threads):
+    with threadpool_limits(limits=execution_plan.model_threads):
+        if use_oof_cache:
+            oof, oof_cache_hit = oof_cache.get_or_create_oof_cache(
+                cache_root,
+                fingerprint,
+                lambda: generate_oof_for_config(
+                    config,
+                    runners,
+                    member_workers=execution_plan.member_workers,
+                ),
+            )
         artifact, oof, final_values, member_bundles, audit = fit_ensemble(
             config,
             runners,
             oof=oof,
             outer_cutoff_origin=None,
+            member_workers=execution_plan.member_workers,
         )
     stage_wall_seconds["ensemble_fit"] = perf_counter() - ensemble_fit_started
     persist_started = perf_counter()
@@ -378,6 +410,10 @@ def run_ensemble_config(
         "execution_plan": execution_plan.payload(),
         "member_execution_plans": {
             name: runner.execution_plan.payload()
+            for name, runner in runners.items()
+        },
+        "member_resources": {
+            name: runner.runtime_resources_payload()
             for name, runner in runners.items()
         },
         "cache": {

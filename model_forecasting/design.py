@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Mapping, Sequence
+from time import perf_counter
+from typing import Any, Mapping, Sequence, cast
 
 import numpy as np
 import pandas as pd
@@ -161,6 +162,72 @@ class _RegistryDesignBuilder:
         self.categorical_schema: tuple[str, ...] = ()
         self._audit: list[CompiledFeatures] = []
         self.series_ids = self._resolve_series_ids()
+        self._training_compile_stats: dict[str, Any] = {
+            "batch_batches": 0,
+            "row_batches": 0,
+            "origin_count": 0,
+            "call_count": len(self.plan.call_coordinates),
+            "estimated_origin_call_count": 0,
+            "reason_codes": set(),
+            "trigger_fields": set(),
+            "stage_wall_seconds": {
+                "materialize": 0.0,
+                "labels": 0.0,
+                "compile_batch": 0.0,
+                "compile_row": 0.0,
+                "batch_prepare": 0.0,
+                "batch_feature_columns": 0.0,
+                "finish_and_proof_validation": 0.0,
+                "split_concatenate": 0.0,
+            },
+        }
+
+    def _record_batch_eligibility(self, eligibility) -> None:
+        key = "batch_batches" if eligibility.eligible else "row_batches"
+        self._training_compile_stats[key] += 1
+        self._training_compile_stats["origin_count"] += eligibility.origin_count
+        self._training_compile_stats[
+            "estimated_origin_call_count"
+        ] += eligibility.estimated_origin_call_count
+        self._training_compile_stats["reason_codes"].update(
+            eligibility.reason_codes
+        )
+        self._training_compile_stats["trigger_fields"].update(
+            eligibility.trigger_fields
+        )
+
+    def _add_training_compile_wall(self, name: str, elapsed: float) -> None:
+        self._training_compile_stats["stage_wall_seconds"][name] += elapsed
+
+    def training_compile_summary(self) -> dict[str, Any]:
+        batch_batches = int(self._training_compile_stats["batch_batches"])
+        row_batches = int(self._training_compile_stats["row_batches"])
+        if batch_batches and row_batches:
+            mode = "mixed"
+        elif batch_batches:
+            mode = "batch"
+        elif row_batches:
+            mode = "row"
+        else:
+            mode = "not_run"
+        return {
+            "mode": mode,
+            "batch_batches": batch_batches,
+            "row_batches": row_batches,
+            "origin_count": int(self._training_compile_stats["origin_count"]),
+            "call_count": int(self._training_compile_stats["call_count"]),
+            "estimated_origin_call_count": int(
+                self._training_compile_stats["estimated_origin_call_count"]
+            ),
+            "reason_codes": sorted(self._training_compile_stats["reason_codes"]),
+            "trigger_fields": sorted(self._training_compile_stats["trigger_fields"]),
+            "stage_wall_seconds": {
+                name: float(value)
+                for name, value in self._training_compile_stats[
+                    "stage_wall_seconds"
+                ].items()
+            },
+        }
 
     @property
     def n_series(self) -> int:
@@ -516,12 +583,19 @@ class _RegistryDesignBuilder:
         origin: pd.Timestamp,
     ) -> tuple[tuple[np.ndarray, ...], np.ndarray]:
         training_request = self.request(origin, target_access="supervised_labels")
+        stage_started = perf_counter()
         information_set = self.registry.materialize(training_request)
+        self._add_training_compile_wall(
+            "materialize", perf_counter() - stage_started
+        )
+        stage_started = perf_counter()
         target_values, trajectories = self._labels_from_information_set(
             training_request,
             information_set,
         )
+        self._add_training_compile_wall("labels", perf_counter() - stage_started)
         visibility_cutoff = pd.Timestamp(training_request.forecast_times[-1])
+        stage_started = perf_counter()
         designs = tuple(
             self._compile_call(
                 origin,
@@ -541,6 +615,9 @@ class _RegistryDesignBuilder:
             )
             for call_index in range(len(self.plan.call_coordinates))
         )
+        self._add_training_compile_wall(
+            "compile_row", perf_counter() - stage_started
+        )
         return designs, target_values if self.is_global else target_values[0]
 
     def training_rows(
@@ -548,14 +625,24 @@ class _RegistryDesignBuilder:
         origins: Sequence[pd.Timestamp],
     ) -> tuple[tuple[tuple[np.ndarray, ...], np.ndarray], ...]:
         """批量编译一组监督 origins；provider 依赖策略保持逐行路径。"""
-        normalized_origins = tuple(pd.Timestamp(origin) for origin in origins)
+        normalized_origins = tuple(
+            cast(pd.Timestamp, pd.Timestamp(origin)) for origin in origins
+        )
         if not normalized_origins:
             return ()
         call_steps = tuple(
             coordinates[0].horizon_step
             for coordinates in self.plan.call_coordinates
         )
-        if not self._can_batch_training(call_steps):
+        compile_requests = tuple(
+            self.request(origin) for origin in normalized_origins
+        )
+        eligibility = self.compiler.batch_eligibility(
+            compile_requests,
+            horizon_steps=call_steps,
+        )
+        self._record_batch_eligibility(eligibility)
+        if not eligibility.eligible:
             return tuple(self.training_row(origin) for origin in normalized_origins)
 
         training_requests = tuple(
@@ -575,8 +662,13 @@ class _RegistryDesignBuilder:
             series_ids=self.series_ids if self.is_global else (),
             target_access="supervised_labels",
         )
+        stage_started = perf_counter()
         shared_information_set = self.registry.materialize(materialization_request)
+        self._add_training_compile_wall(
+            "materialize", perf_counter() - stage_started
+        )
         information_sets = (shared_information_set,) * len(training_requests)
+        stage_started = perf_counter()
         target_values = tuple(
             self._labels_from_information_set(request, information_set)[0]
             for request, information_set in zip(
@@ -584,9 +676,8 @@ class _RegistryDesignBuilder:
                 information_sets,
             )
         )
-        compile_requests = tuple(
-            self.request(origin) for origin in normalized_origins
-        )
+        self._add_training_compile_wall("labels", perf_counter() - stage_started)
+        stage_started = perf_counter()
         compiled_items = self.compiler.compile_batch(
             information_sets,
             compile_requests,
@@ -597,6 +688,12 @@ class _RegistryDesignBuilder:
             ),
             proof_mode="validate_only",
         )
+        self._add_training_compile_wall(
+            "compile_batch", perf_counter() - stage_started
+        )
+        for name, value in self.compiler.last_batch_stage_wall_seconds.items():
+            self._add_training_compile_wall(name, value)
+        stage_started = perf_counter()
         rows = []
         for compiled, values in zip(compiled_items, target_values):
             schema = self._update_feature_schema(compiled)
@@ -612,30 +709,10 @@ class _RegistryDesignBuilder:
                     values if self.is_global else values[0],
                 )
             )
-        return tuple(rows)
-
-    def _can_batch_training(self, call_steps: Sequence[int]) -> bool:
-        if self.config.strategy is None:
-            return False
-        advanced = self.config.features.transformations.get("advanced", {})
-        if isinstance(advanced, Mapping) and any(
-            advanced.get(kind) is not None
-            for kind in ("percent_change", "time_since", "ewm")
-        ):
-            return False
-        direct = self.config.features.transformations.get("direct")
-        if isinstance(direct, Mapping) and direct.get("align_to_target") is False:
-            return True
-        max_step = max(call_steps)
-        return all(
-            lag >= max_step
-            for lag_mapping in (
-                self.config.features.target_lags,
-                self.config.features.observed_past_lags,
-            )
-            for lags in lag_mapping.values()
-            for lag in lags
+        self._add_training_compile_wall(
+            "split_concatenate", perf_counter() - stage_started
         )
+        return tuple(rows)
 
     def forecast_designs(
         self,

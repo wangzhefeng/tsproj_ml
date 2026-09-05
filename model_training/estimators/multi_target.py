@@ -6,6 +6,7 @@ from typing import Callable, Sequence
 
 import numpy as np
 
+from forecasting_core.checkpoints import FitCheckpoint
 from forecasting_core.tensors import unflatten_time_major
 from model_training.estimators.capabilities import EstimatorCapabilities
 from model_training.strategies.base import TargetCoordinate
@@ -28,6 +29,7 @@ class _BaseMultiTargetAdapter:
         capabilities: EstimatorCapabilities,
         target_coordinates: tuple[TargetCoordinate, ...],
         probabilistic_mode: str = "point",
+        checkpoint: FitCheckpoint | None = None,
     ) -> None:
         if not callable(estimator_factory):
             raise TypeError("estimator_factory must be callable")
@@ -39,6 +41,7 @@ class _BaseMultiTargetAdapter:
         targets, horizon = self._validate_coordinates(target_coordinates)
         self._validate_capabilities(capabilities, probabilistic_mode)
 
+        self.checkpoint = checkpoint
         self.estimator_factory = estimator_factory
         self.capabilities = capabilities
         self.target_coordinates = target_coordinates
@@ -47,6 +50,11 @@ class _BaseMultiTargetAdapter:
         self.probabilistic_mode = probabilistic_mode
         self.metadata = AdapterMetadata(self.target_coordinates)
         self._is_fit = False
+
+    def __getstate__(self):
+        state = dict(self.__dict__)
+        state["checkpoint"] = None
+        return state
 
     @staticmethod
     def _validate_coordinates(
@@ -233,6 +241,7 @@ def fit_independent_adapters(
             tasks.append(
                 (
                     "batch",
+                    adapter,
                     batch_fitter,
                     design,
                     flat_targets,
@@ -245,6 +254,7 @@ def fit_independent_adapters(
         tasks.extend(
             (
                 "scalar",
+                column_index,
                 adapter,
                 estimator,
                 design,
@@ -256,10 +266,22 @@ def fit_independent_adapters(
 
     def fit_task(task):
         if task[0] == "batch":
-            _, batch_fitter, design, targets, sample_weight = task
-            return tuple(batch_fitter(design, targets, sample_weight))
-        _, adapter, estimator, design, target, sample_weight = task
-        adapter._fit_estimator(estimator, design, target, sample_weight)
+            _, adapter, batch_fitter, design, targets, sample_weight = task
+            def fit_batch():
+                return tuple(batch_fitter(design, targets, sample_weight))
+            if adapter.checkpoint is None:
+                return fit_batch()
+            return adapter.checkpoint.run(identity={"model": "batch_outputs"},
+                arrays=(design, targets, sample_weight), fit=fit_batch)
+        _, column_index, adapter, estimator, design, target, sample_weight = task
+        def fit_scalar():
+            adapter._fit_estimator(estimator, design, target, sample_weight)
+            return estimator
+        if adapter.checkpoint is not None:
+            estimator = adapter.checkpoint.run(identity={"model": f"scalar/{column_index}"},
+                arrays=(design, target, sample_weight), fit=fit_scalar)
+        else:
+            estimator = fit_scalar()
         return (estimator,)
 
     worker_count = min(max_workers, len(tasks))
@@ -311,12 +333,18 @@ class RegressorChainMultiTargetAdapter(_BaseMultiTargetAdapter):
             chained_design = np.column_stack(
                 (design, flat_targets[:, :column_index])
             )
-            self._fit_estimator(
-                estimator,
-                chained_design,
-                flat_targets[:, column_index],
-                validated_weight,
-            )
+            def fit_chain_unit():
+                self._fit_estimator(estimator, chained_design,
+                                    flat_targets[:, column_index], validated_weight)
+                return estimator
+            if self.checkpoint is None:
+                estimator = fit_chain_unit()
+            else:
+                estimator = self.checkpoint.run(
+                    identity={"model": f"chain/{column_index}"},
+                    arrays=(chained_design, flat_targets[:, column_index], validated_weight),
+                    fit=fit_chain_unit,
+                )
             estimators.append(estimator)
         self.estimators = tuple(estimators)
         self.estimator_factory = None
@@ -362,7 +390,14 @@ class NativeMultiTargetAdapter(_BaseMultiTargetAdapter):
             X, Y, sample_weight
         )
         estimator = self.estimator_factory()
-        self._fit_estimator(estimator, design, flat_targets, validated_weight)
+        def fit_native():
+            self._fit_estimator(estimator, design, flat_targets, validated_weight)
+            return estimator
+        if self.checkpoint is None:
+            estimator = fit_native()
+        else:
+            estimator = self.checkpoint.run(identity={"model": "native"},
+                arrays=(design, flat_targets, validated_weight), fit=fit_native)
         self.estimator = estimator
         self.estimator_factory = None
         self._is_fit = True

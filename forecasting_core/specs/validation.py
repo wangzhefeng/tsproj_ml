@@ -64,9 +64,11 @@ class RuntimePerformanceSpec(FrozenMappingSpec):
     window_parallel_workers: int | None
     multi_output_n_jobs: int | None
     quantile_parallel_workers: int | None
+    ensemble_parallel_workers: int | None
     model_thread_count: int | None
     total_thread_limit: int | None
     memory_limit_bytes: int | None
+    profile_ref: str | None = None
 
     @classmethod
     def from_mapping(
@@ -82,10 +84,12 @@ class RuntimePerformanceSpec(FrozenMappingSpec):
                 "window_parallel_workers",
                 "multi_output_n_jobs",
                 "quantile_parallel_workers",
+                "ensemble_parallel_workers",
                 "model_thread_count",
                 "total_thread_limit",
                 "memory_limit_bytes",
             }
+            | {"profile_ref"}
         )
         payload = strict_mapping(
             value,
@@ -94,6 +98,10 @@ class RuntimePerformanceSpec(FrozenMappingSpec):
             allowed=allowed,
         )
         for field_name, field_value in payload.items():
+            if field_name == "profile_ref":
+                if not isinstance(field_value, str) or not field_value.strip():
+                    raise ValueError("validation.performance.profile_ref must be nonempty text")
+                continue
             if (
                 isinstance(field_value, bool)
                 or not isinstance(field_value, int)
@@ -107,9 +115,11 @@ class RuntimePerformanceSpec(FrozenMappingSpec):
             window_parallel_workers=payload.get("window_parallel_workers"),
             multi_output_n_jobs=payload.get("multi_output_n_jobs"),
             quantile_parallel_workers=payload.get("quantile_parallel_workers"),
+            ensemble_parallel_workers=payload.get("ensemble_parallel_workers"),
             model_thread_count=payload.get("model_thread_count"),
             total_thread_limit=payload.get("total_thread_limit"),
             memory_limit_bytes=payload.get("memory_limit_bytes"),
+            profile_ref=payload.get("profile_ref"),
         )
 
 VALIDATION_FIELDS = frozenset(
@@ -179,10 +189,12 @@ _VALIDATION_NESTED_FIELDS: dict[str, frozenset[str]] = {
             "window_parallel_workers",
             "multi_output_n_jobs",
             "quantile_parallel_workers",
+            "ensemble_parallel_workers",
             "model_thread_count",
             "total_thread_limit",
             "memory_limit_bytes",
         }
+        | {"profile_ref"}
     ),
 }
 

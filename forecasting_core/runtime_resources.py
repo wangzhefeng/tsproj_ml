@@ -1,7 +1,7 @@
 """Immutable contracts for runtime workload and resource planning."""
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from typing import Any
 
 
@@ -108,7 +108,31 @@ class RuntimeResourceBudget:
     @property
     def available_threads(self) -> int:
         machine_limit = min(self.physical_cores, self.total_thread_limit)
-        return max(1, machine_limit // self.parent_concurrency)
+        available = machine_limit // self.parent_concurrency
+        if available < 1:
+            raise ValueError(
+                "parent_concurrency exceeds available thread budget: "
+                f"parent_concurrency={self.parent_concurrency}, available={machine_limit}"
+            )
+        return available
+
+    def for_children(self, concurrency: int) -> "RuntimeResourceBudget":
+        """Compose, never overwrite, the full ancestry of a child pool.
+
+        Memory remains a shared parent limit; the scheduler admits shared raw
+        designs and concurrent task working sets against it, not per-runner copies.
+        """
+        _positive_int(concurrency, "concurrency")
+        if concurrency > self.available_threads:
+            raise ValueError(
+                "child concurrency exceeds available thread budget: "
+                f"config_workers={concurrency}, available={self.available_threads}"
+            )
+        return replace(
+            self,
+            parent_concurrency=self.parent_concurrency * concurrency,
+            source=f"{self.source}+batch_config",
+        )
 
     def payload(self) -> dict[str, Any]:
         return {**asdict(self), "available_threads": self.available_threads}

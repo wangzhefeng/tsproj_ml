@@ -166,9 +166,11 @@ _CANONICAL_NESTED_FIELDS = {
     "validation.train_outlier.drop": {"max_run_points", "rebound_min_abs_diff"},
     "validation.eval_mask": {"mode", "percentile", "min_value", "max_value"},
     "validation.performance": {
+        "profile_ref",
         "window_parallel_workers",
         "multi_output_n_jobs",
         "quantile_parallel_workers",
+        "ensemble_parallel_workers",
         "model_thread_count",
         "total_thread_limit",
         "memory_limit_bytes",

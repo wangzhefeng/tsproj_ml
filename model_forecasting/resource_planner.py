@@ -4,6 +4,7 @@ from __future__ import annotations
 import os
 from collections.abc import Mapping, Sequence
 from dataclasses import replace
+from pathlib import Path
 from typing import Any
 
 from forecasting_core.runtime_resources import (
@@ -14,6 +15,7 @@ from forecasting_core.runtime_resources import (
 from forecasting_core.specs import ForecastConfigSpec, TargetAdapter
 from model_training.estimators import supports_native_multi_quantile
 from model_training.strategies import target_plan_for_config
+from model_forecasting.performance_profiles import resolve_performance_profile
 
 
 _THREAD_PARAM_BY_MODEL = {
@@ -257,13 +259,20 @@ def plan_runtime_execution(
     workload: RuntimeWorkload,
     *,
     budget: RuntimeResourceBudget | None = None,
+    base_dir: str | Path | None = None,
+    feature_schema: Sequence[str] | None = None,
 ) -> RuntimeExecutionPlan:
     """Resolve one non-nested execution plan and reject explicit conflicts."""
     if not isinstance(config, ForecastConfigSpec):
         raise TypeError("config must be a ForecastConfigSpec")
     if not isinstance(workload, RuntimeWorkload):
         raise TypeError("workload must be a RuntimeWorkload")
-    performance = _performance(config)
+    budget = runtime_budget_for_config(config, parent_budget=budget)
+    profile = resolve_performance_profile(
+        config, workload, budget=budget,
+        base_dir=base_dir, feature_schema=feature_schema,
+    )
+    performance = profile["controls"]
     configured_window = _positive_performance_int(
         performance, "window_parallel_workers"
     )
@@ -276,7 +285,14 @@ def plan_runtime_execution(
     configured_model = _positive_performance_int(
         performance, "model_thread_count"
     )
-    budget = runtime_budget_for_config(config, parent_budget=budget)
+    configured_ensemble = _positive_performance_int(
+        performance, "ensemble_parallel_workers"
+    )
+    if configured_ensemble is not None:
+        raise ValueError(
+            "validation.performance.ensemble_parallel_workers requires "
+            "EnsembleConfigSpec"
+        )
     available = budget.available_threads
     if workload.design_bytes > budget.memory_limit_bytes:
         raise ValueError(
@@ -400,6 +416,8 @@ def plan_runtime_execution(
         "quantile": max_quantile,
         "output": max_output,
     }.get(selected_axis, 1)
+    if profile["profile_ref"] is not None:
+        profile_source = f"benchmark_profile:{profile['profile_ref']}"
     return RuntimeExecutionPlan(
         schema_version=1,
         selected_axis=selected_axis,
@@ -424,7 +442,7 @@ def plan_ensemble_resources(
     *,
     budget: RuntimeResourceBudget | None = None,
 ) -> tuple[RuntimeWorkload, RuntimeResourceBudget, RuntimeExecutionPlan]:
-    """Resolve the serial Ensemble plan used before OPT-015 member parallelism."""
+    """Resolve one budget-checked Ensemble member execution plan."""
     if not runners:
         raise ValueError("ensemble resource planning requires member runners")
     member_workloads = tuple(runner.workload for runner in runners.values())
@@ -476,7 +494,64 @@ def plan_ensemble_resources(
             f"design_bytes={workload.design_bytes}, "
             f"memory_limit_bytes={resolved_budget.memory_limit_bytes}"
         )
+    performance = _performance(config)
+    configured_member_workers = _positive_performance_int(
+        performance,
+        "ensemble_parallel_workers",
+    )
+    member_workers = configured_member_workers or 1
+    if member_workers > workload.member_count:
+        raise ValueError(
+            "validation.performance.ensemble_parallel_workers exceeds member count: "
+            f"workers={member_workers}, members={workload.member_count}"
+        )
+    if member_workers > 1 and workload.design_bytes * 2 > resolved_budget.memory_limit_bytes:
+        raise ValueError(
+            "parallel ensemble fit exceeds conservative memory budget: "
+            f"estimated_peak_bytes={workload.design_bytes * 2}, "
+            f"memory_limit_bytes={resolved_budget.memory_limit_bytes}"
+        )
+    model_threads = (
+        max(1, resolved_budget.available_threads // member_workers)
+        if member_workers > 1
+        else max(
+            int(runner.execution_plan.model_threads)
+            for runner in runners.values()
+        )
+    )
+    budget_product = member_workers * model_threads
+    selected_axis = "ensemble_member" if member_workers > 1 else "serial"
     execution_plan = RuntimeExecutionPlan(
+        schema_version=1,
+        selected_axis=selected_axis,
+        config_workers=1,
+        member_workers=member_workers,
+        window_workers=1,
+        quantile_workers=1,
+        output_workers=1,
+        model_threads=model_threads,
+        available_threads=resolved_budget.available_threads,
+        budget_product=budget_product,
+        task_count=len(member_workloads),
+        profile_source=(
+            "validation.performance"
+            if configured_member_workers is not None
+            else "ensemble_serial_default"
+        ),
+    )
+    return workload, resolved_budget, execution_plan
+
+
+def ensemble_member_execution_plan(
+    ensemble_plan: RuntimeExecutionPlan,
+    workload: RuntimeWorkload,
+) -> RuntimeExecutionPlan:
+    """Derive the serial internal plan for one member worker."""
+    if ensemble_plan.selected_axis != "ensemble_member":
+        raise ValueError(
+            "ensemble member child plans require selected_axis='ensemble_member'"
+        )
+    return RuntimeExecutionPlan(
         schema_version=1,
         selected_axis="serial",
         config_workers=1,
@@ -484,13 +559,13 @@ def plan_ensemble_resources(
         window_workers=1,
         quantile_workers=1,
         output_workers=1,
-        model_threads=1,
-        available_threads=resolved_budget.available_threads,
-        budget_product=1,
-        task_count=len(member_workloads),
-        profile_source="ensemble_serial_pre_opt015",
+        model_threads=ensemble_plan.model_threads,
+        available_threads=ensemble_plan.model_threads,
+        budget_product=ensemble_plan.model_threads,
+        task_count=max(1, workload.physical_fit_task_count),
+        profile_source="parent_ensemble_member_budget",
+        fallback_reasons=("member_internal_parallelism_suppressed",),
     )
-    return workload, resolved_budget, execution_plan
 
 
 def runtime_estimator_params(
@@ -515,6 +590,7 @@ def runtime_estimator_params(
 __all__ = [
     "build_runtime_workload",
     "detect_runtime_budget",
+    "ensemble_member_execution_plan",
     "plan_ensemble_resources",
     "plan_runtime_execution",
     "runtime_budget_for_config",

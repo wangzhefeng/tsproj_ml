@@ -11,6 +11,7 @@ import numpy as np
 
 from model_training.estimators import EstimatorCapabilities
 from model_training.trainer import CanonicalTrainer
+from forecasting_core.checkpoints import FitCheckpoint
 from forecasting_core.specs import ForecastConfigSpec
 from forecasting_core.probabilistic_spec import validate_quantile_grid
 
@@ -54,6 +55,7 @@ class CanonicalMarginalQuantileTrainer:
         estimator_factory_for_level: Callable[[float], Callable[[], object]],
         capabilities: EstimatorCapabilities,
         feature_schema: Sequence[str],
+        checkpoint: FitCheckpoint | None = None,
     ) -> None:
         if not isinstance(config, ForecastConfigSpec):
             raise TypeError("config must be a ForecastConfigSpec")
@@ -70,6 +72,7 @@ class CanonicalMarginalQuantileTrainer:
         levels = validate_quantile_grid(raw_levels, point_quantile=float(
             config.probabilistic.get("point_quantile", 0.5)
         ))
+        self.checkpoint = checkpoint
         self.config = config
         self.estimator_factory_for_level = estimator_factory_for_level
         self.capabilities = capabilities
@@ -166,6 +169,8 @@ class CanonicalMarginalQuantileTrainer:
             estimator_factory=estimator_factory,
             capabilities=self.capabilities,
             feature_schema=self.feature_schema,
+            checkpoint=(self.checkpoint.child(quantile=level)
+                        if self.checkpoint is not None else None),
         ).train(
             X_by_call,
             Y,

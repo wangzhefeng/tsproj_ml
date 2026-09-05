@@ -6,6 +6,7 @@ resolved `EnsembleConfigSpec`; it never touches runtime private helpers.
 
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from typing import Any, Mapping
 
@@ -51,6 +52,7 @@ def generate_oof_for_config(
     runners: Mapping[str, BaseModelRunner],
     *,
     outer_cutoff_origin: pd.Timestamp | None = None,
+    member_workers: int = 1,
 ) -> OOFPredictionArtifact:
     """Generate member OOF predictions using one ensemble config contract."""
     return generate_oof(
@@ -61,6 +63,7 @@ def generate_oof_for_config(
         gap_steps=config.oof.gap_steps,
         quantile_levels=_quantile_levels_for_config(config),
         outer_cutoff_origin=outer_cutoff_origin,
+        member_workers=member_workers,
     )
 
 
@@ -107,6 +110,7 @@ def fit_ensemble(
     *,
     oof: OOFPredictionArtifact | None = None,
     outer_cutoff_origin: pd.Timestamp | None = None,
+    member_workers: int = 1,
 ) -> tuple[
     EnsembleArtifact,
     OOFPredictionArtifact,
@@ -135,6 +139,7 @@ def fit_ensemble(
             config,
             runners,
             outer_cutoff_origin=outer_cutoff_origin,
+            member_workers=member_workers,
         )
     folds = oof.folds
     origin_to_index = {
@@ -175,25 +180,40 @@ def fit_ensemble(
     # ensemble forecast origin, restored to original target space
     origin = first.origin
     times = first.forecast_times(origin)
-    final_values: dict[str, np.ndarray] = {}
-    member_bundles: dict[str, ForecastModelBundle] = {}
-    for name in names:
+    def final_refit(name: str):
         runner = runners[name]
-        scaler, transform, X_all, Y_all = runner.final_bundle_inputs()
-        trainer, artifact, capabilities = runner.fit_final(X_all, Y_all)
-        designs, provider = runner.forecast_designs(origin, scaler, transform)
-        prediction = runner.predict(artifact, designs, provider, times, transform)
-        if isinstance(prediction, MarginalForecastDistribution):
-            final_values[name] = prediction.quantiles.values
-        else:
-            final_values[name] = prediction.values
-        member_bundles[name] = runner.build_final_bundle(
-            scaler,
-            transform,
-            trainer,
-            artifact,
-            capabilities,
-        )
+        try:
+            scaler, transform, X_all, Y_all = runner.final_bundle_inputs()
+            trainer, artifact, capabilities = runner.fit_final(X_all, Y_all)
+            designs, provider = runner.forecast_designs(origin, scaler, transform)
+            prediction = runner.predict(artifact, designs, provider, times, transform)
+            values = (
+                prediction.quantiles.values
+                if isinstance(prediction, MarginalForecastDistribution)
+                else prediction.values
+            )
+            bundle = runner.build_final_bundle(
+                scaler,
+                transform,
+                trainer,
+                artifact,
+                capabilities,
+            )
+            return values, bundle
+        except Exception as exc:
+            raise RuntimeError(f"final refit member={name!r} failed") from exc
+
+    if member_workers > 1:
+        with ThreadPoolExecutor(max_workers=member_workers) as executor:
+            final_results = tuple(executor.map(final_refit, names))
+    else:
+        final_results = tuple(final_refit(name) for name in names)
+    final_values = {
+        name: values for name, (values, _bundle) in zip(names, final_results)
+    }
+    member_bundles = {
+        name: bundle for name, (_values, bundle) in zip(names, final_results)
+    }
 
     member_scores = _member_oof_scores(oof, actual)
 

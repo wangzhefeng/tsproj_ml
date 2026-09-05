@@ -10,6 +10,7 @@ from forecasting_core.runtime_resources import RuntimeResourceBudget
 from forecasting_core.specs import EstimatorSpec, RuntimePerformanceSpec
 from model_forecasting.resource_planner import (
     build_runtime_workload,
+    ensemble_member_execution_plan,
     plan_ensemble_resources,
     plan_runtime_execution,
     runtime_budget_for_config,
@@ -146,7 +147,6 @@ class RuntimeWorkloadTest(unittest.TestCase):
 
     def test_removed_dead_performance_fields_raise(self):
         for field, value in (
-            ("ensemble_parallel_workers", 2),
             ("step_logging", True),
             ("forecast_log_interval", 10),
         ):
@@ -177,6 +177,22 @@ class RuntimeExecutionPlanTest(unittest.TestCase):
             design_bytes=1024,
             fold_count=8,
         )
+
+    def test_single_model_rejects_ensemble_member_axis(self):
+        config = _config(
+            strategy="direct",
+            performance={"ensemble_parallel_workers": 2},
+        )
+
+        with self.assertRaisesRegex(
+            ValueError,
+            "ensemble_parallel_workers requires EnsembleConfigSpec",
+        ):
+            plan_runtime_execution(
+                config,
+                self._workload(config),
+                budget=self._budget(),
+            )
 
     def test_verified_window_model_topology_resolves_within_budget(self):
         config = _config(
@@ -310,11 +326,18 @@ class RuntimeExecutionPlanTest(unittest.TestCase):
             source_path="ensemble.yaml",
         )
         member_workload = self._workload(_config(strategy="recursive"))
+        member_plan = SimpleNamespace(model_threads=4)
         workload, budget, plan = plan_ensemble_resources(
             config,
             {
-                "m_direct": SimpleNamespace(workload=member_workload),
-                "m_recursive": SimpleNamespace(workload=member_workload),
+                "m_direct": SimpleNamespace(
+                    workload=member_workload,
+                    execution_plan=member_plan,
+                ),
+                "m_recursive": SimpleNamespace(
+                    workload=member_workload,
+                    execution_plan=SimpleNamespace(model_threads=2),
+                ),
             },
             budget=self._budget(),
         )
@@ -323,7 +346,55 @@ class RuntimeExecutionPlanTest(unittest.TestCase):
         self.assertEqual(workload.member_count, 2)
         self.assertEqual(plan.selected_axis, "serial")
         self.assertEqual(plan.member_workers, 1)
+        self.assertEqual(plan.model_threads, 4)
         self.assertEqual(plan.available_threads, budget.available_threads)
+
+    def test_ensemble_member_axis_allocates_serial_child_plans(self):
+        doc = _ensemble_doc("averaging")
+        doc["validation"]["performance"] = {
+            "ensemble_parallel_workers": 2,
+            "total_thread_limit": 8,
+        }
+        config = parse_ensemble_document(doc, source_path="ensemble.yaml")
+        member_workload = self._workload(_config(strategy="recursive"))
+
+        workload, _budget, plan = plan_ensemble_resources(
+            config,
+            {
+                "m_direct": SimpleNamespace(workload=member_workload),
+                "m_recursive": SimpleNamespace(workload=member_workload),
+            },
+            budget=self._budget(),
+        )
+        child = ensemble_member_execution_plan(plan, member_workload)
+
+        self.assertEqual(plan.selected_axis, "ensemble_member")
+        self.assertEqual(plan.member_workers, 2)
+        self.assertEqual(plan.model_threads, 4)
+        self.assertEqual(plan.budget_product, 8)
+        self.assertEqual(child.selected_axis, "serial")
+        self.assertEqual(child.window_workers, 1)
+        self.assertEqual(child.quantile_workers, 1)
+        self.assertEqual(child.output_workers, 1)
+        self.assertEqual(child.model_threads, 4)
+
+    def test_ensemble_workers_above_member_count_raise(self):
+        doc = _ensemble_doc("averaging")
+        doc["validation"]["performance"] = {
+            "ensemble_parallel_workers": 3,
+        }
+        config = parse_ensemble_document(doc, source_path="ensemble.yaml")
+        member_workload = self._workload(_config(strategy="recursive"))
+
+        with self.assertRaisesRegex(ValueError, "exceeds member count"):
+            plan_ensemble_resources(
+                config,
+                {
+                    "m_direct": SimpleNamespace(workload=member_workload),
+                    "m_recursive": SimpleNamespace(workload=member_workload),
+                },
+                budget=self._budget(),
+            )
 
 
 if __name__ == "__main__":

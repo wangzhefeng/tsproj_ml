@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import tempfile
 import unittest
+from contextlib import contextmanager
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from threading import Lock
@@ -21,6 +22,7 @@ import numpy as np
 import pandas as pd
 import yaml
 
+import model_ensemble.runtime as runtime_module
 from feature_engineering.cache import COMPILED_CACHE_DIR_NAME
 from model_ensemble.contracts import EnsembleRuntimeServices
 from model_ensemble.loader import load_ensemble_config
@@ -30,12 +32,15 @@ from model_forecasting.resource_planner import plan_ensemble_resources
 
 from model_ensemble.methods.linear_blending import fit_nonnegative_stacking_weights
 from forecasting_core.specs.config import parse_model_config
+from forecasting_core.runtime_resources import RuntimeResourceBudget
+from model_forecasting.resource_planner import runtime_budget_for_config
 
 
 RUNTIME_SERVICES = EnsembleRuntimeServices(
     runner_factory=CanonicalBaseModelRunner,
     persist_bundle=persist_model_bundle,
     plan_resources=plan_ensemble_resources,
+    resolve_budget=runtime_budget_for_config,
 )
 
 
@@ -149,6 +154,9 @@ class EnsembleRuntimeTestBase(unittest.TestCase):
 
     def _run(self, method: str, mode: str = "point", **kwargs):
         doc = _ensemble_doc(method, mode=mode)
+        performance = kwargs.pop("performance", None)
+        if performance is not None:
+            doc["validation"]["performance"] = performance
         path = self.root / f"ens_{method}_{mode}.yaml"
         path.write_text(yaml.safe_dump(doc), encoding="utf-8")
         config = load_ensemble_config(path)
@@ -158,6 +166,75 @@ class EnsembleRuntimeTestBase(unittest.TestCase):
 
 
 class EnsembleRuntimeMatrixTest(EnsembleRuntimeTestBase):
+    def test_oof_cache_miss_runs_inside_process_thread_limit(self):
+        active = 0
+        original_generate = runtime_module.generate_oof_for_config
+
+        @contextmanager
+        def tracked_limits(*_args, **_kwargs):
+            nonlocal active
+            active += 1
+            try:
+                yield
+            finally:
+                active -= 1
+
+        def checked_generate(*args, **kwargs):
+            self.assertGreater(active, 0)
+            return original_generate(*args, **kwargs)
+
+        with patch.object(runtime_module, "threadpool_limits", tracked_limits), patch.object(
+            runtime_module,
+            "generate_oof_for_config",
+            checked_generate,
+        ):
+            result = self._run("averaging", use_oof_cache=True)
+
+        self.assertFalse(result["oof_cache_hit"])
+
+    def test_member_construction_receives_parent_memory_share(self):
+        parent_budget = RuntimeResourceBudget(
+            physical_cores=8,
+            logical_cores=8,
+            total_thread_limit=8,
+            memory_limit_bytes=1_000_000_000,
+            source="ensemble-test",
+        )
+        received = []
+
+        def runner_factory(
+            config,
+            registry,
+            origin,
+            *,
+            compiled_cache_root,
+            resource_budget=None,
+        ):
+            received.append(resource_budget)
+            runner = CanonicalBaseModelRunner(
+                config,
+                registry,
+                origin,
+                compiled_cache_root=compiled_cache_root,
+                resource_budget=resource_budget,
+            )
+            return runner
+
+        services = EnsembleRuntimeServices(
+            runner_factory=runner_factory,
+            persist_bundle=persist_model_bundle,
+            plan_resources=plan_ensemble_resources,
+            resolve_budget=lambda _config: parent_budget,
+        )
+
+        self._run("averaging", services=services)
+
+        self.assertEqual(len(received), 2)
+        self.assertTrue(all(item is not None for item in received))
+        self.assertEqual(
+            [item.memory_limit_bytes for item in received],
+            [500_000_000, 500_000_000],
+        )
     def test_averaging_point_end_to_end(self):
         result = self._run("averaging")
         self.assertEqual(result["execution_plan"].selected_axis, "serial")
@@ -174,6 +251,14 @@ class EnsembleRuntimeMatrixTest(EnsembleRuntimeTestBase):
             resolved["runtime"]["resources"]["workload"]["member_count"],
             2,
         )
+        member_resources = resolved["runtime"]["resources"]["member_resources"]
+        self.assertEqual(tuple(member_resources), ("m_direct", "m_recursive"))
+        for resources in member_resources.values():
+            self.assertIn(resources["training_compile"]["mode"], {"batch", "row"})
+            self.assertEqual(
+                set(resources["cache"]["stage_wall_seconds"]),
+                {"load", "compile", "write"},
+            )
         self.assertEqual(
             set(resolved["runtime"]["resources"]["stage_wall_seconds"]),
             {"raw_design", "ensemble_fit", "persist", "total"},
@@ -310,6 +395,145 @@ class EnsembleRuntimeMatrixTest(EnsembleRuntimeTestBase):
         self.assertEqual(
             sorted(result["oof_cache_hit"] for result in results),
             [False, True],
+        )
+
+    def test_member_parallelism_preserves_order_and_values(self):
+        serial = self._run("averaging", use_oof_cache=False)
+        fit_active = 0
+        fit_max_active = 0
+        final_active = 0
+        final_max_active = 0
+        count_lock = Lock()
+        original_fit = CanonicalBaseModelRunner.fit
+        original_fit_final = CanonicalBaseModelRunner.fit_final
+
+        def slow_fit(runner, train_indices, **kwargs):
+            nonlocal fit_active, fit_max_active
+            with count_lock:
+                fit_active += 1
+                fit_max_active = max(fit_max_active, fit_active)
+            try:
+                sleep(0.05)
+                return original_fit(runner, train_indices, **kwargs)
+            finally:
+                with count_lock:
+                    fit_active -= 1
+
+        def slow_fit_final(runner, X, Y):
+            nonlocal final_active, final_max_active
+            with count_lock:
+                final_active += 1
+                final_max_active = max(final_max_active, final_active)
+            try:
+                sleep(0.05)
+                return original_fit_final(runner, X, Y)
+            finally:
+                with count_lock:
+                    final_active -= 1
+
+        with patch.object(CanonicalBaseModelRunner, "fit", slow_fit), patch.object(
+            CanonicalBaseModelRunner,
+            "fit_final",
+            slow_fit_final,
+        ):
+            parallel = self._run(
+                "averaging",
+                use_oof_cache=False,
+                performance={"ensemble_parallel_workers": 2},
+            )
+
+        self.assertGreaterEqual(fit_max_active, 2)
+        self.assertGreaterEqual(final_max_active, 2)
+        self.assertEqual(parallel["execution_plan"].selected_axis, "ensemble_member")
+        self.assertEqual(parallel["execution_plan"].member_workers, 2)
+        self.assertEqual(tuple(parallel["member_bundles"]), ("m_direct", "m_recursive"))
+        for name in serial["oof"].member_order:
+            np.testing.assert_array_equal(
+                serial["oof"].values_by_member[name],
+                parallel["oof"].values_by_member[name],
+            )
+            np.testing.assert_array_equal(
+                serial["member_final_values"][name],
+                parallel["member_final_values"][name],
+            )
+        np.testing.assert_array_equal(
+            serial["combined_values"],
+            parallel["combined_values"],
+        )
+
+    def test_parallel_oof_error_includes_fold_and_member(self):
+        original_fit = CanonicalBaseModelRunner.fit
+
+        def fail_recursive(runner, train_indices, **kwargs):
+            if runner.config.strategy.name.value == "recursive":
+                raise ValueError("injected member failure")
+            return original_fit(runner, train_indices, **kwargs)
+
+        with patch.object(CanonicalBaseModelRunner, "fit", fail_recursive):
+            with self.assertRaisesRegex(
+                RuntimeError,
+                "OOF fold=1 member='m_recursive'",
+            ):
+                self._run(
+                    "averaging",
+                    use_oof_cache=False,
+                    performance={"ensemble_parallel_workers": 2},
+                )
+
+    def test_parallel_final_refit_error_includes_member(self):
+        original_fit_final = CanonicalBaseModelRunner.fit_final
+
+        def fail_recursive(runner, X, Y):
+            if runner.config.strategy.name.value == "recursive":
+                raise ValueError("injected final failure")
+            return original_fit_final(runner, X, Y)
+
+        with patch.object(CanonicalBaseModelRunner, "fit_final", fail_recursive):
+            with self.assertRaisesRegex(
+                RuntimeError,
+                "final refit member='m_recursive'",
+            ):
+                self._run(
+                    "averaging",
+                    use_oof_cache=False,
+                    performance={"ensemble_parallel_workers": 2},
+                )
+
+    def test_quantile_member_parallelism_matches_serial(self):
+        for name, strategy in (
+            ("member_direct", "direct"),
+            ("member_recursive", "recursive"),
+        ):
+            doc = _member_doc(strategy, "qr", name)
+            doc["probabilistic"] = {
+                "mode": "quantile",
+                "quantiles": [0.1, 0.5, 0.9],
+                "point_quantile": 0.5,
+            }
+            (self.root / f"{name}.yaml").write_text(
+                yaml.safe_dump(doc), encoding="utf-8"
+            )
+
+        serial = self._run("averaging", mode="quantile", use_oof_cache=False)
+        parallel = self._run(
+            "averaging",
+            mode="quantile",
+            use_oof_cache=False,
+            performance={"ensemble_parallel_workers": 2},
+        )
+
+        for name in serial["oof"].member_order:
+            np.testing.assert_array_equal(
+                serial["oof"].values_by_member[name],
+                parallel["oof"].values_by_member[name],
+            )
+            np.testing.assert_array_equal(
+                serial["member_final_values"][name],
+                parallel["member_final_values"][name],
+            )
+        np.testing.assert_array_equal(
+            serial["combined_values"],
+            parallel["combined_values"],
         )
 
     def test_fused_oof_scores_point(self):

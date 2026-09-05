@@ -7,6 +7,7 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
+from forecasting_core.checkpoints import FitCheckpoint
 from forecasting_core.artifacts import MarginalForecastDistribution
 from forecasting_core.runtime_resources import RuntimeExecutionPlan
 from forecasting_core.specs import ForecastConfigSpec, TargetAdapter
@@ -157,9 +158,15 @@ def _fit_point(
     n_series: int,
     execution_plan: RuntimeExecutionPlan | None = None,
     max_workers: int | None = None,
+    checkpoint: FitCheckpoint | None = None,
 ):
     resolved_plan = execution_plan or _runtime_execution_plan(config)
     runtime_params = _planned_estimator_params(config, resolved_plan)
+    if checkpoint is not None:
+        checkpoint = checkpoint.child(
+            config=config.fingerprint(), feature_schema=feature_schema,
+            n_series=n_series, estimator_params=runtime_params,
+        )
     capabilities = resolve_model_capabilities(
         config.estimator.model_type,
         runtime_params,
@@ -175,6 +182,7 @@ def _fit_point(
         ),
         capabilities=capabilities,
         feature_schema=feature_schema,
+        checkpoint=checkpoint,
     )
     return trainer, trainer.train(
         X_by_call,
@@ -197,9 +205,15 @@ def _fit_quantile(
     n_series: int,
     execution_plan: RuntimeExecutionPlan | None = None,
     worker_plan: tuple[int, int] | None = None,
+    checkpoint: FitCheckpoint | None = None,
 ):
     resolved_plan = execution_plan or _runtime_execution_plan(config)
     runtime_params = _planned_estimator_params(config, resolved_plan)
+    if checkpoint is not None:
+        checkpoint = checkpoint.child(
+            config=config.fingerprint(), feature_schema=feature_schema,
+            n_series=n_series, estimator_params=runtime_params,
+        )
     capabilities = resolve_model_capabilities(
         config.estimator.model_type,
         runtime_params,
@@ -223,6 +237,9 @@ def _fit_quantile(
             levels,
             feature_schema,
         )
+        # Persist the completed shared booster, not level slices holding a pool.
+        # Every level still creates every position, preserving positional alignment.
+        pool.checkpoint = checkpoint
         trainer = CanonicalMarginalQuantileTrainer(
             config,
             estimator_factory_for_level=lambda level: pool.factory_for_level(
@@ -246,6 +263,7 @@ def _fit_quantile(
         ),
         capabilities=capabilities,
         feature_schema=feature_schema,
+        checkpoint=checkpoint,
     )
     level_workers, output_workers = (
         (resolved_plan.quantile_workers, resolved_plan.output_workers)

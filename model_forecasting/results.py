@@ -10,6 +10,9 @@ from typing import Any
 
 import numpy as np
 import pandas as pd
+import matplotlib
+
+matplotlib.use("Agg")
 
 from forecasting_core.tensors import PointForecastTensor, require_matching_point_axes
 from forecasting_core.artifacts import MarginalForecastDistribution, QuantileGrid

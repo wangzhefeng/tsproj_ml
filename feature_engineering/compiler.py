@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
+from time import perf_counter
 from typing import Any, Literal, cast
 import warnings
 
@@ -32,6 +33,32 @@ from feature_engineering.transform_specs import (
 class FeatureSchema:
     feature_names: tuple[str, ...]
     categorical_names: tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class BatchEligibility:
+    """Structured decision for one supervised compiler batch."""
+
+    eligible: bool
+    reason_codes: tuple[str, ...]
+    trigger_fields: tuple[str, ...]
+    origin_count: int
+    call_count: int
+    estimated_origin_call_count: int
+
+    @property
+    def reason_code(self) -> str:
+        return self.reason_codes[0] if self.reason_codes else "eligible"
+
+    def to_payload(self) -> dict[str, Any]:
+        return {
+            "eligible": self.eligible,
+            "reason_codes": list(self.reason_codes),
+            "trigger_fields": list(self.trigger_fields),
+            "origin_count": self.origin_count,
+            "call_count": self.call_count,
+            "estimated_origin_call_count": self.estimated_origin_call_count,
+        }
 
 
 @dataclass(frozen=True, slots=True)
@@ -132,6 +159,11 @@ class FeatureCompiler:
         # 三角色帧（property 会 deep copy），作用域内全部逐行查询共享这一份。
         self._compile_scope_frames: dict[str, dict[str, Any]] = {}
         self._compile_scope_aux: dict[str, Any] = {}
+        self.last_batch_stage_wall_seconds: dict[str, float] = {
+            "batch_prepare": 0.0,
+            "batch_feature_columns": 0.0,
+            "finish_and_proof_validation": 0.0,
+        }
 
     def _prime_compile_scope(self, information_set: MaterializedInformationSet) -> None:
         """compile() 进入时调用：刷新当前信息集的帧与派生缓存。"""
@@ -349,7 +381,8 @@ class FeatureCompiler:
             if request.target_access != "history_only":
                 raise ValueError("feature compilation requires target_access='history_only'")
 
-        if self._batch_requires_fallback(requests, selected_steps):
+        eligibility = self._batch_eligibility(requests, selected_steps)
+        if not eligibility.eligible:
             if proof_mode == "validate_only":
                 raise ValueError(
                     "proof_mode='validate_only' requires vectorized batch compilation"
@@ -370,6 +403,7 @@ class FeatureCompiler:
         previous_scope = self._compile_scope_frames
         previous_aux = self._compile_scope_aux
         try:
+            prepare_started = perf_counter()
             items = []
             frame_cache: dict[
                 int,
@@ -404,6 +438,10 @@ class FeatureCompiler:
                         static_frames=cached_frames[1],
                     )
                 )
+            self.last_batch_stage_wall_seconds["batch_prepare"] = (
+                perf_counter() - prepare_started
+            )
+            features_started = perf_counter()
             self._compile_batch_lag_mapping(
                 items,
                 ColumnRole.TARGET,
@@ -418,22 +456,49 @@ class FeatureCompiler:
             self._compile_batch_static(items)
             self._compile_batch_datetime(items)
             self._compile_batch_transformations(items)
-            return tuple(self._finish_batch_item(item) for item in items)
+            self.last_batch_stage_wall_seconds["batch_feature_columns"] = (
+                perf_counter() - features_started
+            )
+            finish_started = perf_counter()
+            compiled = tuple(self._finish_batch_item(item) for item in items)
+            self.last_batch_stage_wall_seconds[
+                "finish_and_proof_validation"
+            ] = perf_counter() - finish_started
+            return compiled
         finally:
             self._compile_scope_frames = previous_scope
             self._compile_scope_aux = previous_aux
 
-    def _batch_requires_fallback(
+    def batch_eligibility(
+        self,
+        requests: Sequence[InformationSetRequest],
+        *,
+        horizon_steps: Sequence[int] | None = None,
+    ) -> BatchEligibility:
+        """Resolve batch eligibility using the compiler's actual semantics."""
+        selected_steps = tuple(
+            self._normalize_horizon_steps(horizon_steps, request.H)
+            for request in requests
+        )
+        return self._batch_eligibility(requests, selected_steps)
+
+    def _batch_eligibility(
         self,
         requests: Sequence[InformationSetRequest],
         selected_steps: Sequence[tuple[int, ...]],
-    ) -> bool:
+    ) -> BatchEligibility:
+        reason_codes: list[str] = []
+        trigger_fields: set[str] = set()
         advanced = self.features.transformations.get("advanced", {})
-        if isinstance(advanced, Mapping) and any(
-            advanced.get(kind) is not None
-            for kind in ("percent_change", "time_since", "ewm")
-        ):
-            return True
+        if isinstance(advanced, Mapping):
+            unsupported = tuple(
+                kind
+                for kind in ("percent_change", "time_since", "ewm")
+                if advanced.get(kind) is not None
+            )
+            if unsupported:
+                reason_codes.append("unsupported_advanced_transformation")
+                trigger_fields.update(f"advanced:{kind}" for kind in unsupported)
         for role, lag_mapping in (
             (ColumnRole.TARGET, self.features.target_lags),
             (ColumnRole.OBSERVED_PAST, self.features.observed_past_lags),
@@ -448,16 +513,26 @@ class FeatureCompiler:
                         for target_time in target_times
                     ]
                 )
-                for lags in lag_mapping.values():
+                for column, lags in lag_mapping.items():
                     for lag in lags:
                         source_times = anchors - lag * pd.tseries.frequencies.to_offset(
                             self.problem.freq
                         )
                         if bool((source_times > request.forecast_origin).any()):
-                            return True
+                            if "provider_dependent_lag" not in reason_codes:
+                                reason_codes.append("provider_dependent_lag")
+                            trigger_fields.add(f"{role.value}:{column}:lag={lag}")
                 if role is ColumnRole.OBSERVED_PAST:
                     continue
-        return False
+        call_count = len(selected_steps[0]) if selected_steps else 0
+        return BatchEligibility(
+            eligible=not reason_codes,
+            reason_codes=tuple(reason_codes),
+            trigger_fields=tuple(sorted(trigger_fields)),
+            origin_count=len(requests),
+            call_count=call_count,
+            estimated_origin_call_count=sum(len(steps) for steps in selected_steps),
+        )
 
     def _compile_batch_fallback(
         self,

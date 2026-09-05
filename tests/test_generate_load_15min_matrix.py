@@ -231,6 +231,31 @@ class Load15minFullFactorialMatrixTest(unittest.TestCase):
                 ]["validation"],
             )
 
+        catboost_path = short_root / "route_A/baseline/cab_direct-pointwise.yaml"
+        self.assertEqual(
+            short[catboost_path]["validation"]["performance"],
+            {"profile_ref": "opt017-catboost-short-a-pointwise-v1"},
+        )
+        from config.config_loader import load_yaml_config
+        physical = load_yaml_config(catboost_path)
+        generated = parse_model_config(short[catboost_path], catboost_path)
+        self.assertEqual(physical.canonical_payload(), generated.canonical_payload())
+        assert physical.validation.backtest is not None
+        self.assertEqual(physical.validation.backtest.fold_count, 31)
+        profiled_catboost = [
+            path for configs in expected_by_scenario.values()
+            for path, payload in configs.items()
+            if payload.get("estimator", {}).get("model_type") == "catboost"
+            and "performance" in payload["validation"]
+        ]
+        self.assertEqual(profiled_catboost, [catboost_path])
+        self.assertNotIn(
+            "performance",
+            short[
+                short_root / "route_B/baseline/cab_direct-pointwise.yaml"
+            ]["validation"],
+        )
+
         p4_paths = (
             daily_root / "route_A/add_exogenous/lgbm_direct_holiday-weather.yaml",
             daily_root / "route_A/add_endogenous_state/lgbm_direct.yaml",

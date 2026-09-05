@@ -122,10 +122,12 @@ def overwrite_calendar_month_backtest(
         )
         runner = runners_by_horizon.get(fold.horizon)
         if runner is None:
+            checkpoint_root = getattr(final_runner, "checkpoint_root", None)
             runner = runner_factory(
                 dynamic_config,
                 registry,
                 final_runner.origin,
+                **({"checkpoint_root": checkpoint_root} if checkpoint_root is not None else {}),
             )
             runners_by_horizon[fold.horizon] = runner
         try:

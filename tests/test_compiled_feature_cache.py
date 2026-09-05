@@ -143,6 +143,43 @@ class CompiledFeatureCacheTest(unittest.TestCase):
     def test_cache_hit_is_fast_and_source_change_invalidates(self) -> None:
         first = self._runner()
         self.assertFalse(first.compiled_cache_hit)
+        first_resources = first.runtime_resources_payload()
+        first_compile = first_resources["training_compile"]
+        self.assertEqual(first_compile["mode"], "batch")
+        self.assertEqual(first_compile["reason_codes"], [])
+        self.assertGreater(first_compile["origin_count"], 0)
+        self.assertGreater(first_compile["estimated_origin_call_count"], 0)
+        self.assertEqual(
+            set(first_compile["stage_wall_seconds"]),
+            {
+                "materialize",
+                "labels",
+                "compile_batch",
+                "compile_row",
+                "batch_prepare",
+                "batch_feature_columns",
+                "finish_and_proof_validation",
+                "split_concatenate",
+            },
+        )
+        self.assertTrue(
+            all(
+                value >= 0.0
+                for value in first_compile["stage_wall_seconds"].values()
+            )
+        )
+        self.assertEqual(
+            set(first_resources["cache"]["stage_wall_seconds"]),
+            {"load", "compile", "write"},
+        )
+        self.assertGreater(
+            first_resources["cache"]["stage_wall_seconds"]["compile"],
+            0.0,
+        )
+        self.assertGreaterEqual(
+            first_resources["cache"]["stage_wall_seconds"]["write"],
+            0.0,
+        )
         cache_parent = self.cache_root / COMPILED_CACHE_DIR_NAME
         first_entries = tuple(cache_parent.iterdir())
         self.assertEqual(len(first_entries), 1)
@@ -152,6 +189,20 @@ class CompiledFeatureCacheTest(unittest.TestCase):
         elapsed = perf_counter() - start
         self.assertTrue(second.compiled_cache_hit)
         self.assertLess(elapsed, 1.0)
+        second_resources = second.runtime_resources_payload()
+        self.assertEqual(second_resources["training_compile"]["mode"], "cache_hit")
+        self.assertGreaterEqual(
+            second_resources["cache"]["stage_wall_seconds"]["load"],
+            0.0,
+        )
+        self.assertEqual(
+            second_resources["cache"]["stage_wall_seconds"]["compile"],
+            0.0,
+        )
+        self.assertEqual(
+            second_resources["cache"]["stage_wall_seconds"]["write"],
+            0.0,
+        )
         for actual, expected in zip(second.X_all, first.X_all):
             np.testing.assert_array_equal(actual, expected)
         np.testing.assert_array_equal(second.Y_all, first.Y_all)
@@ -170,7 +221,7 @@ class CompiledFeatureCacheTest(unittest.TestCase):
         configured = self._config(
             {
                 "window_parallel_workers": 2,
-                "model_thread_count": 4,
+                "total_thread_limit": 4,
             }
         )
 

@@ -14,6 +14,7 @@ import numpy as np
 import pandas as pd
 from sklearn.base import clone
 
+from forecasting_core.checkpoints import FitCheckpoint
 from forecasting_core.specs.estimator import EstimatorCapabilities
 
 __all__ = ["EstimatorCapabilities"]  # 合同类型自 specs 再导出（向后兼容）
@@ -477,6 +478,7 @@ class SharedMultiQuantilePool:
             "quantile_alpha": list(self.levels),
         }
         self.feature_names = tuple(feature_names or ())
+        self.checkpoint: FitCheckpoint | None = None
         self._fitted: dict[int, _ModelFactoryEstimator] = {}
         self._lock = threading.Lock()
 
@@ -484,6 +486,7 @@ class SharedMultiQuantilePool:
         # 线程锁不可序列化；bundle 部署期只读 pool（不再 fit），重建即可
         state = dict(self.__dict__)
         state["_lock"] = None
+        state["checkpoint"] = None
         return state
 
     def __setstate__(self, state: dict) -> None:
@@ -522,12 +525,23 @@ class SharedMultiQuantilePool:
                 self.params,
                 self.feature_names,
             )
-            estimator.fit(X, y, sample_weight=sample_weight)
-            values = np.asarray(estimator.predict(X), dtype=float)
-            if values.ndim != 2 or values.shape[1] != len(self.levels):
-                raise ValueError(
-                    "native multi-quantile predict must return "
-                    f"(n_samples, {len(self.levels)}); got {values.shape}"
+            def fit_booster():
+                estimator.fit(X, y, sample_weight=sample_weight)
+                values = np.asarray(estimator.predict(X), dtype=float)
+                if values.ndim != 2 or values.shape[1] != len(self.levels):
+                    raise ValueError(
+                        "native multi-quantile predict must return "
+                        f"(n_samples, {len(self.levels)}); got {values.shape}"
+                    )
+                return estimator
+            if self.checkpoint is None:
+                estimator = fit_booster()
+            else:
+                estimator = self.checkpoint.run(
+                    identity={"model": f"shared_quantile/{position}",
+                              "levels": self.levels, "feature_schema": self.feature_names,
+                              "params": self.params},
+                    arrays=(np.asarray(X), np.asarray(y), sample_weight), fit=fit_booster,
                 )
             self._fitted[position] = estimator
 

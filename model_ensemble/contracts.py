@@ -29,10 +29,19 @@ class BaseModelRunner(Protocol):
     execution_plan: Any
 
     def fit(
-        self, train_indices: tuple[int, ...]
+        self,
+        train_indices: tuple[int, ...],
+        *,
+        force_serial: bool = False,
     ) -> tuple[Any, Any, tuple[Any, ...], Any, Any]:
         """Fit member transforms + model; returns (scaler, transform, X, Y, artifact)."""
         ...
+
+    def apply_ensemble_member_plan(self, parent_plan: Any) -> None:
+        """Replace internal workers with a parent-budgeted serial child plan."""
+        ...
+
+    def runtime_resources_payload(self) -> dict[str, Any]: ...
 
     def forecast_designs(
         self,
@@ -96,6 +105,7 @@ class BaseModelRunnerFactory(Protocol):
         origin: pd.Timestamp,
         *,
         compiled_cache_root: str | Path,
+        resource_budget: Any | None = None,
     ) -> BaseModelRunner:
         ...
 
@@ -106,10 +116,8 @@ class EnsembleRuntimeServices:
 
     runner_factory: BaseModelRunnerFactory
     persist_bundle: Callable[[Any, str | Path], Any]
-    plan_resources: Callable[
-        [Any, Mapping[str, BaseModelRunner]],
-        tuple[Any, Any, Any],
-    ]
+    plan_resources: Callable[..., tuple[Any, Any, Any]]
+    resolve_budget: Callable[[Any], Any] | None = None
 
 
 @runtime_checkable

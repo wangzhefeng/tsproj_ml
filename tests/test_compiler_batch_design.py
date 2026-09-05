@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import tempfile
 import unittest
+from dataclasses import replace
 from pathlib import Path
 from typing import cast
 from unittest.mock import PropertyMock, patch
@@ -351,8 +352,14 @@ class CompilerBatchDesignTest(unittest.TestCase):
                 coordinates[0].horizon_step
                 for coordinates in batch_builder.plan.call_coordinates
             )
+            requests = tuple(
+                batch_builder.request(origin) for origin in origins
+            )
             self.assertEqual(
-                batch_builder._can_batch_training(call_steps),
+                batch_builder.compiler.batch_eligibility(
+                    requests,
+                    horizon_steps=call_steps,
+                ).eligible,
                 expect_batch,
             )
 
@@ -398,6 +405,59 @@ class CompilerBatchDesignTest(unittest.TestCase):
 
     def test_recursive_training_rows_preserve_provider_fallback(self) -> None:
         self._assert_rows_equal("recursive", expect_batch=False)
+
+    def test_recursive_direct_alignment_hint_does_not_bypass_provider_fallback(
+        self,
+    ) -> None:
+        config = self._config("recursive")
+        config = replace(
+            config,
+            features=replace(
+                config.features,
+                transformations={
+                    "direct": {
+                        "layout": "independent_models",
+                        "align_to_target": False,
+                    }
+                },
+            ),
+        )
+        builder = _RegistryDesignBuilder(
+            config,
+            SourceRegistry(config.data, self.root),
+        )
+        origins = tuple(
+            cast(pd.Timestamp, pd.Timestamp(value)) for value in self.times[12:18]
+        )
+        requests = tuple(builder.request(origin) for origin in origins)
+        call_steps = tuple(
+            coordinates[0].horizon_step
+            for coordinates in builder.plan.call_coordinates
+        )
+
+        eligibility = builder.compiler.batch_eligibility(
+            requests,
+            horizon_steps=call_steps,
+        )
+
+        self.assertFalse(eligibility.eligible)
+        self.assertEqual(eligibility.reason_code, "provider_dependent_lag")
+        self.assertEqual(eligibility.origin_count, len(origins))
+        self.assertEqual(eligibility.call_count, len(call_steps))
+        self.assertEqual(
+            eligibility.estimated_origin_call_count,
+            len(origins) * len(call_steps),
+        )
+        self.assertIn("target:load:lag=1", eligibility.trigger_fields)
+        with patch.object(
+            builder.compiler,
+            "compile_batch",
+            wraps=builder.compiler.compile_batch,
+        ) as compile_batch:
+            actual = builder.training_rows(origins)
+
+        self.assertEqual(len(actual), len(origins))
+        compile_batch.assert_not_called()
 
     def test_recursive_safe_lags_use_batch_and_match(self) -> None:
         self._assert_rows_equal(
@@ -451,11 +511,6 @@ class CompilerBatchDesignTest(unittest.TestCase):
                     config,
                     SourceRegistry(config.data, self.root),
                 )
-                call_steps = tuple(
-                    coordinates[0].horizon_step
-                    for coordinates in batch_builder.plan.call_coordinates
-                )
-                self.assertTrue(batch_builder._can_batch_training(call_steps))
                 actual = batch_builder.training_rows(origins)
 
                 for actual_row, expected_row in zip(actual, expected):

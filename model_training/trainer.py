@@ -15,6 +15,7 @@ from model_training.estimators import (
     RegressorChainMultiTargetAdapter,
     fit_independent_adapters,
 )
+from forecasting_core.checkpoints import FitCheckpoint
 from forecasting_core.specs import ForecastConfigSpec, TargetAdapter
 from forecasting_core.tensors import unflatten_time_major
 from model_training.strategies import (
@@ -45,6 +46,7 @@ class CanonicalTrainer:
         estimator_factory,
         capabilities: EstimatorCapabilities,
         feature_schema: Sequence[str],
+        checkpoint: FitCheckpoint | None = None,
     ) -> None:
         if not isinstance(config, ForecastConfigSpec):
             raise TypeError("config must be a ForecastConfigSpec")
@@ -70,6 +72,7 @@ class CanonicalTrainer:
 
         mode = str(config.probabilistic.get("mode", "point"))
         config.estimator.validate_capabilities(capabilities, mode)
+        self.checkpoint = checkpoint
         self.config = config
         self.estimator_factory = estimator_factory
         self.capabilities = capabilities
@@ -190,6 +193,15 @@ class CanonicalTrainer:
         prepared_groups = tuple(
             prepare_model_group(model_index) for model_index in model_indices
         )
+        def group_checkpoint(model_index):
+            if self.checkpoint is None:
+                return None
+            return self.checkpoint.child(
+                config=self.config.fingerprint(), feature_schema=self.feature_schema,
+                capabilities=self.capabilities.canonical_payload(), group=model_index,
+                n_series=n_series,
+            )
+
         adapter_type = self._ADAPTERS[self.config.estimator.target_adapter]
         if adapter_type is IndependentMultiTargetAdapter:
             adapters = tuple(
@@ -198,8 +210,9 @@ class CanonicalTrainer:
                     self.capabilities,
                     prepared[4],
                     probabilistic_mode=self.probabilistic_mode,
+                    checkpoint=group_checkpoint(model_index),
                 )
-                for prepared in prepared_groups
+                for model_index, prepared in enumerate(prepared_groups)
             )
             fitted_adapters = fit_independent_adapters(
                 tuple(
@@ -228,6 +241,7 @@ class CanonicalTrainer:
                     self.capabilities,
                     prepared[4],
                     probabilistic_mode=self.probabilistic_mode,
+                    checkpoint=group_checkpoint(model_index),
                 ).fit(
                     prepared[1],
                     prepared[2],

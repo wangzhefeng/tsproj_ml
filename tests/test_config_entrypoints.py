@@ -36,7 +36,7 @@ from forecasting_core.specs import (
     ForecastProblemSpec,
     ForecastStrategySpec,
 )
-from main import CanonicalModel
+from run import CanonicalModel
 from config.config_loader import load_yaml_config
 from models.ModelSaveLoad import ModelDeployPkl
 from model_forecasting.forecaster import CanonicalForecaster
@@ -376,12 +376,12 @@ output: {}
             check=False,
         )
 
-    def test_importing_main_does_not_parse_run_cli_arguments(self):
+    def test_importing_run_does_not_parse_cli_arguments(self):
         code = (
             "import sys; "
             "sys.argv=['run.py','--config-yaml','config/aidc_load_month/route_B/lgbm_usmd_prob_mean.yaml',"
             "'--config-class','ModelConfig','--model-type','lightgbm']; "
-            "import main; "
+            "import run; "
             "print('imported')"
         )
 

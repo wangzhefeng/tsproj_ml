@@ -1,13 +1,13 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-"""tsproj_ml 模型配置 dry-run 校验：只加载配置 + 复算 main.py 合法性校验，不训练不预测。
+"""tsproj_ml 模型配置 dry-run 校验：只加载配置 + 复算入口合法性校验，不训练不预测。
 
 用法（项目根，注意 env -u PYTHONPATH 防 Hermes 注入遮蔽项目 utils/ 包）：
     env -u PYTHONPATH .venv/bin/python scripts/check_model_configs.py 'config/<scenario>/route_*/lgbm_*.yaml'
     env -u PYTHONPATH .venv/bin/python scripts/check_model_configs.py 'config/aidc_power_15min/**/*.yaml'
     （无参数时默认 glob config/**/*.yaml，仅检查含 base_config/overrides 的模型 schema）
 
-复算的校验（与 main.py.__init__ 一致）：
+复算的校验（与历史 main.py 入口一致性校验同源，现位于配置加载/校验层）：
   - window_length < history_length
   - window_len - horizon > max(lags)（滞后特征非全 NaN；USMDP 仅在未启用 safe-lag 时除外）
   - USMDP 多步 safe-lag：align_direct_features_to_target=true 时必须启用 lag，且 min(lags) >= horizon
@@ -56,6 +56,8 @@ _CANONICAL_NESTED_FIELDS = {
         "difference",
         "percent_change",
         "time_since",
+        "fourier",
+        "wavelet",
         "cyclical",
         "interaction",
         "polynomial",
@@ -72,6 +74,18 @@ _CANONICAL_NESTED_FIELDS = {
     "features.transformations.advanced.difference": {"columns", "periods"},
     "features.transformations.advanced.percent_change": {"columns", "periods"},
     "features.transformations.advanced.time_since": {"columns", "events"},
+    "features.transformations.advanced.fourier": {
+        "columns",
+        "windows",
+        "top_k",
+        "band_periods",
+    },
+    "features.transformations.advanced.wavelet": {
+        "columns",
+        "windows",
+        "wavelet",
+        "level",
+    },
     "features.transformations.advanced.cyclical": {"columns", "period"},
     "features.transformations.advanced.interaction": {"column_pairs", "operations"},
     "features.transformations.advanced.polynomial": {"columns", "degree"},
@@ -380,6 +394,8 @@ def _check_advanced_transform(value: Any) -> list[str]:
         ("rolling", "windows"),
         ("difference", "periods"),
         ("percent_change", "periods"),
+        ("fourier", "windows"),
+        ("wavelet", "windows"),
     ):
         spec = value.get(name)
         if spec is None:
@@ -403,6 +419,54 @@ def _check_advanced_transform(value: Any) -> list[str]:
             problems.extend(
                 _check_nonempty_string_sequence(spec["stats"], f"{spec_path}.stats")
             )
+        if name == "fourier":
+            top_k = spec.get("top_k")
+            if top_k is not None and (
+                isinstance(top_k, bool) or not isinstance(top_k, int) or top_k < 1
+            ):
+                problems.append(f"{spec_path}.top_k 必须是正整数")
+            band_periods = spec.get("band_periods")
+            if band_periods is not None:
+                if isinstance(band_periods, (str, bytes)) or not isinstance(
+                    band_periods, Sequence
+                ):
+                    problems.append(f"{spec_path}.band_periods 必须是 [lo, hi) 区间序列")
+                else:
+                    for pair in band_periods:
+                        if (
+                            isinstance(pair, (str, bytes))
+                            or not isinstance(pair, Sequence)
+                            or len(pair) != 2
+                        ):
+                            problems.append(
+                                f"{spec_path}.band_periods 每项必须是 [lo, hi) 二元组"
+                            )
+                            continue
+                        lo, hi = pair
+                        if any(
+                            isinstance(bound, bool)
+                            or not isinstance(bound, int)
+                            or bound <= 0
+                            for bound in (lo, hi)
+                        ):
+                            problems.append(
+                                f"{spec_path}.band_periods 区间端点必须是正整数"
+                            )
+                        elif lo >= hi:
+                            problems.append(
+                                f"{spec_path}.band_periods 要求 lo < hi，得到 [{lo}, {hi})"
+                            )
+        if name == "wavelet":
+            level = spec.get("level")
+            if level is not None and (
+                isinstance(level, bool) or not isinstance(level, int) or level < 1
+            ):
+                problems.append(f"{spec_path}.level 必须是正整数")
+            wavelet_name = spec.get("wavelet")
+            if wavelet_name is not None and (
+                not isinstance(wavelet_name, str) or not wavelet_name.strip()
+            ):
+                problems.append(f"{spec_path}.wavelet 必须是非空字符串")
     polynomial = value.get("polynomial")
     if polynomial is not None:
         polynomial_path = f"{path}.polynomial"
@@ -487,7 +551,14 @@ def _check_advanced_target_leakage(cfg: ForecastConfigSpec) -> list[str]:
     lagged = {f"{name}_lag_{lag}" for name in targets for lag in (
         *(cfg.features.target_lags.get(name) or ()),
     )}
-    for section in ("rolling", "expanding", "difference", "percent_change"):
+    for section in (
+        "rolling",
+        "expanding",
+        "difference",
+        "percent_change",
+        "fourier",
+        "wavelet",
+    ):
         spec = advanced.get(section)
         if not isinstance(spec, Mapping):
             continue

@@ -813,6 +813,13 @@ def minimum_history_rows(config: ForecastConfigSpec) -> int:
         windows = rolling.get("windows", ())
         if isinstance(windows, Sequence) and not isinstance(windows, (str, bytes)):
             required = max(required, *(int(value) for value in windows))
+    for kind in ("fourier", "wavelet"):
+        spec = advanced.get(kind)
+        if not isinstance(spec, Mapping):
+            continue
+        windows = spec.get("windows", ())
+        if isinstance(windows, Sequence) and not isinstance(windows, (str, bytes)):
+            required = max(required, *(int(value) for value in windows))
     for kind in ("difference", "percent_change"):
         spec = advanced.get(kind)
         if not isinstance(spec, Mapping):

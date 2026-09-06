@@ -55,6 +55,30 @@ def fft_dominant_period(y: np.ndarray) -> dict:
     }
 
 
+def fft_top_periods(y: np.ndarray, top_k: int) -> list:
+    """FFT 幅度谱前 top_k 个主导频率 -> [(period_samples, frequency, amplitude)]。
+
+    排除直流分量；调用方负责去趋势（detect_periodicity 先线性去趋势再调用）。
+    幅度为原始谱幅值（与 fft_dominant_period 同口径），仅供相对排序诊断。
+    """
+    n = len(y)
+    if n < 4 or top_k < 1:
+        return []
+    y_detrend = y - np.mean(y)
+    spectrum = np.abs(fft(y_detrend))
+    freqs = fftfreq(n)
+    mask = freqs > 0
+    freqs_pos = np.asarray(freqs[mask], dtype=float)
+    amp_pos = np.asarray(spectrum[mask], dtype=float)
+    if len(freqs_pos) == 0:
+        return []
+    order = np.argsort(amp_pos)[::-1][:top_k]
+    return [
+        (float(1.0 / freqs_pos[i]), float(freqs_pos[i]), float(amp_pos[i]))
+        for i in order
+    ]
+
+
 def acf_periods(y: np.ndarray, max_lags: int, top_n: int, min_acf: float = DEFAULT_MIN_ACF) -> list:
     """ACF 峰值间距 -> 周期候选列表。
 
@@ -98,6 +122,7 @@ def detect_periodicity(
     seasonal_period: Optional[int] = None,
     top_n_periods: int = DEFAULT_TOP_N_PERIODS,
     min_acf: float = DEFAULT_MIN_ACF,
+    fft_top_k: int = 1,
 ) -> dict:
     """对 DataFrame 执行周期检测，返回结构化报告字典。"""
     frame = df[[time_col, target_col]].copy()
@@ -128,6 +153,11 @@ def detect_periodicity(
     if fft_info["dominant_period_samples"] and diff_seconds:
         report["fft_dominant_period_seconds"] = fft_info["dominant_period_samples"] * diff_seconds
         report["fft_dominant_period_days"] = fft_info["dominant_period_samples"] * diff_seconds / 86400.0
+    if fft_top_k > 1:
+        report["fft_top_periods"] = [
+            {"period_samples": period, "frequency": freq, "amplitude": amp}
+            for period, freq, amp in fft_top_periods(y_detrended, fft_top_k)
+        ]
 
     # 2. ACF 周期候选（在去趋势序列上）
     acf_result = acf_periods(y_detrended, max_lags, top_n_periods, min_acf)

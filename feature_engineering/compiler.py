@@ -23,6 +23,12 @@ from forecasting_core.specs import (
     DataSourceSpec,
     ForecastConfigSpec,
 )
+from feature_engineering.spectral import (
+    fourier_features,
+    normalize_band_periods,
+    signal_entropy,
+    wavelet_energy_features,
+)
 from feature_engineering.transform_specs import (
     normalize_feature_scaling,
     normalize_target_transformations,
@@ -955,6 +961,8 @@ class FeatureCompiler:
             "percent_change",
             "time_since",
             "ewm",
+            "fourier",
+            "wavelet",
             "cyclical",
             "interaction",
             "polynomial",
@@ -1147,6 +1155,133 @@ class FeatureCompiler:
                             )
                         item["columns"][feature_name] = values
 
+        fourier_spec = advanced.get("fourier")
+        if fourier_spec is not None:
+            if not isinstance(fourier_spec, Mapping):
+                raise TypeError("transformations.advanced.fourier must be a mapping")
+            columns = self._string_sequence(
+                fourier_spec.get("columns", ()), "advanced.fourier.columns"
+            )
+            windows = self._positive_int_sequence(
+                fourier_spec.get("windows", ()), "fourier.windows"
+            )
+            band_periods = normalize_band_periods(fourier_spec.get("band_periods"))
+            for column in columns:
+                histories = self._batch_master_histories(items, column)
+                for window in windows:
+                    # 频域特征无增量算法，直接按 (identity, origin) 缓存窗内复算，
+                    # 与逐行 compile() 的数值合同天然一致。
+                    cache: dict[Any, dict[str, float]] = {}
+                    for item in items:
+                        step_count = len(item["selected_steps"])
+                        feature_values: dict[str, np.ndarray] = {}
+                        for identity_index, identity in enumerate(item["identities"]):
+                            history = histories[identity]
+                            position = int(
+                                np.searchsorted(
+                                    history.index.asi8,
+                                    pd.Timestamp(
+                                        item["request"].forecast_origin
+                                    ).value,
+                                    side="right",
+                                )
+                                - 1
+                            )
+                            if position + 1 < window:
+                                raise ValueError(
+                                    f"{column!r} has insufficient visible history "
+                                    f"for fourier window {window}"
+                                )
+                            key = (identity, position)
+                            if key not in cache:
+                                cache[key] = fourier_features(
+                                    history.iloc[
+                                        position - window + 1 : position + 1
+                                    ].to_numpy(),
+                                    top_k=int(fourier_spec.get("top_k", 5)),
+                                    band_periods=band_periods,
+                                )
+                            row_slice = slice(
+                                identity_index * step_count,
+                                (identity_index + 1) * step_count,
+                            )
+                            for suffix, value in cache[key].items():
+                                name = f"{column}_fft_{suffix}_{window}"
+                                values = feature_values.get(name)
+                                if values is None:
+                                    values = np.empty(
+                                        len(item["target_times"]), dtype=float
+                                    )
+                                    feature_values[name] = values
+                                values[row_slice] = value
+                        item["columns"].update(feature_values)
+
+        wavelet_spec = advanced.get("wavelet")
+        if wavelet_spec is not None:
+            if not isinstance(wavelet_spec, Mapping):
+                raise TypeError("transformations.advanced.wavelet must be a mapping")
+            columns = self._string_sequence(
+                wavelet_spec.get("columns", ()), "advanced.wavelet.columns"
+            )
+            windows = self._positive_int_sequence(
+                wavelet_spec.get("windows", ()), "wavelet.windows"
+            )
+            wavelet_name = str(wavelet_spec.get("wavelet", "db4"))
+            wavelet_level = wavelet_spec.get("level", 3)
+            if (
+                isinstance(wavelet_level, bool)
+                or not isinstance(wavelet_level, int)
+                or wavelet_level < 1
+            ):
+                raise ValueError("wavelet.level must be a positive integer")
+            for column in columns:
+                histories = self._batch_master_histories(items, column)
+                for window in windows:
+                    cache = {}
+                    for item in items:
+                        step_count = len(item["selected_steps"])
+                        feature_values = {}
+                        for identity_index, identity in enumerate(item["identities"]):
+                            history = histories[identity]
+                            position = int(
+                                np.searchsorted(
+                                    history.index.asi8,
+                                    pd.Timestamp(
+                                        item["request"].forecast_origin
+                                    ).value,
+                                    side="right",
+                                )
+                                - 1
+                            )
+                            if position + 1 < window:
+                                raise ValueError(
+                                    f"{column!r} has insufficient visible history "
+                                    f"for wavelet window {window}"
+                                )
+                            key = (identity, position)
+                            if key not in cache:
+                                cache[key] = wavelet_energy_features(
+                                    history.iloc[
+                                        position - window + 1 : position + 1
+                                    ].to_numpy(),
+                                    wavelet=wavelet_name,
+                                    level=wavelet_level,
+                                )
+                            row_slice = slice(
+                                identity_index * step_count,
+                                (identity_index + 1) * step_count,
+                            )
+                            for suffix, value in cache[key].items():
+                                name = f"{column}_wavelet_energy_{suffix}_{window}"
+                                values = feature_values.get(name)
+                                if values is None:
+                                    values = np.empty(
+                                        len(item["target_times"]), dtype=float
+                                    )
+                                    feature_values[name] = values
+                                values[row_slice] = value
+                        item["columns"].update(feature_values)
+
     def _batch_master_histories(
         self,
         items: Sequence[dict[str, Any]],
@@ -1226,6 +1361,9 @@ class FeatureCompiler:
         results: dict[str, pd.Series] = {}
         rolling = history.rolling(window, min_periods=1)
         for stat in stats:
+            if stat == "entropy":
+                results[stat] = rolling.apply(signal_entropy, raw=True).fillna(0.0)
+                continue
             if stat in {"max_diff", "min_diff"}:
                 if window < 2:
                     results[stat] = pd.Series(0.0, index=history.index)
@@ -1902,6 +2040,8 @@ class FeatureCompiler:
             "percent_change",
             "time_since",
             "ewm",
+            "fourier",
+            "wavelet",
             "cyclical",
             "interaction",
             "polynomial",
@@ -1916,6 +2056,8 @@ class FeatureCompiler:
             "percent_change",
             "time_since",
             "ewm",
+            "fourier",
+            "wavelet",
         ):
             spec = advanced.get(kind)
             if spec is None:
@@ -1980,6 +2122,44 @@ class FeatureCompiler:
                         if previous == 0.0:
                             raise ValueError(f"{column!r} percent_change denominator is zero")
                         row[f"{column}_pct_change_{period}"] = float(history.iloc[-1] / previous - 1.0)
+                elif kind == "fourier":
+                    windows = self._positive_int_sequence(spec.get("windows", ()), "fourier.windows")
+                    band_periods = normalize_band_periods(spec.get("band_periods"))
+                    for window in windows:
+                        if len(history) < window:
+                            raise ValueError(
+                                f"{column!r} has insufficient visible history "
+                                f"for fourier window {window}"
+                            )
+                        features = fourier_features(
+                            history.iloc[-window:].to_numpy(),
+                            top_k=int(spec.get("top_k", 5)),
+                            band_periods=band_periods,
+                        )
+                        for suffix, value in features.items():
+                            row[f"{column}_fft_{suffix}_{window}"] = value
+                elif kind == "wavelet":
+                    windows = self._positive_int_sequence(spec.get("windows", ()), "wavelet.windows")
+                    wavelet_level = spec.get("level", 3)
+                    if (
+                        isinstance(wavelet_level, bool)
+                        or not isinstance(wavelet_level, int)
+                        or wavelet_level < 1
+                    ):
+                        raise ValueError("wavelet.level must be a positive integer")
+                    for window in windows:
+                        if len(history) < window:
+                            raise ValueError(
+                                f"{column!r} has insufficient visible history "
+                                f"for wavelet window {window}"
+                            )
+                        features = wavelet_energy_features(
+                            history.iloc[-window:].to_numpy(),
+                            wavelet=str(spec.get("wavelet", "db4")),
+                            level=wavelet_level,
+                        )
+                        for suffix, value in features.items():
+                            row[f"{column}_wavelet_energy_{suffix}_{window}"] = value
                 else:
                     events = self._string_sequence(spec.get("events", ()), "time_since.events")
                     for event in events:
@@ -2147,6 +2327,9 @@ class FeatureCompiler:
 
     @staticmethod
     def _statistic(values: pd.Series, stat: str) -> float:
+        if stat == "entropy":
+            # 香农熵（p = |y|/sum|y|）；非常量窗内分布越均匀熵越高。
+            return signal_entropy(values.to_numpy())
         if stat in {"max_diff", "min_diff"}:
             # 爬坡统计：窗内相邻步最大/最小变化量。窗口 < 2 时无相邻对，
             # 与其他统计的防御回退一致（minimum_history_rows 已保证

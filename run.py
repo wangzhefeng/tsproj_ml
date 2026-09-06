@@ -5,15 +5,16 @@
 # * Author      : Zhefeng Wang
 # * Email       : zfwang7@gmail.com
 # * Date        : 2026-02-11
-# * Version     : 2.0.0
-# * Description : CLI entry for ML time-series forecasting
+# * Version     : 3.0.0
+# * Description : 统一 canonical 入口（单模型 + 引用式 Ensemble 分派）
 # ***************************************************
 
+"""Canonical forecasting entrypoint: single-model and reference-based ensemble."""
 
 import argparse
 import os
 import random
-import sys
+import warnings
 from pathlib import Path
 
 from config.config_loader import load_yaml_config
@@ -30,6 +31,9 @@ from model_forecasting.resource_planner import (
     plan_ensemble_resources,
     runtime_budget_for_config,
 )
+from utils.runtime_env import ensure_runtime_environment
+
+warnings.filterwarnings("ignore")
 
 ENSEMBLE_RUNTIME_SERVICES = EnsembleRuntimeServices(
     runner_factory=CanonicalBaseModelRunner,
@@ -39,9 +43,44 @@ ENSEMBLE_RUNTIME_SERVICES = EnsembleRuntimeServices(
 )
 
 # global variable
-LOGGING_LABEL = Path(__file__).name[:-3]
+LOGGING_LABEL = Path(__file__).stem
 os.environ['LOG_NAME'] = LOGGING_LABEL
 from utils.log_util import logger
+
+
+class CanonicalModel:
+    """Single-model canonical wrapper: logging identity + result handle."""
+
+    def __init__(self, args: ForecastConfigSpec):
+        if not isinstance(args, ForecastConfigSpec):
+            raise TypeError("CanonicalModel requires ForecastConfigSpec")
+        self.args = args
+        self.setting = args.result_identity()
+        self.log_prefix = f"[{self.setting}]"
+        self.result = None
+
+    def run(self, output_root=None):
+        # output_root=None 时由 runtime 按 output.directories/results_root 解析，
+        # 与 main.py 历史分支语义完全一致（model_forecasting.runtime._output_paths）。
+        self.result = run_canonical_config(self.args, output_root=output_root)
+        return self.result
+
+
+def build_model(args: ForecastConfigSpec) -> CanonicalModel:
+    """Build the single-model runtime wrapper; non-canonical configs are rejected."""
+    if isinstance(args, EnsembleConfigSpec):
+        raise TypeError(
+            "reference-based ensemble configs are dispatched to "
+            "model_ensemble.runtime by run.py; build_model accepts "
+            "single-model configs only"
+        )
+    if not isinstance(args, ForecastConfigSpec):
+        raise TypeError(
+            "only canonical ForecastConfigSpec can enter the runtime; "
+            f"got {type(args).__name__}"
+        )
+    return CanonicalModel(args)
+
 
 def _set_seed(seed: int) -> None:
     random.seed(seed)
@@ -122,10 +161,23 @@ def run(args):
         identity,
     )
 
-    return run_canonical_config(cfg, output_root=args.output_root)
+    model = build_model(cfg)
+    try:
+        model.run(output_root=args.output_root)
+    except Exception as exc:
+        logger.error(
+            f"{model.log_prefix} Pipeline FAILED: {exc}",
+            exc_info=True,
+        )
+        raise
+    logger.info(f"{model.log_prefix} {'#' * 85}")
+    logger.info(f"{model.log_prefix} 模型预测流程完成！")
+    logger.info(f"{model.log_prefix} {'#' * 85}")
+    return model.result
 
 def main():
     args = args_parse()
+    ensure_runtime_environment()
     _set_seed(args.seed)
     run(args)
 

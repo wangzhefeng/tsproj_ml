@@ -6,9 +6,9 @@ import unittest
 from pathlib import Path
 from types import SimpleNamespace
 
-import main
+import run
 from config.config_loader import load_yaml_config
-from main import CanonicalModel, build_model
+from run import CanonicalModel, build_model
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -26,7 +26,7 @@ class CanonicalOnlyRuntimeTest(unittest.TestCase):
     def test_single_model_consumers_do_not_access_removed_ensemble_field(self):
         violations = []
         for relative in (
-            "main.py",
+            "run.py",
             "scripts/check_model_configs.py",
             "scripts/audit_forecast_configs.py",
         ):
@@ -46,7 +46,7 @@ class CanonicalOnlyRuntimeTest(unittest.TestCase):
         import model_forecasting.forecaster
         import model_training.trainer
 
-        self.assertFalse(hasattr(main, "Model"))
+        self.assertFalse(hasattr(run, "Model"))
         self.assertFalse(hasattr(model_forecasting.forecaster, "Forecaster"))
         self.assertFalse(hasattr(model_training.trainer, "Trainer"))
 

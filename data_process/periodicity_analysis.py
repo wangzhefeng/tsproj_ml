@@ -3,7 +3,7 @@
 
 检测算法核心位于 decomposition/periods.py（FFT/ACF/STL 纯数值实现，
 与 decomposition 残差频谱诊断共用同一事实源）；本模块只承载
-规格、可视化、报告落盘与配置驱动 CLI。
+规格、可视化、报告落盘、协整诊断与配置驱动 CLI。
 
 输出（源文件同级的 periodicity_analysis/ 子目录，文件名从源文件名派生）：
   <stem>_periodicity_report.csv  结构化报告（指标名/值/说明）
@@ -31,6 +31,8 @@
         top_n_periods: 3         # 报告输出前 N 个 ACF 周期候选，默认 3
         min_acf: 0.1             # ACF 周期候选最小相关值，默认 0.1（过滤噪声假峰）
         plot: true               # 是否生成 ACF/FFT 图，默认 true
+        fft_top_k: 1             # 额外报告 FFT 前 K 个主导周期（>1 时生效），默认 1
+        coint_col: null          # 可选：与目标列做 Engle-Granger 协整检验的列名
 """
 
 from __future__ import annotations
@@ -70,6 +72,8 @@ class PeriodicitySpec:
     seasonal_period: Optional[int] = None
     top_n_periods: int = DEFAULT_TOP_N_PERIODS
     min_acf: float = DEFAULT_MIN_ACF
+    fft_top_k: int = 1
+    coint_col: Optional[str] = None
     plot: bool = True
     route: str = ""
     output_dir: Optional[Path] = None
@@ -131,6 +135,32 @@ def plot_fft_spectrum(y: np.ndarray, output_path: Path) -> Path:
 # ---------------------------------------------------------------------------
 # 单任务执行
 # ---------------------------------------------------------------------------
+def _engle_granger_coint(
+    df: pd.DataFrame, time_col: str, target_col: str, coint_col: str
+) -> dict[str, Any]:
+    """Engle-Granger 协整检验（目标列 vs 对照列，按时间排序后成对完整样本）。"""
+    from statsmodels.tsa.stattools import coint
+
+    if coint_col not in df.columns:
+        raise ValueError(f"缺少协整对照列 {coint_col!r}")
+    frame: pd.DataFrame = df.loc[:, [time_col, target_col, coint_col]].copy()
+    frame[time_col] = pd.to_datetime(frame[time_col])
+    frame = frame.sort_values(time_col).reset_index(drop=True)
+    pair: pd.DataFrame = frame.loc[:, [target_col, coint_col]].apply(
+        pd.to_numeric, errors="coerce"
+    ).dropna()
+    y = np.asarray(pair[target_col], dtype=float)
+    x = np.asarray(pair[coint_col], dtype=float)
+    if len(y) < 20 or not (np.isfinite(y).all() and np.isfinite(x).all()):
+        raise ValueError(f"协整检验有效样本不足（<20）或含非有限值：{target_col} vs {coint_col}")
+    statistic, pvalue, _ = coint(y, x)
+    return {
+        "statistic": float(statistic),
+        "pvalue": float(pvalue),
+        "verdict": "协整" if pvalue < 0.05 else "不协整",
+    }
+
+
 def _output_paths(source_path: Path, output_dir: Optional[Path] = None) -> dict[str, Path]:
     stem = source_path.stem
     out_dir = output_dir or (source_path.parent / "periodicity_analysis")
@@ -158,6 +188,7 @@ def process_periodicity(spec: PeriodicitySpec) -> dict[str, Any]:
         seasonal_period=spec.seasonal_period,
         top_n_periods=spec.top_n_periods,
         min_acf=spec.min_acf,
+        fft_top_k=spec.fft_top_k,
     )
     paths = _output_paths(source_path, spec.output_dir)
 
@@ -177,6 +208,20 @@ def process_periodicity(spec: PeriodicitySpec) -> dict[str, Any]:
         {"metric": "stl_residual_std", "value": report.get("stl_residual_std"), "description": "残差成分标准差"},
         {"metric": "stl_seasonal_ratio", "value": report.get("stl_seasonal_ratio"), "description": "季节/残差标准差比（越大季节性越强）"},
     ]
+    if report.get("fft_top_periods"):
+        rows.append({
+            "metric": "fft_top_periods",
+            "value": json.dumps(report["fft_top_periods"], ensure_ascii=False),
+            "description": f"FFT 前 {len(report['fft_top_periods'])} 个主导周期（period_samples/frequency/amplitude，按幅度降序）",
+        })
+    if spec.coint_col:
+        coint_result = _engle_granger_coint(df, spec.time_col, spec.target_col, spec.coint_col)
+        rows.extend([
+            {"metric": "coint_col", "value": spec.coint_col, "description": "Engle-Granger 协整检验对照列"},
+            {"metric": "coint_statistic", "value": coint_result["statistic"], "description": "协整检验 t 统计量"},
+            {"metric": "coint_pvalue", "value": coint_result["pvalue"], "description": "协整检验 p 值（<0.05 判协整）"},
+            {"metric": "coint_verdict", "value": coint_result["verdict"], "description": "5% 显著性下的协整判定"},
+        ])
     report_df = pd.DataFrame(rows)
     report_df.to_csv(paths["report"], index=False, encoding="utf-8-sig")
 
@@ -231,6 +276,8 @@ def _build_spec(raw: dict[str, Any], config_path: Path) -> PeriodicitySpec:
         seasonal_period=raw.get("seasonal_period"),
         top_n_periods=int(raw.get("top_n_periods", DEFAULT_TOP_N_PERIODS)),
         min_acf=float(raw.get("min_acf", DEFAULT_MIN_ACF)),
+        fft_top_k=int(raw.get("fft_top_k", 1)),
+        coint_col=raw.get("coint_col"),
         plot=bool(raw.get("plot", True)),
         route=raw.get("route", ""),
         output_dir=_resolve_path(raw["output_dir"]) if raw.get("output_dir") else None,

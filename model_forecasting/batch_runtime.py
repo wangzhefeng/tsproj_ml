@@ -37,7 +37,7 @@ from uuid import uuid4
 from model_performance.resource_planner import detect_runtime_budget, plan_runtime_execution
 from model_forecasting.runtime import CanonicalBaseModelRunner
 from model_performance.transform_cache import FoldTransformCache
-from model_testing.backtest import resolve_origin
+from model_testing.primitives import resolve_origin
 
 
 _BATCH_LOCKS: dict[Path, threading.Lock] = {}

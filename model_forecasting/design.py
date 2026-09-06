@@ -25,8 +25,8 @@ from forecasting_core.specs import (
 )
 from forecasting_core.tensors import PointForecastTensor
 from feature_engineering.transforms import CanonicalTargetTransform
-from model_testing import validation
-from model_testing.backtest import actual_tensor as _actual_tensor
+from model_testing import geometry as validation
+from model_testing.primitives import actual_tensor as _actual_tensor
 from model_training.strategies import (
     TargetCoordinate,
     target_plan_for_config,

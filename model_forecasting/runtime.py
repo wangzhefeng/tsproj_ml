@@ -14,7 +14,7 @@ import numpy as np
 import pandas as pd
 from threadpoolctl import threadpool_limits
 
-from model_testing import validation
+from model_testing import geometry as validation
 from data_loading import (
     BUILTIN_GENERATORS,
     SourceRegistry,
@@ -47,7 +47,7 @@ from forecasting_core.specs import (
     ForecastConfigSpec,
     TargetAdapter,
 )
-from model_testing.backtest import (
+from model_testing.primitives import (
     actual_tensor,
     positive_validation_int,
     resolve_origin,

@@ -30,7 +30,7 @@ from model_ensemble.artifacts import method_artifact_audit_payload
 from model_ensemble.predictor import combine_members
 from model_ensemble.specs import EnsembleConfigSpec, EnsembleSpecError
 from model_ensemble.trainer import fit_ensemble, generate_oof_for_config
-from model_testing.backtest import resolve_origin
+from model_testing.primitives import resolve_origin
 from data_loading import SourceRegistry
 from model_forecasting.results import backtest_tensors_to_long, write_forecast_results
 from utils.log_util import logger

@@ -3,7 +3,7 @@ import unittest
 import pandas as pd
 from types import SimpleNamespace
 from model_ensemble.oof import oof_fold_origins
-from model_testing.validation import TimeGeometry, rolling_origin_folds
+from model_testing.geometry import TimeGeometry, rolling_origin_folds
 
 
 class IntradayScheduleContractTest(unittest.TestCase):

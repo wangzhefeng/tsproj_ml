@@ -96,8 +96,8 @@ ALLOWED_ROOTS = {
         "model_evaluation",
         "model_forecasting.deployment",
         "model_forecasting.results",
-        "model_testing.backtest",
-        "model_testing.validation",  # 共享标签安全合同，不暴露 runner 执行面
+        "model_testing.primitives",
+        "model_testing.geometry",  # 共享标签安全合同，不暴露 runner 执行面
         "utils",
     },
 }
@@ -281,7 +281,7 @@ class InterPackageLayeringTest(unittest.TestCase):
             package = root / "model_ensemble"
             package.mkdir()
             (package / "probe.py").write_text(
-                "from model_testing.validation import is_label_safe\n"
+                "from model_testing.geometry import is_label_safe\n"
                 "from model_forecasting.runtime import CanonicalBaseModelRunner\n",
                 encoding="utf-8",
             )

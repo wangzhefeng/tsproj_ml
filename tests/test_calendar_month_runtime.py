@@ -19,8 +19,8 @@ from model_forecasting.runtime import CanonicalBaseModelRunner, run_canonical_co
 from forecasting_core.specs import ForecastConfigSpec
 from forecasting_core.specs.config import parse_model_config
 from forecasting_core.tensors import PointForecastTensor
-from model_testing import validation
-from model_testing.backtest import seasonal_naive_tensor
+from model_testing import geometry as validation
+from model_testing.primitives import seasonal_naive_tensor
 
 
 ROOT = Path(__file__).resolve().parents[1]

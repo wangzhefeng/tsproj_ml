@@ -25,7 +25,7 @@ from model_evaluation.point import (
 )
 from model_forecasting.results import backtest_tensors_to_long, write_backtest_results
 
-from model_testing import validation
+from model_testing import geometry as validation
 from pandas.tseries.frequencies import to_offset
 from probabilistic.calibration import ConformalCalibrationTracker
 from forecasting_core.probabilistic_spec import probabilistic_spec_from_mapping

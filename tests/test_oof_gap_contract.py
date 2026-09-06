@@ -6,7 +6,7 @@ from dataclasses import dataclass
 import pandas as pd
 
 from model_ensemble.oof import oof_fold_origins
-from model_testing import validation
+from model_testing import geometry as validation
 
 
 @dataclass

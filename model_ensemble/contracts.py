@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Any, Callable, Mapping, Protocol, runtime_checkable
 
 import pandas as pd
-from model_testing.validation import OriginTimeline
+from model_testing.geometry import OriginTimeline
 
 
 @runtime_checkable

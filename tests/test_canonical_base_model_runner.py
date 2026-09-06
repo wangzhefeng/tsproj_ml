@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from model_testing import validation
+from model_testing import geometry as validation
 from model_forecasting.runtime import CanonicalBaseModelRunner, SourceRegistry
 
 

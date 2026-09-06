@@ -1,6 +1,6 @@
 """OOF generation: shared rolling-origin folds, per-member fit/predict/restore.
 
-Label eligibility reuses `model_testing.validation.is_label_safe`; the
+Label eligibility reuses `model_testing.geometry.is_label_safe`; the
 single-model backtest and ensemble retain their own fold-selection policies.
 Fusion methods never see this module — they only consume the produced
 `OOFPredictionArtifact` (v4 §7.1).
@@ -15,7 +15,7 @@ import numpy as np
 import pandas as pd
 
 from forecasting_core.artifacts import MarginalForecastDistribution
-from model_testing.validation import OriginTimeline, is_label_safe, scheduled_origin_indices
+from model_testing.geometry import OriginTimeline, is_label_safe, scheduled_origin_indices
 
 from model_ensemble.artifacts import OOFPredictionArtifact
 from model_ensemble.contracts import BaseModelRunner, member_execution_evidence

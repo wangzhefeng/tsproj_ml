@@ -7,7 +7,7 @@ import pandas as pd
 
 from config.config_loader import load_yaml_config
 from forecasting_core.specs import ForecastConfigSpec
-from model_testing.validation import calendar_month_folds
+from model_testing.geometry import calendar_month_folds
 
 
 ROOT = Path(__file__).resolve().parent.parent

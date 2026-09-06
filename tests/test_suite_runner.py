@@ -4,7 +4,7 @@ import io
 import unittest
 from unittest.mock import patch
 
-from run_suite import classify, flatten, main, partition
+from run_suite import ROOT, classify, flatten, main, partition, uses_project_venv
 
 
 class SuiteRunnerTest(unittest.TestCase):
@@ -47,6 +47,25 @@ class SuiteRunnerTest(unittest.TestCase):
         case = unittest.FunctionTestCase(failure)
         with patch("run_suite.discover", return_value=[case]), patch("sys.stderr", new_callable=io.StringIO), patch("sys.stdout", new_callable=io.StringIO):
             self.assertEqual(main(["all"]), 1)
+
+    def test_refuses_interpreter_outside_project_venv(self):
+        case = unittest.FunctionTestCase(lambda: None)
+        with patch("run_suite.discover", return_value=[case]), \
+             patch("sys.prefix", "/tmp/not-the-project-venv"), \
+             patch("sys.stderr", new_callable=io.StringIO) as err:
+            self.assertEqual(main(["all"]), 2)
+        self.assertIn(".venv", err.getvalue())
+
+    def test_accepts_existing_dot_venv(self):
+        with patch("sys.prefix", str(ROOT / ".venv")):
+            self.assertTrue(uses_project_venv())
+
+    def test_rejects_sibling_venv_before_discovery(self):
+        with patch("sys.prefix", str(ROOT / "venv")), \
+             patch("run_suite.discover") as discover, \
+             patch("sys.stderr", new_callable=io.StringIO):
+            self.assertEqual(main(["all", "--list"]), 2)
+        discover.assert_not_called()
 
 
 if __name__ == "__main__":

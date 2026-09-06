@@ -81,6 +81,11 @@ def discover():
     return tests
 
 
+def uses_project_venv():
+    """测试入口只接受项目已有 .venv；解释器身份与 uv 下载缓存无关。"""
+    return Path(sys.prefix).resolve() == (ROOT / ".venv").resolve()
+
+
 class TimedResult(unittest.TextTestResult):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -102,6 +107,13 @@ def main(argv=None):
     parser.add_argument("--list", action="store_true", help="只发现并列出，不执行测试")
     parser.add_argument("--report", type=Path, help="保存实际执行耗时及失败 ID（JSON）")
     args = parser.parse_args(argv)
+    if not uses_project_venv():
+        print(
+            f"请用 .venv/bin/python 执行 tests/run_suite.py：{ROOT / '.venv'}；"
+            f"当前 sys.prefix={sys.prefix}",
+            file=sys.stderr,
+        )
+        return 2
     try:
         tests = discover()
         groups = partition(test.id() for test in tests)

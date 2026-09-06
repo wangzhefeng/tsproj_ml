@@ -22,7 +22,7 @@ from forecasting_core.specs import (
 )
 from forecasting_core.tensors import MarginalQuantileForecastTensor, PointForecastTensor
 from model_forecasting.fit_service import _fit_runtime_transforms
-from model_forecasting.transforms import CanonicalFeatureScaler, CanonicalTargetTransform
+from feature_engineering.transforms import CanonicalFeatureScaler, CanonicalTargetTransform
 
 
 def _config(*, target_transform=None, feature_scaling=None):

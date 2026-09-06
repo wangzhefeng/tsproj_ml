@@ -50,6 +50,7 @@ ALLOWED_PACKAGES = {
         "forecasting_core",
         "data_loading",
         "decomposition",
+        "utils",
     },
     "model_training": {"forecasting_core", "models"},
     "model_testing": {"forecasting_core"},

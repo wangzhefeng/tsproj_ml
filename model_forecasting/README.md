@@ -8,8 +8,7 @@
 - `persistence.py`：schema-2 bundle 构造与持久化。
 - `runtime.py`：`CanonicalBaseModelRunner` 与顶层单模型生命周期编排。
 - `forecaster.py`：point 与 marginal quantile 推理，recursive quantile 使用 median path。
-- `transforms.py`：目标/特征变换状态与严格逆变换。
-- `transform_windows.py`：按唯一监督标签时间选取 scaler 窗口；分解默认同窗，允许显式较长上下文。
+- 目标/特征变换状态与严格逆变换、scaler 窗口选择已于 2026-09-06 R3 迁入 `feature_engineering/transforms/`（行为不变重构，方案 v3）。
 - `evidence.py`：现有模型状态的只读参数快照及 JSON 安全转换，不执行拟合/预测。
 - `lifecycle.py`：单模型 running/completed/failed 状态；批产物验收检查完成状态，不是目录事务。
 - `results.py`：canonical long result 读写和绘图。

@@ -24,7 +24,7 @@ from forecasting_core.specs import (
     ForecastConfigSpec,
 )
 from forecasting_core.tensors import PointForecastTensor
-from model_forecasting.transforms import CanonicalTargetTransform
+from feature_engineering.transforms import CanonicalTargetTransform
 from model_testing import validation
 from model_testing.backtest import actual_tensor as _actual_tensor
 from model_training.strategies import (

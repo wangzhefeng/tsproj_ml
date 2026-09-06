@@ -59,7 +59,7 @@ from model_forecasting.persistence import (
 )
 from model_training.strategies import CanonicalStrategyArtifact
 from forecasting_core.tensors import PointForecastTensor
-from model_forecasting.transforms import CanonicalFeatureScaler, CanonicalTargetTransform
+from feature_engineering.transforms import CanonicalFeatureScaler, CanonicalTargetTransform
 from model_performance.checkpoints import (
     FileFitCheckpoint, implementation_fingerprint, runtime_checkpoint_errors,
 )

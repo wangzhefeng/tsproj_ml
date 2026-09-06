@@ -92,10 +92,10 @@ class CanonicalOnlyRuntimeTest(unittest.TestCase):
         self.assertFalse((ROOT / "data_process" / "outlier_handling.py").exists())
 
     def test_features_package_is_removed(self):
-        """架构收敛 P4（D4）：features 整包删除，目标变换并入 model_forecasting/transforms。"""
+        """架构收敛 P4（D4）：features 整包删除；2026-09-06 R3 变换三件套归位 feature_engineering/transforms。"""
         self.assertFalse((ROOT / "features").exists())
 
-        source = (ROOT / "model_forecasting" / "transforms.py").read_text(encoding="utf-8")
+        source = (ROOT / "feature_engineering" / "transforms" / "pipeline.py").read_text(encoding="utf-8")
         self.assertNotIn("from features", source)
 
     def test_target_transform_pipeline_restores_strictly(self):
@@ -104,7 +104,7 @@ class CanonicalOnlyRuntimeTest(unittest.TestCase):
         - identity 配置直通且 restore 恒等；
         - calendar normalization 单步启用时 restore 严格还原 fit_transform 结果。
         """
-        from model_forecasting.transforms import CanonicalTargetTransform
+        from feature_engineering.transforms import CanonicalTargetTransform
 
         def make_config(transformations: dict) -> SimpleNamespace:
             from feature_engineering.transform_specs import (
@@ -140,10 +140,10 @@ class CanonicalOnlyRuntimeTest(unittest.TestCase):
         """R1 死代码清扫：TargetScaler 三个零消费 legacy 方法与死 resolver 删除。"""
         import ast as _ast
 
-        import model_forecasting.transforms as transforms_module
+        import feature_engineering.transforms.pipeline as transforms_module
 
         tree = _ast.parse(
-            (ROOT / "model_forecasting" / "transforms.py").read_text(encoding="utf-8")
+            (ROOT / "feature_engineering" / "transforms" / "pipeline.py").read_text(encoding="utf-8")
         )
         target_scaler_methods = {
             node.name

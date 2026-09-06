@@ -22,7 +22,7 @@ from feature_engineering.transform_specs import (
     normalize_feature_scaling,
     normalize_target_transformations,
 )
-from feature_engineering.scaling import CanonicalFeatureScaler  # noqa: F401  (兼容 re-export，2026-09-01 归位)
+# CanonicalFeatureScaler 住在同包 scaling.py（2026-09-06 R3 归位，re-export 桥删除）
 from forecasting_core.tensors import (
     MarginalQuantileForecastTensor,
     PointForecastTensor,

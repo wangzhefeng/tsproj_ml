@@ -17,8 +17,8 @@ from model_forecasting.forecaster import (
     CanonicalForecaster,
     CanonicalMarginalQuantileForecaster,
 )
-from model_forecasting.transforms import CanonicalFeatureScaler, CanonicalTargetTransform
-from model_forecasting.transform_windows import select_transform_history
+from feature_engineering.transforms import CanonicalFeatureScaler, CanonicalTargetTransform
+from feature_engineering.transforms.windows import select_transform_history
 from model_training.estimators import (
     SharedMultiQuantilePool,
     make_model_factory,

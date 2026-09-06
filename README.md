@@ -109,21 +109,22 @@ features:
 安装/同步环境：
 
 ```bash
-uv sync
+uv sync --locked --no-cache
 ```
+
+项目使用已有根目录 `.venv/`，依赖唯一来源为 `pyproject.toml` + `uv.lock`，依赖变更统一使用 `uv add`。上面的同步命令仅用于环境缺失或需要同步时；日常测试直接调用 `.venv/bin/python`，不启动 uv、不设置 `UV_CACHE_DIR`，不依赖或重建 `.uv_cache/`。
 
 单配置本地入口：
 
 ```bash
-env -u PYTHONPATH UV_CACHE_DIR=.uv_cache uv run --no-sync python main.py \
+env -u PYTHONPATH .venv/bin/python main.py \
   --config-yaml config/aidc_load_15min_short/route_A/baseline/st_recursive.yaml
 ```
 
 必须显式指定单模型配置；`main.py` 不提供硬编码默认值。单模型或引用式融合均可使用 CLI：
 
 ```bash
-env -u PYTHONPATH UV_CACHE_DIR=.uv_cache uv run --no-sync \
-  python run.py --config-yaml config/<scenario>/<model>.yaml
+env -u PYTHONPATH .venv/bin/python run.py --config-yaml config/<scenario>/<model>.yaml
 ```
 
 模型语义以 YAML 为唯一来源；CLI 不支持模型、数据和训练参数的静默覆盖。
@@ -154,20 +155,18 @@ results/<scenario>/<result_identity>/
 
 ```bash
 # 日常快测；同时补跑本次修改涉及的定向测试
-env -u PYTHONPATH UV_CACHE_DIR=.uv_cache uv run --no-sync \
-  python tests/run_suite.py fast
+env -u PYTHONPATH .venv/bin/python tests/run_suite.py fast
 
 # 全量收口（与原生 unittest discover 同一全集）
-env -u PYTHONPATH UV_CACHE_DIR=.uv_cache uv run --no-sync \
-  python tests/run_suite.py all
+env -u PYTHONPATH .venv/bin/python tests/run_suite.py all
 
 # 配置、数据资产与 Ensemble 审计
-env -u PYTHONPATH UV_CACHE_DIR=.uv_cache uv run --no-sync python scripts/check_model_configs.py
-env -u PYTHONPATH UV_CACHE_DIR=.uv_cache uv run --no-sync python scripts/audit_runtime_assets.py
-env -u PYTHONPATH UV_CACHE_DIR=.uv_cache uv run --no-sync python scripts/audit_ensemble_configs.py
+env -u PYTHONPATH .venv/bin/python scripts/check_model_configs.py
+env -u PYTHONPATH .venv/bin/python scripts/audit_runtime_assets.py
+env -u PYTHONPATH .venv/bin/python scripts/audit_ensemble_configs.py
 
 # 语法与格式
-env -u PYTHONPATH UV_CACHE_DIR=.uv_cache uv run --no-sync python -m compileall -q \
+env -u PYTHONPATH .venv/bin/python -m compileall -q \
   forecasting_core data_loading feature_engineering model_training model_testing \
   model_evaluation model_forecasting probabilistic model_ensemble models \
   decomposition data_process utils config scripts tests main.py run.py

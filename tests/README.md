@@ -14,16 +14,18 @@
 | `all` | 三组全集 | 全量收口，串行运行，避免多套测试争抢 CPU |
 
 ```bash
-# 以下命令均从项目根运行；不安装或同步依赖
-env -u PYTHONPATH UV_CACHE_DIR=.uv_cache uv run --no-sync python tests/run_suite.py fast
-env -u PYTHONPATH UV_CACHE_DIR=.uv_cache uv run --no-sync python tests/run_suite.py integration --match test_ensemble_runtime
-env -u PYTHONPATH UV_CACHE_DIR=.uv_cache uv run --no-sync python tests/run_suite.py audit --match test_validation_geometry_manifest
-env -u PYTHONPATH UV_CACHE_DIR=.uv_cache uv run --no-sync python tests/run_suite.py all --list
-env -u PYTHONPATH UV_CACHE_DIR=.uv_cache uv run --no-sync python tests/run_suite.py all --report .hermes/plans/test-suite-report.json
+# 以下命令均从项目根运行；run_suite 只接受项目 .venv 解释器，其他环境直接拒绝
+env -u PYTHONPATH .venv/bin/python tests/run_suite.py fast
+env -u PYTHONPATH .venv/bin/python tests/run_suite.py integration --match test_ensemble_runtime
+env -u PYTHONPATH .venv/bin/python tests/run_suite.py audit --match test_validation_geometry_manifest
+env -u PYTHONPATH .venv/bin/python tests/run_suite.py all --list
+env -u PYTHONPATH .venv/bin/python tests/run_suite.py all --report .hermes/plans/test-suite-report.json
 
 # 原有入口仍发现并执行所有测试，不是快测入口
-env -u PYTHONPATH UV_CACHE_DIR=.uv_cache uv run --no-sync python -m unittest discover -s tests -p "test_*.py"
+env -u PYTHONPATH .venv/bin/python -m unittest discover -s tests -p "test_*.py"
 ```
+
+测试分组入口只接受根目录 `.venv/`（按 `sys.prefix` 校验，错误环境返回 2）；该门禁不拦截绕过入口的原生 unittest 或库调用，直接运行它们时也必须显式使用 `.venv/bin/python`。测试不经过 uv 或 `.uv_cache/`；依赖仍由 `pyproject.toml` + `uv.lock` 管理，必要时用 `uv sync --locked --no-cache` 同步已有 `.venv`，不新建其他环境。
 
 `--match` 是完整测试 ID 的子串过滤；无匹配、重复 ID 或任一模块导入失败返回非零，不允许因为选择 fast 而隐藏其他模块的发现错误。`--list` 仅导入和发现，不执行测试正文；仍会发生项目已有的 import 初始化。`--report` 记录本次实际 testsRun、失败/错误/跳过 ID 和逐测试耗时，不作未经测量的速度承诺。场景模块需要独立选择，不代表其测试可以删除。
 

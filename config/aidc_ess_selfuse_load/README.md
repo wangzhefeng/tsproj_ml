@@ -45,7 +45,7 @@ route_A/route_B 的 `baseline/lgbm_usbr_prob_mean.yaml` 是引用式 Quantile En
 执行：
 
 ```bash
-env -u PYTHONPATH UV_CACHE_DIR=.uv_cache uv run python \
+env -u PYTHONPATH .venv/bin/python \
   config/aidc_ess_selfuse_load/derive_weather.py
 ```
 
@@ -67,13 +67,13 @@ PCS 计划继续使用通用 `custom_features` 注册表，而不是增加 PCS �
 
 ```bash
 # 完整计算和契约校验，不写文件
-UV_CACHE_DIR=.uv_cache uv run --no-sync python \
+env -u PYTHONPATH .venv/bin/python \
   config/aidc_ess_selfuse_load/build_strategy_features.py \
   --config config/aidc_ess_selfuse_load/strategy_features.yaml \
   --validate-only
 
 # 写入输出；已有文件时必须显式 --force
-UV_CACHE_DIR=.uv_cache uv run --no-sync python \
+env -u PYTHONPATH .venv/bin/python \
   config/aidc_ess_selfuse_load/build_strategy_features.py \
   --config config/aidc_ess_selfuse_load/strategy_features.yaml \
   --force
@@ -146,7 +146,7 @@ v2 同时维护两个时间轴：
 ## 测试
 
 ```bash
-UV_CACHE_DIR=.uv_cache uv run --no-sync python -m unittest discover \
+env -u PYTHONPATH .venv/bin/python -m unittest discover \
   -s tests -p "test_*.py"
 ```
 

@@ -19,11 +19,11 @@
 默认都从仓库根目录执行：
 
 ```bash
-uv run python config/aidc_electricity_computility/electricity/2026-06-11/scripts/computility_process.py
-uv run python config/aidc_electricity_computility/electricity/2026-06-11/scripts/fill_missing.py
-uv run python config/aidc_electricity_computility/electricity/2026-06-11/scripts/select_aidc_leadership_days.py --build-report
-uv run python config/aidc_electricity_computility/electricity/2026-06-11/scripts/fuse_aidc_results.py
-uv run python config/aidc_electricity_computility/electricity/2026-06-11/scripts/adjust_leadership_day_summary_metrics.py
+env -u PYTHONPATH .venv/bin/python config/aidc_electricity_computility/electricity/2026-06-11/scripts/computility_process.py
+env -u PYTHONPATH .venv/bin/python config/aidc_electricity_computility/electricity/2026-06-11/scripts/fill_missing.py
+env -u PYTHONPATH .venv/bin/python config/aidc_electricity_computility/electricity/2026-06-11/scripts/select_aidc_leadership_days.py --build-report
+env -u PYTHONPATH .venv/bin/python config/aidc_electricity_computility/electricity/2026-06-11/scripts/fuse_aidc_results.py
+env -u PYTHONPATH .venv/bin/python config/aidc_electricity_computility/electricity/2026-06-11/scripts/adjust_leadership_day_summary_metrics.py
 ```
 
 ## 输入输出约定

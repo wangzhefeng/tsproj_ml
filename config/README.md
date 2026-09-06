@@ -27,7 +27,7 @@ Fixed-step validation 使用 `history_steps/train_window_steps/fold_count/stride
 ## 审计
 
 ```bash
-env -u PYTHONPATH UV_CACHE_DIR=.uv_cache uv run --no-sync python scripts/check_model_configs.py
-env -u PYTHONPATH UV_CACHE_DIR=.uv_cache uv run --no-sync python scripts/audit_runtime_assets.py
-env -u PYTHONPATH UV_CACHE_DIR=.uv_cache uv run --no-sync python scripts/audit_ensemble_configs.py
+env -u PYTHONPATH .venv/bin/python scripts/check_model_configs.py
+env -u PYTHONPATH .venv/bin/python scripts/audit_runtime_assets.py
+env -u PYTHONPATH .venv/bin/python scripts/audit_ensemble_configs.py
 ```

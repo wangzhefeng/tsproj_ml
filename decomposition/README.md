@@ -33,7 +33,7 @@ Extractor（拆分）→ Forecaster（分量外推）→ Composer（合成）→
 ## 验证
 
 ```bash
-env -u PYTHONPATH UV_CACHE_DIR=.uv_cache uv run python -m unittest \
+env -u PYTHONPATH .venv/bin/python -m unittest \
   tests.test_decomposition_spec tests.test_decomposition_equivalence \
   tests.test_decomposition_diagnostics -v
 ```

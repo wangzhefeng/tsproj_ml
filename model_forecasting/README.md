@@ -19,3 +19,30 @@
 `CanonicalBaseModelRunner.execution_evidence(artifact, target_transform)` 为公开只读能力，供 fixed-step、calendar-month 和通过 Protocol 边界调用的 Ensemble 成员复用。单模型逐折证据位于 holdout metadata，final 证据位于 `runtime.run_evidence` 与 `result_metadata.json`。自然月回测/CQR 收集在 final fit 之前完成，不再于 run 返回后改写 final 产物。
 
 运行证据和验证边界见 [权威设计 §6.3](../docs/multistep_forecasting_redesign.md#63-可靠性收口实现与受限验证)。外部直接加载 pickle 不会自动消费完成状态。
+
+## 批调度、资源与部署
+
+- `resource_planner.py`：从真实 workload 和父预算生成统一执行计划，约束外层并行轴与模型线程乘积；非法预算报错。
+- `performance_profiles.py`：已采用性能 profile 的签名、来源与适用性校验；不能把受限折数基准外推为正式全折性能收益。
+- `batch_runtime.py`：`run_canonical_batch()` 与 `verify_batch_results()`，负责跨配置 preflight、调度、恢复和验收；CLI 为根目录 `batch_run.py`。
+- `batch_artifacts.py`：产物摘要、时间网格、维度与 bundle 身份验收；只看文件存在不能判 completed。
+- `batch_memory.py`：有界内存缓存和采样 RSS；采样不是硬内存隔离。
+- `checkpoints.py`：`FileFitCheckpoint`，仅恢复完成的拟合单元；身份变化 miss，损坏报错。部署 bundle 不依赖 checkpoint。
+- `transform_cache.py`：批内 fold transform 复用及指纹；不代替 source/raw-design 缓存。
+- `deployment.py`：`predict_strategy_bundle()`，消费已加载 bundle 和显式部署输入，不重新训练。
+
+## 执行链与结果
+
+`run_canonical_config()` 编排设计准备、滚动回测、可选 CQR 收集、final fit、正式预测与持久化。fixed-step 和 calendar-month 各自使用配置训练窗口；自然月折按真实月份长度构造。底层 trainer/forecaster 不拥有这个生命周期。
+
+活动配置通常写入 `results/{pretrained_models,results_test,results_forecast}/<scenario>/<identity>/`，未声明目录时才采用 runtime 回退布局。`prediction.csv` 与 `cv_plot_df.csv` 分别使用 `(series_id,time,target)` 和追加 `window` 的 long 唯一键；quantile 评估另写概率评分文件。
+
+## 定向验证
+
+```bash
+env -u PYTHONPATH .venv/bin/python tests/run_suite.py all --match test_canonical_runtime_smoke
+env -u PYTHONPATH .venv/bin/python tests/run_suite.py all --match test_batch_runtime
+env -u PYTHONPATH .venv/bin/python tests/run_suite.py all --match test_runtime_checkpoints
+```
+
+测试临时产物不替代正式模型验收；本轮文档更新不触发全配置重跑或清理旧结果。

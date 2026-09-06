@@ -55,7 +55,16 @@ env -u PYTHONPATH .venv/bin/python -m unittest discover -s tests -p "test_*.py"
 - `test_conformal_tracker` 增加倒置区间整批拒绝且不污染历史池的负向断言；CQR 合法输入、as-of 和恢复链继续验证。
 - 资产缺列测试改走实际 `audit_runtime_assets` 的 CSV 审计与报告，选日尾部误差测试改走 `run_selection`，不再只测休眠包装。
 
+## 日历生成器回归
+
+`test_holiday_generator` 使用包级公开入口，独立钉住 2024 年年初四节气日期并与依赖库公开 API 对照；验证日内最后支持日不多读下一年、每帧仅构建一次节气表，以及 registry → compiler → VisibilityProof 接线和真实 CSV 导出。旧 `data_loading/holiday_generator.py` 不再是兼容合同；前轮信息集冻结 fixture 保留，不按修复后算法重生成。
+
 ## 行为不变重构覆盖映射
+
+- 数据层实现归入 `sources/processing/information`；根信息集/provider 兼容文件及 registry 旧 provider 别名已删除。冻结 provider fixture 不重生成，改为验证旧路径拒绝加载；新路径类往返、实际 provider 值及可得性往返仍有回归覆盖。
+
+- `test_data_loading_boundaries` 对照迁移前独立冻结的 `fixtures/data_loading_materialization.json`，覆盖 local/global、vintage、标签访问、provider、日历及既有异常；不得用改后实现重生成参照。另验证读取缓存/拷贝、覆盖发现、角色限定索引、旧 provider pickle，以及包含赋值别名和属性链的生产 registry 私有访问 AST 门禁。信息集原本不能 pickle 往返的失败行为保留，不误记为支持。
+- `test_data_loading_assets` 验证真实单模型/融合配置分派、缺资产/缺列/空文件、typed 表头预检查及来源哈希；`test_runtime_asset_audit` 仍在 audit 集合。生成器计算文件的实现指纹保护和源码变化失效由资产边界测试及 `test_compiled_feature_cache` 共同覆盖。
 
 - 编译器保留 single/batch 双执行路径，共用规则解析。`test_compiler_batch_equivalence` 继续覆盖受支持路径等价；`test_compiler_shared_rules` 对照迁移前冻结的 `fixtures/compiler_shared_rules.json`，独立钉住 frame、schema、lineage、visibility 和错误行为。黄金值不得改为委托现实现生成。
 - 目标/特征变换测试直接导入 `feature_engineering.transforms`；quantile 训练测试直接导入 `model_training.quantile`。回测评分、pipeline runner 与预测器的静态点名检查跟随新职责位置。

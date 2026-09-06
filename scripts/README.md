@@ -11,7 +11,7 @@
 | `audit_aidc_load_15min_designs.py` | 对三个 AIDC 15min 场景全部 4,617 份活动单模型编译一个真实训练设计；成本很高，静态-only 任务禁止运行 |
 | `generate_load_15min_matrix.py` | 默认只读校验三个 AIDC 15min 场景的 4,689 份矩阵；`--write` 确定性重建 4,617 份单模型与 72 份 add_ensemble |
 | `audit_batch_eligibility.py` | 审计全部活动配置的 supervised compiler 批量资格（batch eligible / fallback 及原因） |
-| `export_chinese_holiday_csv.py` | 用 `data_loading/holiday_generator.py` 同一实现导出中国节假日特征 CSV（generated source 的审计兜底 / 版本固定 file source） |
+| `export_chinese_holiday_csv.py` | 用 `data_loading/calendar_generator/chinese_holiday.py` 同一实现导出中国节假日特征 CSV（generated source 的审计兜底 / 版本固定 file source） |
 
 ```bash
 env -u PYTHONPATH .venv/bin/python scripts/check_model_configs.py

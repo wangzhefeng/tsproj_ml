@@ -10,8 +10,8 @@ import pandas as pd
 from model_evaluation.point import evaluate_point_forecasts
 from model_forecasting.results import (
     CanonicalResultReader,
-    write_backtest_results,
 )
+from model_testing.reporting import write_backtest_results
 from forecasting_core.tensors import PointForecastTensor
 
 

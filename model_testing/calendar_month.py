@@ -12,20 +12,15 @@ from typing import Any, Mapping
 import pandas as pd
 
 from data_loading import SourceRegistry
-from forecasting_core.artifacts import MarginalForecastDistribution
 from forecasting_core.specs import (
     CalendarMonthBacktestSpec,
     ForecastConfigSpec,
 )
-from forecasting_core.tensors import PointForecastTensor
-from model_evaluation.marginal import evaluate_marginal_distribution
-from model_evaluation.point import (
-    evaluate_point_forecasts,
-    resolve_aggregate_weighting,
-)
-from model_forecasting.results import backtest_tensors_to_long, write_backtest_results
+from model_evaluation.point import resolve_aggregate_weighting
+from model_testing.reporting import write_backtest_results
 
 from model_testing import geometry as validation
+from model_testing.scoring import score_holdout_fold
 from pandas.tseries.frequencies import to_offset
 from probabilistic.calibration import ConformalCalibrationTracker
 from forecasting_core.probabilistic_spec import probabilistic_spec_from_mapping
@@ -172,66 +167,28 @@ def run_calendar_month_backtest(
         fold_fits = tuple(fit_context(context) for context in fold_contexts)
 
     for context, fit_result in zip(fold_contexts, fold_fits):
-        fold, runner, origin_index, train_indices, training_label_end_max, _ = context
-        scaler, transform, _X, _Y, artifact = fit_result
-        designs, provider = runner.forecast_designs(
-            fold.origin,
-            scaler,
-            transform,
+        fold_ctx, runner, origin_index, train_indices, training_label_end_max, _ = context
+        fold = score_holdout_fold(
+            runner=runner,
+            fit_result=fit_result,
+            origin=fold_ctx.origin,
+            origin_index=origin_index,
+            window=fold_ctx.window,
+            calibration_tracker=calibration_tracker,
+            aggregate_weights=aggregate_weights,
+            eval_mask_config=eval_mask_config,
         )
-        forecast_times = runner.forecast_times(fold.origin)
-        prediction = runner.predict(
-            artifact,
-            designs,
-            provider,
-            forecast_times,
-            transform,
-        )
-        actual = runner.actual(origin_index, forecast_times)
-        naive = runner.seasonal_naive(fold.origin, forecast_times)
-        point = (
-            prediction
-            if isinstance(prediction, PointForecastTensor)
-            else prediction.point
-        )
-        fold_frame = backtest_tensors_to_long(actual, prediction, window=fold.window)
-        if calibration_tracker is not None:
-            fold_frame, calibration_audit = calibration_tracker.apply_to_frame(
-                fold_frame,
-                forecast_origin=fold.origin,
-            )
-            calibration_audits.append({"window": fold.window, **calibration_audit})
-        cv_frames.append(fold_frame)
-        if calibration_tracker is not None:
-            calibration_tracker.collect_from_frame(
-                fold_frame,
-                forecast_origin=fold.origin,
-                window=fold.window,
-            )
-        score_frames.append(
-            evaluate_point_forecasts(
-                actual,
-                point,
-                aggregate_weighting=aggregate_weights,
-                seasonal_naive=naive,
-                window=fold.window,
-                eval_mask=eval_mask_config,
-            )
-        )
-        if isinstance(prediction, MarginalForecastDistribution):
-            probabilistic_frames.append(
-                evaluate_marginal_distribution(
-                    actual,
-                    prediction,
-                    eval_mask=eval_mask_config,
-                    window=fold.window,
-                )
-            )
+        cv_frames.append(fold.frame)
+        if fold.calibration_audit is not None:
+            calibration_audits.append({"window": fold.window, **fold.calibration_audit})
+        score_frames.append(fold.point_scores)
+        if fold.probabilistic_scores is not None:
+            probabilistic_frames.append(fold.probabilistic_scores)
         fold_metadata.append(
             {
-                **fold.metadata,
+                **fold_ctx.metadata,
                 "training_label_end_max": training_label_end_max.isoformat(),
-                "execution_evidence": runner.execution_evidence(artifact, transform),
+                "execution_evidence": fold.execution_evidence,
             }
         )
 

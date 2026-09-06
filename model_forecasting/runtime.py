@@ -33,11 +33,9 @@ from feature_engineering.selection import (
     selected_indices_for_artifact,
 )
 from utils.log_util import logger
-from model_forecasting.results import (
-    backtest_tensors_to_long,
-    write_backtest_results,
-    write_forecast_results,
-)
+from model_forecasting.results import write_forecast_results
+from model_testing.reporting import write_backtest_results
+from model_testing.scoring import score_holdout_fold
 from pandas.tseries.frequencies import to_offset
 from probabilistic.calibration import ConformalCalibrationTracker
 from forecasting_core.probabilistic_spec import probabilistic_spec_from_mapping
@@ -74,7 +72,7 @@ from forecasting_core.runtime_resources import (
     RuntimeExecutionPlan,
     RuntimeResourceBudget,
 )
-from model_forecasting.backtest_runtime import run_calendar_month_backtest
+from model_testing.calendar_month import run_calendar_month_backtest
 from model_forecasting.evidence import collect_model_evidence, dependency_versions, json_evidence
 from model_forecasting.lifecycle import write_run_state
 from model_forecasting.design import (
@@ -1250,94 +1248,35 @@ class CanonicalBaseModelRunner:
                 )
 
         for window_index, backtest_window in enumerate(backtest_windows):
-            (
-                holdout_feature_scaler,
-                holdout_target_transform,
-                _X_train_transformed,
-                _Y_train_transformed,
-                holdout_artifact,
-            ) = (
+            fit_result = (
                 parallel_fits[window_index]
                 if parallel_fits is not None
                 else self.fit(backtest_window.train_indices)
             )
-
             builder.reset_audit()
-            holdout_designs, holdout_provider = self.forecast_designs(
-                backtest_window.origin,
-                holdout_feature_scaler,
-                holdout_target_transform,
-            )
-            holdout_times = self.forecast_times(backtest_window.origin)
-            holdout_prediction = self.predict(
-                holdout_artifact,
-                holdout_designs,
-                holdout_provider,
-                holdout_times,
-                holdout_target_transform,
-            )
-            actual = self.actual(
-                backtest_window.origin_index,
-                holdout_times,
-            )
-            seasonal_naive = self.seasonal_naive(
-                backtest_window.origin,
-                holdout_times,
-            )
-            holdout_point = (
-                holdout_prediction
-                if isinstance(holdout_prediction, PointForecastTensor)
-                else holdout_prediction.point
-            )
-            fold_frame = backtest_tensors_to_long(
-                actual,
-                holdout_prediction,
+            fold = score_holdout_fold(
+                runner=self,
+                fit_result=fit_result,
+                origin=backtest_window.origin,
+                origin_index=backtest_window.origin_index,
                 window=backtest_window.window,
+                calibration_tracker=calibration_tracker,
+                aggregate_weights=aggregate_weights,
+                eval_mask_config=eval_mask_config,
             )
-            if calibration_tracker is not None:
-                # apply-before-collect：当前折只消费严格更早折的校准池
-                fold_frame, calibration_audit = (
-                    calibration_tracker.apply_to_frame(
-                        fold_frame,
-                        forecast_origin=backtest_window.origin,
-                    )
-                )
+            cv_frames.append(fold.frame)
+            if fold.calibration_audit is not None:
                 calibration_audits.append(
-                    {"window": backtest_window.window, **calibration_audit}
+                    {"window": fold.window, **fold.calibration_audit}
                 )
-            cv_frames.append(fold_frame)
-            if calibration_tracker is not None:
-                calibration_tracker.collect_from_frame(
-                    fold_frame,
-                    forecast_origin=backtest_window.origin,
-                    window=backtest_window.window,
-                )
-            score_frames.append(
-                evaluate_point_forecasts(
-                    actual,
-                    holdout_point,
-                    aggregate_weighting=aggregate_weights,
-                    seasonal_naive=seasonal_naive,
-                    window=backtest_window.window,
-                    eval_mask=eval_mask_config,
-                )
-            )
-            # 概率评估接线（2026-08-30）：quantile 模式逐窗产出 pinball/central 区间
-            # 指标；eval_mask 配置直传，掩码口径与点评估同一 payload（同一业务口径）。
-            if not isinstance(holdout_prediction, PointForecastTensor):
-                prob_score_frames.append(
-                    evaluate_marginal_distribution(
-                        actual,
-                        holdout_prediction,
-                        eval_mask=eval_mask_config,
-                        window=backtest_window.window,
-                    )
-                )
+            score_frames.append(fold.point_scores)
+            if fold.probabilistic_scores is not None:
+                prob_score_frames.append(fold.probabilistic_scores)
             holdout_audits.extend(builder.audit)
             holdout_execution_evidence.append({
-                "window": backtest_window.window,
-                "origin": backtest_window.origin.isoformat(),
-                **self.execution_evidence(holdout_artifact, holdout_target_transform),
+                "window": fold.window,
+                "origin": fold.origin.isoformat(),
+                **fold.execution_evidence,
             })
         holdout_audit = tuple(holdout_audits)
         _log_provider_usage(holdout_audit)

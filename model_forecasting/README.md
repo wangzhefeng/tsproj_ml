@@ -4,7 +4,7 @@
 
 - `design.py`：information set、特征设计、监督样本和 fixed-step 回测几何。
 - `fit_service.py`：fold/final transform、训练与预测服务。
-- `backtest_runtime.py`：calendar-month 回测生命周期。
+- calendar-month 回测生命周期已于 2026-09-06 R5 迁入 `model_testing/calendar_month.py`（逐折评分体共用 `model_testing/scoring.py`，方案 v3）。
 - `persistence.py`：schema-2 bundle 构造与持久化。
 - `runtime.py`：`CanonicalBaseModelRunner` 与顶层单模型生命周期编排。
 - `forecaster.py`：point 与 marginal quantile 推理，recursive quantile 使用 median path。

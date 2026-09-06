@@ -53,7 +53,12 @@ ALLOWED_PACKAGES = {
         "utils",
     },
     "model_training": {"forecasting_core", "models"},
-    "model_testing": {"forecasting_core"},
+    "model_testing": {
+        "forecasting_core",
+        "data_loading",
+        "model_evaluation",
+        "probabilistic",
+    },
     "model_evaluation": {"forecasting_core"},
     "model_performance": {
         "forecasting_core",
@@ -307,7 +312,6 @@ class InterPackageLayeringTest(unittest.TestCase):
         expected_modules = {
             "design.py",
             "fit_service.py",
-            "backtest_runtime.py",
             "persistence.py",
         }
         self.assertTrue(

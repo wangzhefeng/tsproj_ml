@@ -52,8 +52,11 @@ class ExecutionEvidenceContractTest(unittest.TestCase):
             self.assertEqual(load_oof_cache(directory, "fixture").execution_evidence, ())
 
     def test_production_wiring_without_executing_lifecycles(self):
-        for path, name in (("model_forecasting/runtime.py", "execution_evidence"),
-                           ("model_forecasting/backtest_runtime.py", "execution_evidence"),
+        # R5b（2026-09-06）：逐折证据收集移入 model_testing/scoring.py（共用评分体），
+        # calendar_month 经 score_holdout_fold 间接接线；点名检查随之更新。
+        for path, name in (("model_forecasting/runtime.py", "score_holdout_fold"),
+                           ("model_testing/calendar_month.py", "score_holdout_fold"),
+                           ("model_testing/scoring.py", "execution_evidence"),
                            ("model_ensemble/oof.py", "member_execution_evidence"),
                            ("model_ensemble/trainer.py", "member_execution_evidence")):
             tree = ast.parse((ROOT / path).read_text())

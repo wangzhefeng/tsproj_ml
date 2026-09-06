@@ -27,7 +27,7 @@ class LifecycleStaticContractTest(unittest.TestCase):
         self.assertLess(max(calls["fit_final"]), min(calls["persist_model_bundle"]))
 
     def test_calendar_helper_does_not_rewrite_final_artifacts(self):
-        source = (ROOT / "model_forecasting/backtest_runtime.py").read_text()
+        source = (ROOT / "model_testing/calendar_month.py").read_text()
         self.assertNotIn("persist_model_bundle", source)
         self.assertNotIn("prediction.csv", source)
         self.assertNotIn("resolved_config.json", source)

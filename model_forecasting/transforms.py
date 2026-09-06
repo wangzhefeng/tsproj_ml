@@ -250,22 +250,6 @@ class CanonicalTargetTransform:
 # 目标变换（2026-08-29 架构收敛 P4/D4 自 features/TargetTransformation.py 并入）
 # ==============================================================================
 
-def resolve_scale_features_enabled(args) -> bool:
-    """优先使用新字段，兼容旧字段 `scale`。"""
-    return bool(getattr(args, "scale_features", getattr(args, "scale", False)))
-
-def resolve_scale_target_enabled(args) -> bool:
-    """优先使用新字段，兼容旧字段 `scale`。"""
-    return bool(getattr(args, "scale_target", getattr(args, "scale", False)))
-
-def resolve_inverse_target_enabled(args) -> bool:
-    """优先使用新字段，兼容旧字段 `inverse`。"""
-    return bool(getattr(args, "inverse_target", getattr(args, "inverse", False)))
-
-def resolve_feature_scaler_type(args) -> str:
-    """获取预测特征 X 的缩放方法。"""
-    return str(getattr(args, "feature_scaler_type", "standard")).lower()
-
 def resolve_target_scaler_type(args) -> str:
     """获取目标变量 Y 的缩放方法。"""
     return str(getattr(args, "target_scaler_type", "standard")).lower()
@@ -281,7 +265,8 @@ class TargetScaler:
         self.args = args
         self.log_prefix = log_prefix
         self.verbose = verbose
-        self.enabled = resolve_scale_target_enabled(self.args)
+        # target scaling 默认启用（canonical 配置无旧版 scale 开关残留）
+        self.enabled = True
         self.scaler_type = str(scaler_type).lower()
         self.column_transformers = {}
         self.column_names = []
@@ -441,47 +426,6 @@ class TargetScaler:
             restored[:, [idx]] = self._apply_column_transform(arr[:, [idx]], column_name, inverse=True)
 
         return self._restore_type(restored, original_type, original_shape, original_index, original_columns)
-
-    def restore_predictions(self, values, target_columns: List[str]):
-        """
-        在需要时将预测结果从目标缩放空间恢复到原始量纲。
-        """
-        values_arr = np.asarray(values)
-        if not self.enabled:
-            return values_arr
-        if not resolve_inverse_target_enabled(self.args):
-            return values_arr
-        return np.asarray(self.inverse_transform(values_arr, columns=target_columns))
-
-    def prepare_eval_target(self, values, target_columns: List[str]):
-        """
-        统一评估阶段的目标尺度：
-        - inverse_target=True: 使用原始量纲
-        - inverse_target=False: 将真实值映射到目标缩放空间
-        """
-        values_arr = np.asarray(values)
-        if not self.enabled:
-            return values_arr
-        if resolve_inverse_target_enabled(self.args):
-            return values_arr
-        return np.asarray(self.transform(values_arr, columns=target_columns))
-
-    def prepare_history_target_for_plot(self, df_history: pd.DataFrame, target_columns: List[str]):
-        """
-        预测图保存前，按输出尺度对历史目标列做对齐。
-        """
-        if (
-            not self.enabled
-            or resolve_inverse_target_enabled(self.args)
-            or df_history is None
-            or df_history.empty
-            or "y" not in df_history.columns
-        ):
-            return df_history
-
-        df_history_plot = df_history.copy()
-        df_history_plot["y"] = self.transform(df_history_plot["y"], columns=target_columns)
-        return df_history_plot
 
 
 # ==============================================================================

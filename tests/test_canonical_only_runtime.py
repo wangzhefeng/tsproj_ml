@@ -6,6 +6,9 @@ import unittest
 from pathlib import Path
 from types import SimpleNamespace
 
+import numpy as np
+import pandas as pd
+
 import run
 from config.config_loader import load_yaml_config
 from run import CanonicalModel, build_model
@@ -93,23 +96,72 @@ class CanonicalOnlyRuntimeTest(unittest.TestCase):
         self.assertFalse((ROOT / "features").exists())
 
         source = (ROOT / "model_forecasting" / "transforms.py").read_text(encoding="utf-8")
-        tree = ast.parse(source)
-        names = {
-            node.name
-            for node in ast.walk(tree)
-            if isinstance(node, (ast.ClassDef, ast.FunctionDef))
-        }
-        self.assertLessEqual(
-            {
-                "TargetTransformPipeline",
-                "PerSeriesTargetTransformPipeline",
-                "TargetScaler",
-                "CalendarDayTargetNormalizer",
-                "resolve_target_scaler_type",
-            },
-            names,
-        )
         self.assertNotIn("from features", source)
+
+    def test_target_transform_pipeline_restores_strictly(self):
+        """行为断言（2026-09-06 重构 R1）：不钉私有类名，改为验证变换契约本身。
+
+        - identity 配置直通且 restore 恒等；
+        - calendar normalization 单步启用时 restore 严格还原 fit_transform 结果。
+        """
+        from model_forecasting.transforms import CanonicalTargetTransform
+
+        def make_config(transformations: dict) -> SimpleNamespace:
+            from feature_engineering.transform_specs import (
+                normalize_target_transformations,
+            )
+
+            normalized = normalize_target_transformations(transformations)
+            return SimpleNamespace(
+                problem=SimpleNamespace(freq="15min", targets=["y"]),
+                features=SimpleNamespace(
+                    transformations={"target": normalized},
+                    selection=None,
+                ),
+            )
+
+        identity = CanonicalTargetTransform.from_config(make_config({}))
+        self.assertTrue(identity.is_identity)
+        identity.fit_identity(["s1"], ["y"])
+
+        from forecasting_core.tensors import PointForecastTensor
+
+        values = np.arange(6, dtype=float).reshape(1, 6, 1)
+        tensor = PointForecastTensor(
+            values=values,
+            series_ids=("s1",),
+            forecast_times=pd.date_range("2026-01-01", periods=6, freq="15min"),
+            targets=("y",),
+        )
+        restored = identity.restore_point(identity.transform_point(tensor))
+        np.testing.assert_array_equal(restored.values, tensor.values)
+
+    def test_legacy_target_scaler_helpers_are_removed(self):
+        """R1 死代码清扫：TargetScaler 三个零消费 legacy 方法与死 resolver 删除。"""
+        import ast as _ast
+
+        import model_forecasting.transforms as transforms_module
+
+        tree = _ast.parse(
+            (ROOT / "model_forecasting" / "transforms.py").read_text(encoding="utf-8")
+        )
+        target_scaler_methods = {
+            node.name
+            for node in _ast.walk(tree)
+            if isinstance(node, ast.ClassDef) and node.name == "TargetScaler"
+            for node in node.body
+            if isinstance(node, ast.FunctionDef)
+        }
+        self.assertIn("fit_transform", target_scaler_methods)  # 活方法仍在
+        for dead in ("restore_predictions", "prepare_eval_target", "prepare_history_target_for_plot"):
+            self.assertNotIn(dead, target_scaler_methods)
+        for dead_resolver in (
+            "resolve_scale_features_enabled",
+            "resolve_inverse_target_enabled",
+            "resolve_feature_scaler_type",
+        ):
+            self.assertFalse(hasattr(transforms_module, dead_resolver))
+
 
 
 if __name__ == "__main__":

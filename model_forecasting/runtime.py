@@ -5,10 +5,10 @@ from __future__ import annotations
 import json
 from functools import cached_property
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import asdict, dataclass, replace
+from dataclasses import asdict, dataclass
 from pathlib import Path
 from time import perf_counter
-from typing import Any, Mapping, Sequence, cast
+from typing import Any, Mapping, cast
 
 import numpy as np
 import pandas as pd
@@ -17,15 +17,10 @@ from threadpoolctl import threadpool_limits
 from model_testing import validation
 from data_loading import (
     BUILTIN_GENERATORS,
-    EndogenousFutureProvider,
-    InformationSetRequest,
     SourceRegistry,
 )
-from model_training.estimators import (
-    make_model_factory,
-    resolve_model_capabilities,
-)
-from feature_engineering import CompiledFeatures, FeatureCompiler
+from model_training.estimators import make_model_factory
+from feature_engineering import CompiledFeatures
 from feature_engineering import cache as compiled_cache
 from model_evaluation.marginal import evaluate_marginal_distribution
 from model_evaluation.point import (
@@ -48,7 +43,6 @@ from probabilistic.calibration import ConformalCalibrationTracker
 from forecasting_core.probabilistic_spec import probabilistic_spec_from_mapping
 from forecasting_core.specs import (
     CalendarMonthBacktestSpec,
-    ColumnRole,
     FixedStepBacktestSpec,
     ForecastConfigSpec,
     TargetAdapter,
@@ -59,19 +53,11 @@ from model_testing.backtest import (
     resolve_origin,
     seasonal_naive_tensor,
 )
-from model_forecasting.forecaster import (
-    CanonicalForecaster,
-    CanonicalMarginalQuantileForecaster,
-)
 from model_forecasting.persistence import (
     build_strategy_model_bundle,
     persist_model_bundle,
 )
-from model_training.strategies import (
-    CanonicalStrategyArtifact,
-    StrategyTargetPlan,
-    TargetCoordinate,
-)
+from model_training.strategies import CanonicalStrategyArtifact
 from forecasting_core.tensors import PointForecastTensor
 from model_forecasting.transforms import CanonicalFeatureScaler, CanonicalTargetTransform
 from model_forecasting.checkpoints import (
@@ -83,13 +69,10 @@ from model_forecasting.transform_cache import (
     fold_transform_fingerprint,
 )
 from model_training.trainer import CanonicalTrainer
-from models.ModelFactory import ModelFactory
-from probabilistic.training import CanonicalMarginalQuantileTrainer
 from forecasting_core.artifacts import ForecastModelBundle, MarginalForecastDistribution
 from forecasting_core.runtime_resources import (
     RuntimeExecutionPlan,
     RuntimeResourceBudget,
-    RuntimeWorkload,
 )
 from model_forecasting.backtest_runtime import run_calendar_month_backtest
 from model_forecasting.evidence import collect_model_evidence, dependency_versions, json_evidence
@@ -98,9 +81,7 @@ from model_forecasting.design import (
     _BacktestWindow,
     _RegistryDesignBuilder,
     _actual_at_origin,
-    _holdout_training_indices,
     _label_end,
-    _label_start,
     _rolling_backtest_windows,
     _sample_indices,
     _supervised_arrays,
@@ -120,11 +101,8 @@ from model_forecasting.resource_planner import (
     runtime_budget_for_config,
 )
 
-# P3/D3：回测原语已公开化至 model_testing/backtest.py；保留私有别名转发（历史调用点零改动）。
-_positive_validation_int = positive_validation_int
-_seasonal_naive_tensor = seasonal_naive_tensor
-_actual_tensor = actual_tensor
-_resolve_origin = resolve_origin
+# P3/D3：回测原语已公开化至 model_testing/backtest.py（2026-09-06 R1 清扫：
+# 删除写而不用的 _positive_validation_int/_actual_tensor 别名，仍用的两处改公开名）。
 
 
 @dataclass(frozen=True, slots=True)
@@ -935,7 +913,7 @@ class CanonicalBaseModelRunner:
         origin: pd.Timestamp,
         forecast_times: pd.DatetimeIndex,
     ) -> PointForecastTensor:
-        return _seasonal_naive_tensor(
+        return seasonal_naive_tensor(
             self.builder,
             origin,
             forecast_times,
@@ -1642,7 +1620,7 @@ def run_canonical_config(
     # builtin generators（chinese_holiday）默认可用；调用方同名注入时覆盖。
     merged_generators: dict[str, Any] = {**BUILTIN_GENERATORS, **(generators or {})}
     registry = SourceRegistry(config.data, Path.cwd(), generators=merged_generators)
-    origin = _resolve_origin(registry, config.validation.get("forecast_origin"))
+    origin = resolve_origin(registry, config.validation.get("forecast_origin"))
     compiled_cache_root = (
         Path(output_root)
         if output_root is not None

@@ -905,13 +905,6 @@ def _sample_indices(
     )
 
 
-def _label_start(
-    builder: _RegistryDesignBuilder,
-    origin: pd.Timestamp,
-) -> pd.Timestamp:
-    return validation.label_start(origin, builder.offset)
-
-
 def _label_end(
     builder: _RegistryDesignBuilder,
     origin: pd.Timestamp,

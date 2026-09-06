@@ -23,10 +23,10 @@ class PerformanceProfileTest(unittest.TestCase):
         return parse_model_config(payload, CONFIG)
 
     def test_historical_profile_fails_closed_after_intraday_schedule_change(self):
-        from model_forecasting.performance_profiles import (
+        from model_performance.performance_profiles import (
             adopted_catboost_profile, resolve_performance_profile,
         )
-        from model_forecasting.resource_planner import build_runtime_workload
+        from model_performance.resource_planner import build_runtime_workload
         from forecasting_core.runtime_resources import RuntimeResourceBudget
 
         evidence = adopted_catboost_profile()
@@ -47,8 +47,8 @@ class PerformanceProfileTest(unittest.TestCase):
                 )
 
     def _resolve(self, *, config=None, workload_changes=None, budget_changes=None, schema=None, base_dir: str | Path = ROOT):
-        from model_forecasting.performance_profiles import adopted_catboost_profile, resolve_performance_profile
-        from model_forecasting.resource_planner import build_runtime_workload
+        from model_performance.performance_profiles import adopted_catboost_profile, resolve_performance_profile
+        from model_performance.resource_planner import build_runtime_workload
         from forecasting_core.runtime_resources import RuntimeResourceBudget
 
         config = config or self._profiled_config()
@@ -73,7 +73,7 @@ class PerformanceProfileTest(unittest.TestCase):
                 self._resolve(workload_changes={field: value})
 
     def test_profile_rejects_semantic_changes_even_with_unchanged_width(self):
-        from model_forecasting.performance_profiles import adopted_catboost_profile
+        from model_performance.performance_profiles import adopted_catboost_profile
         original: Any = self._profiled_config().canonical_payload()
         mutations = [
             ("problem", "training_scope", "global"),
@@ -99,7 +99,7 @@ class PerformanceProfileTest(unittest.TestCase):
     def test_profile_rejects_data_and_estimator_version_drift(self):
         from tempfile import TemporaryDirectory
         from unittest.mock import patch
-        from model_forecasting.performance_profiles import adopted_catboost_profile
+        from model_performance.performance_profiles import adopted_catboost_profile
 
         with TemporaryDirectory() as directory:
             relative = self._profiled_config().data.sources[0].history_path
@@ -109,12 +109,12 @@ class PerformanceProfileTest(unittest.TestCase):
             path.write_text("time,value\n2026-07-31,999\n")
             with self.assertRaisesRegex(ValueError, "source_sha256"):
                 self._resolve(base_dir=directory)
-        with patch("model_forecasting.performance_profiles.version", return_value="1.2.11"):
+        with patch("model_performance.performance_profiles.version", return_value="1.2.11"):
             with self.assertRaisesRegex(ValueError, "estimator_versions"):
                 self._resolve()
         defaults = adopted_catboost_profile()["signature"]["estimator_defaults"]
         defaults["depth"] = 7
-        with patch("model_forecasting.performance_profiles.CatBoostModel.DEFAULT_PARAMS", defaults):
+        with patch("model_performance.performance_profiles.CatBoostModel.DEFAULT_PARAMS", defaults):
             with self.assertRaisesRegex(ValueError, "estimator_defaults"):
                 self._resolve()
 
@@ -145,8 +145,8 @@ class PerformanceProfileTest(unittest.TestCase):
         self.assertEqual(result["kind"], "automatic_default")
 
     def test_planner_enforces_reference_and_records_distinct_source(self):
-        from model_forecasting.performance_profiles import adopted_catboost_profile
-        from model_forecasting.resource_planner import build_runtime_workload, plan_runtime_execution
+        from model_performance.performance_profiles import adopted_catboost_profile
+        from model_performance.resource_planner import build_runtime_workload, plan_runtime_execution
         from forecasting_core.runtime_resources import RuntimeResourceBudget
 
         config = self._profiled_config()
@@ -169,8 +169,8 @@ class PerformanceProfileTest(unittest.TestCase):
             plan_runtime_execution(parse_model_config(payload, CONFIG), workload, budget=budget, **context)
 
     def test_stale_profile_cannot_emit_resolved_metadata(self):
-        from model_forecasting.performance_profiles import adopted_catboost_profile
-        from model_forecasting.resource_planner import build_runtime_workload, plan_runtime_execution
+        from model_performance.performance_profiles import adopted_catboost_profile
+        from model_performance.resource_planner import build_runtime_workload, plan_runtime_execution
         from forecasting_core.runtime_resources import RuntimeResourceBudget
 
         config = self._profiled_config()

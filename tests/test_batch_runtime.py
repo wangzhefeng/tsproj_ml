@@ -37,7 +37,7 @@ from model_forecasting.batch_runtime import (
     verify_batch_results,
 )
 from model_forecasting.runtime import CanonicalBaseModelRunner
-from model_forecasting.transform_cache import FoldTransformCache
+from model_performance.transform_cache import FoldTransformCache
 
 
 def _run_same_batch_in_process(

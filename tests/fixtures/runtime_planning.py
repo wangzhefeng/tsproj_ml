@@ -1,6 +1,6 @@
 """资源测试的最小 workload；只调用正式 planner，不复制资源决策规则。"""
 
-from model_forecasting.resource_planner import (
+from model_performance.resource_planner import (
     build_runtime_workload,
     plan_runtime_execution,
     runtime_estimator_params,

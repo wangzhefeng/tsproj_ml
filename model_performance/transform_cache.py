@@ -6,7 +6,7 @@ import json
 from typing import Sequence
 
 from forecasting_core.specs import ForecastConfigSpec
-from model_forecasting.batch_memory import BoundedPayloadCache
+from model_performance.batch_memory import BoundedPayloadCache
 
 
 class FoldTransformCache(BoundedPayloadCache):

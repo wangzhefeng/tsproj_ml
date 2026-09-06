@@ -8,7 +8,7 @@ from types import SimpleNamespace
 
 from forecasting_core.runtime_resources import RuntimeResourceBudget
 from forecasting_core.specs import EstimatorSpec, RuntimePerformanceSpec
-from model_forecasting.resource_planner import (
+from model_performance.resource_planner import (
     build_runtime_workload,
     ensemble_member_execution_plan,
     plan_ensemble_resources,

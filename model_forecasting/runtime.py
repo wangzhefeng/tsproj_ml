@@ -60,11 +60,11 @@ from model_forecasting.persistence import (
 from model_training.strategies import CanonicalStrategyArtifact
 from forecasting_core.tensors import PointForecastTensor
 from model_forecasting.transforms import CanonicalFeatureScaler, CanonicalTargetTransform
-from model_forecasting.checkpoints import (
+from model_performance.checkpoints import (
     FileFitCheckpoint, implementation_fingerprint, runtime_checkpoint_errors,
 )
-from model_forecasting.performance_profiles import resolve_performance_profile
-from model_forecasting.transform_cache import (
+from model_performance.performance_profiles import resolve_performance_profile
+from model_performance.transform_cache import (
     FoldTransformCache,
     fold_transform_fingerprint,
 )
@@ -94,7 +94,7 @@ from model_forecasting.fit_service import (
     _predict,
     _restore_prediction,
 )
-from model_forecasting.resource_planner import (
+from model_performance.resource_planner import (
     build_runtime_workload,
     ensemble_member_execution_plan,
     plan_runtime_execution,

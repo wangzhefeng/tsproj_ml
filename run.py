@@ -27,7 +27,7 @@ from model_forecasting.runtime import (
     persist_model_bundle,
     run_canonical_config,
 )
-from model_forecasting.resource_planner import (
+from model_performance.resource_planner import (
     plan_ensemble_resources,
     runtime_budget_for_config,
 )

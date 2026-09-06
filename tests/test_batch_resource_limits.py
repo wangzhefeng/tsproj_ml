@@ -4,7 +4,7 @@ import unittest
 import numpy as np
 
 from forecasting_core.runtime_resources import RuntimeResourceBudget
-from model_forecasting.transform_cache import FoldTransformCache
+from model_performance.transform_cache import FoldTransformCache
 
 
 class BatchResourceLimitsTest(unittest.TestCase):

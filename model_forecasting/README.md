@@ -22,13 +22,10 @@
 
 ## 批调度、资源与部署
 
-- `resource_planner.py`：从真实 workload 和父预算生成统一执行计划，约束外层并行轴与模型线程乘积；每次最多一个外层并行轴大于 1，线程/内存冲突直接 RAISE；非法预算报错。`validation.performance` 只由 planner 读取，不进入 semantic fingerprint；已标定 performance 必须用可校验 `profile_ref`；resolved metadata 记录 workload、budget、plan、cache 与阶段 wall。
-- `performance_profiles.py`：已采用性能 profile 的签名、来源与适用性校验；不能把受限折数基准外推为正式全折性能收益。
+资源规划、性能档、checkpoint、fold 变换缓存与有界内存缓存已于 2026-09-06 R2 迁入 `model_performance/`（行为不变重构，方案 v3）。
+
 - `batch_runtime.py`：`run_canonical_batch()` 与 `verify_batch_results()`，负责跨配置 preflight、调度、恢复和验收；CLI 为根目录 `batch_run.py`。
 - `batch_artifacts.py`：产物摘要、时间网格、维度与 bundle 身份验收；只看文件存在不能判 completed。
-- `batch_memory.py`：有界内存缓存和采样 RSS；采样不是硬内存隔离。
-- `checkpoints.py`：`FileFitCheckpoint`，仅恢复完成的拟合单元；身份变化 miss，损坏报错。部署 bundle 不依赖 checkpoint。
-- `transform_cache.py`：批内 fold transform 复用及指纹；不代替 source/raw-design 缓存。
 - raw-design 缓存同时绑定源内容、生成器、依赖清单与普通编译链实现内容；修改 compiler/registry/design/策略几何后不得命中旧原始设计。配置 fingerprint 与缓存身份分离，缓存变更不删除存量正式结果。
 - `deployment.py`：`predict_strategy_bundle()`，消费已加载 bundle 和显式部署输入，不重新训练。
 

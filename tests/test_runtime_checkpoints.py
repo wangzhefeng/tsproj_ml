@@ -10,17 +10,17 @@ class CheckpointStoreTest(unittest.TestCase):
     def test_missing_process_lock_backend_fails_closed(self):
         from unittest.mock import patch
         from forecasting_core.checkpoints import FitCheckpointError
-        from model_forecasting.checkpoints import FileFitCheckpoint
+        from model_performance.checkpoints import FileFitCheckpoint
         with tempfile.TemporaryDirectory() as root:
             store = FileFitCheckpoint(root, {"fold": "final"})
-            with patch("model_forecasting.checkpoints.fcntl", None):
+            with patch("model_performance.checkpoints.fcntl", None):
                 with self.assertRaisesRegex(FitCheckpointError, "POSIX"):
                     store.run(identity={"model": "unit"}, arrays=(), fit=lambda: 42)
 
     def test_corrupt_schema_hash_and_stale_context(self):
         import json
         from forecasting_core.checkpoints import FitCheckpointError
-        from model_forecasting.checkpoints import FileFitCheckpoint
+        from model_performance.checkpoints import FileFitCheckpoint
         for damage in ("hash", "schema", "truncated", "identity"):
             with self.subTest(damage=damage), tempfile.TemporaryDirectory() as root:
                 store = FileFitCheckpoint(root, {"config": "cfg", "fold": "fold/2", "implementation": "v1"})
@@ -47,7 +47,7 @@ class CheckpointStoreTest(unittest.TestCase):
     def test_failed_fit_and_failed_atomic_publish_do_not_complete(self):
         from unittest.mock import patch
         from forecasting_core.checkpoints import FitCheckpointError
-        from model_forecasting.checkpoints import FileFitCheckpoint
+        from model_performance.checkpoints import FileFitCheckpoint
         with tempfile.TemporaryDirectory() as root:
             store = FileFitCheckpoint(root, {"config": "cfg", "fold": "final"})
             args = dict(identity={"model": "unit"}, arrays=(np.ones(3),))
@@ -56,7 +56,7 @@ class CheckpointStoreTest(unittest.TestCase):
             with self.assertRaises(FitCheckpointError):
                 store.run(**args, fit=fail)
             self.assertFalse(list(Path(root).rglob("*.fit")))
-            with patch("model_forecasting.checkpoints.os.replace", side_effect=OSError("interruption")):
+            with patch("model_performance.checkpoints.os.replace", side_effect=OSError("interruption")):
                 with self.assertRaises(FitCheckpointError):
                     store.run(**args, fit=lambda: 42)
             self.assertFalse(list(Path(root).rglob("*.fit")))
@@ -64,7 +64,7 @@ class CheckpointStoreTest(unittest.TestCase):
 
     def test_concurrent_same_key_fits_once(self):
         from concurrent.futures import ThreadPoolExecutor
-        from model_forecasting.checkpoints import FileFitCheckpoint
+        from model_performance.checkpoints import FileFitCheckpoint
         with tempfile.TemporaryDirectory() as root:
             calls = []
             def fit():
@@ -78,7 +78,7 @@ class CheckpointStoreTest(unittest.TestCase):
             self.assertEqual(len(calls), 1)
 
     def test_completed_unit_replays_and_array_change_misses(self):
-        from model_forecasting.checkpoints import FileFitCheckpoint
+        from model_performance.checkpoints import FileFitCheckpoint
         with tempfile.TemporaryDirectory() as root:
             calls = []
             def fit():
@@ -115,7 +115,7 @@ class TrainerCheckpointTest(unittest.TestCase):
         from dataclasses import replace
         from model_training.trainer import CanonicalTrainer
         from model_training.estimators import EstimatorCapabilities
-        from model_forecasting.checkpoints import FileFitCheckpoint
+        from model_performance.checkpoints import FileFitCheckpoint
         for adapter in ("native", "regressor_chain"):
             with self.subTest(adapter=adapter), tempfile.TemporaryDirectory() as root:
                 config = fixture.CanonicalRuntimeSmokeTest().build_config(
@@ -136,7 +136,7 @@ class TrainerCheckpointTest(unittest.TestCase):
         from tests import test_canonical_runtime_smoke as fixture
         from model_training.trainer import CanonicalTrainer
         from model_training.estimators import EstimatorCapabilities
-        from model_forecasting.checkpoints import FileFitCheckpoint
+        from model_performance.checkpoints import FileFitCheckpoint
         from forecasting_core.checkpoints import FitCheckpointError
         config = fixture.CanonicalRuntimeSmokeTest().build_config(
             "unused.csv", mode="point", strategy="direct", horizon=3)
@@ -306,7 +306,7 @@ class RuntimeCheckpointTest(unittest.TestCase):
         from unittest.mock import patch
         import pickle
         from model_forecasting.fit_service import _fit_quantile
-        from model_forecasting.checkpoints import FileFitCheckpoint
+        from model_performance.checkpoints import FileFitCheckpoint
         from forecasting_core.checkpoints import FitCheckpointError
         from model_training.estimators.capabilities import _ModelFactoryEstimator
         original = _ModelFactoryEstimator.fit

@@ -26,7 +26,7 @@ from model_training.estimators import (
     supports_native_multi_quantile,
 )
 from model_training.trainer import CanonicalTrainer
-from model_forecasting.resource_planner import (
+from model_performance.resource_planner import (
     build_runtime_workload,
     plan_runtime_execution,
     runtime_estimator_params as _planned_estimator_params,

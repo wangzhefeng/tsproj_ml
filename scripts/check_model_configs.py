@@ -35,7 +35,7 @@ from decomposition import TREND_FORECAST_MODES  # noqa: E402
 from feature_engineering.compiler import FeatureCompiler  # noqa: E402
 from forecasting_core.specs import ForecastConfigSpec  # noqa: E402
 from model_ensemble.specs import EnsembleConfigSpec  # noqa: E402
-from probabilistic.objectives import validate_quantile_model_support  # noqa: E402
+from model_training.objectives import validate_quantile_model_support  # noqa: E402
 from forecasting_core.probabilistic_spec import resolve_probabilistic_spec  # noqa: E402
 
 PROJ = Path(__file__).resolve().parent.parent

@@ -32,7 +32,7 @@ from model_training.strategies import (
 )
 from forecasting_core.tensors import PointForecastTensor
 from model_forecasting.forecaster import CanonicalMarginalQuantileForecaster
-from probabilistic.training import CanonicalMarginalQuantileArtifact
+from model_training.quantile import CanonicalMarginalQuantileArtifact
 from forecasting_core.artifacts import ForecastModelBundle
 
 

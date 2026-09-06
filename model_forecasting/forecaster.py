@@ -18,7 +18,7 @@ from forecasting_core.tensors import (
     MarginalQuantileForecastTensor,
     PointForecastTensor,
 )
-from probabilistic.training import CanonicalMarginalQuantileArtifact
+from model_training.quantile import CanonicalMarginalQuantileArtifact
 from forecasting_core.artifacts import MarginalForecastDistribution
 
 

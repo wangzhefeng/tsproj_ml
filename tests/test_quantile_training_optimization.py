@@ -32,7 +32,7 @@ from model_training.estimators import (
     SharedMultiQuantilePool,
     supports_native_multi_quantile,
 )
-from probabilistic.training import CanonicalMarginalQuantileTrainer
+from model_training.quantile import CanonicalMarginalQuantileTrainer
 
 
 class MeanQuantileRegressor:

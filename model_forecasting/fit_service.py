@@ -31,7 +31,7 @@ from model_performance.resource_planner import (
     plan_runtime_execution,
     runtime_estimator_params as _planned_estimator_params,
 )
-from probabilistic.training import CanonicalMarginalQuantileTrainer
+from model_training.quantile import CanonicalMarginalQuantileTrainer
 
 
 def _fit_runtime_transforms(

@@ -24,7 +24,7 @@ from model_training.strategies import (
     TargetCoordinate,
     get_standard_executor,
 )
-from probabilistic.training import CanonicalMarginalQuantileArtifact
+from model_training.quantile import CanonicalMarginalQuantileArtifact
 
 
 FeatureProvider = Callable[..., np.ndarray]

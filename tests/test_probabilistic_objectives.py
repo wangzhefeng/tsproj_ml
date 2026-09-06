@@ -6,7 +6,7 @@ from pathlib import Path
 
 from config.config_loader import load_yaml_config
 from forecasting_core.specs import EstimatorSpec, ForecastConfigSpec
-from probabilistic.objectives import (
+from model_training.objectives import (
     supports_quantile_objective,
     validate_quantile_model_support,
 )

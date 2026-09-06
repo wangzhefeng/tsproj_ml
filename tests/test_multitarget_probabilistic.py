@@ -26,7 +26,7 @@ from model_forecasting.forecaster import (
     CanonicalMarginalQuantileForecaster,
     repair_marginal_quantile_crossing,
 )
-from probabilistic.training import CanonicalMarginalQuantileTrainer
+from model_training.quantile import CanonicalMarginalQuantileTrainer
 from forecasting_core.artifacts import (
     MarginalForecastDistribution,
     generate_joint_samples,

@@ -1542,7 +1542,7 @@ P0 语义修复
 
 ### 12.5 生产同步边界
 
-`docs/production_sync.md` 规定本仓库是核心算法源。概率模块先在本仓库完成：
+`docs/redesign/architecture.md` 规定本仓库是核心算法源。概率模块先在本仓库完成：
 
 - spec；
 - metrics；

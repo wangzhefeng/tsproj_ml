@@ -11,7 +11,7 @@
 - 5,150 个活动模型 YAML 均为 `schema_version: 2`：5,066 个普通单模型、6 个其他场景保留的独立 Ensemble member、78 个引用式 Ensemble；按 typed spec 计为 5,072 个 `ForecastConfigSpec` + 78 个 `EnsembleConfigSpec`。另有 41 个数据工具 YAML，不计入模型数。三个 AIDC 15min 负荷场景共 4,689 份：4,617 份六组全因子单模型，另有 72 个 Ensemble 按三组 Latin-square × 四方法直接引用 baseline 成员，不维护 `ensemble_members/` 副本；3 个无有效资产配置原样保存在 `docs/archived_configs/`，不进入 loader/audit/runtime。
 - `load_yaml_config()` 严格分派 `ForecastConfigSpec | EnsembleConfigSpec`。未知字段、重复 YAML key、角色冲突和非法 strategy/chunk 均 RAISE。
 - `main.py`、`run.py` 不接受 legacy 配置或旧产物。旧 `base_config + overrides`、九方法运行类、旧宽表、旧 pkl 和迁移兼容层均已删除。
-- `docs/model_ensemble_redesign.md` 与 `docs/time_series_probabilistic_forecasting_redesign.md` 仅作历史决策参考，本文和 `AGENTS.md` 才是当前事实源。
+- `docs/redesign/model_ensemble.md` 与 `docs/redesign/probabilistic.md` 仅作历史决策参考，本文和 `AGENTS.md` 才是当前事实源。
 
 ## 2. 正交预测合同
 
@@ -266,7 +266,7 @@ git diff --check
 - completed 必须通过 `batch_artifacts`：非空必需 manifest、distinct 文件路径、内容 SHA256、配置 fingerprint/result identity、schema-2 bundle、预测/回测 canonical 键与维度、评分表及 quantile 列网格。自然月按每折 label_start/label_end 推导真实步数，不能把 30 天折按最终 31 天 horizon 验收。预检、执行或产物验证失败均记录失败阶段；可确定的模型错误附 config/fold/model 坐标。旧空 manifest 或仅有文件存在性证据不能直接跳过。
 - batch 自动向 runner 传入持久化 checkpoint 根目录；单运行 API 通过可选 `checkpoint_root` 启用。稳定合同 `forecasting_core.checkpoints.FitCheckpoint` 与 L2 `model_forecasting.checkpoints` 分离。完成的 scalar、multi-RHS、native、chain 节点及共享 quantile booster 按配置、source/raw、实现与依赖版本、实际 X/y/weights、训练索引、schema 和 group/level 身份寻址，原子 envelope 校验 schema/key/descriptor/SHA256 后读取；损坏 RAISE，输入变化新键 miss，未完成 estimator.fit 不保存。恢复重放预测与 CQR apply-before-collect 顺序，不重复拟合已完成单元。自然月 factory 显式接受并透传 checkpoint_root；部署 bundle 不依赖该目录。`--no-resume` 创建新的 checkpoint namespace，不删除旧数据。
 - H=16、5-fold 的 XGBoost+CatBoost baseline pointwise 真实组中，两配置均固定 `model_threads=1`，父 `config_workers=2` 总模型线程乘积为 2；门禁修复后三轮复验，batch 相对逐 YAML median wall `40.470→33.999s`（改善 15.990%），p95 `41.867→35.087s`，swap used 增量均为 0；CPU median `40.032→42.580s`、最大 RSS `469,909,504→489,439,232 bytes`。每模型三类 CSV hash 唯一、identity 一致、bundle reload 最大差 `1.82e-12`。该数字只证明相同 RawDesign/transform 组的 catalog throughput，不替代单配置 latency profile，也不宣称正式 31-fold 结果已重跑。
-- LGBM+Ridge 的 `/tmp` 5-fold 门禁夹具 output workers 从 8 改为 4 后三轮全部完成，median 仅改善 0.453%，不足采用门槛；它是正确性对照，不与上面的性能采用组混用。最终统一定向回归 222 项、123.089 秒通过（TASK27 46/46），命令与证据见 `TODO_OPTIM.md` OPT-016 实施记录和 `/tmp/tsproj-opt016-benchmark/metrics/closeout-verification.json`。
+- LGBM+Ridge 的 `/tmp` 5-fold 门禁夹具 output workers 从 8 改为 4 后三轮全部完成，median 仅改善 0.453%，不足采用门槛；它是正确性对照，不与上面的性能采用组混用。最终统一定向回归 222 项、123.089 秒通过（TASK27 46/46），命令与证据见 `docs/TODO_OPTIM.md` OPT-016 实施记录和 `/tmp/tsproj-opt016-benchmark/metrics/closeout-verification.json`。
 - compiler 的 batch eligibility 统一为结构化单一事实源，runtime metadata 记录 batch/row reason、origin/call 规模、编译阶段与 cache load/compile/write wall。5,072 个活动单模型 inventory 中 4,265 个 batch eligible，807 个 fallback 全部是 `provider_dependent_lag`；活动集没有 percent-change/time-since/EWM fallback。真实 Recursive row 热点必须维持逐步 provider 语义，OPT-018 因此不新增向量化算法。
 - 非 LightGBM 九类模型各完成三轮 profile。仅 short Route A baseline CatBoost Direct pointwise 的 `model_thread_count=8` 达到门槛并写入生成器/YAML（median 改善 19.56%）；其余保留默认。RandomForest 8 线程虽快 58.73%，但出现最大 `7.28e-12` 的跨轮并行归约差异，因 deterministic gate 不采用。profile 不跨 H/K/Q/rows/features/scope 外推。
 
@@ -274,7 +274,7 @@ git diff --check
 
 2026-09-06 intraday 回测改为正式 forecast origin 的 stride 网格后，该历史 profile 的训练折语义已改变。活动 YAML 与确定性生成器撤下 `profile_ref`，旧签名保留并必须以 `semantic_sha256_at_5fold` mismatch fail-closed；不能只更新 SHA 冒充重测。未来如需恢复，必须按新时间网格重新执行 benchmark 与数值/资源验收。
 
-2026-09-05 本批验收收口：新增预算/产物/checkpoint/profile及自然月门禁的统一定向回归为267项、225.300秒、OK（精确命令及日志见`TODO_OPTIM.md`本批新增证据）；5150配置checker通过、4689矩阵生成计划零漂移。原正式24份清单全部通过31fold/final/forecast/摘要/身份/几何和历史四CSV及reload exact复验，其中22份新运行、2份复用。其后linear/STL96/MSTL96-672以独立5fold完成三拓扑各三轮，共27次运行；verifier独立回读108份CSV及27个bundle并复算统计一致。三个分解代表全部保持默认1x8：linear/STL最佳median改善仅9.867%/5.376%，MSTL候选更慢；未新增分解性能配置或扩大收益结论。记录到系统swap-out活动，不能宣称全局无swap。统计与验收证据在`results/_optimization_closeout/decomposition/`，完整实验产物在原`/tmp`隔离目录。最后收口遵照用户要求不跑全量测试、不重跑上述267项回归；完成证据验收、生成器13项定向测试、两次只读幂等和文档检查。OPT-001至OPT-019均已完成；历史测量、no-op与证据覆盖边界继续保留。
+2026-09-05 本批验收收口：新增预算/产物/checkpoint/profile及自然月门禁的统一定向回归为267项、225.300秒、OK（精确命令及日志见`docs/TODO_OPTIM.md`本批新增证据）；5150配置checker通过、4689矩阵生成计划零漂移。原正式24份清单全部通过31fold/final/forecast/摘要/身份/几何和历史四CSV及reload exact复验，其中22份新运行、2份复用。其后linear/STL96/MSTL96-672以独立5fold完成三拓扑各三轮，共27次运行；verifier独立回读108份CSV及27个bundle并复算统计一致。三个分解代表全部保持默认1x8：linear/STL最佳median改善仅9.867%/5.376%，MSTL候选更慢；未新增分解性能配置或扩大收益结论。记录到系统swap-out活动，不能宣称全局无swap。统计与验收证据在`results/_optimization_closeout/decomposition/`，完整实验产物在原`/tmp`隔离目录。最后收口遵照用户要求不跑全量测试、不重跑上述267项回归；完成证据验收、生成器13项定向测试、两次只读幂等和文档检查。OPT-001至OPT-019均已完成；历史测量、no-op与证据覆盖边界继续保留。
 
 ## 8. 结果与产物合同
 
@@ -322,7 +322,7 @@ results/<scenario>/<result_identity>/
 | C6 | completed | README、权威设计、§17 与 AGENTS typed geometry 已同步；活动 Markdown 断链 0 |
 | C7 | completed | 前轮 fresh 615 tests 与 H16/H31 代表已通过；V4 配置扩展另完成 5,150 typed parse、资产/Ensemble/manifest 审计、23 个静态定向 tests、compileall/diff，按用户要求未重跑模型 |
 
-C7 的命令、计数和七类产物核验结果只在 `docs/architecture_convergence_plan.md` 的最终执行记录维护；其他文档不复制测试数。
+C7 的命令、计数和七类产物核验结果只在 `docs/redesign/architecture.md` 的最终执行记录维护；其他文档不复制测试数。
 
 ## 10. 历史决策与偏差
 
@@ -355,7 +355,7 @@ env -u PYTHONPATH UV_CACHE_DIR=.uv_cache uv run --no-sync python -m compileall -
 git diff --check
 ```
 
-前轮 C0–C7 的 fresh 命令、精确计数、七类产物和阻断项只在 `docs/architecture_convergence_plan.md` §17 维护；本次 V4 配置矩阵扩展的静态证据见下节，其他文档中的旧测试数只代表历史环境。
+前轮 C0–C7 的 fresh 命令、精确计数、七类产物和阻断项只在 `docs/redesign/architecture.md` §17 维护；本次 V4 配置矩阵扩展的静态证据见下节，其他文档中的旧测试数只代表历史环境。
 
 ## 12. V4 AIDC 15min 全因子配置矩阵（2026-09-03）
 
@@ -457,7 +457,7 @@ cyclical bundle 为 1,648,584 bytes。两份bundle均为 1 model group / 1 estim
 - 2026-08-24：概率预测专项方案，现保留为历史参考。
 - 2026-08-27 至 29：预测问题正交化、schema-2 迁移、legacy 删除。
 - 2026-08-29：引用式 Ensemble v4 实施。
-- 2026-08-30 至 31：包级 DAG、时间几何、配置资产、产物和文档收敛；完整执行记录见 `docs/architecture_convergence_plan.md`。
+- 2026-08-30 至 31：包级 DAG、时间几何、配置资产、产物和文档收敛；完整执行记录见 `docs/redesign/architecture.md`。
 
 未经 wangzf 明确指示，不 commit、不 push；模型效果消融不属于本架构验收。
 

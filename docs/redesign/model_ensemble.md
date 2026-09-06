@@ -333,7 +333,7 @@ learned 方法必须同时报告 best single、averaging 和当前方法；只�
 ### E0：基线、parity fixture 与文档状态
 
 **Files:**
-- Modify: `docs/multistep_forecasting_redesign.md`
+- Modify: `docs/redesign/multistep.md`
 - Modify: `AGENTS.md`
 - Create/Modify: `tests/test_ensemble_parity.py`
 
@@ -489,7 +489,7 @@ git diff --check
 - learned 方法必须同时优于 best single 和 averaging；
 - 报告 MAE、naive skill、horizon-wise error、OOF error correlation、权重稳定性、成员胜率和训练成本；
 - quantile 额外报告 pinball、coverage、width/Winkler；
-- 不把同模型多 seed 作为首批成员；优先误差结构不同的基模型（见 `docs/kaggle_time_series_forecasting_research.md` §5、§13）。
+- 不把同模型多 seed 作为首批成员；优先误差结构不同的基模型（见 `docs/redesign/kaggle_research.md` §5、§13）。
 
 未达门槛不推广，但模块保留。
 

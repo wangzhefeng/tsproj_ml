@@ -2,7 +2,7 @@
 """时间序列分解模块（重构后主入口）。
 
 架构：Extractor → Forecaster → Composer → Pipeline（编排）→ Registry（构造）。
-配置契约见 decomposition/spec.py；设计文档 docs/time_series_decomposition_redesign.md。
+配置契约见 decomposition/spec.py；设计文档 docs/redesign/decomposition.md。
 """
 from decomposition.pipeline import DecompositionPipeline
 from decomposition.registry import build_pipeline, build_pipeline_from_args

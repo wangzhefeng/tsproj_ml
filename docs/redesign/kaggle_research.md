@@ -1,7 +1,7 @@
 # Kaggle 时间序列预测调研：面向 tsproj_ml 的能力提升建议
 
 > 文档性质：外部技术调研与项目能力差距分析  
-> 调研日期：2026-08-22；更新：2026-08-24——多步预测四项语义修复、时间序列分解重构均已落地；概率预测重构 Phase 0–4 已全部完成：quantile/PI 分离、概率指标闭环、prequential/as-of CQR、`ProbabilisticSpec`/typed bundle/`TargetTransformPipeline`、9 方法族迁移与唯一 `ForecastModelBundle` 持久化（证据见 `docs/time_series_probabilistic_forecasting_redesign.md` §15）。
+> 调研日期：2026-08-22；更新：2026-08-24——多步预测四项语义修复、时间序列分解重构均已落地；概率预测重构 Phase 0–4 已全部完成：quantile/PI 分离、概率指标闭环、prequential/as-of CQR、`ProbabilisticSpec`/typed bundle/`TargetTransformPipeline`、9 方法族迁移与唯一 `ForecastModelBundle` 持久化（证据见 `docs/redesign/probabilistic.md` §15）。
 > 调研范围：Kaggle 竞赛、获奖方案、Notebook、数据集和讨论；重点关注电力负荷、能源时序、多步预测、时间序列分解、概率预测、天气外生变量
 > 本文不构成实施授权；概率重构代码侧已收口，当前欠账按优先级为：baseline suite/skill score（本文 P0）、受 MSMD/MSMDR 修复影响的存量结果重跑、safe-lag/global panel 正式 A/B 消融，再按单配置消融规则逐项实施。
 
@@ -420,7 +420,7 @@ $$
 
 ### 7.7 缺陷处置状态与集成缺口
 
-> 处置状态：7.7.1–7.7.4 全部关闭。7.7.1–7.7.3 于 2026-08-23 修复；7.7.4 的局部 `DecompositionBundle` 于 2026-08-24 完成，随后已由概率重构中的唯一 `ForecastModelBundle` 取代。最新验收事实见 `docs/time_series_probabilistic_forecasting_redesign.md` §15；以下原文保留为审计记录。
+> 处置状态：7.7.1–7.7.4 全部关闭。7.7.1–7.7.3 于 2026-08-23 修复；7.7.4 的局部 `DecompositionBundle` 于 2026-08-24 完成，随后已由概率重构中的唯一 `ForecastModelBundle` 取代。最新验收事实见 `docs/redesign/probabilistic.md` §15；以下原文保留为审计记录。
 
 #### 7.7.1 【已修复 2026-08-23】linear+damped 忽略 `decomposition_trend_lookback`
 

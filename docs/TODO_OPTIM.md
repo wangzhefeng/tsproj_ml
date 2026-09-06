@@ -1,6 +1,6 @@
 # 项目待优化问题
 
-本文档记录尚未解决的工程问题、技术债和配置体系优化事项。业务实验与场景研究事项继续记录在 [`docs/TODO.md`](docs/TODO.md)。
+本文档记录尚未解决的工程问题、技术债和配置体系优化事项。业务实验与场景研究事项继续记录在 [`docs/TODO_AIDC.md`](TODO_AIDC.md)。
 
 ## 维护约定
 
@@ -103,7 +103,7 @@ env -u PYTHONPATH UV_CACHE_DIR=.uv_cache uv run --no-sync python -m unittest tes
 
 - `ForecastProblemSpec`、单模型 parser 与 Ensemble parser 已删除公共字段；重新声明按未知字段 RAISE。
 - `InformationSetRequest` 改为内部 `target_access=history_only|supervised_labels`。后者只放开 `forecast_times` 上的 target 标签；known-future 和历史 target revision 仍受 `available_at <= forecast_origin` 约束。故障注入测试曾复现历史修订泄漏 `[99, 2, 3]`，修复后恢复为 `[1, 2, 3]`。
-- 5,150 份活动 YAML 与 AIDC 生成器已清扫。该语义字段删除会使全部活动配置获得新 fingerprint；`docs/validation_geometry_migration_manifest.yaml` 已全量重算。旧结果目录与 OOF cache 不重命名、不复用，后续运行按新 identity/cache key 重新生成；物理清理旧结果不在本项范围内。
+- 5,150 份活动 YAML 与 AIDC 生成器已清扫。该语义字段删除会使全部活动配置获得新 fingerprint；迁移清单 `docs/redesign/architecture.md` 当时已全量重算（该 manifest 已于 2026-09-06 清除，历史内容从 Git 溯源）。旧结果目录与 OOF cache 不重命名、不复用，后续运行按新 identity/cache key 重新生成；物理清理旧结果不在本项范围内。
 - 定向合同测试：`python -m unittest tests.test_forecast_problem_spec tests.test_information_set_registry tests.test_ensemble_loader`，40 项相关信息集/Ensemble 测试通过；共同全量证据见 OPT-004。
 
 ---

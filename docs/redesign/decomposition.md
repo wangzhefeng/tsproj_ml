@@ -1075,7 +1075,7 @@ VMD/Wavelet 的启动与否取决于实跑 `residual_diagnostics.csv` 的 stable
 
 ### 15.8 环境备忘
 
-- 2026-08-23 起点工作区：`.gitignore`、`docs/kaggle_time_series_forecasting_research.md`（用户侧修改）+ 本设计文档；AGENTS.md 两条旧文案已于 2026-08-23 修正为 `decomposition_method` 口径。
+- 2026-08-23 起点工作区：`.gitignore`、`docs/redesign/kaggle_research.md`（用户侧修改）+ 本设计文档；AGENTS.md 两条旧文案已于 2026-08-23 修正为 `decomposition_method` 口径。
 - 验证命令统一前缀：`env -u PYTHONPATH UV_CACHE_DIR=.uv_cache uv run --no-sync python ...`
 
 ### 15.9 遗留待办清单（2026-08-25 review 发现）

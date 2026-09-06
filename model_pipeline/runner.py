@@ -1043,8 +1043,17 @@ class CanonicalBaseModelRunner:
         trainer: Any,
         artifact: Any,
         capabilities: Any,
+        extras: Mapping[str, Any] | None = None,
     ) -> ForecastModelBundle:
-        """Build a self-contained schema-2 bundle from a completed final fit."""
+        """Build a self-contained schema-2 bundle from a completed final fit.
+
+        ``extras``（可选）：单模型生命周期传入的附加产物元数据——
+        ``unknown_series_policy``（来自 builder 训练域校验，默认 "raise"）、
+        ``availability_summary``、``visibility_proof``、``feature_lineage``、
+        ``source_lineage``、``calibration_state``。ensemble 成员路径不传，
+        行为与迁移前逐字一致。
+        """
+        extras = dict(extras or {})
         mode = self._mode()
         if mode == "point":
             bundle_builder = trainer
@@ -1064,23 +1073,32 @@ class CanonicalBaseModelRunner:
                 capabilities=capabilities,
                 feature_schema=selected_schema,
             )
+        input_schema = {
+            "columns": list(self.feature_schema),
+            "panel": {
+                "series_id_cols": list(self.config.problem.series_id_cols),
+                "known_series_ids": [
+                    list(value) if isinstance(value, tuple) else value
+                    for value in self.series_ids
+                ],
+                "unknown_series_policy": extras.get("unknown_series_policy", "raise"),
+            },
+        }
+        if extras.get("availability_summary") is not None:
+            input_schema["availability_summary"] = extras["availability_summary"]
+        if extras.get("visibility_proof") is not None:
+            input_schema["visibility_proof"] = extras["visibility_proof"]
+        bundle_kwargs: dict[str, Any] = {"series_ids": self.series_ids}
+        for key in ("feature_lineage", "source_lineage", "calibration_state"):
+            if extras.get(key) is not None:
+                bundle_kwargs[key] = extras[key]
         bundle = build_strategy_model_bundle(
             bundle_builder,
             bundle_artifact,
             feature_scaler=feature_scaler,
             target_transform=target_transform,
-            input_schema={
-                "columns": list(self.feature_schema),
-                "panel": {
-                    "series_id_cols": list(self.config.problem.series_id_cols),
-                    "known_series_ids": [
-                        list(value) if isinstance(value, tuple) else value
-                        for value in self.series_ids
-                    ],
-                    "unknown_series_policy": "raise",
-                },
-            },
-            series_ids=self.series_ids,
+            input_schema=input_schema,
+            **bundle_kwargs,
         )
         if mode == "quantile":
             bundle.model = artifact
@@ -1392,53 +1410,28 @@ class CanonicalBaseModelRunner:
             visibility_proof,
             config,
         )
-        if mode == "point":
-            bundle_builder = final_trainer
-            bundle_artifact = final_artifact
-        else:
-            point_level = float(config.probabilistic.get("point_quantile", 0.5))
-            bundle_builder = CanonicalTrainer(
-                config,
-                estimator_factory=make_model_factory(
-                    config.estimator.model_type,
-                    config.estimator.params,
-                    feature_names=builder.feature_schema,
-                    quantile=point_level,
-                ),
-                capabilities=final_capabilities,
-                feature_schema=builder.feature_schema,
-            )
-            bundle_artifact = final_artifact.artifacts_by_level[point_level]
-        bundle = build_strategy_model_bundle(
-            bundle_builder,
-            bundle_artifact,
-            feature_scaler=final_feature_scaler,
-            target_transform=final_target_transform,
-            input_schema={
-                "columns": list(builder.feature_schema),
-                "panel": {
-                    "series_id_cols": list(config.problem.series_id_cols),
-                    "known_series_ids": [
-                        list(value) if isinstance(value, tuple) else value
-                        for value in builder.series_ids
-                    ],
-                    "unknown_series_policy": str(
-                        builder._training_scope_validation().get(
-                            "unknown_series_policy",
-                            "raise",
-                        )
-                    ).lower(),
-                },
+        # bundle 构建唯一入口（R6b）：消除与方法版 build_final_bundle 的漂移双份；
+        # 单模型路径经 extras 传入完整产物元数据，ensemble 成员路径不传走默认。
+        bundle = self.build_final_bundle(
+            final_feature_scaler,
+            final_target_transform,
+            final_trainer,
+            final_artifact,
+            final_capabilities,
+            extras={
+                "unknown_series_policy": str(
+                    builder._training_scope_validation().get(
+                        "unknown_series_policy",
+                        "raise",
+                    )
+                ).lower(),
                 "availability_summary": availability_summary,
                 "visibility_proof": visibility_proof,
+                "feature_lineage": feature_lineage,
+                "source_lineage": source_lineage,
+                "calibration_state": calibration_state,
             },
-            feature_lineage=feature_lineage,
-            source_lineage=source_lineage,
-            series_ids=builder.series_ids,
-            calibration_state=calibration_state,
         )
-        if mode == "quantile":
-            bundle.model = final_artifact
 
         persist_model_bundle(bundle, model_dir)
 

@@ -35,6 +35,7 @@
 | 动生命周期编排/监督设计/批调度 | `model_pipeline/README.md` |
 | 动资源规划/性能档/checkpoint/运行缓存 | `model_performance/README.md` |
 | 动特征编译/目标与特征变换 | `feature_engineering/README.md`、`feature_engineering/transforms/README.md` |
+| 动目标分解/分量外推/通用周期诊断 | `decomposition/README.md`、`timeseries_analysis/README.md` |
 | 动回测几何/逐折评分/回测产物 | `model_testing/README.md` |
 | 动预测/部署/证据与 bundle 持久化 | `model_forecasting/README.md` |
 | 动训练器/策略 executor/estimator 能力 | `model_training/README.md` |

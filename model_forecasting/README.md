@@ -14,6 +14,8 @@
 
 外部直接加载 pickle 不会自动消费完成状态。
 
+目标分解对象使用版本化状态；旧分解对象布局/已移除组件路径明确拒绝加载，不进行兼容转换。启用分解的配置带 `component_fit_v2` 语义身份；存量结果保留，需用户显式重新训练后才能用于新部署。
+
 ## 编排与部署边界
 
 批调度与产物完成验收见 `model_pipeline/README.md`；资源规划、性能档、checkpoint、fold 变换缓存与有界内存缓存见 `model_performance/README.md`。

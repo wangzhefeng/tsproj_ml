@@ -1,6 +1,6 @@
 # data_process
 
-`data_process/` 是进模型前的离线数据准备工具库：频率聚合、填补方法回测、异常分析、事件检测、峰谷和周期分析。周期检测的纯数值核心在 `decomposition/periods.py`，本包的 `periodicity_analysis.py` 只承载规格、可视化、报告落盘与 CLI；FFT top-k 主导周期（`fft_top_k`）与 Engle-Granger 协整诊断（`coint_col`）为可选报告项，数值实现同样来自 `decomposition/periods.py`。
+`data_process/` 是进模型前的离线数据准备工具库：频率聚合、填补方法回测、异常分析、事件检测、峰谷和周期分析。周期检测的纯数值核心在 `timeseries_analysis/periods.py`；`periodicity_analysis.py` 承载 DataFrame 排序/有效样本选择、时间单位换算、规格、可视化、报告和 CLI。FFT top-k（`fft_top_k`）与 Engle-Granger 协整诊断（`coint_col`）为可选报告项；协整检验留在本离线工具中。
 
 进入 canonical runtime 的信息集默认缺失/异常即 RAISE；本目录工具只生成新的离线 CSV，不在训练窗口内静默改值。已删除未接生产的 legacy 训练窗口清洗实现。
 

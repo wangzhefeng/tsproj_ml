@@ -9,7 +9,8 @@
 4. ``model_ensemble`` 只能通过 Protocol/注入获取单模型 runner，
    对 ``model_forecasting`` 的依赖限于稳定结果写入接口。
 
-稳定合同位于 ``forecasting_core/``；``model_forecasting/`` 仅负责运行编排。
+稳定合同位于 ``forecasting_core/``；``model_pipeline/`` 负责运行编排，
+``model_forecasting/`` 负责预测、部署与预测产物。
 """
 
 import ast
@@ -223,6 +224,31 @@ def _function_local_project_imports() -> list[str]:
 
 
 class InterPackageLayeringTest(unittest.TestCase):
+    def test_all_packages_follow_dependency_whitelists(self):
+        self.assertEqual(set(ALLOWED_PACKAGES), PROJECT_PACKAGES)
+        for package in sorted(PROJECT_PACKAGES):
+            with self.subTest(package=package):
+                self.assertEqual(self._violations(package), [])
+
+    def test_new_package_whitelist_gate_rejects_forbidden_edges(self):
+        gate_name = "test_all_packages_follow_dependency_whitelists"
+        self.assertTrue(hasattr(type(self), gate_name))
+        for owner, target in (
+            ("model_performance", "model_pipeline.runner"),
+            ("model_pipeline", "data_process.periodicity_analysis"),
+        ):
+            with self.subTest(owner=owner), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                package = root / owner
+                package.mkdir()
+                (package / "probe.py").write_text(f"import {target}\n", encoding="utf-8")
+                result = unittest.TestResult()
+                with patch.object(sys.modules[__name__], "ROOT", root):
+                    type(self)(gate_name).run(result)
+                self.assertEqual(len(result.errors), 0)
+                self.assertEqual(len(result.failures), 1)
+                self.assertIn(target, result.failures[0][1])
+
     def test_relative_imports_resolve_against_the_owning_package(self):
         self.assertEqual(list(_iter_imports(ast.parse("from ..trainer import Trainer"), "model_training.estimators")), [("model_training.trainer", 1)])
 

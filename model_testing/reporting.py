@@ -311,5 +311,3 @@ def write_backtest_results(
                 target,
             )
     return cv_path, scores_path
-
-

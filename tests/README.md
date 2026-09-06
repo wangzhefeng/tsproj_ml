@@ -61,6 +61,7 @@ env -u PYTHONPATH .venv/bin/python -m unittest discover -s tests -p "test_*.py"
 - 目标/特征变换测试直接导入 `feature_engineering.transforms`；quantile 训练测试直接导入 `model_training.quantile`。回测评分、pipeline runner 与预测器的静态点名检查跟随新职责位置。
 - 模型测试使用 `models.factory`、`models.wrappers.<family>` 与 `models.pickle_io`。`test_model_wrapper_persistence` 验证各 family 的新路径 pickle 往返预测、旧路径无 shim/拒绝加载，以及 pickle IO 导入不修改 `sys.path`；参数校验和多目标 adapter 的原有断言保留。
 - layering 的 `PROJECT_PACKAGES` 包含 `model_pipeline` 与 `model_performance`；新包必须注册，不能靠漏扫换取门禁通过。
+- 依赖白名单门禁遍历全部 `PROJECT_PACKAGES` 并核对注册集合；新增包自动进入检查。两个新包的非法依赖探针验证门禁确实报错，而不仅验证当前仓库为绿。
 - `test_backtest_lifecycle_split` 覆盖 runner 的显式协议能力、串行/并行窗口评分顺序与历史传参、running/completed/failed 状态以及 BaseException 原样传播；生命周期静态检查位于 `model_pipeline/lifecycle.py`，逐折证据接线检查指向 `model_testing/fixed_step.py` 与 calendar-month。这些接缝测试不替代真实配置产物 diff。
 
 ```bash

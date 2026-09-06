@@ -1,7 +1,7 @@
 """Runtime contracts between the ensemble package and base-model execution.
 
 `BaseModelRunner` is the structural protocol the ensemble trainer/predictor
-rely on; `CanonicalBaseModelRunner` (model_forecasting.runtime) is the reference
+rely on; `CanonicalBaseModelRunner` (model_pipeline.runner) is the reference
 implementation. `FusionMethod` is the protocol every `model_ensemble.methods.*`
 class implements.
 """

@@ -14,7 +14,7 @@ from feature_engineering.compiler import (
     FeatureSchema,
     VisibilityProof,
 )
-from model_forecasting.runtime import _holdout_proof_summary, _sample_selector
+from model_pipeline.runner import _holdout_proof_summary, _sample_selector
 from model_training.estimators import make_model_factory
 
 

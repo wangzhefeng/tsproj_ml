@@ -12,8 +12,8 @@ import numpy as np
 import pandas as pd
 
 from data_loading import SourceRegistry
-from model_forecasting.design import minimum_history_rows
-from model_forecasting.runtime import _RegistryDesignBuilder, run_canonical_config
+from model_pipeline.supervised_design import minimum_history_rows
+from model_pipeline.runner import _RegistryDesignBuilder, run_canonical_config
 from forecasting_core.specs import (
     ColumnSpec,
     DataSourceSpec,
@@ -31,7 +31,7 @@ from model_training.strategies import (
     StrategyTargetPlan,
 )
 from forecasting_core.tensors import PointForecastTensor
-from model_forecasting.forecaster import CanonicalMarginalQuantileForecaster
+from model_forecasting.predictor import CanonicalMarginalQuantileForecaster
 from model_training.quantile import CanonicalMarginalQuantileArtifact
 from forecasting_core.artifacts import ForecastModelBundle
 

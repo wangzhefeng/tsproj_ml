@@ -24,7 +24,7 @@ from forecasting_core.specs import (
     ForecastProblemSpec,
     ForecastStrategySpec,
 )
-from model_forecasting.design import _RegistryDesignBuilder, _split_batch_designs
+from model_pipeline.supervised_design import _RegistryDesignBuilder, _split_batch_designs
 
 
 class _CountingSourceRegistry(SourceRegistry):

@@ -11,7 +11,7 @@ import yaml
 
 from config.config_loader import is_model_yaml, load_yaml_config
 from forecasting_core.specs import FixedStepBacktestSpec, ForecastConfigSpec
-from model_forecasting.design import minimum_history_rows
+from model_pipeline.supervised_design import minimum_history_rows
 
 
 ROOT = Path(__file__).resolve().parents[1]

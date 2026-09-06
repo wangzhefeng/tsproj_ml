@@ -22,7 +22,7 @@ from forecasting_core.tensors import (
     PointForecastTensor,
 )
 from model_evaluation.marginal import evaluate_marginal_distribution
-from model_forecasting.forecaster import (
+from model_forecasting.predictor import (
     CanonicalMarginalQuantileForecaster,
     repair_marginal_quantile_crossing,
 )

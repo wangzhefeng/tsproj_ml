@@ -17,7 +17,7 @@ from feature_engineering.selection import selected_indices_for_artifact
 from forecasting_core.artifacts import ForecastModelBundle, MarginalForecastDistribution
 from forecasting_core.specs import ForecastStrategySpec
 from forecasting_core.tensors import MarginalQuantileForecastTensor, PointForecastTensor
-from model_forecasting.forecaster import repair_marginal_quantile_crossing
+from model_forecasting.predictor import repair_marginal_quantile_crossing
 from probabilistic.calibration import pi_column_names
 from model_training.strategies import (
     CanonicalStrategyArtifact,

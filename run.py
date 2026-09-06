@@ -22,7 +22,7 @@ from forecasting_core.specs import ForecastConfigSpec
 from model_ensemble.contracts import EnsembleRuntimeServices
 from model_ensemble.runtime import run_ensemble_config_file
 from model_ensemble.specs import EnsembleConfigSpec
-from model_forecasting.runtime import (
+from model_pipeline.runner import (
     CanonicalBaseModelRunner,
     persist_model_bundle,
     run_canonical_config,
@@ -61,7 +61,7 @@ class CanonicalModel:
 
     def run(self, output_root=None):
         # output_root=None 时由 runtime 按 output.directories/results_root 解析，
-        # 与 main.py 历史分支语义完全一致（model_forecasting.runtime._output_paths）。
+        # 与 main.py 历史分支语义完全一致（model_pipeline.runner._output_paths）。
         self.result = run_canonical_config(self.args, output_root=output_root)
         return self.result
 

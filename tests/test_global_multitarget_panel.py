@@ -19,7 +19,7 @@ from forecasting_core.specs import (
     ForecastStrategySpec,
 )
 from forecasting_core.tensors import PointForecastTensor
-from model_forecasting.forecaster import CanonicalForecaster
+from model_forecasting.predictor import CanonicalForecaster
 from model_training.trainer import CanonicalTrainer
 
 

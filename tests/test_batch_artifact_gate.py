@@ -4,9 +4,9 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from model_forecasting.batch_runtime import _artifacts_complete, verify_batch_results
-from model_forecasting.batch_runtime import run_canonical_batch
-from model_forecasting.batch_artifacts import artifact_digests
+from model_pipeline.batch_runtime import _artifacts_complete, verify_batch_results
+from model_pipeline.batch_runtime import run_canonical_batch
+from model_pipeline.batch_artifacts import artifact_digests
 from tests import test_batch_runtime as batch_fixture
 
 

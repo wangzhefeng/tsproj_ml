@@ -6,7 +6,7 @@ quantile 逐 level 训练编排与原生 objective 能力映射已迁出——
 `model_training/quantile.py` 与 `model_training/objectives.py`；
 本包仅保留 `calibration`（Conformalized Quantile Regression 内核，
 经 runtime 的 as-of 校准追踪器接线）。Crossing 修复由
-`model_forecasting.forecaster` 的张量级实现负责，不维护 DataFrame 版副本。
+`model_forecasting.predictor` 的张量级实现负责，不维护 DataFrame 版副本。
 """
 
 from forecasting_core.probabilistic_spec import validate_quantile_grid

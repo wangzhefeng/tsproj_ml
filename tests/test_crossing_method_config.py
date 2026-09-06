@@ -16,7 +16,7 @@ import pandas as pd
 from forecasting_core.probabilistic_spec import resolve_crossing_settings
 from forecasting_core.specs.probabilistic import ProbabilisticConfigSpec
 from forecasting_core.tensors import MarginalQuantileForecastTensor
-from model_forecasting.forecaster import repair_marginal_quantile_crossing
+from model_forecasting.predictor import repair_marginal_quantile_crossing
 
 
 def _crossed_tensor() -> MarginalQuantileForecastTensor:

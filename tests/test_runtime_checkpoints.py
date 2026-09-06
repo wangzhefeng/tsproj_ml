@@ -166,7 +166,7 @@ class RuntimeCheckpointTest(unittest.TestCase):
     def test_config_source_failure_is_structured(self):
         from tests import test_canonical_runtime_smoke as fixture
         from forecasting_core.checkpoints import FitCheckpointError
-        from model_forecasting.runtime import run_canonical_config
+        from model_pipeline.runner import run_canonical_config
         with tempfile.TemporaryDirectory() as root:
             config = fixture.CanonicalRuntimeSmokeTest().build_config(
                 Path(root) / "missing.csv", mode="point")
@@ -184,7 +184,7 @@ class RuntimeCheckpointTest(unittest.TestCase):
         from unittest.mock import patch
         import pandas as pd
         from data_loading import SourceRegistry
-        from model_forecasting.runtime import CanonicalBaseModelRunner
+        from model_pipeline.runner import CanonicalBaseModelRunner
         from model_training.estimators.capabilities import _ModelFactoryEstimator
         original_fit = _ModelFactoryEstimator.fit
         original_batch = _ModelFactoryEstimator.fit_multi_output
@@ -234,7 +234,7 @@ class RuntimeCheckpointTest(unittest.TestCase):
         from unittest.mock import patch
         import pandas as pd
         import pickle
-        from model_forecasting.runtime import run_canonical_config
+        from model_pipeline.runner import run_canonical_config
         from model_training.estimators.capabilities import _ModelFactoryEstimator
         from probabilistic.calibration import ConformalCalibrationTracker
         original_fit = _ModelFactoryEstimator.fit
@@ -305,7 +305,7 @@ class RuntimeCheckpointTest(unittest.TestCase):
         from dataclasses import replace
         from unittest.mock import patch
         import pickle
-        from model_forecasting.fit_service import _fit_quantile
+        from model_pipeline.fold_fit import _fit_quantile
         from model_performance.checkpoints import FileFitCheckpoint
         from forecasting_core.checkpoints import FitCheckpointError
         from model_training.estimators.capabilities import _ModelFactoryEstimator
@@ -346,7 +346,7 @@ class RuntimeCheckpointTest(unittest.TestCase):
         import pandas as pd
         import pickle
         from data_loading import SourceRegistry
-        from model_forecasting.runtime import CanonicalBaseModelRunner
+        from model_pipeline.runner import CanonicalBaseModelRunner
         from model_training.estimators.capabilities import _ModelFactoryEstimator
         original_fit = _ModelFactoryEstimator.fit
         for mode in ("point", "quantile"):

@@ -25,6 +25,8 @@ ROOT = Path(__file__).resolve().parents[1]
 PROJECT_PACKAGES = {
     "forecasting_core",
     "model_forecasting",
+    "model_pipeline",
+    "model_performance",
     "model_ensemble",
     "probabilistic",
     "models",
@@ -76,6 +78,21 @@ ALLOWED_PACKAGES = {
         "model_performance",
         "model_testing",
         "model_training",
+        "models",
+        "probabilistic",
+        "utils",
+    },
+    "model_pipeline": {
+        "data_loading",
+        "decomposition",
+        "feature_engineering",
+        "forecasting_core",
+        "model_evaluation",
+        "model_performance",
+        "model_testing",
+        "model_training",
+        "model_forecasting",
+        "model_ensemble",
         "models",
         "probabilistic",
         "utils",
@@ -209,9 +226,9 @@ class InterPackageLayeringTest(unittest.TestCase):
         self.assertEqual(list(_iter_imports(ast.parse("from ..trainer import Trainer"), "model_training.estimators")), [("model_training.trainer", 1)])
 
     def test_dynamic_aliases_and_constants_are_visible(self):
-        tree = ast.parse('import importlib as il\nfrom importlib import import_module as load\nTARGET = "models.ModelFactory"\nil.import_module(TARGET)\nload("model_forecasting.runtime")\n__import__("forecasting_core.specs")\n')
+        tree = ast.parse('import importlib as il\nfrom importlib import import_module as load\nTARGET = "models.ModelFactory"\nil.import_module(TARGET)\nload("model_pipeline.runner")\n__import__("forecasting_core.specs")\n')
         modules = {module for module, _ in _iter_imports(tree)}
-        self.assertTrue({"models.ModelFactory", "model_forecasting.runtime", "forecasting_core.specs"} <= modules)
+        self.assertTrue({"models.ModelFactory", "model_pipeline.runner", "forecasting_core.specs"} <= modules)
 
     def _violations(self, pkg: str) -> list[str]:
         pkg_dir = ROOT / pkg
@@ -287,13 +304,13 @@ class InterPackageLayeringTest(unittest.TestCase):
             package.mkdir()
             (package / "probe.py").write_text(
                 "from model_testing.geometry import is_label_safe\n"
-                "from model_forecasting.runtime import CanonicalBaseModelRunner\n",
+                "from model_pipeline.runner import CanonicalBaseModelRunner\n",
                 encoding="utf-8",
             )
             with patch.object(sys.modules[__name__], "ROOT", root):
                 violations = self._violations("model_ensemble")
             self.assertEqual(len(violations), 1)
-            self.assertIn("model_forecasting.runtime", violations[0])
+            self.assertIn("model_pipeline.runner", violations[0])
 
     def test_package_graph_is_acyclic(self):
         self.assertEqual(_find_cycle(_package_edges()), [])
@@ -305,26 +322,27 @@ class InterPackageLayeringTest(unittest.TestCase):
         runtime = ROOT / "model_ensemble/runtime.py"
         tree = ast.parse(runtime.read_text(encoding="utf-8"))
         imports = [module for module, _ in _iter_imports(tree)]
-        self.assertNotIn("model_forecasting.runtime", imports)
+        self.assertNotIn("model_pipeline.runner", imports)
 
     def test_forecasting_runtime_delegates_design_fit_and_calendar_backtest(self):
-        """C4：runtime 只编排，不再内嵌 design/fit/calendar-backtest 实现。"""
-        expected_modules = {
-            "design.py",
-            "fit_service.py",
-            "persistence.py",
+        """C4（R6 更新）：编排实现统一在 model_pipeline，model_forecasting 只剩预测模块。"""
+        expected_pipeline = {
+            "runner.py",
+            "supervised_design.py",
+            "fold_fit.py",
+            "run_state.py",
         }
         self.assertTrue(
-            expected_modules.issubset(
-                {path.name for path in (ROOT / "model_forecasting").glob("*.py")}
+            expected_pipeline.issubset(
+                {path.name for path in (ROOT / "model_pipeline").glob("*.py")}
             )
         )
-        runtime_tree = ast.parse(
-            (ROOT / "model_forecasting" / "runtime.py").read_text(encoding="utf-8")
+        runner_tree = ast.parse(
+            (ROOT / "model_pipeline" / "runner.py").read_text(encoding="utf-8")
         )
         owned = {
             node.name
-            for node in runtime_tree.body
+            for node in runner_tree.body
             if isinstance(node, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef))
         }
         self.assertTrue(

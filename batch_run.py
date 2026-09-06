@@ -7,7 +7,7 @@ import argparse
 import json
 from pathlib import Path
 
-from model_forecasting.batch_runtime import (
+from model_pipeline.batch_runtime import (
     run_canonical_batch,
     verify_batch_results,
 )

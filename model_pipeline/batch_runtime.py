@@ -28,14 +28,14 @@ from feature_engineering.cache import compute_raw_design_fingerprint
 from forecasting_core.runtime_resources import RuntimeResourceBudget
 from forecasting_core.specs import ForecastConfigSpec
 
-from model_forecasting.batch_artifacts import (
+from model_pipeline.batch_artifacts import (
     artifact_paths, artifact_digests, artifacts_complete, validate_artifacts,
 )
 from model_performance.batch_memory import BoundedPayloadCache, SampledRSS
 from forecasting_core.checkpoints import FitCheckpointError
 from uuid import uuid4
 from model_performance.resource_planner import detect_runtime_budget, plan_runtime_execution
-from model_forecasting.runtime import CanonicalBaseModelRunner
+from model_pipeline.runner import CanonicalBaseModelRunner
 from model_performance.transform_cache import FoldTransformCache
 from model_testing.primitives import resolve_origin
 

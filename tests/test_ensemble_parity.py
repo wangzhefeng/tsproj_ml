@@ -26,7 +26,7 @@ import pandas as pd
 from model_ensemble.contracts import EnsembleRuntimeServices
 from fixtures.legacy_nnls import fit_nonnegative_stacking_weights
 from model_ensemble.runtime import run_ensemble_config
-from model_forecasting.runtime import (
+from model_pipeline.runner import (
     CanonicalBaseModelRunner,
     persist_model_bundle,
     run_canonical_config,

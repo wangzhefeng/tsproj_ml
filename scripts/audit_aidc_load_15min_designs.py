@@ -3,7 +3,7 @@
 """真实编译三个 AIDC 15min 场景的全部活动单模型训练设计。
 
 本门禁不训练 estimator；每份配置选择一个标签完整可见的真实训练 origin，
-通过生产 ``SourceRegistry`` 与 ``model_forecasting.design`` 设计 builder 完成
+通过生产 ``SourceRegistry`` 与 ``model_pipeline.supervised_design`` 设计 builder 完成
 信息集物化、provider 构造、全部策略 call 的特征编译及标签构造。
 """
 
@@ -24,7 +24,7 @@ if str(ROOT) not in sys.path:
 from config.config_loader import is_model_yaml, load_yaml_config  # noqa: E402
 from data_loading import BUILTIN_GENERATORS, SourceRegistry  # noqa: E402
 from forecasting_core.specs import ForecastConfigSpec  # noqa: E402
-from model_forecasting.design import probe_training_design  # noqa: E402
+from model_pipeline.supervised_design import probe_training_design  # noqa: E402
 
 
 SCENARIOS = (

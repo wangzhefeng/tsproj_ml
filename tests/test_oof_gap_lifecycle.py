@@ -13,7 +13,7 @@ from forecasting_core.specs.config import parse_model_config
 from model_ensemble.deployment import predict_ensemble_bundle
 from model_ensemble.loader import parse_ensemble_document
 from model_ensemble.runtime import run_ensemble_config
-from model_forecasting.runtime import CanonicalBaseModelRunner
+from model_pipeline.runner import CanonicalBaseModelRunner
 from test_ensemble_runtime import (
     EnsembleRuntimeTestBase, RUNTIME_SERVICES, _ensemble_doc, _member_doc,
 )

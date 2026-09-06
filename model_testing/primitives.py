@@ -1,12 +1,12 @@
 # -*- coding: utf-8 -*-
-"""回测公开原语（2026-08-29 架构收敛 P3/D3：自 model_forecasting.runtime 公开化迁入，实现逐字保真）。
+"""回测公开原语（2026-08-29 架构收敛 P3/D3：自 model_pipeline.runner 公开化迁入，实现逐字保真）。
 
 - `seasonal_naive_tensor`：seasonal-naive 基线张量（滞后阶数可配，默认一个自然日）；
 - `actual_tensor`：holdout 实际值张量；
 - `resolve_origin`：预测原点解析（ensemble runtime 经此公开 API 使用，修复 E-B 私有导入）；
 - `positive_validation_int`：validation 段正整数解析（回测原语的共享校验）。
 
-`model_forecasting.runtime` 保留同名私有别名转发，行为零变化；
+`model_pipeline.runner` 保留同名私有别名转发，行为零变化；
 评估掩码 `build_eval_mask` 已迁入 `model_evaluation/mask.py`（2026-08-30 evaluation 模块化）。
 """
 

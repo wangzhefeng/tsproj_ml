@@ -46,11 +46,11 @@ class CanonicalOnlyRuntimeTest(unittest.TestCase):
             build_model(legacy)
 
     def test_legacy_runtime_classes_are_not_public(self):
-        import model_forecasting.forecaster
+        import model_forecasting.predictor
         import model_training.trainer
 
         self.assertFalse(hasattr(run, "Model"))
-        self.assertFalse(hasattr(model_forecasting.forecaster, "Forecaster"))
+        self.assertFalse(hasattr(model_forecasting.predictor, "Forecaster"))
         self.assertFalse(hasattr(model_training.trainer, "Trainer"))
 
     def test_models_shims_are_removed(self):

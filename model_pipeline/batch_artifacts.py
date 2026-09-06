@@ -16,7 +16,7 @@ import pandas as pd
 
 from forecasting_core.artifacts import ForecastModelBundle, QuantileGrid
 from model_testing.geometry import TimeGeometry, scheduled_origin_indices
-from model_forecasting.lifecycle import require_completed_state
+from model_pipeline.run_state import require_completed_state
 
 
 REQUIRED_ARTIFACTS = frozenset({

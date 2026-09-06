@@ -22,7 +22,7 @@ from feature_engineering.selection import (
     normalize_feature_selection,
     selected_indices_for_artifact,
 )
-from model_forecasting.runtime import run_canonical_config
+from model_pipeline.runner import run_canonical_config
 from forecasting_core.specs.config import parse_model_config
 
 

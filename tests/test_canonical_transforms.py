@@ -21,7 +21,7 @@ from forecasting_core.specs import (
     ForecastStrategySpec,
 )
 from forecasting_core.tensors import MarginalQuantileForecastTensor, PointForecastTensor
-from model_forecasting.fit_service import _fit_runtime_transforms
+from model_pipeline.fold_fit import _fit_runtime_transforms
 from feature_engineering.transforms import CanonicalFeatureScaler, CanonicalTargetTransform
 
 

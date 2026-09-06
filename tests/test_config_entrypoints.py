@@ -20,7 +20,7 @@ from model_ensemble.contracts import EnsembleRuntimeServices
 from model_ensemble.loader import load_ensemble_config
 from model_ensemble.runtime import run_ensemble_config
 from model_training.estimators.capabilities import EstimatorCapabilities
-from model_forecasting.runtime import (
+from model_pipeline.runner import (
     CanonicalBaseModelRunner,
     persist_model_bundle,
     run_canonical_config,
@@ -39,7 +39,7 @@ from forecasting_core.specs import (
 from run import CanonicalModel
 from config.config_loader import load_yaml_config
 from models.ModelSaveLoad import ModelDeployPkl
-from model_forecasting.forecaster import CanonicalForecaster
+from model_forecasting.predictor import CanonicalForecaster
 from model_training.trainer import CanonicalTrainer
 
 

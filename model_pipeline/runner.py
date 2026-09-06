@@ -74,8 +74,8 @@ from forecasting_core.runtime_resources import (
 )
 from model_testing.calendar_month import run_calendar_month_backtest
 from model_forecasting.evidence import collect_model_evidence, dependency_versions, json_evidence
-from model_forecasting.lifecycle import write_run_state
-from model_forecasting.design import (
+from model_pipeline.run_state import write_run_state
+from model_pipeline.supervised_design import (
     _BacktestWindow,
     _RegistryDesignBuilder,
     _actual_at_origin,
@@ -84,7 +84,7 @@ from model_forecasting.design import (
     _sample_indices,
     _supervised_arrays,
 )
-from model_forecasting.fit_service import (
+from model_pipeline.fold_fit import (
     _fit_point,
     _fit_quantile,
     _fit_runtime_transforms,

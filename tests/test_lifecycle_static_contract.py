@@ -2,7 +2,7 @@
 import ast
 from pathlib import Path
 import unittest
-from model_forecasting.lifecycle import require_completed_state
+from model_pipeline.run_state import require_completed_state
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -15,7 +15,7 @@ class LifecycleStaticContractTest(unittest.TestCase):
                 require_completed_state({"schema_version": 1, "config_fingerprint": fingerprint, "status": status}, "fixture")
 
     def test_calendar_backtest_precedes_final_fit_and_bundle_persistence(self):
-        tree = ast.parse((ROOT / "model_forecasting/runtime.py").read_text())
+        tree = ast.parse((ROOT / "model_pipeline/runner.py").read_text())
         run = next(n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef) and n.name == "_execute_lifecycle")
         calls = {}
         for node in ast.walk(run):
@@ -33,8 +33,8 @@ class LifecycleStaticContractTest(unittest.TestCase):
         self.assertNotIn("resolved_config.json", source)
 
     def test_no_post_completion_calendar_hook(self):
-        for name in ("runtime.py", "batch_runtime.py"):
-            self.assertNotIn("overwrite_calendar_month_backtest", (ROOT / "model_forecasting" / name).read_text())
+        for name in ("runner.py", "batch_runtime.py"):
+            self.assertNotIn("overwrite_calendar_month_backtest", (ROOT / "model_pipeline" / name).read_text())
 
 
 if __name__ == "__main__":

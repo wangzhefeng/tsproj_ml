@@ -15,7 +15,7 @@ import numpy as np
 import pandas as pd
 
 from config.config_loader import load_yaml_config
-from model_forecasting.runtime import CanonicalBaseModelRunner, run_canonical_config
+from model_pipeline.runner import CanonicalBaseModelRunner, run_canonical_config
 from forecasting_core.specs import ForecastConfigSpec
 from forecasting_core.specs.config import parse_model_config
 from forecasting_core.tensors import PointForecastTensor
@@ -148,7 +148,7 @@ class CalendarMonthRuntimeGeometryTest(unittest.TestCase):
             )
             _CountingRunner.reset()
             with patch(
-                "model_forecasting.runtime.CanonicalBaseModelRunner",
+                "model_pipeline.runner.CanonicalBaseModelRunner",
                 _CountingRunner,
             ):
                 result = run_canonical_config(

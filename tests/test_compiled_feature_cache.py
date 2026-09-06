@@ -35,7 +35,7 @@ from forecasting_core.specs import (
     ForecastStrategySpec,
     parse_model_config,
 )
-from model_forecasting.runtime import CanonicalBaseModelRunner
+from model_pipeline.runner import CanonicalBaseModelRunner
 
 
 def _generated_feature_a(*_args, **_kwargs):

@@ -26,7 +26,7 @@ from forecasting_core.specs import (
     ForecastProblemSpec,
     ForecastStrategySpec,
 )
-from model_forecasting.forecaster import CanonicalMarginalQuantileForecaster
+from model_forecasting.predictor import CanonicalMarginalQuantileForecaster
 from model_training.estimators import (
     EstimatorCapabilities,
     SharedMultiQuantilePool,

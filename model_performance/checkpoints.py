@@ -41,7 +41,7 @@ def implementation_fingerprint() -> str:
     digest = hashlib.sha256()
     for package in ("forecasting_core", "data_loading", "feature_engineering",
                     "model_training", "model_forecasting", "model_performance",
-                    "probabilistic", "models", "decomposition",
+                    "model_pipeline", "probabilistic", "models", "decomposition",
                     "model_testing", "utils"):
         for path in sorted((root / package).rglob("*.py")):
             digest.update(str(path.relative_to(root)).encode())

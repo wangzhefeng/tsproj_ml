@@ -12,8 +12,8 @@ from forecasting_core.artifacts import MarginalForecastDistribution
 from forecasting_core.runtime_resources import RuntimeExecutionPlan
 from forecasting_core.specs import ForecastConfigSpec, TargetAdapter
 from forecasting_core.tensors import PointForecastTensor
-from model_forecasting.design import _RegistryDesignBuilder
-from model_forecasting.forecaster import (
+from model_pipeline.supervised_design import _RegistryDesignBuilder
+from model_forecasting.predictor import (
     CanonicalForecaster,
     CanonicalMarginalQuantileForecaster,
 )

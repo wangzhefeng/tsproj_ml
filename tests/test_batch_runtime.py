@@ -29,14 +29,14 @@ from forecasting_core.specs import (
     ForecastProblemSpec,
     ForecastStrategySpec,
 )
-from model_forecasting.batch_runtime import (
+from model_pipeline.batch_runtime import (
     _SharedBatchRunnerFactory,
     _batch_id,
     _resolve_config_pool_thread_limit,
     run_canonical_batch,
     verify_batch_results,
 )
-from model_forecasting.runtime import CanonicalBaseModelRunner
+from model_pipeline.runner import CanonicalBaseModelRunner
 from model_performance.transform_cache import FoldTransformCache
 
 
@@ -292,7 +292,7 @@ class CanonicalBatchRuntimeTest(unittest.TestCase):
         compile_calls = 0
         transform_calls = 0
         original_compile = CanonicalBaseModelRunner._compile_supervised_arrays
-        from model_forecasting import runtime as runtime_module
+        from model_pipeline import runner as runtime_module
 
         original_transform = runtime_module._fit_runtime_transforms
 

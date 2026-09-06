@@ -11,7 +11,7 @@ import pandas as pd
 import yaml
 
 from tests import test_canonical_runtime_smoke as fixture
-from model_forecasting.batch_runtime import run_canonical_batch, verify_batch_results
+from model_pipeline.batch_runtime import run_canonical_batch, verify_batch_results
 from model_training.estimators.capabilities import _ModelFactoryEstimator
 
 

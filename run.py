@@ -61,7 +61,7 @@ class CanonicalModel:
 
     def run(self, output_root=None):
         # output_root=None 时由 runtime 按 output.directories/results_root 解析，
-        # 与 main.py 历史分支语义完全一致（model_pipeline.runner._output_paths）。
+        # 与 main.py 历史分支语义完全一致（model_pipeline.lifecycle._output_paths）。
         self.result = run_canonical_config(self.args, output_root=output_root)
         return self.result
 

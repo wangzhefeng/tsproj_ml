@@ -925,58 +925,25 @@ class FeatureCompiler:
             raise ValueError(f"unsupported feature transformations: {unknown}")
         direct = transformations.get("direct")
         if direct is not None:
-            if not isinstance(direct, Mapping):
-                raise TypeError("transformations.direct must be a mapping")
-            layout = direct.get("layout")
-            if layout not in {"independent_models", "single_model_horizon"}:
-                raise ValueError(f"unsupported direct layout: {layout!r}")
-            if layout == "single_model_horizon":
-                horizon_feature = direct.get("horizon_feature", {})
-                if not isinstance(horizon_feature, Mapping):
-                    raise TypeError(
-                        "transformations.direct.horizon_feature must be a mapping"
-                    )
-                name = str(horizon_feature.get("name", "forecast_horizon_idx"))
-                for item in items:
-                    values = np.asarray(
-                        item["columns"]["horizon_step"], dtype=float
-                    )
-                    item["columns"][name] = values
-                    if bool(horizon_feature.get("cyclical", False)):
-                        period = float(self.problem.horizon)
-                        item["columns"][f"{name}_sin"] = np.sin(
-                            2.0 * np.pi * values / period
-                        )
-                        item["columns"][f"{name}_cos"] = np.cos(
-                            2.0 * np.pi * values / period
-                        )
+            # 空 batch 也保留原有 direct 校验，不能因无行而静默放行。
+            self._direct_horizon_feature(direct)
+            for item in items:
+                self._compile_direct_transformations(
+                    item["columns"], direct, vectorized=True,
+                )
 
         advanced = transformations.get("advanced", {})
         if not isinstance(advanced, Mapping):
             raise TypeError("transformations.advanced must be a mapping")
-        supported = {
-            "rolling",
-            "expanding",
-            "difference",
-            "percent_change",
-            "time_since",
-            "ewm",
-            "fourier",
-            "wavelet",
-            "cyclical",
-            "interaction",
-            "polynomial",
-        }
-        unknown_advanced = sorted(set(advanced) - supported)
-        if unknown_advanced:
-            raise ValueError(
-                f"unsupported advanced transformations: {unknown_advanced}"
-            )
+        self._validate_advanced_transformations(advanced)
         self._compile_batch_history_transformations(items, advanced)
         for item in items:
-            self._compile_batch_row_transformations(item["columns"], advanced)
-            self._compile_batch_named_interactions(
-                item["columns"], transformations.get("interactions", {})
+            columns = item["columns"]
+            self._compile_cyclical(columns, advanced.get("cyclical"), vectorized=True)
+            self._compile_interaction_spec(columns, advanced.get("interaction"), vectorized=True)
+            self._compile_polynomial(columns, advanced.get("polynomial"), vectorized=True)
+            self._compile_named_interactions(
+                columns, transformations.get("interactions", {}), vectorized=True,
             )
             request = cast(InformationSetRequest, item["request"])
             for feature_name in item["columns"]:
@@ -1379,130 +1346,6 @@ class FeatureCompiler:
             results[stat] = getattr(rolling, stat)().fillna(0.0)
         return results
 
-    def _compile_batch_row_transformations(
-        self,
-        frame: dict[str, Any],
-        advanced: Mapping[str, Any],
-    ) -> None:
-        cyclical = advanced.get("cyclical")
-        if cyclical is not None:
-            if not isinstance(cyclical, Mapping):
-                raise TypeError("transformations.advanced.cyclical must be a mapping")
-            period = cyclical.get("period")
-            if (
-                isinstance(period, bool)
-                or not isinstance(period, (int, float))
-                or period <= 0
-            ):
-                raise ValueError("cyclical.period must be positive")
-            for configured in self._string_sequence(
-                cyclical.get("columns", ()), "cyclical.columns"
-            ):
-                column = configured if configured in frame else f"dt_{configured}"
-                if column not in frame:
-                    raise ValueError(
-                        f"cyclical references unknown feature: {configured!r}"
-                    )
-                values = np.asarray(frame[column], dtype=float)
-                frame[f"{column}_sin"] = np.sin(
-                    2.0 * np.pi * values / float(period)
-                )
-                frame[f"{column}_cos"] = np.cos(
-                    2.0 * np.pi * values / float(period)
-                )
-
-        interaction = advanced.get("interaction")
-        if interaction is not None:
-            if not isinstance(interaction, Mapping):
-                raise TypeError(
-                    "transformations.advanced.interaction must be a mapping"
-                )
-            pairs = interaction.get("column_pairs", ())
-            if isinstance(pairs, (str, bytes)) or not isinstance(pairs, Sequence):
-                raise TypeError("interaction.column_pairs must be a sequence")
-            operations = set(
-                self._string_sequence(
-                    interaction.get("operations", ()), "interaction.operations"
-                )
-            )
-            for pair in pairs:
-                if (
-                    isinstance(pair, (str, bytes))
-                    or not isinstance(pair, Sequence)
-                    or len(pair) != 2
-                ):
-                    raise TypeError(
-                        "interaction column pairs must contain two feature names"
-                    )
-                left, right = pair
-                if left not in frame or right not in frame:
-                    raise ValueError(
-                        f"interaction references unknown features: {pair}"
-                    )
-                left_values = np.asarray(frame[left], dtype=float)
-                right_values = np.asarray(frame[right], dtype=float)
-                if "add" in operations:
-                    frame[f"{left}_add_{right}"] = left_values + right_values
-                if "subtract" in operations:
-                    frame[f"{left}_substract_{right}"] = left_values - right_values
-                if "multiply" in operations:
-                    frame[f"{left}_multiply_{right}"] = left_values * right_values
-                if "divide" in operations:
-                    frame[f"{left}_divide_{right}"] = left_values / (
-                        right_values + 1e-8
-                    )
-
-        polynomial = advanced.get("polynomial")
-        if polynomial is not None:
-            if not isinstance(polynomial, Mapping):
-                raise TypeError(
-                    "transformations.advanced.polynomial must be a mapping"
-                )
-            degree = polynomial.get("degree", 2)
-            if (
-                isinstance(degree, bool)
-                or not isinstance(degree, int)
-                or degree < 2
-            ):
-                raise ValueError("polynomial.degree must be an integer >= 2")
-            for column in self._string_sequence(
-                polynomial.get("columns", ()), "polynomial.columns"
-            ):
-                if column not in frame:
-                    raise ValueError(
-                        f"polynomial references unknown feature: {column!r}"
-                    )
-                values = np.asarray(frame[column], dtype=float)
-                for current_degree in range(2, degree + 1):
-                    frame[f"{column}_pow_{current_degree}"] = (
-                        values ** current_degree
-                    )
-
-    def _compile_batch_named_interactions(
-        self,
-        frame: dict[str, Any],
-        interactions: Any,
-    ) -> None:
-        if not isinstance(interactions, Mapping):
-            raise TypeError("transformations.interactions must be a mapping")
-        for name, members in interactions.items():
-            if isinstance(members, (str, bytes)) or not isinstance(members, Sequence):
-                raise TypeError(f"interaction {name!r} must list feature names")
-            if len(members) < 2:
-                raise ValueError(f"interaction {name!r} requires at least two features")
-            missing = [member for member in members if member not in frame]
-            if missing:
-                raise ValueError(
-                    f"interaction {name!r} references unknown features: {missing}"
-                )
-            values = np.column_stack(
-                [np.asarray(frame[member], dtype=float) for member in members]
-            )
-            if not np.isfinite(values).all():
-                raise ValueError(
-                    f"interaction {name!r} requires finite numeric features"
-                )
-            frame[str(name)] = np.prod(values, axis=1)
 
     @staticmethod
     def _add_batch_proof_column(
@@ -2004,35 +1847,40 @@ class FeatureCompiler:
         self,
         row: dict[str, Any],
         direct: Any,
+        *,
+        vectorized: bool = False,
     ) -> None:
-        if direct is None:
+        horizon_feature = self._direct_horizon_feature(direct)
+        if horizon_feature is None:
             return
+        name = str(horizon_feature.get("name", "forecast_horizon_idx"))
+        value = np.asarray(row["horizon_step"], dtype=float) if vectorized else float(row["horizon_step"])
+        row[name] = value
+        if bool(horizon_feature.get("cyclical", False)):
+            period = float(self.problem.horizon)
+            sine = np.sin(2.0 * np.pi * value / period)
+            cosine = np.cos(2.0 * np.pi * value / period)
+            row[f"{name}_sin"] = sine if vectorized else float(sine)
+            row[f"{name}_cos"] = cosine if vectorized else float(cosine)
+
+    @staticmethod
+    def _direct_horizon_feature(direct: Any) -> Mapping[str, Any] | None:
+        if direct is None:
+            return None
         if not isinstance(direct, Mapping):
             raise TypeError("transformations.direct must be a mapping")
         layout = direct.get("layout")
         if layout not in {"independent_models", "single_model_horizon"}:
             raise ValueError(f"unsupported direct layout: {layout!r}")
         if layout != "single_model_horizon":
-            return
+            return None
         horizon_feature = direct.get("horizon_feature", {})
         if not isinstance(horizon_feature, Mapping):
             raise TypeError("transformations.direct.horizon_feature must be a mapping")
-        name = str(horizon_feature.get("name", "forecast_horizon_idx"))
-        value = float(row["horizon_step"])
-        row[name] = value
-        if bool(horizon_feature.get("cyclical", False)):
-            period = float(self.problem.horizon)
-            row[f"{name}_sin"] = float(np.sin(2.0 * np.pi * value / period))
-            row[f"{name}_cos"] = float(np.cos(2.0 * np.pi * value / period))
+        return horizon_feature
 
-    def _compile_history_transformations(
-        self,
-        row: dict[str, Any],
-        advanced: Mapping[str, Any],
-        identity: Any,
-        request: InformationSetRequest,
-        information_set: MaterializedInformationSet,
-    ) -> None:
+    @staticmethod
+    def _validate_advanced_transformations(advanced: Mapping[str, Any]) -> None:
         supported = {
             "rolling",
             "expanding",
@@ -2049,6 +1897,16 @@ class FeatureCompiler:
         unknown = sorted(set(advanced) - supported)
         if unknown:
             raise ValueError(f"unsupported advanced transformations: {unknown}")
+
+    def _compile_history_transformations(
+        self,
+        row: dict[str, Any],
+        advanced: Mapping[str, Any],
+        identity: Any,
+        request: InformationSetRequest,
+        information_set: MaterializedInformationSet,
+    ) -> None:
+        self._validate_advanced_transformations(advanced)
         for kind in (
             "rolling",
             "expanding",
@@ -2165,7 +2023,9 @@ class FeatureCompiler:
                     for event in events:
                         row[f"{column}_time_since_{event}"] = self._time_since(history, event)
 
-    def _compile_cyclical(self, row: dict[str, Any], spec: Any) -> None:
+    def _compile_cyclical(
+        self, row: dict[str, Any], spec: Any, *, vectorized: bool = False,
+    ) -> None:
         if spec is None:
             return
         if not isinstance(spec, Mapping):
@@ -2177,11 +2037,15 @@ class FeatureCompiler:
             column = configured if configured in row else f"dt_{configured}"
             if column not in row:
                 raise ValueError(f"cyclical references unknown feature: {configured!r}")
-            value = float(row[column])
-            row[f"{column}_sin"] = float(np.sin(2.0 * np.pi * value / float(period)))
-            row[f"{column}_cos"] = float(np.cos(2.0 * np.pi * value / float(period)))
+            value = np.asarray(row[column], dtype=float) if vectorized else float(row[column])
+            sine = np.sin(2.0 * np.pi * value / float(period))
+            cosine = np.cos(2.0 * np.pi * value / float(period))
+            row[f"{column}_sin"] = sine if vectorized else float(sine)
+            row[f"{column}_cos"] = cosine if vectorized else float(cosine)
 
-    def _compile_interaction_spec(self, row: dict[str, Any], spec: Any) -> None:
+    def _compile_interaction_spec(
+        self, row: dict[str, Any], spec: Any, *, vectorized: bool = False,
+    ) -> None:
         if spec is None:
             return
         if not isinstance(spec, Mapping):
@@ -2196,8 +2060,8 @@ class FeatureCompiler:
             left, right = pair
             if left not in row or right not in row:
                 raise ValueError(f"interaction references unknown features: {pair}")
-            left_value = float(row[left])
-            right_value = float(row[right])
+            left_value = np.asarray(row[left], dtype=float) if vectorized else float(row[left])
+            right_value = np.asarray(row[right], dtype=float) if vectorized else float(row[right])
             if "add" in operations:
                 row[f"{left}_add_{right}"] = left_value + right_value
             if "subtract" in operations:
@@ -2207,7 +2071,9 @@ class FeatureCompiler:
             if "divide" in operations:
                 row[f"{left}_divide_{right}"] = left_value / (right_value + 1e-8)
 
-    def _compile_polynomial(self, row: dict[str, Any], spec: Any) -> None:
+    def _compile_polynomial(
+        self, row: dict[str, Any], spec: Any, *, vectorized: bool = False,
+    ) -> None:
         if spec is None:
             return
         if not isinstance(spec, Mapping):
@@ -2218,10 +2084,14 @@ class FeatureCompiler:
         for column in self._string_sequence(spec.get("columns", ()), "polynomial.columns"):
             if column not in row:
                 raise ValueError(f"polynomial references unknown feature: {column!r}")
+            # 保留 Python float 与 NumPy 数组各自的幂运算，不统一数值后端。
+            value = np.asarray(row[column], dtype=float) if vectorized else float(row[column])
             for current_degree in range(2, degree + 1):
-                row[f"{column}_pow_{current_degree}"] = float(row[column]) ** current_degree
+                row[f"{column}_pow_{current_degree}"] = value ** current_degree
 
-    def _compile_named_interactions(self, row: dict[str, Any], interactions: Any) -> None:
+    def _compile_named_interactions(
+        self, row: dict[str, Any], interactions: Any, *, vectorized: bool = False,
+    ) -> None:
         if not isinstance(interactions, Mapping):
             raise TypeError("transformations.interactions must be a mapping")
         for name, members in interactions.items():
@@ -2232,10 +2102,14 @@ class FeatureCompiler:
             missing = [member for member in members if member not in row]
             if missing:
                 raise ValueError(f"interaction {name!r} references unknown features: {missing}")
-            values = np.asarray([row[member] for member in members], dtype=float)
+            values = (
+                np.column_stack([np.asarray(row[member], dtype=float) for member in members])
+                if vectorized
+                else np.asarray([row[member] for member in members], dtype=float)
+            )
             if not np.isfinite(values).all():
                 raise ValueError(f"interaction {name!r} requires finite numeric features")
-            row[str(name)] = float(np.prod(values))
+            row[str(name)] = np.prod(values, axis=1) if vectorized else float(np.prod(values))
 
     def _visible_history_series(
         self,

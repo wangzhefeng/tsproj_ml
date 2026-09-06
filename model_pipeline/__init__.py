@@ -4,7 +4,8 @@
 `.hermes/plans/2026-09-06_162605`）：把「数据管道 → 特征工程 → 模型训练 → 模型测试 →
 模型预测」串成完整生命周期，`run.py` / `batch_run.py` 只调用本包。
 
-- `runner.py`：`CanonicalBaseModelRunner` 执行器与 `run_canonical_config()`；编排各阶段，不实现算法。
+- `runner.py`：`CanonicalBaseModelRunner` 执行能力与 `run_canonical_config()`。
+- `lifecycle.py`：阶段编排、完成态调用与产物元数据；回测循环位于 model_testing。
 - `supervised_design.py`：information set 消费、监督样本构造与 fixed-step 回测几何。
 - `fold_fit.py`：折/final 拟合与预测服务（fit_service）。
 - `run_state.py`：running/completed/failed 完成态证据。

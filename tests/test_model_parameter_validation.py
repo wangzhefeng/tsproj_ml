@@ -2,7 +2,7 @@
 
 import unittest
 
-from models.ModelFactory import ModelFactory
+from models.factory import ModelFactory
 
 
 class ModelParameterValidationTest(unittest.TestCase):

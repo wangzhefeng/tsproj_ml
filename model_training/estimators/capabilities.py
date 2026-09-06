@@ -17,7 +17,7 @@ from sklearn.base import clone
 from forecasting_core.checkpoints import FitCheckpoint
 from forecasting_core.specs.estimator import EstimatorCapabilities
 from models.catalog import MODEL_CATALOG, quantile_parameters
-from models.ModelFactory import ModelFactory
+from models.factory import ModelFactory
 
 __all__ = ["EstimatorCapabilities"]  # 合同类型自 specs 再导出（向后兼容）
 

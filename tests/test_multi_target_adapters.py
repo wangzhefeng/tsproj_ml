@@ -27,7 +27,7 @@ from model_training.estimators.multi_target import (
 from forecasting_core.specs import EstimatorSpec, TargetAdapter
 from model_training.strategies import StrategyTargetPlan, TargetCoordinate
 from forecasting_core.specs import ForecastStrategySpec
-from models.ModelFactory import ModelFactory
+from models.factory import ModelFactory
 
 
 class ScalarOnlyRegressor:
@@ -694,7 +694,7 @@ class MultiTargetAdapterTests(unittest.TestCase):
 
 class ImportBoundaryTests(unittest.TestCase):
     def test_training_core_only_imports_approved_model_infrastructure(self):
-        approved = {"models.catalog", "models.ModelFactory"}
+        approved = {"models.catalog", "models.factory"}
         for path in (
             Path("forecasting_core/specs/estimator.py"),
             Path("model_training/estimators/capabilities.py"),

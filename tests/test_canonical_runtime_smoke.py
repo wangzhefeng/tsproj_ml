@@ -13,7 +13,8 @@ import pandas as pd
 
 from data_loading import SourceRegistry
 from model_pipeline.supervised_design import minimum_history_rows
-from model_pipeline.runner import _RegistryDesignBuilder, run_canonical_config
+from model_pipeline.supervised_design import SupervisedDesignBuilder
+from model_pipeline.runner import run_canonical_config
 from forecasting_core.specs import (
     ColumnSpec,
     DataSourceSpec,
@@ -155,7 +156,7 @@ class CanonicalRuntimeSmokeTest(unittest.TestCase):
                 horizon=2,
                 align_to_target=False,
             )
-            builder = _RegistryDesignBuilder(config, SourceRegistry(config.data, root))
+            builder = SupervisedDesignBuilder(config, SourceRegistry(config.data, root))
 
             self.assertEqual(minimum_history_rows(config), 5)
 
@@ -781,7 +782,7 @@ class CanonicalRuntimeSmokeTest(unittest.TestCase):
                         horizon=4,
                         output_chunk_length=chunk_length,
                     )
-                    builder = _RegistryDesignBuilder(
+                    builder = SupervisedDesignBuilder(
                         config,
                         SourceRegistry(config.data, root),
                     )
@@ -814,7 +815,7 @@ class CanonicalRuntimeSmokeTest(unittest.TestCase):
                         strategy=strategy,
                         horizon=4,
                     )
-                    builder = _RegistryDesignBuilder(
+                    builder = SupervisedDesignBuilder(
                         config,
                         SourceRegistry(config.data, root),
                     )
@@ -881,7 +882,7 @@ class CanonicalRuntimeSmokeTest(unittest.TestCase):
                 strategy="recursive",
                 horizon=3,
             )
-            builder = _RegistryDesignBuilder(
+            builder = SupervisedDesignBuilder(
                 config,
                 SourceRegistry(config.data, root),
             )

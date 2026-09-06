@@ -86,7 +86,7 @@ class ModelDeployPassthroughTest(unittest.TestCase):
 
             joblib.dump({"plain": 1}, path)
 
-            from models.ModelSaveLoad import ModelDeployPkl
+            from models.pickle_io import ModelDeployPkl
 
             loaded = ModelDeployPkl(str(path)).load_model()
             self.assertEqual(loaded, {"plain": 1})

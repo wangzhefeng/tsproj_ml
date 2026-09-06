@@ -151,7 +151,7 @@ def _split_batch_designs(
     return tuple(shaped[:, call_index, :] for call_index in range(len(normalized_steps)))
 
 
-class _RegistryDesignBuilder:
+class SupervisedDesignBuilder:
     def __init__(self, config: ForecastConfigSpec, registry: SourceRegistry) -> None:
         self.config = config
         self.registry = registry
@@ -772,7 +772,7 @@ def probe_training_design(
     normalized_origin = pd.Timestamp(origin)
     if not isinstance(normalized_origin, pd.Timestamp):
         raise ValueError("training design probe origin must be a valid timestamp")
-    builder = _RegistryDesignBuilder(config, registry)
+    builder = SupervisedDesignBuilder(config, registry)
     designs, targets = builder.training_row(normalized_origin)
     return TrainingDesignProbe(
         origin=normalized_origin,
@@ -831,7 +831,7 @@ def minimum_history_rows(config: ForecastConfigSpec) -> int:
 
 
 def _supervised_arrays(
-    builder: _RegistryDesignBuilder,
+    builder: SupervisedDesignBuilder,
     origin: pd.Timestamp,
 ) -> tuple[
     tuple[np.ndarray, ...],
@@ -906,14 +906,14 @@ def _sample_indices(
 
 
 def _label_end(
-    builder: _RegistryDesignBuilder,
+    builder: SupervisedDesignBuilder,
     origin: pd.Timestamp,
 ) -> pd.Timestamp:
     return validation.label_end(origin, builder.offset, builder.config.problem.horizon)
 
 
 def _holdout_training_indices(
-    builder: _RegistryDesignBuilder,
+    builder: SupervisedDesignBuilder,
     supervised_origins: tuple[pd.Timestamp, ...],
 ) -> tuple[tuple[int, ...], dict[str, Any]]:
     holdout_origin = supervised_origins[-1]
@@ -945,7 +945,7 @@ class _BacktestWindow:
 
 
 def _rolling_backtest_windows(
-    builder: _RegistryDesignBuilder,
+    builder: SupervisedDesignBuilder,
     supervised_origins: tuple[pd.Timestamp, ...],
     *,
     schedule_origin: pd.Timestamp | None = None,

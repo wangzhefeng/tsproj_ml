@@ -21,6 +21,7 @@ from model_testing.reporting import write_backtest_results
 
 from model_testing import geometry as validation
 from model_testing.scoring import score_holdout_fold
+from model_testing.contracts import BacktestRunner, BacktestRunnerFactory
 from pandas.tseries.frequencies import to_offset
 from probabilistic.calibration import ConformalCalibrationTracker
 from forecasting_core.probabilistic_spec import probabilistic_spec_from_mapping
@@ -29,10 +30,10 @@ from forecasting_core.probabilistic_spec import probabilistic_spec_from_mapping
 def run_calendar_month_backtest(
     config: ForecastConfigSpec,
     registry: SourceRegistry,
-    final_runner: Any,
+    final_runner: BacktestRunner,
     test_dir: Path,
     *,
-    runner_factory: Any,
+    runner_factory: BacktestRunnerFactory,
 ) -> tuple[dict[str, Any], ConformalCalibrationTracker | None]:
     backtest_started = perf_counter()
     backtest = config.validation.backtest
@@ -75,7 +76,7 @@ def run_calendar_month_backtest(
                 freq_offset=to_offset(str(config.problem.freq)),
             )
     calibration_audits: list[dict[str, Any]] = []
-    runners_by_horizon: dict[int, Any] = {}
+    runners_by_horizon: dict[int, BacktestRunner] = {}
     fold_contexts = []
     raw_history_times = final_runner.builder.target_history_times(final_runner.origin)
     dynamic_history_steps = len(final_runner.supervised_origins)

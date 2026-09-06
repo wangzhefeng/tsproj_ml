@@ -10,7 +10,7 @@ import math
 import numpy as np
 from typing import Any
 
-from models.ModelFactory import BaseModel
+from models.wrappers.base import BaseModel
 
 
 def dependency_versions() -> dict[str, str]:

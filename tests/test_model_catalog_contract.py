@@ -9,12 +9,16 @@ ROOT = Path(__file__).resolve().parents[1]
 
 class ModelCatalogContractTest(unittest.TestCase):
     def test_all_aliases_resolve_to_existing_wrapper_classes(self):
-        tree = ast.parse((ROOT / "models/ModelFactory.py").read_text())
-        classes = {node.name for node in tree.body if isinstance(node, ast.ClassDef)}
+        classes = {
+            node.name
+            for path in (ROOT / "models/wrappers").glob("*.py")
+            for node in ast.parse(path.read_text()).body
+            if isinstance(node, ast.ClassDef)
+        }
         self.assertEqual(len(MODEL_CATALOG), 18)
         for descriptor in MODEL_CATALOG.values():
             self.assertIn(descriptor.wrapper, classes)
-        for path in ("models/ModelFactory.py", "model_training/estimators/capabilities.py", "model_forecasting/resource_planner.py"):
+        for path in ("models/factory.py", "model_training/estimators/capabilities.py", "model_performance/resource_planner.py"):
             self.assertIn("from models.catalog import", (ROOT / path).read_text())
 
     def test_quantile_parameters_preserve_native_conventions(self):

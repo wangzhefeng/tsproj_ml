@@ -56,6 +56,7 @@ ALLOWED_PACKAGES = {
     },
     "model_training": {"forecasting_core", "models"},
     "model_testing": {
+        "utils",
         "forecasting_core",
         "data_loading",
         "model_evaluation",
@@ -226,9 +227,9 @@ class InterPackageLayeringTest(unittest.TestCase):
         self.assertEqual(list(_iter_imports(ast.parse("from ..trainer import Trainer"), "model_training.estimators")), [("model_training.trainer", 1)])
 
     def test_dynamic_aliases_and_constants_are_visible(self):
-        tree = ast.parse('import importlib as il\nfrom importlib import import_module as load\nTARGET = "models.ModelFactory"\nil.import_module(TARGET)\nload("model_pipeline.runner")\n__import__("forecasting_core.specs")\n')
+        tree = ast.parse('import importlib as il\nfrom importlib import import_module as load\nTARGET = "models.factory"\nil.import_module(TARGET)\nload("model_pipeline.runner")\n__import__("forecasting_core.specs")\n')
         modules = {module for module, _ in _iter_imports(tree)}
-        self.assertTrue({"models.ModelFactory", "model_pipeline.runner", "forecasting_core.specs"} <= modules)
+        self.assertTrue({"models.factory", "model_pipeline.runner", "forecasting_core.specs"} <= modules)
 
     def _violations(self, pkg: str) -> list[str]:
         pkg_dir = ROOT / pkg
@@ -328,6 +329,7 @@ class InterPackageLayeringTest(unittest.TestCase):
         """C4（R6 更新）：编排实现统一在 model_pipeline，model_forecasting 只剩预测模块。"""
         expected_pipeline = {
             "runner.py",
+            "lifecycle.py",
             "supervised_design.py",
             "fold_fit.py",
             "run_state.py",
@@ -347,7 +349,7 @@ class InterPackageLayeringTest(unittest.TestCase):
         }
         self.assertTrue(
             {
-                "_RegistryDesignBuilder",
+                "SupervisedDesignBuilder",
                 "_fit_runtime_transforms",
                 "_overwrite_calendar_month_backtest",
             }.isdisjoint(owned)

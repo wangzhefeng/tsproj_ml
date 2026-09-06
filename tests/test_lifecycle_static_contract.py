@@ -15,14 +15,15 @@ class LifecycleStaticContractTest(unittest.TestCase):
                 require_completed_state({"schema_version": 1, "config_fingerprint": fingerprint, "status": status}, "fixture")
 
     def test_calendar_backtest_precedes_final_fit_and_bundle_persistence(self):
-        tree = ast.parse((ROOT / "model_pipeline/runner.py").read_text())
-        run = next(n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef) and n.name == "_execute_lifecycle")
+        tree = ast.parse((ROOT / "model_pipeline/lifecycle.py").read_text())
+        run = next(n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef) and n.name == "execute_lifecycle")
         calls = {}
         for node in ast.walk(run):
             if isinstance(node, ast.Call):
                 name = node.func.id if isinstance(node.func, ast.Name) else getattr(node.func, "attr", "")
                 calls.setdefault(name, []).append(node.lineno)
         self.assertIn("run_calendar_month_backtest", calls)
+        self.assertLess(max(calls["run_fixed_step_backtest"]), min(calls["fit_final"]))
         self.assertLess(max(calls["run_calendar_month_backtest"]), min(calls["fit_final"]))
         self.assertLess(max(calls["fit_final"]), min(calls["persist_model_bundle"]))
 

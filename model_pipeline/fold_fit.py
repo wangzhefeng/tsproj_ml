@@ -12,7 +12,7 @@ from forecasting_core.artifacts import MarginalForecastDistribution
 from forecasting_core.runtime_resources import RuntimeExecutionPlan
 from forecasting_core.specs import ForecastConfigSpec, TargetAdapter
 from forecasting_core.tensors import PointForecastTensor
-from model_pipeline.supervised_design import _RegistryDesignBuilder
+from model_pipeline.supervised_design import SupervisedDesignBuilder
 from model_forecasting.predictor import (
     CanonicalForecaster,
     CanonicalMarginalQuantileForecaster,
@@ -36,7 +36,7 @@ from model_training.quantile import CanonicalMarginalQuantileTrainer
 
 def _fit_runtime_transforms(
     config: ForecastConfigSpec,
-    builder: _RegistryDesignBuilder,
+    builder: SupervisedDesignBuilder,
     X_by_call: tuple[np.ndarray, ...],
     Y: np.ndarray,
     origins: tuple[pd.Timestamp, ...],
@@ -91,7 +91,7 @@ def _fit_runtime_transforms(
 
 
 def _forecast_designs_with_scaler(
-    builder: _RegistryDesignBuilder,
+    builder: SupervisedDesignBuilder,
     origin: pd.Timestamp,
     feature_scaler: CanonicalFeatureScaler,
     target_transform: CanonicalTargetTransform,

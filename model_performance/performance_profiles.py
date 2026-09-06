@@ -19,7 +19,7 @@ from forecasting_core.runtime_resources import (
     RuntimeExecutionPlan, RuntimeResourceBudget, RuntimeWorkload,
 )
 from forecasting_core.specs import ForecastConfigSpec
-from models.ModelFactory import CatBoostModel
+from models.wrappers.catboost import CatBoostModel
 
 CATBOOST_PROFILE_REF = "opt017-catboost-short-a-pointwise-v1"
 

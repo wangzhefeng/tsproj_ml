@@ -10,7 +10,7 @@ import numpy as np
 import pandas as pd
 import xgboost as xgb
 
-from models.ModelFactory import XGBoostModel
+from models.wrappers.xgboost import XGBoostModel
 from models import xgb_validation
 
 

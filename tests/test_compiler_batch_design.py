@@ -24,7 +24,7 @@ from forecasting_core.specs import (
     ForecastProblemSpec,
     ForecastStrategySpec,
 )
-from model_pipeline.supervised_design import _RegistryDesignBuilder, _split_batch_designs
+from model_pipeline.supervised_design import SupervisedDesignBuilder, _split_batch_designs
 
 
 class _CountingSourceRegistry(SourceRegistry):
@@ -97,7 +97,7 @@ class CompilerBatchDesignTest(unittest.TestCase):
 
     def test_label_extraction_does_not_use_dataframe_row_access(self) -> None:
         config = self._config("mimo")
-        builder = _RegistryDesignBuilder(
+        builder = SupervisedDesignBuilder(
             config,
             SourceRegistry(config.data, self.root),
         )
@@ -127,7 +127,7 @@ class CompilerBatchDesignTest(unittest.TestCase):
 
     def test_batch_training_validates_without_materializing_proofs(self) -> None:
         config = self._config("direct")
-        builder = _RegistryDesignBuilder(
+        builder = SupervisedDesignBuilder(
             config,
             SourceRegistry(config.data, self.root),
         )
@@ -145,7 +145,7 @@ class CompilerBatchDesignTest(unittest.TestCase):
 
     def test_batch_training_validate_only_rejects_late_availability(self) -> None:
         config = self._config("direct")
-        builder = _RegistryDesignBuilder(
+        builder = SupervisedDesignBuilder(
             config,
             SourceRegistry(config.data, self.root),
         )
@@ -338,12 +338,12 @@ class CompilerBatchDesignTest(unittest.TestCase):
         origins = tuple(
             cast(pd.Timestamp, pd.Timestamp(value)) for value in self.times[12:18]
         )
-        expected_builder = _RegistryDesignBuilder(
+        expected_builder = SupervisedDesignBuilder(
             config,
             SourceRegistry(config.data, self.root),
         )
         expected = tuple(expected_builder.training_row(origin) for origin in origins)
-        batch_builder = _RegistryDesignBuilder(
+        batch_builder = SupervisedDesignBuilder(
             config,
             SourceRegistry(config.data, self.root),
         )
@@ -422,7 +422,7 @@ class CompilerBatchDesignTest(unittest.TestCase):
                 },
             ),
         )
-        builder = _RegistryDesignBuilder(
+        builder = SupervisedDesignBuilder(
             config,
             SourceRegistry(config.data, self.root),
         )
@@ -500,14 +500,14 @@ class CompilerBatchDesignTest(unittest.TestCase):
         for strategy, chunk in cases:
             with self.subTest(strategy=strategy):
                 config = self._global_config(strategy, chunk)
-                row_builder = _RegistryDesignBuilder(
+                row_builder = SupervisedDesignBuilder(
                     config,
                     SourceRegistry(config.data, self.root),
                 )
                 expected = tuple(
                     row_builder.training_row(origin) for origin in origins
                 )
-                batch_builder = _RegistryDesignBuilder(
+                batch_builder = SupervisedDesignBuilder(
                     config,
                     SourceRegistry(config.data, self.root),
                 )
@@ -524,7 +524,7 @@ class CompilerBatchDesignTest(unittest.TestCase):
 
     def test_training_row_does_not_retain_forecast_audit(self) -> None:
         config = self._config("recursive")
-        builder = _RegistryDesignBuilder(
+        builder = SupervisedDesignBuilder(
             config,
             SourceRegistry(config.data, self.root),
         )
@@ -536,7 +536,7 @@ class CompilerBatchDesignTest(unittest.TestCase):
 
     def test_forecast_design_retains_visibility_audit(self) -> None:
         config = self._config("recursive")
-        builder = _RegistryDesignBuilder(
+        builder = SupervisedDesignBuilder(
             config,
             SourceRegistry(config.data, self.root),
         )
@@ -549,7 +549,7 @@ class CompilerBatchDesignTest(unittest.TestCase):
     def test_training_row_materializes_information_set_once(self) -> None:
         config = self._config("recursive")
         registry = _CountingSourceRegistry(config.data, self.root)
-        builder = _RegistryDesignBuilder(config, registry)
+        builder = SupervisedDesignBuilder(config, registry)
         origin = cast(pd.Timestamp, pd.Timestamp(self.times.to_numpy()[20]))
 
         builder.training_row(origin)

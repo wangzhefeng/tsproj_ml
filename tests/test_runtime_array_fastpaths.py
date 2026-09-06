@@ -14,7 +14,8 @@ from feature_engineering.compiler import (
     FeatureSchema,
     VisibilityProof,
 )
-from model_pipeline.runner import _holdout_proof_summary, _sample_selector
+from model_pipeline.lifecycle import _holdout_proof_summary
+from model_pipeline.runner import _sample_selector
 from model_training.estimators import make_model_factory
 
 
@@ -137,7 +138,7 @@ class EstimatorInputFastPathTest(unittest.TestCase):
         values = np.column_stack((100.0 + step, step % 7.0))
         target = values[:, 0] * 2.0
 
-        with patch("models.ModelFactory.logger.info") as log_info:
+        with patch("models.wrappers.seasonal_template.logger.info") as log_info:
             estimator.fit(values, target)
 
         log_info.assert_not_called()

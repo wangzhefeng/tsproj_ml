@@ -1,13 +1,13 @@
 # -*- coding: utf-8 -*-
 """回测逐折评分共用体（R5b，2026-09-06 自两份重复循环体合一，方案 v3）。
 
-fixed-step（model_pipeline.runner）与 calendar-month（model_testing.calendar_month）
+fixed-step（model_testing.fixed_step）与 calendar-month（model_testing.calendar_month）
 的逐折「predict 后处理 → 评分 → CQR apply/collect → 证据」体是同一条业务规则，
 此前两处各写一遍（2026-09-01 CQR 接线时就双份维护）。本模块抽出唯一实现：
 调用方负责折构造与并行调度，本模块只消费每折已完成的 (fit 结果, origin, 窗口号)。
 
 输入输出均为 forecasting_core 合同类型 + model_evaluation 评分帧；不 import
-model_forecasting（runner 以 duck-typing 协议传入），供两侧共用且不构成包环。
+model_forecasting（runner 以显式 FoldScoringRunner 协议传入），供两侧共用且不构成包环。
 """
 
 from __future__ import annotations
@@ -24,6 +24,7 @@ from model_evaluation.point import evaluate_point_forecasts
 from probabilistic.calibration import ConformalCalibrationTracker
 
 from model_testing.tensor_frames import backtest_tensors_to_long
+from model_testing.contracts import FitResult, FoldScoringRunner
 
 
 @dataclass
@@ -41,8 +42,8 @@ class FoldScoreResult:
 
 def score_holdout_fold(
     *,
-    runner: Any,
-    fit_result: tuple[Any, Any, Any, Any, Any],
+    runner: FoldScoringRunner,
+    fit_result: FitResult,
     origin: pd.Timestamp,
     origin_index: int,
     window: int,

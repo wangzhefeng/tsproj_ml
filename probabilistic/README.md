@@ -18,9 +18,3 @@
 `CalibrationRecord` 保存可得时刻与 nonconformity score，`select_calibration_records()` 负责 as-of 选择，`calibrate_with_records()` / `calibrate_quantile_band()` 计算修正。`ConformalCalibrationTracker` 在每折先应用已有历史修正，再收集该折可用 score，不能先把当前验证误差放入历史池。
 
 final 校准状态写入 bundle，部署只应用已保存修正。CQR 提供边际区间，不提供联合样本、联合概率或任意分布漂移下的覆盖保证。crossing 修复、区间校准与指标评估是不同责任，不因都处理 quantile 而合并为重复流水线。
-
-```bash
-env -u PYTHONPATH .venv/bin/python tests/run_suite.py all --match test_conformal_tracker
-env -u PYTHONPATH .venv/bin/python tests/run_suite.py all --match test_probabilistic_objectives
-env -u PYTHONPATH .venv/bin/python tests/run_suite.py all --match test_multitarget_probabilistic
-```

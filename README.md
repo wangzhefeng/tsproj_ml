@@ -19,11 +19,11 @@
 
 ## 当前架构
 
-可靠性收口的当前实现、运行证据布局及受限验证状态见 [权威设计 §6.3](docs/multistep_forecasting_redesign.md#63-可靠性收口实现与受限验证)。代码接线完成不代表真实模型/部署验收完成。
+代码接线完成不代表真实模型/部署验收完成。
 
 ```text
 入口/分派
-  main.py / run.py / config/config_loader.py
+  run.py / config/config_loader.py
         │
         ├── model_forecasting/       单模型生命周期、推理、结果持久化
         └── model_ensemble/          OOF、融合器、Ensemble bundle/结果
@@ -66,8 +66,6 @@
 | `scripts/` | 配置、Ensemble 与运行资产审计 |
 | `tests/` | unittest、runtime smoke、结构门禁和场景数据链测试 |
 
-`docs/` 下实验性 Python/ipynb 不属于生产代码。
-
 ## 配置与时间几何
 
 模型 YAML 顶层分为：
@@ -106,28 +104,19 @@ features:
 
 ## 运行
 
-安装/同步环境：
+安装/同步环境（仅环境缺失或需要同步时；日常使用已有 `.venv/`，依赖变更统一 `uv add`）：
 
 ```bash
 uv sync --locked --no-cache
 ```
 
-项目使用已有根目录 `.venv/`，依赖唯一来源为 `pyproject.toml` + `uv.lock`，依赖变更统一使用 `uv add`。上面的同步命令仅用于环境缺失或需要同步时；日常测试直接调用 `.venv/bin/python`，不启动 uv、不设置 `UV_CACHE_DIR`，不依赖或重建 `.uv_cache/`。
-
-单配置本地入口：
-
-```bash
-env -u PYTHONPATH .venv/bin/python main.py \
-  --config-yaml config/aidc_load_15min_short/route_A/baseline/st_recursive.yaml
-```
-
-必须显式指定单模型配置；`main.py` 不提供硬编码默认值。单模型或引用式融合均可使用 CLI：
+单配置本地入口（单模型与引用式融合统一走 `run.py`，按配置类型自动分派）：
 
 ```bash
 env -u PYTHONPATH .venv/bin/python run.py --config-yaml config/<scenario>/<model>.yaml
 ```
 
-模型语义以 YAML 为唯一来源；CLI 不支持模型、数据和训练参数的静默覆盖。
+必须显式指定配置；`run.py` 不提供硬编码默认值。模型语义以 YAML 为唯一来源；CLI 不支持模型、数据和训练参数的静默覆盖。
 
 ## 结果合同
 
@@ -169,10 +158,10 @@ env -u PYTHONPATH .venv/bin/python scripts/audit_ensemble_configs.py
 env -u PYTHONPATH .venv/bin/python -m compileall -q \
   forecasting_core data_loading feature_engineering model_training model_testing \
   model_evaluation model_forecasting probabilistic model_ensemble models \
-  decomposition data_process utils config scripts tests main.py run.py
+  decomposition data_process utils config scripts tests run.py
 git diff --check
 ```
 
 测试分组、按 ID 过滤和精简覆盖映射见 [`tests/README.md`](tests/README.md)。
 
-当前实现与整改状态见 [`docs/architecture_convergence_plan.md`](docs/architecture_convergence_plan.md)。历史方案文档仅用于 Git/决策溯源，不作为当前实现事实源。
+历史方案文档仅用于 Git/决策溯源，不作为当前实现事实源。

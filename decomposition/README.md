@@ -1,6 +1,6 @@
 # decomposition 模块说明
 
-`decomposition/` 是时间序列目标分解组件库：在可见训练窗口内把目标拆成结构化分量（趋势/季节/残差），各分量独立外推后合回原始目标空间。设计文档见 [`docs/time_series_decomposition_redesign.md`](../docs/time_series_decomposition_redesign.md)。
+`decomposition/` 是时间序列目标分解组件库：在可见训练窗口内把目标拆成结构化分量（趋势/季节/残差），各分量独立外推后合回原始目标空间。
 
 ## 架构
 
@@ -29,11 +29,3 @@ Extractor（拆分）→ Forecaster（分量外推）→ Composer（合成）→
 - 分解严格遵守时间因果：每个训练窗口内独立拟合，测试标签保留原始电平；canonical 主链中由 `model_forecasting/transforms.py` 按 `(series_id, target)` 隔离调用，恢复严格逆序（scaling ← decomposition ← calendar normalization）。
 - 与 canonical 配置的关系：YAML 的 `features.transformations.decomposition` 声明方法与参数。
 - 历史 sidecar bundle（`bundle.py`/`DecompositionBundle`）已于 2026-09-02 删除：canonical 产物统一由 `ForecastModelBundle` 持有 pipeline，旧 pkl 不再可读（与全仓"无 legacy 层"口径一致）。
-
-## 验证
-
-```bash
-env -u PYTHONPATH .venv/bin/python -m unittest \
-  tests.test_decomposition_spec tests.test_decomposition_equivalence \
-  tests.test_decomposition_diagnostics -v
-```

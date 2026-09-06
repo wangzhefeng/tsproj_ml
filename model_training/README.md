@@ -19,9 +19,3 @@
 ## 恢复与边界
 
 checkpoint 通过 `forecasting_core.checkpoints.FitCheckpoint` 注入，训练层不导入运行时文件实现。特征准备、目标变换和 final bundle 落盘由上层负责；quantile 层注入不同分位点的 estimator factory，不在训练包复制目标函数参数规则。
-
-```bash
-env -u PYTHONPATH .venv/bin/python tests/run_suite.py all --match test_standard_strategy_executors
-env -u PYTHONPATH .venv/bin/python tests/run_suite.py all --match test_multi_target_adapters
-env -u PYTHONPATH .venv/bin/python tests/run_suite.py all --match test_model_thread_runtime
-```

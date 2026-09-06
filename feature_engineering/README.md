@@ -3,10 +3,11 @@
 `feature_engineering/` 是 canonical 唯一特征编译层。
 
 - `compiler.py`：lag、known-future、static、datetime、advanced transformation、visibility proof 与 lineage。
+- `spectral.py`：FFT/小波/熵特征纯函数（trailing 窗），供 compiler 的 `advanced.fourier`/`advanced.wavelet` 与 rolling `entropy` 调用。
 - `selection.py`：每个训练窗独立拟合的监督特征选择。
 - `transform_specs.py`：feature/target transformation 严格配置归一化。
 
-特征只能使用预测原点可见信息。实验性 FFT/wavelet 等脚本位于 `docs/feature_engineering/`，未接入生产；现役中国节假日 source 由 `data_loading/holiday_generator.py` 提供，两者不要混淆。
+特征只能使用预测原点可见信息。频域/小波特征由 `spectral.py` 提供纯函数实现，经 `features.transformations.advanced.fourier`（trailing 窗 FFT：top-k 振幅/频率/相位 + 谱质心 + 按周期区间的频带能量占比）与 `advanced.wavelet`（trailing 窗 DWT 各分量能量占比）声明启用；两者只在 trailing 可见窗上计算，as-of 由编译器合同保证，可见历史不足窗口长度时 RAISE。rolling.stats 额外支持 `entropy`（香农熵，p=|y|/Σ|y|）。现役中国节假日 source 由 `data_loading/holiday_generator.py` 提供，两者不要混淆。
 
 ## 缓存与训练态
 
@@ -21,10 +22,3 @@
 known-future 按目标时刻取值；Direct 历史 lag/rolling/diff 的锚点由 `features.transformations.direct.align_to_target` 决定。目标日对齐且 lag 足够深时消费原点前真实历史；越过原点的 observed-past 访问必须显式 provider，不能隐式填补。
 
 目标变换规格归一化位于本包，目标变换实际拟合与恢复由 `model_forecasting/transforms.py` 编排。raw-design 缓存也不是 `.uv_cache/`：删除依赖下载缓存不应清理模型设计缓存。
-
-```bash
-# 项目根目录；按修改范围选用
-env -u PYTHONPATH .venv/bin/python tests/run_suite.py all --match test_feature_visibility_compiler
-env -u PYTHONPATH .venv/bin/python tests/run_suite.py all --match test_compiler_batch_equivalence
-env -u PYTHONPATH .venv/bin/python tests/run_suite.py all --match test_compiled_feature_cache
-```

@@ -37,7 +37,7 @@ env -u PYTHONPATH .venv/bin/python -m unittest discover -s tests -p "test_*.py"
 | `test_ensemble_runtime.test_learned_methods_end_to_end` 的三次独立运行 | 有限值与 method 断言合入 `test_oof_cache_reused_across_fusion_methods`；四方法仍真实执行，减少三次重复生命周期 |
 | TASK27 Local K2 的七策略 × independent/native 完整 runtime | Direct 保留两种 adapter 的完整接线；其余十二组合改为真实 Ridge/RF 的 trainer → forecaster 测试；regressor-chain 原有七组合保留。矩阵仍覆盖原组合，并非跳过策略 |
 | TASK27 的其他轴 | Local K1、Local K2 quantile、Global K2 仍逐策略完整 runtime；两种融合及非法配置/产物检查保留。策略依赖与 time-major 精确值另由 `test_standard_strategy_executors`、`test_multi_target_adapters` 保护 |
-| 历史 migration manifest 与当前 fingerprint/路径全集的永久相等锁 | `test_validation_geometry_manifest` 不再读取历史 manifest；继续扫描当前活动配置，拒绝旧字段，并基于真实时间轴验证实际训练 origin 数等于当前 `train_window_steps`。历史 manifest 不删除，不再承担持续配置清单职责 |
+| 历史 migration manifest 与当前 fingerprint/路径全集的永久相等锁 | `test_validation_geometry_manifest` 不读取历史 manifest；继续扫描当前活动配置，拒绝旧字段，并基于真实时间轴验证实际训练 origin 数等于当前 `train_window_steps`。历史 manifest 已于 2026-09-06 清除（连同 `_regen_validation_geometry_manifest.py`），内容从 Git 溯源 |
 
 上述改变只影响测试执行与历史快照验收，不修改预测、评估、模型文件或配置解析。下沉的十二组合不再各自单独验证落盘：这是有意收窄重复的接线覆盖，保留 Direct adapter 接线及七策略其他 runtime 轴作为补偿，不宣称逐组合端到端覆盖完全不变。
 
@@ -58,6 +58,7 @@ env -u PYTHONPATH .venv/bin/python -m unittest discover -s tests -p "test_*.py"
 执行纪律：
 
 - 新行为先 RED 再实现；
+- AIDC 专项脚本目录路径含日期段、不是合法 Python 包，相关测试用 `sys.path.insert` 引导后按模块名导入；
 - runtime 产物使用临时目录；
 - `tests/test_package_layering.py` AST 扫描所有 import，包括函数内 import；
 - `tests/test_active_config_runtime_contract.py` 保证活动 YAML 与生产 grammar/时间几何一致；
@@ -75,4 +76,4 @@ env -u PYTHONPATH .venv/bin/python -m unittest discover -s tests -p "test_*.py"
 - `test_model_catalog_contract.py`、`test_package_layering.py`、`test_lifecycle_static_contract.py`：描述表、依赖门禁及生命周期静态接线/状态合同。
 - `test_execution_evidence_contract.py`：合成元数据的缓存读写、旧缓存缺证据、公开能力错误传播、JSON 参数快照和静态调用接线；临时测试数组不是模型结果或运行验收证据。
 
-本地复验入口为 `.hermes/plans/verify-architecture-no-models.py`，安装调用拦截器后执行上述白名单，遇到 fit/predict 类调用立即中止。各文件仍纳入原生 discovery，不从完整测试集合排除。精确计数与本轮未验证项只在权威设计 §6.3 维护。
+本地复验入口为 `.hermes/plans/verify-architecture-no-models.py`，安装调用拦截器后执行上述白名单，遇到 fit/predict 类调用立即中止。各文件仍纳入原生 discovery，不从完整测试集合排除。

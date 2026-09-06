@@ -26,10 +26,3 @@
 `N/H/K/Q` 分别表示序列、预测步、目标、分位点。point 与 quantile 使用明确轴和时间网格，展平固定 time-major；`(N,S,H,K)` 仅为 joint-sample 类型边界，`generate_joint_samples()` 不提供生成能力。
 
 单模型配置由 `ForecastConfigSpec` 表达；引用式融合规格在 `model_ensemble/specs.py`。core 不为旧配置、旧一维分布或旧模型导入路径建立兼容层。新增字段须同时明确 canonical payload、校验和 fingerprint 语义，不能只增加序列化字段。
-
-```bash
-# 项目根目录
-env -u PYTHONPATH .venv/bin/python tests/run_suite.py all --match test_forecast_tensor
-env -u PYTHONPATH .venv/bin/python tests/run_suite.py all --match test_forecast_model_bundle
-env -u PYTHONPATH .venv/bin/python tests/run_suite.py all --match test_package_layering
-```

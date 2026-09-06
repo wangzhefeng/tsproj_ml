@@ -13,25 +13,13 @@ Quantile linear blending 按 target 最小化 simplex 约束 pooled pinball；�
 
 成员 OOF/final 证据通过 `contracts.member_execution_evidence` 调用 runner 的公开只读能力，不导入 L2 执行实现。自定义 runner 未提供该能力时显式记录 unavailable；已提供能力但执行失败直接报错。
 
-`OOFPredictionArtifact.execution_evidence` 与 folds/预测身份分离，写入 `oof_metadata.json` 并在缓存命中时原样读回；旧缓存缺此字段返回空证据，不重跑、不回填当前环境。`resolved_config.json` 和 `result_metadata.json` 的 `run_evidence` 包含 `member_oof`、`member_final` 及 source hashes；成员证据不完整时汇总不能称 recorded。数值/部署验收状态见 [权威设计 §6.3](../docs/multistep_forecasting_redesign.md#63-可靠性收口实现与受限验证)。
+`OOFPredictionArtifact.execution_evidence` 与 folds/预测身份分离，写入 `oof_metadata.json` 并在缓存命中时原样读回；旧缓存缺此字段返回空证据，不重跑、不回填当前环境。`resolved_config.json` 和 `result_metadata.json` 的 `run_evidence` 包含 `member_oof`、`member_final` 及 source hashes；成员证据不完整时汇总不能称 recorded。
 
 ## 生命周期与依赖注入
 
 1. `run_ensemble_config_file()` 解析引用式 YAML 并校验成员共享合同，不接受 ensemble-of-ensemble。
-2. `generate_oof_for_config()` 生成或读取成员 OOF；验证标签与训练标签用 `is_label_safe` 隔离，不能用成员 final fit 的训练内预测学习融合权重。
-3. `fit_ensemble()` 学习融合参数，`evaluation.py::evaluate_fused_oof()` 给出融合 OOF 评分；该评分与 final 预测结果分开记录。
+2. `generate_oof_for_config()` 生成或读取成员 OOF；验证标签与训练标签用 `is_label_safe` 隔离（`ensemble.oof.gap_steps` 隔离合同），不能用成员 final fit 的训练内预测学习融合权重。
+3. `fit_ensemble()` 学习融合参数，`evaluation.py::evaluate_fused_oof()` 给出融合 OOF 评分（挂在 `run_ensemble_config` 返回的 `fused_oof_scores` 与 audit）；该评分与 final 预测结果分开记录。
 4. 成员按与单模型一致的显式窗口 final fit，持久化自包含 bundle。`predict_ensemble_bundle()` 使用已保存成员与融合器，不重新读取 OOF cache 或成员 YAML。
 
 `contracts.py` 提供 `BaseModelRunner`、`BaseModelRunnerFactory`、`EnsembleRuntimeServices` 与 `FusionMethod`；入口注入执行服务，融合包不直接构造 L2 runtime 私有对象。成员顺序、目标顺序、时间轴和 quantile grid 必须一致。
-
-## 入口与验证
-
-```bash
-# 运行引用式融合（替换为实际配置路径）
-env -u PYTHONPATH .venv/bin/python run.py --config-yaml config/<scenario>/<ensemble>.yaml
-# 小样本端到端与部署恢复测试
-env -u PYTHONPATH .venv/bin/python tests/run_suite.py all --match test_ensemble_runtime
-env -u PYTHONPATH .venv/bin/python tests/run_suite.py all --match test_ensemble_persistence
-```
-
-OOF 缓存与业务结果缓存独立于 uv 下载缓存；清理 `.uv_cache/` 不等于授权删除 OOF 或正式结果。

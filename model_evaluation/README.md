@@ -17,11 +17,3 @@
 - `metrics.py` 的 `pinball_loss/interval_metrics/crossing_metrics/wilson_interval` 是指标内核，不负责修复预测。
 
 结果 CSV 的 long schema、写盘和绘图由 `model_forecasting/results.py` 承载；crossing 修复由 forecaster 承载，CQR 校准由 `probabilistic/calibration.py` 承载。Ensemble 的融合 OOF 评分复用本包，不另维护一份指标公式。
-
-## 定向验证
-
-```bash
-env -u PYTHONPATH .venv/bin/python tests/run_suite.py all --match test_probabilistic_metrics
-env -u PYTHONPATH .venv/bin/python tests/run_suite.py all --match test_eval_mask_rewire
-env -u PYTHONPATH .venv/bin/python tests/run_suite.py all --match test_probabilistic_eval_wiring
-```

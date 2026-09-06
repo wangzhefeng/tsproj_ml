@@ -26,6 +26,6 @@ Extractor（拆分）→ Forecaster（分量外推）→ Composer（合成）→
 
 ## 边界
 
-- 分解严格遵守时间因果：每个训练窗口内独立拟合，测试标签保留原始电平；canonical 主链中由 `model_forecasting/transforms.py` 按 `(series_id, target)` 隔离调用，恢复严格逆序（scaling ← decomposition ← calendar normalization）。
+- 分解严格遵守时间因果：每个训练窗口内独立拟合，测试标签保留原始电平；canonical 主链中由 `feature_engineering/transforms/pipeline.py` 按 `(series_id, target)` 隔离调用，恢复严格逆序（scaling ← decomposition ← calendar normalization）。
 - 与 canonical 配置的关系：YAML 的 `features.transformations.decomposition` 声明方法与参数。
 - 历史 sidecar bundle（`bundle.py`/`DecompositionBundle`）已于 2026-09-02 删除：canonical 产物统一由 `ForecastModelBundle` 持有 pipeline，旧 pkl 不再可读（与全仓"无 legacy 层"口径一致）。

@@ -6,7 +6,7 @@
 - `spectral.py`：FFT/小波/熵特征纯函数（trailing 窗），供 compiler 的 `advanced.fourier`/`advanced.wavelet` 与 rolling `entropy` 调用。
 - `selection.py`：每个训练窗独立拟合的监督特征选择。
 - `transform_specs.py`：feature/target transformation 严格配置归一化。
-- `transforms/`：变换三件套子包（2026-09-06 R3 归位，方案 v3）：
+- `transforms/`：目标/特征变换子包，详见 `transforms/README.md`：
   - `pipeline.py`：目标变换栈（calendar normalization → decomposition → scaling，point/quantile 严格逆序恢复，状态按 `(series_id,target)` 隔离）；
   - `scaling.py`：`CanonicalFeatureScaler`，在训练设计上拟合并将同一状态用于预测设计；
   - `windows.py`：按唯一监督标签时间选取 scaler 窗口；分解默认同窗，允许显式较长上下文。
@@ -20,7 +20,7 @@
 
 ## 输入输出与对齐
 
-`FeatureCompiler.compile()` 消费物化信息集，返回 `CompiledFeatures`，包含设计值、`FeatureSchema`、lineage 和 `VisibilityProof`。`batch_eligibility()` 检查批编译能力，`compile_batch()` 提供受支持设计的批量编译；批量路径与普通路径必须保持等价。
+`FeatureCompiler.compile()` 消费物化信息集，返回 `CompiledFeatures`，包含设计值、`FeatureSchema`、lineage 和 `VisibilityProof`。`batch_eligibility()` 检查批编译能力，`compile_batch()` 提供受支持设计的批量编译。single 与 batch 保留不同执行路径，共用规则解析；不能把 provider 依赖设计强制改走 batch，也不能把同一实现自比较当成独立黄金值验证。
 
 known-future 按目标时刻取值；Direct 历史 lag/rolling/diff 的锚点由 `features.transformations.direct.align_to_target` 决定。目标日对齐且 lag 足够深时消费原点前真实历史；越过原点的 observed-past 访问必须显式 provider，不能隐式填补。
 

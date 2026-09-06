@@ -32,7 +32,11 @@
 | 任务 | 先读 |
 |---|---|
 | 写/改配置 YAML、时间边界、低频与外生约定 | `config/README.md` |
-| 动批调度/资源规划/checkpoint/证据与持久化 | `model_forecasting/README.md` |
+| 动生命周期编排/监督设计/批调度 | `model_pipeline/README.md` |
+| 动资源规划/性能档/checkpoint/运行缓存 | `model_performance/README.md` |
+| 动特征编译/目标与特征变换 | `feature_engineering/README.md`、`feature_engineering/transforms/README.md` |
+| 动回测几何/逐折评分/回测产物 | `model_testing/README.md` |
+| 动预测/部署/证据与 bundle 持久化 | `model_forecasting/README.md` |
 | 动训练器/策略 executor/estimator 能力 | `model_training/README.md` |
 | 动模型工厂/参数校验/别名 | `models/README.md` |
 | 动 ensemble/OOF/融合方法 | `model_ensemble/README.md` |

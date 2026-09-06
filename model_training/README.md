@@ -3,8 +3,8 @@
 `model_training/` 只负责模型训练行为，不拥有结果 IO 或 bundle 类型。
 
 - `trainer.py`：`CanonicalTrainer`，训练 strategy artifact。
-- `quantile.py`：`CanonicalMarginalQuantileTrainer`/`CanonicalMarginalQuantileArtifact`，按 quantile grid 逐 level 训练编排（2026-09-06 R4 自 probabilistic/training.py 归位）。
-- `objectives.py`：quantile 模型支持性检查（2026-09-06 R4 自 probabilistic/objectives.py 归位）。
+- `quantile.py`：`CanonicalMarginalQuantileTrainer`/`CanonicalMarginalQuantileArtifact`，按 quantile grid 逐 level 训练编排。
+- `objectives.py`：quantile 模型支持性检查。
 - `strategies/`：七种标准多步 executor。
 - `estimators/`：能力探测和 independent/chain/native adapter。
 

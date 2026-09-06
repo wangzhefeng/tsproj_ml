@@ -18,7 +18,7 @@
 ## 资源与恢复合同
 
 - `runtime_resources.py`：`RuntimeWorkload`、`RuntimeResourceBudget`、`RuntimeExecutionPlan` 及其序列化 payload；本包不执行资源探测或启动并行任务，实际规划在运行时层。
-- `checkpoints.py`：`FitCheckpoint` Protocol 与结构化 `FitCheckpointError`；训练侧只依赖该接口，本地文件实现位于 `model_forecasting/checkpoints.py`。
+- `checkpoints.py`：`FitCheckpoint` Protocol 与结构化 `FitCheckpointError`；训练侧只依赖该接口，本地文件实现位于 `model_performance/checkpoints.py`。
 - `ForecastModelBundle.schema_payload()` 提供不含模型对象的审计元数据；`write_schema_json()` 可显式写出 JSON。模型 pickle 与生命周期持久化由上层服务负责，因此不能把本包描述为绝对无 IO。
 
 ## 张量与配置边界

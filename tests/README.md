@@ -55,6 +55,21 @@ env -u PYTHONPATH .venv/bin/python -m unittest discover -s tests -p "test_*.py"
 - `test_conformal_tracker` 增加倒置区间整批拒绝且不污染历史池的负向断言；CQR 合法输入、as-of 和恢复链继续验证。
 - 资产缺列测试改走实际 `audit_runtime_assets` 的 CSV 审计与报告，选日尾部误差测试改走 `run_selection`，不再只测休眠包装。
 
+## 行为不变重构覆盖映射
+
+- 编译器保留 single/batch 双执行路径，共用规则解析。`test_compiler_batch_equivalence` 继续覆盖受支持路径等价；`test_compiler_shared_rules` 对照迁移前冻结的 `fixtures/compiler_shared_rules.json`，独立钉住 frame、schema、lineage、visibility 和错误行为。黄金值不得改为委托现实现生成。
+- 目标/特征变换测试直接导入 `feature_engineering.transforms`；quantile 训练测试直接导入 `model_training.quantile`。回测评分、pipeline runner 与预测器的静态点名检查跟随新职责位置。
+- 模型测试使用 `models.factory`、`models.wrappers.<family>` 与 `models.pickle_io`。`test_model_wrapper_persistence` 验证各 family 的新路径 pickle 往返预测、旧路径无 shim/拒绝加载，以及 pickle IO 导入不修改 `sys.path`；参数校验和多目标 adapter 的原有断言保留。
+- layering 的 `PROJECT_PACKAGES` 包含 `model_pipeline` 与 `model_performance`；新包必须注册，不能靠漏扫换取门禁通过。
+- `test_backtest_lifecycle_split` 覆盖 runner 的显式协议能力、串行/并行窗口评分顺序与历史传参、running/completed/failed 状态以及 BaseException 原样传播；生命周期静态检查位于 `model_pipeline/lifecycle.py`，逐折证据接线检查指向 `model_testing/fixed_step.py` 与 calendar-month。这些接缝测试不替代真实配置产物 diff。
+
+```bash
+env -u PYTHONPATH .venv/bin/python tests/run_suite.py integration --match test_compiler_shared_rules
+env -u PYTHONPATH .venv/bin/python tests/run_suite.py integration --match test_model_wrapper_persistence
+```
+
+真实配置的数值 diff、wall 与 bundle 部署往返证据记录在实施计划，不以单元测试或产物交集相等替代完整结果验收。
+
 执行纪律：
 
 - 新行为先 RED 再实现；

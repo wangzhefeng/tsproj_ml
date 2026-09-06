@@ -23,22 +23,22 @@
 
 ```text
 入口/分派
-  run.py / config/config_loader.py
+  run.py / batch_run.py / config/config_loader.py
         │
-        ├── model_forecasting/       单模型生命周期、推理、结果持久化
-        └── model_ensemble/          OOF、融合器、Ensemble bundle/结果
-                 │
-                 ▼
-  probabilistic/                     quantile 训练与独立后处理
+        ├── model_pipeline/          单模型生命周期、监督设计、批调度
+        └── model_ensemble/          OOF、融合器、自包含 bundle；执行服务由入口注入
                  │
                  ▼
   data_loading/ → feature_engineering/ → model_training/
-                         ├── model_testing/
-                         └── model_evaluation/
+                         │ transforms/     │ quantile/七策略
+                         ├── model_testing/       回测几何、评分与产物
+                         ├── model_forecasting/   预测、部署与 bundle/结果
+                         ├── model_performance/   资源、性能档与运行缓存
+                         └── probabilistic/       仅 CQR 校准
                  │
                  ▼
   forecasting_core/                  specs/tensors/artifacts/probabilistic contracts
-  models/ decomposition/ data_process/
+  models/ model_evaluation/ decomposition/ data_process/
                  │
                  ▼
   utils/
@@ -52,14 +52,16 @@
 |---|---|
 | `forecasting_core/` | Forecast/Data/Feature/Strategy/Estimator specs，预测张量，bundle/distribution/probabilistic spec |
 | `data_loading/` | SourceRegistry、information set、显式 provider |
-| `feature_engineering/` | FeatureCompiler、监督特征选择、transform 配置归一化 |
-| `model_training/` | CanonicalTrainer、七策略 executor、能力探测与多目标 adapter |
-| `model_testing/` | fixed-step/calendar-month 折、actual、seasonal-naive、origin 原语 |
+| `feature_engineering/` | FeatureCompiler、监督特征选择、transform 配置归一化及 `transforms/` 训练态 |
+| `model_training/` | CanonicalTrainer、quantile 训练、七策略 executor、能力探测与多目标 adapter |
+| `model_testing/` | fixed-step/calendar-month 几何、actual/seasonal-naive、逐折评分与回测产物 |
 | `model_evaluation/` | 点预测与边际 quantile 指标、eval mask |
-| `model_forecasting/` | 单模型回测、final fit、forecast、bundle 与 long result |
-| `probabilistic/` | quantile 训练、crossing/CQR 独立后处理工具 |
+| `model_pipeline/` | 单模型生命周期、监督设计、fold/final fit 编排、批调度与验收 |
+| `model_forecasting/` | point/quantile 预测、crossing、部署、bundle 与预测 long result |
+| `model_performance/` | 资源规划、性能档、checkpoint、变换缓存与有界内存缓存 |
+| `probabilistic/` | CQR 校准内核与 apply-before-collect 追踪器 |
 | `model_ensemble/` | 引用解析、OOF、四种融合方法、缓存、持久化 |
-| `models/` | estimator factory 与底层 pickle IO |
+| `models/` | catalog、factory、按 family 分组的 wrappers 与底层 pickle IO |
 | `decomposition/` | 趋势/季节/残差分解与恢复 |
 | `data_process/` | 进模型前的离线聚合、填补、异常、事件、周期与峰谷分析 |
 | `config/` | 5,150 个活动模型 YAML（5,072 ForecastConfigSpec + 78 Ensemble）+ 41 个独立数据工具 YAML；3 个无有效资产配置归档于 `docs/archived_configs/` |
@@ -121,16 +123,16 @@ env -u PYTHONPATH .venv/bin/python run.py --config-yaml config/<scenario>/<model
 ## 结果合同
 
 ```text
-results/<scenario>/<result_identity>/
-├── pretrained_models/
+results/
+├── pretrained_models/<scenario>/<result_identity>/
 │   ├── model.pkl
 │   └── resolved_model.json
-├── results_test/
+├── results_test/<scenario>/<result_identity>/
 │   ├── cv_plot_df.csv
 │   ├── test_scores_df.csv
 │   ├── test_scores_probabilistic_df.csv   # quantile 模式
 │   └── result_metadata.json
-└── results_forecast/
+└── results_forecast/<scenario>/<result_identity>/
     ├── prediction.csv
     └── resolved_config.json
 ```
@@ -138,6 +140,7 @@ results/<scenario>/<result_identity>/
 - `prediction.csv` 唯一键：`(series_id,time,target)`。
 - `cv_plot_df.csv` 唯一键：`(series_id,time,target,window)`。
 - 单模型和 Ensemble 都保存 schema-2 `ForecastModelBundle`。
+- wrappers 模块迁移后，旧 `models.ModelFactory` 路径 bundle 不再兼容，不提供 shim；需重新训练，现有结果不自动删除。见 `models/README.md`。
 - Ensemble bundle 自包含成员 bundle 和融合器，部署预测不读取成员 YAML 或 OOF cache。
 
 ## 验证
@@ -157,7 +160,7 @@ env -u PYTHONPATH .venv/bin/python scripts/audit_ensemble_configs.py
 # 语法与格式
 env -u PYTHONPATH .venv/bin/python -m compileall -q \
   forecasting_core data_loading feature_engineering model_training model_testing \
-  model_evaluation model_forecasting probabilistic model_ensemble models \
+  model_evaluation model_forecasting model_pipeline model_performance probabilistic model_ensemble models \
   decomposition data_process utils config scripts tests run.py
 git diff --check
 ```

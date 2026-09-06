@@ -1,12 +1,12 @@
 """Canonical forecasting data registry and information-set contracts."""
 
-from data_loading.information_set import (
+from data_loading.information.information_set import (
     InformationSetRequest,
     MaterializedInformationSet,
     SourceLineage,
     TargetAccess,
 )
-from data_loading.providers import (
+from data_loading.information.providers import (
     AuxiliaryProvider,
     CompositeProvider,
     EndogenousFutureProvider,
@@ -14,20 +14,19 @@ from data_loading.providers import (
     ProvidedScenarioProvider,
     create_endogenous_future_provider,
 )
-from data_loading.holiday_generator import (
+from data_loading.calendar_generator import (
+    BUILTIN_GENERATORS,
     chinese_holiday_frame,
     chinese_holiday_generator,
-    generator_name as chinese_holiday_generator_name,
+    GENERATOR_NAME as CHINESE_HOLIDAY_GENERATOR_NAME,
 )
 from data_loading.registry import FrameReader, SourceGenerator, SourceRegistry
 
-BUILTIN_GENERATORS: dict[str, SourceGenerator] = {
-    chinese_holiday_generator_name(): chinese_holiday_generator,
-}
 
 __all__ = [
     "AuxiliaryProvider",
     "BUILTIN_GENERATORS",
+    "CHINESE_HOLIDAY_GENERATOR_NAME",
     "chinese_holiday_frame",
     "chinese_holiday_generator",
     "CompositeProvider",

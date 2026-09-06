@@ -445,8 +445,8 @@ def execute_lifecycle(runner: Any, output_root: str | Path | None = None) -> Can
     run_evidence = {
         **runner.execution_evidence(final_artifact, final_target_transform),
         "raw_design_provenance": compiled_cache.raw_design_provenance(
-            config, base_dir=runner.registry._base_dir, origin=origin,
-            generators=runner.registry._generators,
+            config, base_dir=runner.registry.base_dir, origin=origin,
+            generators=runner.registry.generators,
         ),
 
     }

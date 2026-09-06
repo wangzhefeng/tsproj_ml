@@ -9,6 +9,7 @@ from typing import Any, Mapping, Sequence, cast
 import numpy as np
 import pandas as pd
 
+from data_loading.processing.alignment import filter_identity
 from data_loading import (
     EndogenousFutureProvider,
     InformationSetRequest,
@@ -258,40 +259,6 @@ class SupervisedDesignBuilder:
             raise ValueError(f"series identity must have width {width}")
         return tuple(value)
 
-    @staticmethod
-    def _source_identities(source, frame: pd.DataFrame) -> tuple[Any, ...]:
-        if len(source.series_id_cols) == 1:
-            values = frame[source.series_id_cols[0]].tolist()
-        else:
-            values = list(
-                frame.loc[:, list(source.series_id_cols)].itertuples(
-                    index=False,
-                    name=None,
-                )
-            )
-        return tuple(dict.fromkeys(values))
-
-    def _target_source_frames(self) -> tuple[tuple[Any, pd.DataFrame], ...]:
-        frames = []
-        for source in self.config.data.sources:
-            if not any(column.role is ColumnRole.TARGET for column in source.columns):
-                continue
-            if source.source_type != "file" or source.history_path is None:
-                raise ValueError(
-                    "global generated target sources require explicit "
-                    "validation.training_scope.series_order"
-                )
-            frame = self.registry._validate_frame(
-                source,
-                self.registry._read_path(source.history_path),
-                generated=False,
-                path_version="history",
-            )
-            frames.append((source, frame))
-        if not frames:
-            raise ValueError("canonical runtime requires target history")
-        return tuple(frames)
-
     def _resolve_series_ids(self) -> tuple[Any, ...]:
         if not self.is_global:
             return ("__local__",)
@@ -302,9 +269,9 @@ class SupervisedDesignBuilder:
         if unknown_policy != "raise":
             raise ValueError("global unknown_series_policy must be raise")
         configured = validation.get("series_order")
-        target_frames = self._target_source_frames()
+        target_coverage = self.registry.target_history_coverage()
         discovered_by_source = tuple(
-            self._source_identities(source, frame) for source, frame in target_frames
+            coverage.series_ids for coverage in target_coverage
         )
         if configured is None:
             series_ids = discovered_by_source[0]
@@ -327,8 +294,7 @@ class SupervisedDesignBuilder:
         if policy not in {"raise", "drop"}:
             raise ValueError("incomplete_series_policy must be raise or drop")
         expected_times_by_source = tuple(
-            pd.DatetimeIndex(pd.to_datetime(frame[source.time_col]).unique()).sort_values()
-            for source, frame in target_frames
+            coverage.times for coverage in target_coverage
         )
         reference_times = expected_times_by_source[0]
         if any(
@@ -339,12 +305,11 @@ class SupervisedDesignBuilder:
         complete = []
         for series_id in series_ids:
             series_complete = True
-            for (source, frame), expected_times in zip(
-                target_frames,
+            for coverage, expected_times in zip(
+                target_coverage,
                 expected_times_by_source,
             ):
-                selected = self.registry._filter_identity(source, frame, series_id)
-                times = pd.DatetimeIndex(pd.to_datetime(selected[source.time_col])).sort_values()
+                times = coverage.times_by_series.get(series_id, pd.DatetimeIndex([]))
                 if not times.equals(expected_times):
                     series_complete = False
                     break
@@ -388,7 +353,7 @@ class SupervisedDesignBuilder:
                 continue
             frame = information_set.target_history[source.name]
             if self.is_global:
-                frame = self.registry._filter_identity(source, frame, self.series_ids[0])
+                frame = filter_identity(source, frame, self.series_ids[0])
             indices.append(pd.DatetimeIndex(pd.to_datetime(frame[source.time_col])))
         if not indices:
             raise ValueError("canonical runtime requires target history")
@@ -413,7 +378,7 @@ class SupervisedDesignBuilder:
             frame = information_set.target_history[source.name]
             for series_id in self.series_ids:
                 selected = (
-                    self.registry._filter_identity(source, frame, series_id)
+                    filter_identity(source, frame, series_id)
                     if self.is_global
                     else frame
                 )
@@ -485,7 +450,7 @@ class SupervisedDesignBuilder:
             frame = information_set.target_history[source.name]
             for series_index, series_id in enumerate(self.series_ids):
                 series_frame = (
-                    self.registry._filter_identity(source, frame, series_id)
+                    filter_identity(source, frame, series_id)
                     if self.is_global
                     else frame
                 )

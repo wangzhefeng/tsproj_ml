@@ -1,0 +1,1688 @@
+{
+  "global=False,provider=persistence,access=history_only": {
+    "target_history": {
+      "targets": {
+        "csv": "ts,load,power\n2026-01-01 01:00:00,1.0,10.0\n2026-01-01 02:00:00,2.0,20.0\n2026-01-01 03:00:00,3.0,30.0\n",
+        "dtypes": [
+          "datetime64[ns]",
+          "float64",
+          "float64"
+        ]
+      }
+    },
+    "observed_past": {
+      "sensors": {
+        "csv": "ts,issued_at,humidity\n2026-01-01 01:00:00,2026-01-01 01:00:00,100.0\n2026-01-01 02:00:00,2026-01-01 02:00:00,200.0\n2026-01-01 03:00:00,2026-01-01 03:00:00,300.0\n",
+        "dtypes": [
+          "datetime64[ns]",
+          "datetime64[ns]",
+          "float64"
+        ]
+      }
+    },
+    "known_future": {
+      "weather": {
+        "csv": "ts,issued_at,temperature\n2026-01-01 04:00:00,2026-01-01 03:00:00,40.0\n2026-01-01 05:00:00,2026-01-01 03:00:00,50.0\n",
+        "dtypes": [
+          "datetime64[ns]",
+          "datetime64[ns]",
+          "float64"
+        ]
+      }
+    },
+    "static": {},
+    "lineage": [
+      {
+        "source_name": "targets",
+        "path_version": "history",
+        "path": "targets.csv",
+        "availability_policy": "source_time",
+        "includes_target_labels": false
+      },
+      {
+        "source_name": "sensors",
+        "path_version": "history",
+        "path": "sensors.csv",
+        "availability_policy": "column",
+        "includes_target_labels": false
+      },
+      {
+        "source_name": "weather",
+        "path_version": "backtest",
+        "path": "weather_backtest.csv",
+        "availability_policy": "column",
+        "includes_target_labels": false
+      },
+      {
+        "source_name": "weather",
+        "path_version": "future",
+        "path": "weather_future.csv",
+        "availability_policy": "column",
+        "includes_target_labels": false
+      }
+    ],
+    "providers": {
+      "()": {
+        "values": [
+          300.0,
+          300.0
+        ],
+        "methods": [
+          "persistence",
+          "persistence"
+        ],
+        "available_at": [
+          "2026-01-01 03:00:00",
+          "2026-01-01 03:00:00"
+        ]
+      }
+    },
+    "compiled": {
+      "csv": "target_time,horizon_step,load__lag_2,power__lag_2,humidity__lag_1,temperature,dt_hour\n2026-01-01 04:00:00,1,2.0,20.0,300.0,40.0,4\n2026-01-01 05:00:00,2,3.0,30.0,300.0,50.0,5\n",
+      "dtypes": [
+        "datetime64[ns]",
+        "int64",
+        "float64",
+        "float64",
+        "float64",
+        "float64",
+        "int64"
+      ]
+    },
+    "schema": [
+      "load__lag_2",
+      "power__lag_2",
+      "humidity__lag_1",
+      "temperature",
+      "dt_hour"
+    ],
+    "proofs": [
+      {
+        "feature_name": "load__lag_2",
+        "source_name": "targets",
+        "role": "target",
+        "target_time": "2026-01-01 04:00:00",
+        "source_time": "2026-01-01 02:00:00",
+        "forecast_origin": "2026-01-01 03:00:00",
+        "horizon_step": 1,
+        "available_at": "2026-01-01 02:00:00",
+        "provider": null
+      },
+      {
+        "feature_name": "power__lag_2",
+        "source_name": "targets",
+        "role": "target",
+        "target_time": "2026-01-01 04:00:00",
+        "source_time": "2026-01-01 02:00:00",
+        "forecast_origin": "2026-01-01 03:00:00",
+        "horizon_step": 1,
+        "available_at": "2026-01-01 02:00:00",
+        "provider": null
+      },
+      {
+        "feature_name": "humidity__lag_1",
+        "source_name": "sensors",
+        "role": "observed_past",
+        "target_time": "2026-01-01 04:00:00",
+        "source_time": "2026-01-01 03:00:00",
+        "forecast_origin": "2026-01-01 03:00:00",
+        "horizon_step": 1,
+        "available_at": "2026-01-01 03:00:00",
+        "provider": null
+      },
+      {
+        "feature_name": "temperature",
+        "source_name": "weather",
+        "role": "known_future",
+        "target_time": "2026-01-01 04:00:00",
+        "source_time": "2026-01-01 04:00:00",
+        "forecast_origin": "2026-01-01 03:00:00",
+        "horizon_step": 1,
+        "available_at": "2026-01-01 03:00:00",
+        "provider": null
+      },
+      {
+        "feature_name": "dt_hour",
+        "source_name": "calendar",
+        "role": "known_future",
+        "target_time": "2026-01-01 04:00:00",
+        "source_time": "2026-01-01 04:00:00",
+        "forecast_origin": "2026-01-01 03:00:00",
+        "horizon_step": 1,
+        "available_at": "2026-01-01 03:00:00",
+        "provider": null
+      },
+      {
+        "feature_name": "load__lag_2",
+        "source_name": "targets",
+        "role": "target",
+        "target_time": "2026-01-01 05:00:00",
+        "source_time": "2026-01-01 03:00:00",
+        "forecast_origin": "2026-01-01 03:00:00",
+        "horizon_step": 2,
+        "available_at": "2026-01-01 03:00:00",
+        "provider": null
+      },
+      {
+        "feature_name": "power__lag_2",
+        "source_name": "targets",
+        "role": "target",
+        "target_time": "2026-01-01 05:00:00",
+        "source_time": "2026-01-01 03:00:00",
+        "forecast_origin": "2026-01-01 03:00:00",
+        "horizon_step": 2,
+        "available_at": "2026-01-01 03:00:00",
+        "provider": null
+      },
+      {
+        "feature_name": "humidity__lag_1",
+        "source_name": "sensors",
+        "role": "observed_past",
+        "target_time": "2026-01-01 05:00:00",
+        "source_time": "2026-01-01 04:00:00",
+        "forecast_origin": "2026-01-01 03:00:00",
+        "horizon_step": 2,
+        "available_at": "2026-01-01 03:00:00",
+        "provider": "persistence"
+      },
+      {
+        "feature_name": "temperature",
+        "source_name": "weather",
+        "role": "known_future",
+        "target_time": "2026-01-01 05:00:00",
+        "source_time": "2026-01-01 05:00:00",
+        "forecast_origin": "2026-01-01 03:00:00",
+        "horizon_step": 2,
+        "available_at": "2026-01-01 03:00:00",
+        "provider": null
+      },
+      {
+        "feature_name": "dt_hour",
+        "source_name": "calendar",
+        "role": "known_future",
+        "target_time": "2026-01-01 05:00:00",
+        "source_time": "2026-01-01 05:00:00",
+        "forecast_origin": "2026-01-01 03:00:00",
+        "horizon_step": 2,
+        "available_at": "2026-01-01 03:00:00",
+        "provider": null
+      }
+    ]
+  },
+  "global=False,provider=persistence,access=supervised_labels": {
+    "target_history": {
+      "targets": {
+        "csv": "ts,load,power\n2026-01-01 01:00:00,1.0,10.0\n2026-01-01 02:00:00,2.0,20.0\n2026-01-01 03:00:00,3.0,30.0\n2026-01-01 04:00:00,2.0,20.0\n2026-01-01 05:00:00,3.0,30.0\n",
+        "dtypes": [
+          "datetime64[ns]",
+          "float64",
+          "float64"
+        ]
+      }
+    },
+    "observed_past": {
+      "sensors": {
+        "csv": "ts,issued_at,humidity\n2026-01-01 01:00:00,2026-01-01 01:00:00,100.0\n2026-01-01 02:00:00,2026-01-01 02:00:00,200.0\n2026-01-01 03:00:00,2026-01-01 03:00:00,300.0\n",
+        "dtypes": [
+          "datetime64[ns]",
+          "datetime64[ns]",
+          "float64"
+        ]
+      }
+    },
+    "known_future": {
+      "weather": {
+        "csv": "ts,issued_at,temperature\n2026-01-01 04:00:00,2026-01-01 03:00:00,40.0\n2026-01-01 05:00:00,2026-01-01 03:00:00,50.0\n",
+        "dtypes": [
+          "datetime64[ns]",
+          "datetime64[ns]",
+          "float64"
+        ]
+      }
+    },
+    "static": {},
+    "lineage": [
+      {
+        "source_name": "targets",
+        "path_version": "history",
+        "path": "targets.csv",
+        "availability_policy": "source_time",
+        "includes_target_labels": true
+      },
+      {
+        "source_name": "sensors",
+        "path_version": "history",
+        "path": "sensors.csv",
+        "availability_policy": "column",
+        "includes_target_labels": false
+      },
+      {
+        "source_name": "weather",
+        "path_version": "backtest",
+        "path": "weather_backtest.csv",
+        "availability_policy": "column",
+        "includes_target_labels": false
+      },
+      {
+        "source_name": "weather",
+        "path_version": "future",
+        "path": "weather_future.csv",
+        "availability_policy": "column",
+        "includes_target_labels": false
+      }
+    ],
+    "providers": {
+      "()": {
+        "values": [
+          300.0,
+          300.0
+        ],
+        "methods": [
+          "persistence",
+          "persistence"
+        ],
+        "available_at": [
+          "2026-01-01 03:00:00",
+          "2026-01-01 03:00:00"
+        ]
+      }
+    }
+  },
+  "global=False,provider=provided_scenario,access=history_only": {
+    "target_history": {
+      "targets": {
+        "csv": "ts,load,power\n2026-01-01 01:00:00,1.0,10.0\n2026-01-01 02:00:00,2.0,20.0\n2026-01-01 03:00:00,3.0,30.0\n",
+        "dtypes": [
+          "datetime64[ns]",
+          "float64",
+          "float64"
+        ]
+      }
+    },
+    "observed_past": {
+      "sensors": {
+        "csv": "ts,issued_at,humidity\n2026-01-01 01:00:00,2026-01-01 01:00:00,100.0\n2026-01-01 02:00:00,2026-01-01 02:00:00,200.0\n2026-01-01 03:00:00,2026-01-01 03:00:00,300.0\n",
+        "dtypes": [
+          "datetime64[ns]",
+          "datetime64[ns]",
+          "float64"
+        ]
+      }
+    },
+    "known_future": {
+      "weather": {
+        "csv": "ts,issued_at,temperature\n2026-01-01 04:00:00,2026-01-01 03:00:00,40.0\n2026-01-01 05:00:00,2026-01-01 03:00:00,50.0\n",
+        "dtypes": [
+          "datetime64[ns]",
+          "datetime64[ns]",
+          "float64"
+        ]
+      }
+    },
+    "static": {},
+    "lineage": [
+      {
+        "source_name": "targets",
+        "path_version": "history",
+        "path": "targets.csv",
+        "availability_policy": "source_time",
+        "includes_target_labels": false
+      },
+      {
+        "source_name": "sensors",
+        "path_version": "history",
+        "path": "sensors.csv",
+        "availability_policy": "column",
+        "includes_target_labels": false
+      },
+      {
+        "source_name": "sensors",
+        "path_version": "provider",
+        "path": "sensor_forecast.csv",
+        "availability_policy": "column",
+        "includes_target_labels": false
+      },
+      {
+        "source_name": "weather",
+        "path_version": "backtest",
+        "path": "weather_backtest.csv",
+        "availability_policy": "column",
+        "includes_target_labels": false
+      },
+      {
+        "source_name": "weather",
+        "path_version": "future",
+        "path": "weather_future.csv",
+        "availability_policy": "column",
+        "includes_target_labels": false
+      }
+    ],
+    "providers": {
+      "()": {
+        "values": [
+          401.0,
+          501.0
+        ],
+        "methods": [
+          "provided_scenario",
+          "provided_scenario"
+        ],
+        "available_at": [
+          "2026-01-01 03:00:00",
+          "2026-01-01 03:00:00"
+        ]
+      }
+    },
+    "compiled": {
+      "csv": "target_time,horizon_step,load__lag_2,power__lag_2,humidity__lag_1,temperature,dt_hour\n2026-01-01 04:00:00,1,2.0,20.0,300.0,40.0,4\n2026-01-01 05:00:00,2,3.0,30.0,401.0,50.0,5\n",
+      "dtypes": [
+        "datetime64[ns]",
+        "int64",
+        "float64",
+        "float64",
+        "float64",
+        "float64",
+        "int64"
+      ]
+    },
+    "schema": [
+      "load__lag_2",
+      "power__lag_2",
+      "humidity__lag_1",
+      "temperature",
+      "dt_hour"
+    ],
+    "proofs": [
+      {
+        "feature_name": "load__lag_2",
+        "source_name": "targets",
+        "role": "target",
+        "target_time": "2026-01-01 04:00:00",
+        "source_time": "2026-01-01 02:00:00",
+        "forecast_origin": "2026-01-01 03:00:00",
+        "horizon_step": 1,
+        "available_at": "2026-01-01 02:00:00",
+        "provider": null
+      },
+      {
+        "feature_name": "power__lag_2",
+        "source_name": "targets",
+        "role": "target",
+        "target_time": "2026-01-01 04:00:00",
+        "source_time": "2026-01-01 02:00:00",
+        "forecast_origin": "2026-01-01 03:00:00",
+        "horizon_step": 1,
+        "available_at": "2026-01-01 02:00:00",
+        "provider": null
+      },
+      {
+        "feature_name": "humidity__lag_1",
+        "source_name": "sensors",
+        "role": "observed_past",
+        "target_time": "2026-01-01 04:00:00",
+        "source_time": "2026-01-01 03:00:00",
+        "forecast_origin": "2026-01-01 03:00:00",
+        "horizon_step": 1,
+        "available_at": "2026-01-01 03:00:00",
+        "provider": null
+      },
+      {
+        "feature_name": "temperature",
+        "source_name": "weather",
+        "role": "known_future",
+        "target_time": "2026-01-01 04:00:00",
+        "source_time": "2026-01-01 04:00:00",
+        "forecast_origin": "2026-01-01 03:00:00",
+        "horizon_step": 1,
+        "available_at": "2026-01-01 03:00:00",
+        "provider": null
+      },
+      {
+        "feature_name": "dt_hour",
+        "source_name": "calendar",
+        "role": "known_future",
+        "target_time": "2026-01-01 04:00:00",
+        "source_time": "2026-01-01 04:00:00",
+        "forecast_origin": "2026-01-01 03:00:00",
+        "horizon_step": 1,
+        "available_at": "2026-01-01 03:00:00",
+        "provider": null
+      },
+      {
+        "feature_name": "load__lag_2",
+        "source_name": "targets",
+        "role": "target",
+        "target_time": "2026-01-01 05:00:00",
+        "source_time": "2026-01-01 03:00:00",
+        "forecast_origin": "2026-01-01 03:00:00",
+        "horizon_step": 2,
+        "available_at": "2026-01-01 03:00:00",
+        "provider": null
+      },
+      {
+        "feature_name": "power__lag_2",
+        "source_name": "targets",
+        "role": "target",
+        "target_time": "2026-01-01 05:00:00",
+        "source_time": "2026-01-01 03:00:00",
+        "forecast_origin": "2026-01-01 03:00:00",
+        "horizon_step": 2,
+        "available_at": "2026-01-01 03:00:00",
+        "provider": null
+      },
+      {
+        "feature_name": "humidity__lag_1",
+        "source_name": "sensors",
+        "role": "observed_past",
+        "target_time": "2026-01-01 05:00:00",
+        "source_time": "2026-01-01 04:00:00",
+        "forecast_origin": "2026-01-01 03:00:00",
+        "horizon_step": 2,
+        "available_at": "2026-01-01 03:00:00",
+        "provider": "provided_scenario"
+      },
+      {
+        "feature_name": "temperature",
+        "source_name": "weather",
+        "role": "known_future",
+        "target_time": "2026-01-01 05:00:00",
+        "source_time": "2026-01-01 05:00:00",
+        "forecast_origin": "2026-01-01 03:00:00",
+        "horizon_step": 2,
+        "available_at": "2026-01-01 03:00:00",
+        "provider": null
+      },
+      {
+        "feature_name": "dt_hour",
+        "source_name": "calendar",
+        "role": "known_future",
+        "target_time": "2026-01-01 05:00:00",
+        "source_time": "2026-01-01 05:00:00",
+        "forecast_origin": "2026-01-01 03:00:00",
+        "horizon_step": 2,
+        "available_at": "2026-01-01 03:00:00",
+        "provider": null
+      }
+    ]
+  },
+  "global=False,provider=provided_scenario,access=supervised_labels": {
+    "target_history": {
+      "targets": {
+        "csv": "ts,load,power\n2026-01-01 01:00:00,1.0,10.0\n2026-01-01 02:00:00,2.0,20.0\n2026-01-01 03:00:00,3.0,30.0\n2026-01-01 04:00:00,2.0,20.0\n2026-01-01 05:00:00,3.0,30.0\n",
+        "dtypes": [
+          "datetime64[ns]",
+          "float64",
+          "float64"
+        ]
+      }
+    },
+    "observed_past": {
+      "sensors": {
+        "csv": "ts,issued_at,humidity\n2026-01-01 01:00:00,2026-01-01 01:00:00,100.0\n2026-01-01 02:00:00,2026-01-01 02:00:00,200.0\n2026-01-01 03:00:00,2026-01-01 03:00:00,300.0\n",
+        "dtypes": [
+          "datetime64[ns]",
+          "datetime64[ns]",
+          "float64"
+        ]
+      }
+    },
+    "known_future": {
+      "weather": {
+        "csv": "ts,issued_at,temperature\n2026-01-01 04:00:00,2026-01-01 03:00:00,40.0\n2026-01-01 05:00:00,2026-01-01 03:00:00,50.0\n",
+        "dtypes": [
+          "datetime64[ns]",
+          "datetime64[ns]",
+          "float64"
+        ]
+      }
+    },
+    "static": {},
+    "lineage": [
+      {
+        "source_name": "targets",
+        "path_version": "history",
+        "path": "targets.csv",
+        "availability_policy": "source_time",
+        "includes_target_labels": true
+      },
+      {
+        "source_name": "sensors",
+        "path_version": "history",
+        "path": "sensors.csv",
+        "availability_policy": "column",
+        "includes_target_labels": false
+      },
+      {
+        "source_name": "sensors",
+        "path_version": "provider",
+        "path": "sensor_forecast.csv",
+        "availability_policy": "column",
+        "includes_target_labels": false
+      },
+      {
+        "source_name": "weather",
+        "path_version": "backtest",
+        "path": "weather_backtest.csv",
+        "availability_policy": "column",
+        "includes_target_labels": false
+      },
+      {
+        "source_name": "weather",
+        "path_version": "future",
+        "path": "weather_future.csv",
+        "availability_policy": "column",
+        "includes_target_labels": false
+      }
+    ],
+    "providers": {
+      "()": {
+        "values": [
+          401.0,
+          501.0
+        ],
+        "methods": [
+          "provided_scenario",
+          "provided_scenario"
+        ],
+        "available_at": [
+          "2026-01-01 03:00:00",
+          "2026-01-01 03:00:00"
+        ]
+      }
+    }
+  },
+  "global=True,provider=persistence,access=history_only": {
+    "target_history": {
+      "targets": {
+        "csv": "site_id,ts,load,power\nA,2026-01-01 01:00:00,1.0,10.0\nA,2026-01-01 02:00:00,2.0,20.0\nA,2026-01-01 03:00:00,3.0,30.0\nB,2026-01-01 01:00:00,1001.0,1010.0\nB,2026-01-01 02:00:00,1002.0,1020.0\nB,2026-01-01 03:00:00,1003.0,1030.0\n",
+        "dtypes": [
+          "object",
+          "datetime64[ns]",
+          "float64",
+          "float64"
+        ]
+      }
+    },
+    "observed_past": {
+      "sensors": {
+        "csv": "site_id,ts,issued_at,humidity\nA,2026-01-01 01:00:00,2026-01-01 01:00:00,100.0\nA,2026-01-01 02:00:00,2026-01-01 02:00:00,200.0\nA,2026-01-01 03:00:00,2026-01-01 03:00:00,300.0\nB,2026-01-01 01:00:00,2026-01-01 01:00:00,1100.0\nB,2026-01-01 02:00:00,2026-01-01 02:00:00,1200.0\nB,2026-01-01 03:00:00,2026-01-01 03:00:00,1300.0\n",
+        "dtypes": [
+          "object",
+          "datetime64[ns]",
+          "datetime64[ns]",
+          "float64"
+        ]
+      }
+    },
+    "known_future": {
+      "weather": {
+        "csv": "site_id,ts,issued_at,temperature\nA,2026-01-01 04:00:00,2026-01-01 03:00:00,40.0\nA,2026-01-01 05:00:00,2026-01-01 03:00:00,50.0\nB,2026-01-01 04:00:00,2026-01-01 03:00:00,1040.0\nB,2026-01-01 05:00:00,2026-01-01 03:00:00,1050.0\n",
+        "dtypes": [
+          "object",
+          "datetime64[ns]",
+          "datetime64[ns]",
+          "float64"
+        ]
+      }
+    },
+    "static": {
+      "sites": {
+        "csv": "site_id,capacity\nA,500.0\nB,1500.0\n",
+        "dtypes": [
+          "object",
+          "float64"
+        ]
+      }
+    },
+    "lineage": [
+      {
+        "source_name": "targets",
+        "path_version": "history",
+        "path": "targets.csv",
+        "availability_policy": "source_time",
+        "includes_target_labels": false
+      },
+      {
+        "source_name": "sensors",
+        "path_version": "history",
+        "path": "sensors.csv",
+        "availability_policy": "column",
+        "includes_target_labels": false
+      },
+      {
+        "source_name": "weather",
+        "path_version": "backtest",
+        "path": "weather_backtest.csv",
+        "availability_policy": "column",
+        "includes_target_labels": false
+      },
+      {
+        "source_name": "weather",
+        "path_version": "future",
+        "path": "weather_future.csv",
+        "availability_policy": "column",
+        "includes_target_labels": false
+      },
+      {
+        "source_name": "sites",
+        "path_version": "history",
+        "path": "sites.csv",
+        "availability_policy": null,
+        "includes_target_labels": false
+      }
+    ],
+    "providers": {
+      "'A'": {
+        "values": [
+          300.0,
+          300.0
+        ],
+        "methods": [
+          "persistence",
+          "persistence"
+        ],
+        "available_at": [
+          "2026-01-01 03:00:00",
+          "2026-01-01 03:00:00"
+        ]
+      },
+      "'B'": {
+        "values": [
+          1300.0,
+          1300.0
+        ],
+        "methods": [
+          "persistence",
+          "persistence"
+        ],
+        "available_at": [
+          "2026-01-01 03:00:00",
+          "2026-01-01 03:00:00"
+        ]
+      }
+    },
+    "compiled": {
+      "csv": "site_id,target_time,horizon_step,load__lag_2,power__lag_2,humidity__lag_1,temperature,capacity,dt_hour\nA,2026-01-01 04:00:00,1,2.0,20.0,300.0,40.0,500.0,4\nA,2026-01-01 05:00:00,2,3.0,30.0,300.0,50.0,500.0,5\nB,2026-01-01 04:00:00,1,1002.0,1020.0,1300.0,1040.0,1500.0,4\nB,2026-01-01 05:00:00,2,1003.0,1030.0,1300.0,1050.0,1500.0,5\n",
+      "dtypes": [
+        "object",
+        "datetime64[ns]",
+        "int64",
+        "float64",
+        "float64",
+        "float64",
+        "float64",
+        "float64",
+        "int64"
+      ]
+    },
+    "schema": [
+      "load__lag_2",
+      "power__lag_2",
+      "humidity__lag_1",
+      "temperature",
+      "capacity",
+      "dt_hour"
+    ],
+    "proofs": [
+      {
+        "feature_name": "load__lag_2",
+        "source_name": "targets",
+        "role": "target",
+        "target_time": "2026-01-01 04:00:00",
+        "source_time": "2026-01-01 02:00:00",
+        "forecast_origin": "2026-01-01 03:00:00",
+        "horizon_step": 1,
+        "available_at": "2026-01-01 02:00:00",
+        "provider": null
+      },
+      {
+        "feature_name": "power__lag_2",
+        "source_name": "targets",
+        "role": "target",
+        "target_time": "2026-01-01 04:00:00",
+        "source_time": "2026-01-01 02:00:00",
+        "forecast_origin": "2026-01-01 03:00:00",
+        "horizon_step": 1,
+        "available_at": "2026-01-01 02:00:00",
+        "provider": null
+      },
+      {
+        "feature_name": "humidity__lag_1",
+        "source_name": "sensors",
+        "role": "observed_past",
+        "target_time": "2026-01-01 04:00:00",
+        "source_time": "2026-01-01 03:00:00",
+        "forecast_origin": "2026-01-01 03:00:00",
+        "horizon_step": 1,
+        "available_at": "2026-01-01 03:00:00",
+        "provider": null
+      },
+      {
+        "feature_name": "temperature",
+        "source_name": "weather",
+        "role": "known_future",
+        "target_time": "2026-01-01 04:00:00",
+        "source_time": "2026-01-01 04:00:00",
+        "forecast_origin": "2026-01-01 03:00:00",
+        "horizon_step": 1,
+        "available_at": "2026-01-01 03:00:00",
+        "provider": null
+      },
+      {
+        "feature_name": "capacity",
+        "source_name": "sites",
+        "role": "static",
+        "target_time": "2026-01-01 04:00:00",
+        "source_time": null,
+        "forecast_origin": "2026-01-01 03:00:00",
+        "horizon_step": 1,
+        "available_at": "2026-01-01 03:00:00",
+        "provider": null
+      },
+      {
+        "feature_name": "dt_hour",
+        "source_name": "calendar",
+        "role": "known_future",
+        "target_time": "2026-01-01 04:00:00",
+        "source_time": "2026-01-01 04:00:00",
+        "forecast_origin": "2026-01-01 03:00:00",
+        "horizon_step": 1,
+        "available_at": "2026-01-01 03:00:00",
+        "provider": null
+      },
+      {
+        "feature_name": "load__lag_2",
+        "source_name": "targets",
+        "role": "target",
+        "target_time": "2026-01-01 05:00:00",
+        "source_time": "2026-01-01 03:00:00",
+        "forecast_origin": "2026-01-01 03:00:00",
+        "horizon_step": 2,
+        "available_at": "2026-01-01 03:00:00",
+        "provider": null
+      },
+      {
+        "feature_name": "power__lag_2",
+        "source_name": "targets",
+        "role": "target",
+        "target_time": "2026-01-01 05:00:00",
+        "source_time": "2026-01-01 03:00:00",
+        "forecast_origin": "2026-01-01 03:00:00",
+        "horizon_step": 2,
+        "available_at": "2026-01-01 03:00:00",
+        "provider": null
+      },
+      {
+        "feature_name": "humidity__lag_1",
+        "source_name": "sensors",
+        "role": "observed_past",
+        "target_time": "2026-01-01 05:00:00",
+        "source_time": "2026-01-01 04:00:00",
+        "forecast_origin": "2026-01-01 03:00:00",
+        "horizon_step": 2,
+        "available_at": "2026-01-01 03:00:00",
+        "provider": "persistence"
+      },
+      {
+        "feature_name": "temperature",
+        "source_name": "weather",
+        "role": "known_future",
+        "target_time": "2026-01-01 05:00:00",
+        "source_time": "2026-01-01 05:00:00",
+        "forecast_origin": "2026-01-01 03:00:00",
+        "horizon_step": 2,
+        "available_at": "2026-01-01 03:00:00",
+        "provider": null
+      },
+      {
+        "feature_name": "capacity",
+        "source_name": "sites",
+        "role": "static",
+        "target_time": "2026-01-01 05:00:00",
+        "source_time": null,
+        "forecast_origin": "2026-01-01 03:00:00",
+        "horizon_step": 2,
+        "available_at": "2026-01-01 03:00:00",
+        "provider": null
+      },
+      {
+        "feature_name": "dt_hour",
+        "source_name": "calendar",
+        "role": "known_future",
+        "target_time": "2026-01-01 05:00:00",
+        "source_time": "2026-01-01 05:00:00",
+        "forecast_origin": "2026-01-01 03:00:00",
+        "horizon_step": 2,
+        "available_at": "2026-01-01 03:00:00",
+        "provider": null
+      },
+      {
+        "feature_name": "load__lag_2",
+        "source_name": "targets",
+        "role": "target",
+        "target_time": "2026-01-01 04:00:00",
+        "source_time": "2026-01-01 02:00:00",
+        "forecast_origin": "2026-01-01 03:00:00",
+        "horizon_step": 1,
+        "available_at": "2026-01-01 02:00:00",
+        "provider": null
+      },
+      {
+        "feature_name": "power__lag_2",
+        "source_name": "targets",
+        "role": "target",
+        "target_time": "2026-01-01 04:00:00",
+        "source_time": "2026-01-01 02:00:00",
+        "forecast_origin": "2026-01-01 03:00:00",
+        "horizon_step": 1,
+        "available_at": "2026-01-01 02:00:00",
+        "provider": null
+      },
+      {
+        "feature_name": "humidity__lag_1",
+        "source_name": "sensors",
+        "role": "observed_past",
+        "target_time": "2026-01-01 04:00:00",
+        "source_time": "2026-01-01 03:00:00",
+        "forecast_origin": "2026-01-01 03:00:00",
+        "horizon_step": 1,
+        "available_at": "2026-01-01 03:00:00",
+        "provider": null
+      },
+      {
+        "feature_name": "temperature",
+        "source_name": "weather",
+        "role": "known_future",
+        "target_time": "2026-01-01 04:00:00",
+        "source_time": "2026-01-01 04:00:00",
+        "forecast_origin": "2026-01-01 03:00:00",
+        "horizon_step": 1,
+        "available_at": "2026-01-01 03:00:00",
+        "provider": null
+      },
+      {
+        "feature_name": "capacity",
+        "source_name": "sites",
+        "role": "static",
+        "target_time": "2026-01-01 04:00:00",
+        "source_time": null,
+        "forecast_origin": "2026-01-01 03:00:00",
+        "horizon_step": 1,
+        "available_at": "2026-01-01 03:00:00",
+        "provider": null
+      },
+      {
+        "feature_name": "dt_hour",
+        "source_name": "calendar",
+        "role": "known_future",
+        "target_time": "2026-01-01 04:00:00",
+        "source_time": "2026-01-01 04:00:00",
+        "forecast_origin": "2026-01-01 03:00:00",
+        "horizon_step": 1,
+        "available_at": "2026-01-01 03:00:00",
+        "provider": null
+      },
+      {
+        "feature_name": "load__lag_2",
+        "source_name": "targets",
+        "role": "target",
+        "target_time": "2026-01-01 05:00:00",
+        "source_time": "2026-01-01 03:00:00",
+        "forecast_origin": "2026-01-01 03:00:00",
+        "horizon_step": 2,
+        "available_at": "2026-01-01 03:00:00",
+        "provider": null
+      },
+      {
+        "feature_name": "power__lag_2",
+        "source_name": "targets",
+        "role": "target",
+        "target_time": "2026-01-01 05:00:00",
+        "source_time": "2026-01-01 03:00:00",
+        "forecast_origin": "2026-01-01 03:00:00",
+        "horizon_step": 2,
+        "available_at": "2026-01-01 03:00:00",
+        "provider": null
+      },
+      {
+        "feature_name": "humidity__lag_1",
+        "source_name": "sensors",
+        "role": "observed_past",
+        "target_time": "2026-01-01 05:00:00",
+        "source_time": "2026-01-01 04:00:00",
+        "forecast_origin": "2026-01-01 03:00:00",
+        "horizon_step": 2,
+        "available_at": "2026-01-01 03:00:00",
+        "provider": "persistence"
+      },
+      {
+        "feature_name": "temperature",
+        "source_name": "weather",
+        "role": "known_future",
+        "target_time": "2026-01-01 05:00:00",
+        "source_time": "2026-01-01 05:00:00",
+        "forecast_origin": "2026-01-01 03:00:00",
+        "horizon_step": 2,
+        "available_at": "2026-01-01 03:00:00",
+        "provider": null
+      },
+      {
+        "feature_name": "capacity",
+        "source_name": "sites",
+        "role": "static",
+        "target_time": "2026-01-01 05:00:00",
+        "source_time": null,
+        "forecast_origin": "2026-01-01 03:00:00",
+        "horizon_step": 2,
+        "available_at": "2026-01-01 03:00:00",
+        "provider": null
+      },
+      {
+        "feature_name": "dt_hour",
+        "source_name": "calendar",
+        "role": "known_future",
+        "target_time": "2026-01-01 05:00:00",
+        "source_time": "2026-01-01 05:00:00",
+        "forecast_origin": "2026-01-01 03:00:00",
+        "horizon_step": 2,
+        "available_at": "2026-01-01 03:00:00",
+        "provider": null
+      }
+    ]
+  },
+  "global=True,provider=persistence,access=supervised_labels": {
+    "target_history": {
+      "targets": {
+        "csv": "site_id,ts,load,power\nA,2026-01-01 01:00:00,1.0,10.0\nA,2026-01-01 02:00:00,2.0,20.0\nA,2026-01-01 03:00:00,3.0,30.0\nA,2026-01-01 04:00:00,2.0,20.0\nA,2026-01-01 05:00:00,3.0,30.0\nB,2026-01-01 01:00:00,1001.0,1010.0\nB,2026-01-01 02:00:00,1002.0,1020.0\nB,2026-01-01 03:00:00,1003.0,1030.0\nB,2026-01-01 04:00:00,1002.0,1020.0\nB,2026-01-01 05:00:00,1003.0,1030.0\n",
+        "dtypes": [
+          "object",
+          "datetime64[ns]",
+          "float64",
+          "float64"
+        ]
+      }
+    },
+    "observed_past": {
+      "sensors": {
+        "csv": "site_id,ts,issued_at,humidity\nA,2026-01-01 01:00:00,2026-01-01 01:00:00,100.0\nA,2026-01-01 02:00:00,2026-01-01 02:00:00,200.0\nA,2026-01-01 03:00:00,2026-01-01 03:00:00,300.0\nB,2026-01-01 01:00:00,2026-01-01 01:00:00,1100.0\nB,2026-01-01 02:00:00,2026-01-01 02:00:00,1200.0\nB,2026-01-01 03:00:00,2026-01-01 03:00:00,1300.0\n",
+        "dtypes": [
+          "object",
+          "datetime64[ns]",
+          "datetime64[ns]",
+          "float64"
+        ]
+      }
+    },
+    "known_future": {
+      "weather": {
+        "csv": "site_id,ts,issued_at,temperature\nA,2026-01-01 04:00:00,2026-01-01 03:00:00,40.0\nA,2026-01-01 05:00:00,2026-01-01 03:00:00,50.0\nB,2026-01-01 04:00:00,2026-01-01 03:00:00,1040.0\nB,2026-01-01 05:00:00,2026-01-01 03:00:00,1050.0\n",
+        "dtypes": [
+          "object",
+          "datetime64[ns]",
+          "datetime64[ns]",
+          "float64"
+        ]
+      }
+    },
+    "static": {
+      "sites": {
+        "csv": "site_id,capacity\nA,500.0\nB,1500.0\n",
+        "dtypes": [
+          "object",
+          "float64"
+        ]
+      }
+    },
+    "lineage": [
+      {
+        "source_name": "targets",
+        "path_version": "history",
+        "path": "targets.csv",
+        "availability_policy": "source_time",
+        "includes_target_labels": true
+      },
+      {
+        "source_name": "sensors",
+        "path_version": "history",
+        "path": "sensors.csv",
+        "availability_policy": "column",
+        "includes_target_labels": false
+      },
+      {
+        "source_name": "weather",
+        "path_version": "backtest",
+        "path": "weather_backtest.csv",
+        "availability_policy": "column",
+        "includes_target_labels": false
+      },
+      {
+        "source_name": "weather",
+        "path_version": "future",
+        "path": "weather_future.csv",
+        "availability_policy": "column",
+        "includes_target_labels": false
+      },
+      {
+        "source_name": "sites",
+        "path_version": "history",
+        "path": "sites.csv",
+        "availability_policy": null,
+        "includes_target_labels": false
+      }
+    ],
+    "providers": {
+      "'A'": {
+        "values": [
+          300.0,
+          300.0
+        ],
+        "methods": [
+          "persistence",
+          "persistence"
+        ],
+        "available_at": [
+          "2026-01-01 03:00:00",
+          "2026-01-01 03:00:00"
+        ]
+      },
+      "'B'": {
+        "values": [
+          1300.0,
+          1300.0
+        ],
+        "methods": [
+          "persistence",
+          "persistence"
+        ],
+        "available_at": [
+          "2026-01-01 03:00:00",
+          "2026-01-01 03:00:00"
+        ]
+      }
+    }
+  },
+  "global=True,provider=provided_scenario,access=history_only": {
+    "target_history": {
+      "targets": {
+        "csv": "site_id,ts,load,power\nA,2026-01-01 01:00:00,1.0,10.0\nA,2026-01-01 02:00:00,2.0,20.0\nA,2026-01-01 03:00:00,3.0,30.0\nB,2026-01-01 01:00:00,1001.0,1010.0\nB,2026-01-01 02:00:00,1002.0,1020.0\nB,2026-01-01 03:00:00,1003.0,1030.0\n",
+        "dtypes": [
+          "object",
+          "datetime64[ns]",
+          "float64",
+          "float64"
+        ]
+      }
+    },
+    "observed_past": {
+      "sensors": {
+        "csv": "site_id,ts,issued_at,humidity\nA,2026-01-01 01:00:00,2026-01-01 01:00:00,100.0\nA,2026-01-01 02:00:00,2026-01-01 02:00:00,200.0\nA,2026-01-01 03:00:00,2026-01-01 03:00:00,300.0\nB,2026-01-01 01:00:00,2026-01-01 01:00:00,1100.0\nB,2026-01-01 02:00:00,2026-01-01 02:00:00,1200.0\nB,2026-01-01 03:00:00,2026-01-01 03:00:00,1300.0\n",
+        "dtypes": [
+          "object",
+          "datetime64[ns]",
+          "datetime64[ns]",
+          "float64"
+        ]
+      }
+    },
+    "known_future": {
+      "weather": {
+        "csv": "site_id,ts,issued_at,temperature\nA,2026-01-01 04:00:00,2026-01-01 03:00:00,40.0\nA,2026-01-01 05:00:00,2026-01-01 03:00:00,50.0\nB,2026-01-01 04:00:00,2026-01-01 03:00:00,1040.0\nB,2026-01-01 05:00:00,2026-01-01 03:00:00,1050.0\n",
+        "dtypes": [
+          "object",
+          "datetime64[ns]",
+          "datetime64[ns]",
+          "float64"
+        ]
+      }
+    },
+    "static": {
+      "sites": {
+        "csv": "site_id,capacity\nA,500.0\nB,1500.0\n",
+        "dtypes": [
+          "object",
+          "float64"
+        ]
+      }
+    },
+    "lineage": [
+      {
+        "source_name": "targets",
+        "path_version": "history",
+        "path": "targets.csv",
+        "availability_policy": "source_time",
+        "includes_target_labels": false
+      },
+      {
+        "source_name": "sensors",
+        "path_version": "history",
+        "path": "sensors.csv",
+        "availability_policy": "column",
+        "includes_target_labels": false
+      },
+      {
+        "source_name": "sensors",
+        "path_version": "provider",
+        "path": "sensor_forecast.csv",
+        "availability_policy": "column",
+        "includes_target_labels": false
+      },
+      {
+        "source_name": "weather",
+        "path_version": "backtest",
+        "path": "weather_backtest.csv",
+        "availability_policy": "column",
+        "includes_target_labels": false
+      },
+      {
+        "source_name": "weather",
+        "path_version": "future",
+        "path": "weather_future.csv",
+        "availability_policy": "column",
+        "includes_target_labels": false
+      },
+      {
+        "source_name": "sites",
+        "path_version": "history",
+        "path": "sites.csv",
+        "availability_policy": null,
+        "includes_target_labels": false
+      }
+    ],
+    "providers": {
+      "'A'": {
+        "values": [
+          401.0,
+          501.0
+        ],
+        "methods": [
+          "provided_scenario",
+          "provided_scenario"
+        ],
+        "available_at": [
+          "2026-01-01 03:00:00",
+          "2026-01-01 03:00:00"
+        ]
+      },
+      "'B'": {
+        "values": [
+          1401.0,
+          1501.0
+        ],
+        "methods": [
+          "provided_scenario",
+          "provided_scenario"
+        ],
+        "available_at": [
+          "2026-01-01 03:00:00",
+          "2026-01-01 03:00:00"
+        ]
+      }
+    },
+    "compiled": {
+      "csv": "site_id,target_time,horizon_step,load__lag_2,power__lag_2,humidity__lag_1,temperature,capacity,dt_hour\nA,2026-01-01 04:00:00,1,2.0,20.0,300.0,40.0,500.0,4\nA,2026-01-01 05:00:00,2,3.0,30.0,401.0,50.0,500.0,5\nB,2026-01-01 04:00:00,1,1002.0,1020.0,1300.0,1040.0,1500.0,4\nB,2026-01-01 05:00:00,2,1003.0,1030.0,1401.0,1050.0,1500.0,5\n",
+      "dtypes": [
+        "object",
+        "datetime64[ns]",
+        "int64",
+        "float64",
+        "float64",
+        "float64",
+        "float64",
+        "float64",
+        "int64"
+      ]
+    },
+    "schema": [
+      "load__lag_2",
+      "power__lag_2",
+      "humidity__lag_1",
+      "temperature",
+      "capacity",
+      "dt_hour"
+    ],
+    "proofs": [
+      {
+        "feature_name": "load__lag_2",
+        "source_name": "targets",
+        "role": "target",
+        "target_time": "2026-01-01 04:00:00",
+        "source_time": "2026-01-01 02:00:00",
+        "forecast_origin": "2026-01-01 03:00:00",
+        "horizon_step": 1,
+        "available_at": "2026-01-01 02:00:00",
+        "provider": null
+      },
+      {
+        "feature_name": "power__lag_2",
+        "source_name": "targets",
+        "role": "target",
+        "target_time": "2026-01-01 04:00:00",
+        "source_time": "2026-01-01 02:00:00",
+        "forecast_origin": "2026-01-01 03:00:00",
+        "horizon_step": 1,
+        "available_at": "2026-01-01 02:00:00",
+        "provider": null
+      },
+      {
+        "feature_name": "humidity__lag_1",
+        "source_name": "sensors",
+        "role": "observed_past",
+        "target_time": "2026-01-01 04:00:00",
+        "source_time": "2026-01-01 03:00:00",
+        "forecast_origin": "2026-01-01 03:00:00",
+        "horizon_step": 1,
+        "available_at": "2026-01-01 03:00:00",
+        "provider": null
+      },
+      {
+        "feature_name": "temperature",
+        "source_name": "weather",
+        "role": "known_future",
+        "target_time": "2026-01-01 04:00:00",
+        "source_time": "2026-01-01 04:00:00",
+        "forecast_origin": "2026-01-01 03:00:00",
+        "horizon_step": 1,
+        "available_at": "2026-01-01 03:00:00",
+        "provider": null
+      },
+      {
+        "feature_name": "capacity",
+        "source_name": "sites",
+        "role": "static",
+        "target_time": "2026-01-01 04:00:00",
+        "source_time": null,
+        "forecast_origin": "2026-01-01 03:00:00",
+        "horizon_step": 1,
+        "available_at": "2026-01-01 03:00:00",
+        "provider": null
+      },
+      {
+        "feature_name": "dt_hour",
+        "source_name": "calendar",
+        "role": "known_future",
+        "target_time": "2026-01-01 04:00:00",
+        "source_time": "2026-01-01 04:00:00",
+        "forecast_origin": "2026-01-01 03:00:00",
+        "horizon_step": 1,
+        "available_at": "2026-01-01 03:00:00",
+        "provider": null
+      },
+      {
+        "feature_name": "load__lag_2",
+        "source_name": "targets",
+        "role": "target",
+        "target_time": "2026-01-01 05:00:00",
+        "source_time": "2026-01-01 03:00:00",
+        "forecast_origin": "2026-01-01 03:00:00",
+        "horizon_step": 2,
+        "available_at": "2026-01-01 03:00:00",
+        "provider": null
+      },
+      {
+        "feature_name": "power__lag_2",
+        "source_name": "targets",
+        "role": "target",
+        "target_time": "2026-01-01 05:00:00",
+        "source_time": "2026-01-01 03:00:00",
+        "forecast_origin": "2026-01-01 03:00:00",
+        "horizon_step": 2,
+        "available_at": "2026-01-01 03:00:00",
+        "provider": null
+      },
+      {
+        "feature_name": "humidity__lag_1",
+        "source_name": "sensors",
+        "role": "observed_past",
+        "target_time": "2026-01-01 05:00:00",
+        "source_time": "2026-01-01 04:00:00",
+        "forecast_origin": "2026-01-01 03:00:00",
+        "horizon_step": 2,
+        "available_at": "2026-01-01 03:00:00",
+        "provider": "provided_scenario"
+      },
+      {
+        "feature_name": "temperature",
+        "source_name": "weather",
+        "role": "known_future",
+        "target_time": "2026-01-01 05:00:00",
+        "source_time": "2026-01-01 05:00:00",
+        "forecast_origin": "2026-01-01 03:00:00",
+        "horizon_step": 2,
+        "available_at": "2026-01-01 03:00:00",
+        "provider": null
+      },
+      {
+        "feature_name": "capacity",
+        "source_name": "sites",
+        "role": "static",
+        "target_time": "2026-01-01 05:00:00",
+        "source_time": null,
+        "forecast_origin": "2026-01-01 03:00:00",
+        "horizon_step": 2,
+        "available_at": "2026-01-01 03:00:00",
+        "provider": null
+      },
+      {
+        "feature_name": "dt_hour",
+        "source_name": "calendar",
+        "role": "known_future",
+        "target_time": "2026-01-01 05:00:00",
+        "source_time": "2026-01-01 05:00:00",
+        "forecast_origin": "2026-01-01 03:00:00",
+        "horizon_step": 2,
+        "available_at": "2026-01-01 03:00:00",
+        "provider": null
+      },
+      {
+        "feature_name": "load__lag_2",
+        "source_name": "targets",
+        "role": "target",
+        "target_time": "2026-01-01 04:00:00",
+        "source_time": "2026-01-01 02:00:00",
+        "forecast_origin": "2026-01-01 03:00:00",
+        "horizon_step": 1,
+        "available_at": "2026-01-01 02:00:00",
+        "provider": null
+      },
+      {
+        "feature_name": "power__lag_2",
+        "source_name": "targets",
+        "role": "target",
+        "target_time": "2026-01-01 04:00:00",
+        "source_time": "2026-01-01 02:00:00",
+        "forecast_origin": "2026-01-01 03:00:00",
+        "horizon_step": 1,
+        "available_at": "2026-01-01 02:00:00",
+        "provider": null
+      },
+      {
+        "feature_name": "humidity__lag_1",
+        "source_name": "sensors",
+        "role": "observed_past",
+        "target_time": "2026-01-01 04:00:00",
+        "source_time": "2026-01-01 03:00:00",
+        "forecast_origin": "2026-01-01 03:00:00",
+        "horizon_step": 1,
+        "available_at": "2026-01-01 03:00:00",
+        "provider": null
+      },
+      {
+        "feature_name": "temperature",
+        "source_name": "weather",
+        "role": "known_future",
+        "target_time": "2026-01-01 04:00:00",
+        "source_time": "2026-01-01 04:00:00",
+        "forecast_origin": "2026-01-01 03:00:00",
+        "horizon_step": 1,
+        "available_at": "2026-01-01 03:00:00",
+        "provider": null
+      },
+      {
+        "feature_name": "capacity",
+        "source_name": "sites",
+        "role": "static",
+        "target_time": "2026-01-01 04:00:00",
+        "source_time": null,
+        "forecast_origin": "2026-01-01 03:00:00",
+        "horizon_step": 1,
+        "available_at": "2026-01-01 03:00:00",
+        "provider": null
+      },
+      {
+        "feature_name": "dt_hour",
+        "source_name": "calendar",
+        "role": "known_future",
+        "target_time": "2026-01-01 04:00:00",
+        "source_time": "2026-01-01 04:00:00",
+        "forecast_origin": "2026-01-01 03:00:00",
+        "horizon_step": 1,
+        "available_at": "2026-01-01 03:00:00",
+        "provider": null
+      },
+      {
+        "feature_name": "load__lag_2",
+        "source_name": "targets",
+        "role": "target",
+        "target_time": "2026-01-01 05:00:00",
+        "source_time": "2026-01-01 03:00:00",
+        "forecast_origin": "2026-01-01 03:00:00",
+        "horizon_step": 2,
+        "available_at": "2026-01-01 03:00:00",
+        "provider": null
+      },
+      {
+        "feature_name": "power__lag_2",
+        "source_name": "targets",
+        "role": "target",
+        "target_time": "2026-01-01 05:00:00",
+        "source_time": "2026-01-01 03:00:00",
+        "forecast_origin": "2026-01-01 03:00:00",
+        "horizon_step": 2,
+        "available_at": "2026-01-01 03:00:00",
+        "provider": null
+      },
+      {
+        "feature_name": "humidity__lag_1",
+        "source_name": "sensors",
+        "role": "observed_past",
+        "target_time": "2026-01-01 05:00:00",
+        "source_time": "2026-01-01 04:00:00",
+        "forecast_origin": "2026-01-01 03:00:00",
+        "horizon_step": 2,
+        "available_at": "2026-01-01 03:00:00",
+        "provider": "provided_scenario"
+      },
+      {
+        "feature_name": "temperature",
+        "source_name": "weather",
+        "role": "known_future",
+        "target_time": "2026-01-01 05:00:00",
+        "source_time": "2026-01-01 05:00:00",
+        "forecast_origin": "2026-01-01 03:00:00",
+        "horizon_step": 2,
+        "available_at": "2026-01-01 03:00:00",
+        "provider": null
+      },
+      {
+        "feature_name": "capacity",
+        "source_name": "sites",
+        "role": "static",
+        "target_time": "2026-01-01 05:00:00",
+        "source_time": null,
+        "forecast_origin": "2026-01-01 03:00:00",
+        "horizon_step": 2,
+        "available_at": "2026-01-01 03:00:00",
+        "provider": null
+      },
+      {
+        "feature_name": "dt_hour",
+        "source_name": "calendar",
+        "role": "known_future",
+        "target_time": "2026-01-01 05:00:00",
+        "source_time": "2026-01-01 05:00:00",
+        "forecast_origin": "2026-01-01 03:00:00",
+        "horizon_step": 2,
+        "available_at": "2026-01-01 03:00:00",
+        "provider": null
+      }
+    ]
+  },
+  "global=True,provider=provided_scenario,access=supervised_labels": {
+    "target_history": {
+      "targets": {
+        "csv": "site_id,ts,load,power\nA,2026-01-01 01:00:00,1.0,10.0\nA,2026-01-01 02:00:00,2.0,20.0\nA,2026-01-01 03:00:00,3.0,30.0\nA,2026-01-01 04:00:00,2.0,20.0\nA,2026-01-01 05:00:00,3.0,30.0\nB,2026-01-01 01:00:00,1001.0,1010.0\nB,2026-01-01 02:00:00,1002.0,1020.0\nB,2026-01-01 03:00:00,1003.0,1030.0\nB,2026-01-01 04:00:00,1002.0,1020.0\nB,2026-01-01 05:00:00,1003.0,1030.0\n",
+        "dtypes": [
+          "object",
+          "datetime64[ns]",
+          "float64",
+          "float64"
+        ]
+      }
+    },
+    "observed_past": {
+      "sensors": {
+        "csv": "site_id,ts,issued_at,humidity\nA,2026-01-01 01:00:00,2026-01-01 01:00:00,100.0\nA,2026-01-01 02:00:00,2026-01-01 02:00:00,200.0\nA,2026-01-01 03:00:00,2026-01-01 03:00:00,300.0\nB,2026-01-01 01:00:00,2026-01-01 01:00:00,1100.0\nB,2026-01-01 02:00:00,2026-01-01 02:00:00,1200.0\nB,2026-01-01 03:00:00,2026-01-01 03:00:00,1300.0\n",
+        "dtypes": [
+          "object",
+          "datetime64[ns]",
+          "datetime64[ns]",
+          "float64"
+        ]
+      }
+    },
+    "known_future": {
+      "weather": {
+        "csv": "site_id,ts,issued_at,temperature\nA,2026-01-01 04:00:00,2026-01-01 03:00:00,40.0\nA,2026-01-01 05:00:00,2026-01-01 03:00:00,50.0\nB,2026-01-01 04:00:00,2026-01-01 03:00:00,1040.0\nB,2026-01-01 05:00:00,2026-01-01 03:00:00,1050.0\n",
+        "dtypes": [
+          "object",
+          "datetime64[ns]",
+          "datetime64[ns]",
+          "float64"
+        ]
+      }
+    },
+    "static": {
+      "sites": {
+        "csv": "site_id,capacity\nA,500.0\nB,1500.0\n",
+        "dtypes": [
+          "object",
+          "float64"
+        ]
+      }
+    },
+    "lineage": [
+      {
+        "source_name": "targets",
+        "path_version": "history",
+        "path": "targets.csv",
+        "availability_policy": "source_time",
+        "includes_target_labels": true
+      },
+      {
+        "source_name": "sensors",
+        "path_version": "history",
+        "path": "sensors.csv",
+        "availability_policy": "column",
+        "includes_target_labels": false
+      },
+      {
+        "source_name": "sensors",
+        "path_version": "provider",
+        "path": "sensor_forecast.csv",
+        "availability_policy": "column",
+        "includes_target_labels": false
+      },
+      {
+        "source_name": "weather",
+        "path_version": "backtest",
+        "path": "weather_backtest.csv",
+        "availability_policy": "column",
+        "includes_target_labels": false
+      },
+      {
+        "source_name": "weather",
+        "path_version": "future",
+        "path": "weather_future.csv",
+        "availability_policy": "column",
+        "includes_target_labels": false
+      },
+      {
+        "source_name": "sites",
+        "path_version": "history",
+        "path": "sites.csv",
+        "availability_policy": null,
+        "includes_target_labels": false
+      }
+    ],
+    "providers": {
+      "'A'": {
+        "values": [
+          401.0,
+          501.0
+        ],
+        "methods": [
+          "provided_scenario",
+          "provided_scenario"
+        ],
+        "available_at": [
+          "2026-01-01 03:00:00",
+          "2026-01-01 03:00:00"
+        ]
+      },
+      "'B'": {
+        "values": [
+          1401.0,
+          1501.0
+        ],
+        "methods": [
+          "provided_scenario",
+          "provided_scenario"
+        ],
+        "available_at": [
+          "2026-01-01 03:00:00",
+          "2026-01-01 03:00:00"
+        ]
+      }
+    }
+  },
+  "calendar": {
+    "target_history": {
+      "targets": {
+        "csv": "ts,load,power\n2026-01-01 01:00:00,1.0,10.0\n2026-01-01 02:00:00,2.0,20.0\n2026-01-01 03:00:00,3.0,30.0\n",
+        "dtypes": [
+          "datetime64[ns]",
+          "float64",
+          "float64"
+        ]
+      }
+    },
+    "observed_past": {},
+    "known_future": {
+      "calendar": {
+        "csv": "time,available_at,is_holiday,holiday_name,next_holiday_days,solar_term\n2026-04-04 00:00:00,2026-04-03,1,Tomb-sweeping Day,0.0,春分\n2026-04-04 12:00:00,2026-04-03,1,Tomb-sweeping Day,0.0,春分\n2026-04-05 00:00:00,2026-04-03,1,Tomb-sweeping Day,0.0,清明\n2026-04-05 12:00:00,2026-04-03,1,Tomb-sweeping Day,0.0,清明\n2026-04-06 00:00:00,2026-04-03,1,Tomb-sweeping Day,0.0,清明\n2026-04-06 12:00:00,2026-04-03,1,Tomb-sweeping Day,0.0,清明\n2026-04-07 00:00:00,2026-04-03,0,,4.0,清明\n2026-04-07 12:00:00,2026-04-03,0,,4.0,清明\n2026-04-08 00:00:00,2026-04-03,0,,3.0,清明\n",
+        "dtypes": [
+          "datetime64[ns]",
+          "datetime64[s]",
+          "int64",
+          "object",
+          "float64",
+          "object"
+        ]
+      }
+    },
+    "static": {},
+    "lineage": [
+      {
+        "source_name": "targets",
+        "path_version": "history",
+        "path": "targets.csv",
+        "availability_policy": "source_time",
+        "includes_target_labels": false
+      },
+      {
+        "source_name": "calendar",
+        "path_version": "generated",
+        "path": null,
+        "availability_policy": "generator_defined",
+        "includes_target_labels": false
+      }
+    ],
+    "providers": {}
+  },
+  "duplicate_vintage": {
+    "type": "ValueError",
+    "message": "source 'weather' has duplicate latest as-of vintages"
+  },
+  "missing": {
+    "type": "ValueError",
+    "message": "source 'targets' column 'load' contains missing values"
+  },
+  "nonfinite": {
+    "type": "ValueError",
+    "message": "source 'targets' column 'load' must be finite"
+  },
+  "empty": {
+    "type": "ValueError",
+    "message": "history source 'targets' is missing requested series"
+  }
+}

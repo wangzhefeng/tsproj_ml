@@ -6,7 +6,8 @@ from typing import Any, Literal, TypeAlias
 
 import pandas as pd
 
-from data_loading.providers import EndogenousFutureProvider
+from data_loading.information.providers import EndogenousFutureProvider
+from data_loading.information.indexing import register_row_position_lookup, row_position_lookup
 
 
 TargetAccess: TypeAlias = Literal["history_only", "supervised_labels"]
@@ -149,12 +150,7 @@ class MaterializedInformationSet:
         ``frames`` 仍是防御性 copy（调用方对其做行提取），lookup 的 position
         直接索引 copy 后的帧是安全的——copy 保持行序与行数不变。
         """
-        cached = self._row_position_caches.get(cache_key)
-        if cached is not None:
-            return cached
-        raise KeyError(
-            f"no row-position cache registered for key {cache_key!r}"
-        )
+        return row_position_lookup(self._row_position_caches, cache_key)
 
     def register_row_position_lookup(
         self,
@@ -165,21 +161,11 @@ class MaterializedInformationSet:
         frame_name: str | None = None,
     ) -> None:
         """为指定缓存域构建并登记时间→行位置映射。"""
-        if cache_key in self._row_position_caches:
-            return
-        frame = frames[frame_name or cache_key]
-        parsed = pd.DatetimeIndex(pd.to_datetime(frame[time_col].to_numpy()))
-        lookup: dict[int, int] = {}
-        for position, value in enumerate(parsed.asi8):
-            if value in lookup:
-                # 重复时间戳：标记为 -1，查询时走「非恰好一行」RAISE 路径
-                lookup[value] = -1
-            else:
-                lookup[value] = position
-        object.__setattr__(
-            self, "_row_position_caches",
-            {**self._row_position_caches, cache_key: (frames, lookup)},
+        updated = register_row_position_lookup(
+            self._row_position_caches, cache_key, frames, time_col, frame_name=frame_name,
         )
+        if updated is not self._row_position_caches:
+            object.__setattr__(self, "_row_position_caches", updated)
 
     @property
     def target_history(self) -> dict[str, pd.DataFrame]:

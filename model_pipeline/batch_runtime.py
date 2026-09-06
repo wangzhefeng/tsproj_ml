@@ -100,9 +100,9 @@ class _SharedBatchRunnerFactory:
         )
         fingerprint = compute_raw_design_fingerprint(
             config,
-            base_dir=registry._base_dir,
+            base_dir=registry.base_dir,
             origin=origin,
-            generators=registry._generators,
+            generators=registry.generators,
         )
         created = []
 
@@ -229,7 +229,7 @@ def _preflight_groups(groups, state, root, budget, config_workers):
             runner.resource_budget = runner.resource_budget.for_children(workers)
             runner.execution_plan = plan_runtime_execution(
                 task.config, runner.workload, budget=runner.resource_budget,
-                base_dir=task.registry._base_dir, feature_schema=runner.builder.feature_schema,
+                base_dir=task.registry.base_dir, feature_schema=runner.builder.feature_schema,
             )
         if workers > 1:
             _resolve_config_pool_thread_limit(tuple(runner for _, runner in runners))
@@ -345,9 +345,9 @@ def _load_tasks(
         origin = resolve_origin(registry, loaded.validation.get("forecast_origin"))
         raw_fingerprint = compute_raw_design_fingerprint(
             loaded,
-            base_dir=registry._base_dir,
+            base_dir=registry.base_dir,
             origin=origin,
-            generators=registry._generators,
+            generators=registry.generators,
         )
         tasks.append(
             _BatchTask(
@@ -598,7 +598,7 @@ def _run_canonical_batch_locked(
                     task.config,
                     runner.workload,
                     budget=runner.resource_budget,
-                    base_dir=task.registry._base_dir,
+                    base_dir=task.registry.base_dir,
                     feature_schema=runner.builder.feature_schema,
                 )
             process_thread_limit = _resolve_config_pool_thread_limit(

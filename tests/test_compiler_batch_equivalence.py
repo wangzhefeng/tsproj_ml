@@ -17,7 +17,7 @@ sys.path.insert(0, str(ROOT))
 
 from config.config_loader import load_yaml_config  # noqa: E402
 from data_loading import BUILTIN_GENERATORS  # noqa: E402
-from data_loading.information_set import InformationSetRequest  # noqa: E402
+from data_loading import InformationSetRequest  # noqa: E402
 from data_loading.registry import SourceRegistry  # noqa: E402
 from feature_engineering.compiler import FeatureCompiler  # noqa: E402
 

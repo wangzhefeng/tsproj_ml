@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import errno
 import hashlib
-import inspect
 import json
 import os
 import pickle
@@ -19,6 +18,7 @@ if os.name == "nt":
 else:
     import fcntl as _process_lock_backend
 
+from data_loading.sources.provenance import file_sha256, source_hashes, generator_hashes
 from forecasting_core.specs import ForecastConfigSpec
 
 
@@ -70,79 +70,6 @@ def _release_process_lock(lock_file: BinaryIO) -> None:
         _process_lock_backend.LK_UNLCK,
         1,
     )
-
-
-def file_sha256(path: str | Path) -> str:
-    digest = hashlib.sha256()
-    with Path(path).open("rb") as handle:
-        for chunk in iter(lambda: handle.read(1 << 20), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
-
-
-def _resolved_path(base_dir: Path, configured_path: str) -> Path:
-    path = Path(configured_path)
-    return path.resolve() if path.is_absolute() else (base_dir / path).resolve()
-
-
-def _source_hashes(
-    config: ForecastConfigSpec,
-    base_dir: Path,
-) -> dict[str, str]:
-    hashes = {}
-    for source in config.data.sources:
-        if source.source_type != "file":
-            continue
-        for path_role in ("history_path", "backtest_path", "future_path"):
-            configured_path = getattr(source, path_role)
-            if configured_path is None:
-                continue
-            hashes[f"{source.name}:{path_role}"] = file_sha256(
-                _resolved_path(base_dir, configured_path)
-            )
-    return hashes
-
-
-def _generator_hashes(
-    config: ForecastConfigSpec,
-    generators: Mapping[str, Any],
-) -> dict[str, str]:
-    hashes = {}
-    for source in config.data.sources:
-        if source.source_type != "generated":
-            continue
-        generator_name = source.generator or ""
-        generator = generators.get(generator_name)
-        if generator is None:
-            raise ValueError(
-                f"no generator registered for compiled cache source {source.name!r}"
-            )
-        try:
-            callable_implementation = inspect.getsource(generator)
-        except (OSError, TypeError):
-            callable_implementation = (
-                f"{generator.__module__}.{generator.__qualname__}"
-            )
-        try:
-            source_file = inspect.getsourcefile(generator)
-        except TypeError:
-            source_file = None
-        module_hash = (
-            file_sha256(source_file)
-            if source_file is not None and Path(source_file).is_file()
-            else None
-        )
-        implementation = json.dumps(
-            {
-                "callable": callable_implementation,
-                "module_sha256": module_hash,
-            },
-            ensure_ascii=False,
-            sort_keys=True,
-            separators=(",", ":"),
-        ).encode("utf-8")
-        hashes[source.name] = hashlib.sha256(implementation).hexdigest()
-    return hashes
 
 
 def _environment_hashes(base_dir: Path) -> dict[str, str]:
@@ -216,8 +143,8 @@ def raw_design_provenance(
         "strategy": config.strategy.canonical_payload(),
         "forecast_origin": str(origin),
         "validation": _raw_validation_payload(config),
-        "source_hashes": _source_hashes(config, root),
-        "generator_hashes": _generator_hashes(config, generators),
+        "source_hashes": source_hashes(config.data, root),
+        "generator_hashes": generator_hashes(config.data, generators),
         "environment_hashes": _environment_hashes(root),
         "compilation_implementation_hashes": _compilation_implementation_hashes(),
     }

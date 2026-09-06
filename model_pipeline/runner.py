@@ -129,8 +129,8 @@ class CanonicalBaseModelRunner:
             self.checkpoint = FileFitCheckpoint(checkpoint_root, {
                 "config": config.fingerprint(),
                 "raw_design": compiled_cache.compute_raw_design_fingerprint(
-                    config, base_dir=registry._base_dir, origin=origin,
-                    generators=registry._generators),
+                    config, base_dir=registry.base_dir, origin=origin,
+                    generators=registry.generators),
                 "implementation": implementation_fingerprint(),
             })
         self.fold_transform_cache = fold_transform_cache
@@ -155,9 +155,9 @@ class CanonicalBaseModelRunner:
                 )
             expected_fingerprint = compiled_cache.compute_raw_design_fingerprint(
                 config,
-                base_dir=registry._base_dir,
+                base_dir=registry.base_dir,
                 origin=origin,
-                generators=registry._generators,
+                generators=registry.generators,
             )
             if precompiled_fingerprint != expected_fingerprint:
                 raise ValueError(
@@ -178,9 +178,9 @@ class CanonicalBaseModelRunner:
             cache_root = Path(compiled_cache_root)
             fingerprint = compiled_cache.compute_raw_design_fingerprint(
                 config,
-                base_dir=registry._base_dir,
+                base_dir=registry.base_dir,
                 origin=origin,
-                generators=registry._generators,
+                generators=registry.generators,
             )
             self.compiled_cache_fingerprint = fingerprint
             started = perf_counter()
@@ -239,7 +239,7 @@ class CanonicalBaseModelRunner:
             config,
             self.workload,
             budget=self.resource_budget,
-            base_dir=registry._base_dir,
+            base_dir=registry.base_dir,
             feature_schema=self.builder.feature_schema,
         )
         self.cache_status = cache_status
@@ -340,7 +340,7 @@ class CanonicalBaseModelRunner:
         return {
             "performance_profile": resolve_performance_profile(
                 self.config, self.workload, budget=self.resource_budget,
-                base_dir=self.registry._base_dir, feature_schema=self.feature_schema,
+                base_dir=self.registry.base_dir, feature_schema=self.feature_schema,
                 execution_plan=self.execution_plan,
             ),
             "workload": self.workload.payload(),

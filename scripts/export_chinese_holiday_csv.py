@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """导出中国节假日特征 CSV（方案 B 审计兜底，2026-09-01）。
 
-与 data_loading/holiday_generator.py 共用同一核心实现，产物用于：
+与 data_loading/calendar_generator/calendar_features.py 共用同一核心实现，产物用于：
 1. 人工核对 generated source 的在线特征（审计兜底）；
 2. 需要版本固定的场景直接作为 canonical file source 的三段路径数据。
 
@@ -13,7 +13,8 @@
         --output dataset/shared/chinese_holiday_20251001_20261231.csv
     # --freq 1D|1h|15min|5min（默认 1D；日内频率同日多点继承当日状态）
 
-列：time, is_holiday, holiday_name, next_holiday_days（与 generated source 一致，
+列：time, is_holiday, holiday_name, next_holiday_days, prev_holiday_days,
+is_adjusted_workday, solar_term（与 generated source 一致，
 file source 引用时另加 available_at 列由 config 声明或按 source_time 政策处理）。
 """
 
@@ -28,7 +29,7 @@ import pandas as pd
 # 脚本目录不在包内，引导仓库根后复用 canonical 实现（单一事实来源）。
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from data_loading.holiday_generator import chinese_holiday_frame  # noqa: E402
+from data_loading import chinese_holiday_frame  # noqa: E402
 
 
 def main() -> int:

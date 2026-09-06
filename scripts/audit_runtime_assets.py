@@ -10,50 +10,26 @@ JSON，供 CI/单元测试消费。
 from __future__ import annotations
 
 import argparse
-import csv
 import json
 import sys
 from collections import defaultdict
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from config.config_loader import is_model_yaml, load_yaml_config  # noqa: E402
-from forecasting_core.specs import ForecastConfigSpec  # noqa: E402
+from data_loading.sources.assets import asset_columns, required_columns, source_paths  # noqa: E402
+from forecasting_core.specs import DataSourceSpec, ForecastConfigSpec  # noqa: E402
 from model_ensemble.specs import EnsembleConfigSpec  # noqa: E402
 
 
-_PATH_FIELDS = ("history_path", "backtest_path", "future_path")
-
-
-def _required_columns(source: Mapping[str, Any]) -> set[str]:
-    """返回 DataSourceSpec 投影视图要求存在的物理列。"""
-    required = {
-        str(column.get("name"))
-        for column in source.get("columns", ())
-        if isinstance(column, Mapping)
-        and column.get("name")
-        and column.get("role") != "ignored"
-    }
-    time_col = source.get("time_col")
-    if time_col:
-        required.add(str(time_col))
-    required.update(str(column) for column in source.get("series_id_cols", ()))
-    return required
-
-
-def _config_sources(config: Any) -> tuple[Mapping[str, Any], ...]:
+def _config_sources(config: Any) -> tuple[DataSourceSpec, ...]:
     if not isinstance(config, (ForecastConfigSpec, EnsembleConfigSpec)):
         raise TypeError(f"unsupported model config type: {type(config).__name__}")
-    payload_sources = config.data.canonical_payload()["sources"]
-    if not isinstance(payload_sources, list):
-        raise TypeError("canonical data.sources must be a list")
-    return tuple(
-        source for source in payload_sources if isinstance(source, Mapping)
-    )
+    return config.data.sources
 
 
 def audit_runtime_assets(
@@ -73,18 +49,14 @@ def audit_runtime_assets(
         config = load_yaml_config(config_path)
         relative_config = config_path.resolve().relative_to(repo).as_posix()
         for source in _config_sources(config):
-            source_name = str(source.get("name", ""))
-            for path_role in _PATH_FIELDS:
-                raw_path = source.get(path_role)
-                if not raw_path:
-                    continue
-                normalized = Path(str(raw_path)).as_posix()
+            source_name = source.name
+            for path_role, normalized in source_paths(source):
                 references[normalized].append(
                     {
                         "config": relative_config,
                         "source": source_name,
                         "path_role": path_role,
-                        "required_columns": sorted(_required_columns(source)),
+                        "required_columns": sorted(required_columns(source)),
                     }
                 )
 
@@ -94,15 +66,8 @@ def audit_runtime_assets(
     missing_declared_column_reference_count = 0
     column_affected_configs: set[str] = set()
     for raw_path in sorted(references):
-        resolved = Path(raw_path)
-        if not resolved.is_absolute():
-            resolved = repo / resolved
-        if resolved.exists():
-            with resolved.open(newline="", encoding="utf-8-sig") as stream:
-                try:
-                    actual_columns = set(next(csv.reader(stream)))
-                except StopIteration as exc:
-                    raise ValueError(f"runtime source is empty: {resolved}") from exc
+        actual_columns = asset_columns(raw_path, repo)
+        if actual_columns is not None:
             missing_sites = []
             for site in references[raw_path]:
                 missing = sorted(set(site["required_columns"]) - actual_columns)

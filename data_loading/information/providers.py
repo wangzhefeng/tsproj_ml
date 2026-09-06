@@ -1,9 +1,21 @@
 """Explicit future-value providers independent of legacy forecasting models."""
 
+from __future__ import annotations
+
 from collections.abc import Mapping, Sequence
-from typing import Protocol, runtime_checkable
+from typing import Any, Protocol, TYPE_CHECKING, runtime_checkable
 
 import numpy as np
+import pandas as pd
+
+from data_loading.sources.source_io import SourceFrames
+from data_loading.processing.validation import validate_frame, resolve_available_at_col
+from data_loading.processing.visibility import select_as_of_vintage
+from data_loading.processing.alignment import select_requested_series, request_identities, filter_identity
+from forecasting_core.specs.data import AvailabilityPolicy, ColumnRole, DataSourceSpec
+
+if TYPE_CHECKING:
+    from data_loading.information.information_set import InformationSetRequest
 
 
 def _validate_horizon(horizon: int) -> int:
@@ -159,7 +171,145 @@ def create_endogenous_future_provider(
     raise ValueError(f"unknown endogenous future provider method: {method!r}")
 
 
+class ObservedFutureProvider:
+    __slots__ = ("_provider", "_available_at")
+
+    def __init__(
+        self,
+        *,
+        horizon: int,
+        trajectories: Mapping[str, tuple[float, ...]],
+        methods: Mapping[str, str],
+        available_at: Mapping[str, tuple[pd.Timestamp, ...]],
+    ) -> None:
+        self._provider = CompositeProvider(
+            horizon=horizon,
+            trajectories=trajectories,
+            methods=methods,
+        )
+        if set(available_at) != set(trajectories):
+            raise ValueError("available_at must exactly cover provider trajectories")
+        normalized = {
+            name: tuple(pd.Timestamp(value) for value in values)
+            for name, values in available_at.items()
+        }
+        if any(len(values) != horizon for values in normalized.values()):
+            raise ValueError("provider available_at must exactly cover the horizon")
+        self._available_at = normalized
+
+    @property
+    def horizon(self) -> int:
+        return self._provider.horizon
+
+    def value_at(self, name: str, step: int) -> float:
+        return self._provider.value_at(name, step)
+
+    def provider_name(self, name: str) -> str:
+        return self._provider.provider_name(name)
+
+    def available_at(self, name: str, step: int) -> pd.Timestamp:
+        self._provider.value_at(name, step)
+        return self._available_at[name][step]
+
+
+def collect_observed_provider(
+    frames: SourceFrames,
+    source: DataSourceSpec,
+    history_frame: pd.DataFrame,
+    request: InformationSetRequest,
+    values_by_identity: dict[Any, dict[str, tuple[float, ...]]],
+    methods_by_identity: dict[Any, dict[str, str]],
+    available_at_by_identity: dict[
+        Any, dict[str, tuple[pd.Timestamp, ...]]
+    ],
+) -> None:
+    method = source.provider
+    if method is None:
+        raise ValueError(f"observed_past source {source.name!r} requires provider")
+    columns = [
+        column.name
+        for column in source.columns
+        if column.role is ColumnRole.OBSERVED_PAST
+    ]
+    if method == "persistence":
+        provider_frame = history_frame
+    else:
+        if source.backtest_path is None:
+            return
+        if source.availability is AvailabilityPolicy.SOURCE_TIME:
+            raise ValueError(
+                f"observed_past source {source.name!r} with availability=source_time "
+                "cannot expose a future observed provider trajectory"
+            )
+        provider_frame = validate_frame(
+            source,
+            frames.read_path(source.backtest_path),
+            generated=False,
+            path_version="backtest",
+        )
+        if source.availability in {
+            AvailabilityPolicy.COLUMN,
+            AvailabilityPolicy.GENERATOR_DEFINED,
+        }:
+            provider_frame = select_as_of_vintage(
+                source,
+                provider_frame,
+                request,
+            )
+        provider_frame = provider_frame.loc[
+            provider_frame[source.time_col].isin(request.forecast_times)
+        ].copy()
+        provider_frame = select_requested_series(
+            source,
+            provider_frame,
+            request,
+            strict_extra=True,
+        )
+    identities = request_identities(source, request)
+    for identity in identities:
+        selected = filter_identity(source, provider_frame, identity)
+        selected = selected.sort_values(source.time_col, kind="stable")
+        target = values_by_identity.setdefault(identity, {})
+        methods = methods_by_identity.setdefault(identity, {})
+        availability = available_at_by_identity.setdefault(identity, {})
+        for column in columns:
+            if column in target:
+                raise ValueError(f"duplicate observed provider column: {column!r}")
+            if method == "persistence":
+                if selected.empty:
+                    raise ValueError(
+                        f"observed history {source.name!r} is empty for {identity!r}"
+                    )
+                trajectory = (float(selected.iloc[-1][column]),) * request.H
+                available_at = (request.forecast_origin,) * request.H
+            else:
+                if len(selected) != request.H:
+                    raise ValueError(
+                        f"observed provider {source.name!r} must exactly cover the horizon"
+                    )
+                trajectory = tuple(float(value) for value in selected[column])
+                available_at_col = resolve_available_at_col(source)
+                available_at = (
+                    tuple(
+                        pd.Timestamp(value)
+                        for value in selected[available_at_col]
+                    )
+                    if available_at_col is not None
+                    else (request.forecast_origin,) * request.H
+                )
+                if any(value > request.forecast_origin for value in available_at):
+                    raise ValueError(
+                        f"observed provider {source.name!r} contains values "
+                        "available after forecast_origin"
+                    )
+            target[column] = trajectory
+            methods[column] = method
+            availability[column] = available_at
+
+
 __all__ = [
+    "ObservedFutureProvider",
+    "collect_observed_provider",
     "AuxiliaryProvider",
     "CompositeProvider",
     "EndogenousFutureProvider",

@@ -10,6 +10,8 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+from forecasting_core.specs import ColumnSpec, DataSourceSpec
+
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "scripts" / "audit_runtime_assets.py"
@@ -42,21 +44,21 @@ class RuntimeAssetAuditTest(unittest.TestCase):
 
     def test_header_audit_requires_non_ignored_declared_columns(self):
         with self.subTest("ignored metadata remains optional"):
-            source = {
-                "time_col": "time",
-                "series_id_cols": [],
-                "columns": [
-                    {"name": "value", "role": "target"},
-                    {"name": "needed", "role": "observed_past"},
-                    {"name": "optional_meta", "role": "ignored"},
-                ],
-            }
+            source = DataSourceSpec(
+                name="target", source_type="file", history_path="source.csv",
+                time_col="time", availability="source_time", provider="persistence",
+                columns=(
+                    ColumnSpec("value", "target"),
+                    ColumnSpec("needed", "observed_past"),
+                    ColumnSpec("optional_meta", "ignored"),
+                ),
+            )
             actual = {"time", "value", "optional_physical_column"}
             with tempfile.TemporaryDirectory() as tmp:
                 root = Path(tmp)
                 (root / "model.yaml").write_text("schema_version: 2\n")
                 (root / "source.csv").write_text(",".join(sorted(actual)) + "\n")
-                source.update(name="target", history_path="source.csv")
+
                 with patch.object(MODULE, "is_model_yaml", return_value=True), \
                      patch.object(MODULE, "load_yaml_config", return_value=None), \
                      patch.object(MODULE, "_config_sources", return_value=(source,)):

@@ -29,6 +29,7 @@ else:
 import numpy as np
 import pandas as pd
 
+from data_loading.sources.provenance import file_sha256
 from model_ensemble.artifacts import OOFPredictionArtifact
 from model_ensemble.specs import OOF_GAP_SEMANTICS
 
@@ -81,14 +82,6 @@ def _release_process_lock(lock_file: BinaryIO) -> None:
         _process_lock_backend.LK_UNLCK,
         1,
     )
-
-
-def file_sha256(path: str | Path) -> str:
-    digest = hashlib.sha256()
-    with Path(path).open("rb") as handle:
-        for chunk in iter(lambda: handle.read(1 << 20), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
 
 
 def compute_oof_fingerprint(

@@ -13,7 +13,7 @@
   5. 截断到 2026-07-31 23:55（up_sampled 覆盖到 PCS 原始数据末点）
 
 用法（仓库根目录）：
-    uv run python config/aidc_ess_selfuse_load/upsample_strategy_plan.py
+    env -u PYTHONPATH .venv/bin/python config/aidc_ess_selfuse_load/upsample_strategy_plan.py
 """
 from pathlib import Path
 

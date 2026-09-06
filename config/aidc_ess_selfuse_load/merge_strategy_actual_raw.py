@@ -9,7 +9,7 @@
   - 截断到 2026-07-28 23:55（与站用电 now_time 对齐，PCS 原始数据多出的 3 天是下载过程混入的）
 
 用法（仓库根目录）：
-    uv run python config/aidc_ess_selfuse_load/merge_strategy_actual_raw.py
+    env -u PYTHONPATH .venv/bin/python config/aidc_ess_selfuse_load/merge_strategy_actual_raw.py
 """
 from pathlib import Path
 

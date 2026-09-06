@@ -23,9 +23,9 @@
        - load_event_analysis_report_15min.md  分析报告（两路合并）
 
 用法（仓库根目录）：
-    uv run python config/aidc_load_15min_daily/load_event_analysis.py
-    uv run python config/aidc_load_15min_daily/load_event_analysis.py --routes A
-    uv run python config/aidc_load_15min_daily/load_event_analysis.py --no-plot
+    env -u PYTHONPATH .venv/bin/python config/aidc_load_15min_daily/load_event_analysis.py
+    env -u PYTHONPATH .venv/bin/python config/aidc_load_15min_daily/load_event_analysis.py --routes A
+    env -u PYTHONPATH .venv/bin/python config/aidc_load_15min_daily/load_event_analysis.py --no-plot
 
 注意：lbl_* 标签列由含居中窗口的检测算法产生，仅供离线分析/样本筛选/
 评估使用；若用于预测训练请只取历史侧（或仅使用 feat_*/xf_*/xr_* 特征列）。
@@ -434,7 +434,7 @@ def process_route(route: str, cfg: EventDetectionConfig, peer_series: pd.Series,
 # ---------------------------------------------------------------------------
 def write_report(results: list[dict], cfg: EventDetectionConfig, out_md: Path) -> None:
     lines = ["# AIDC 15min 负荷事件标签与特征工程报告", ""]
-    lines.append(f"- 生成命令：`uv run python config/aidc_load_15min_daily/load_event_analysis.py`")
+    lines.append(f"- 生成命令：`env -u PYTHONPATH .venv/bin/python config/aidc_load_15min_daily/load_event_analysis.py`")
     lines.append(f"- 检测核心：`data_process/load_event_detection.py`（与日频脚本共享同一口径）")
     lines.append("")
     lines.append("## 1. 事件分类学")

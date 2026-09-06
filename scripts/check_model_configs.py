@@ -3,8 +3,8 @@
 """tsproj_ml 模型配置 dry-run 校验：只加载配置 + 复算 main.py 合法性校验，不训练不预测。
 
 用法（项目根，注意 env -u PYTHONPATH 防 Hermes 注入遮蔽项目 utils/ 包）：
-    env -u PYTHONPATH UV_CACHE_DIR=.uv_cache uv run --no-sync python scripts/check_model_configs.py 'config/<scenario>/route_*/lgbm_*.yaml'
-    env -u PYTHONPATH UV_CACHE_DIR=.uv_cache uv run --no-sync python scripts/check_model_configs.py 'config/aidc_power_15min/**/*.yaml'
+    env -u PYTHONPATH .venv/bin/python scripts/check_model_configs.py 'config/<scenario>/route_*/lgbm_*.yaml'
+    env -u PYTHONPATH .venv/bin/python scripts/check_model_configs.py 'config/aidc_power_15min/**/*.yaml'
     （无参数时默认 glob config/**/*.yaml，仅检查含 base_config/overrides 的模型 schema）
 
 复算的校验（与 main.py.__init__ 一致）：

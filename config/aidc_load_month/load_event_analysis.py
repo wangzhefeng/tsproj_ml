@@ -27,9 +27,9 @@
        - load_event_analysis_report_daily.md  分析报告（两路合并）
 
 用法（仓库根目录）：
-    uv run python config/aidc_load_month/load_event_analysis.py
-    uv run python config/aidc_load_month/load_event_analysis.py --routes A
-    uv run python config/aidc_load_month/load_event_analysis.py --no-plot
+    env -u PYTHONPATH .venv/bin/python config/aidc_load_month/load_event_analysis.py
+    env -u PYTHONPATH .venv/bin/python config/aidc_load_month/load_event_analysis.py --routes A
+    env -u PYTHONPATH .venv/bin/python config/aidc_load_month/load_event_analysis.py --no-plot
 """
 
 from __future__ import annotations
@@ -398,7 +398,7 @@ def write_report(results: list[dict], cfg: EventDetectionConfig, out_md: Path) -
     lines = ["# AIDC 日频负荷事件标签与特征工程报告", ""]
     lines.append("- 数据：dataset/aidc_load_month/ 下 A/B 路 1day 粒度负荷"
                  "（目录名沿用场景命名 aidc_load_month）")
-    lines.append("- 生成命令：`uv run python config/aidc_load_month/load_event_analysis.py`")
+    lines.append("- 生成命令：`env -u PYTHONPATH .venv/bin/python config/aidc_load_month/load_event_analysis.py`")
     lines.append("- 检测核心：`data_process/load_event_detection.py`（与 15min 脚本共享同一口径；"
                  "日水平基线取 15min 数据聚合的逐日中位数，保证跨频率标签一致）")
     lines.append("")

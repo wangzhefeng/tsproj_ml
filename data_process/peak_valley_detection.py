@@ -10,8 +10,8 @@
   <stem>_peaks_valleys.png  全序列折线图 + 峰谷标注
 
 用法（仓库根目录）：
-    uv run python data_process/peak_valley_detection.py <config.yaml>
-    uv run python data_process/peak_valley_detection.py <config.yaml> --force
+    env -u PYTHONPATH .venv/bin/python data_process/peak_valley_detection.py <config.yaml>
+    env -u PYTHONPATH .venv/bin/python data_process/peak_valley_detection.py <config.yaml> --force
 
 配置 YAML schema（与模型配置完全独立，无 base_config/overrides）：
     # 单任务（顶层平铺）

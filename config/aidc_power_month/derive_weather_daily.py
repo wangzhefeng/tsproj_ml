@@ -36,7 +36,7 @@
    与月度脚本的全量输出行为一致）
 
 用法（仓库根目录）：
-    uv run python config/aidc_power_month/derive_weather_daily.py
+    env -u PYTHONPATH .venv/bin/python config/aidc_power_month/derive_weather_daily.py
 """
 from pathlib import Path
 

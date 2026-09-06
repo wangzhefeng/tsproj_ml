@@ -16,8 +16,8 @@ local/periodic Z-score 支持 run-length 过滤（短段保留、长段提高阈
   outlier_analysis/review_days/<stem>/<date>_review.png  统计可疑点的逐日审核图
 
 用法（仓库根目录）：
-    uv run python data_process/outlier_process.py <config.yaml>
-    uv run python data_process/outlier_process.py <config.yaml> --force
+    env -u PYTHONPATH .venv/bin/python data_process/outlier_process.py <config.yaml>
+    env -u PYTHONPATH .venv/bin/python data_process/outlier_process.py <config.yaml> --force
 
 配置 YAML schema（与模型配置完全独立，无 base_config/overrides）：
     # 单任务（顶层平铺）

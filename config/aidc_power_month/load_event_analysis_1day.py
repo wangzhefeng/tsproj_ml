@@ -11,9 +11,9 @@
 输出目录：``dataset/aidc_power_month/freq_1day/event_label_features/``。
 
 用法：
-    uv run python config/aidc_power_month/load_event_analysis_1day.py
-    uv run python config/aidc_power_month/load_event_analysis_1day.py --routes A
-    uv run python config/aidc_power_month/load_event_analysis_1day.py --no-plot
+    env -u PYTHONPATH .venv/bin/python config/aidc_power_month/load_event_analysis_1day.py
+    env -u PYTHONPATH .venv/bin/python config/aidc_power_month/load_event_analysis_1day.py --routes A
+    env -u PYTHONPATH .venv/bin/python config/aidc_power_month/load_event_analysis_1day.py --no-plot
 """
 
 from __future__ import annotations
@@ -284,7 +284,7 @@ def write_report(results: list[dict[str, Any]], out_md: Path) -> None:
         "- 目标：`dataset/aidc_power_month/freq_1day/` 的 1D sum 日用电量（kWh）",
         "- 日内来源：`dataset/aidc_load_15min_daily/` 的 15min 负荷功率（kW）",
         "- 检测核心：复用 `data_process/load_event_detection.py`，事件明细应与负荷日频场景一致",
-        "- 生成命令：`uv run python config/aidc_power_month/load_event_analysis_1day.py`",
+        "- 生成命令：`env -u PYTHONPATH .venv/bin/python config/aidc_power_month/load_event_analysis_1day.py`",
         "",
     ]
     for result in results:

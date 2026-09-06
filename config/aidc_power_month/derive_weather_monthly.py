@@ -28,7 +28,7 @@ CSV 中供 custom_features 或人工分析使用（框架 weather 通路只用�
   dataset/aidc_power_month/freq_1month/weather_monthly_stats_202510_202607.csv
 
 用法（仓库根目录）：
-    uv run python config/aidc_power_month/derive_weather_monthly.py
+    env -u PYTHONPATH .venv/bin/python config/aidc_power_month/derive_weather_monthly.py
 """
 from pathlib import Path
 

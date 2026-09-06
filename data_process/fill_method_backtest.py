@@ -5,8 +5,8 @@
 按缺口长度分桶对比 MAPE。新增填充方法加入注册表后自动纳入回测。
 
 用法（仓库根目录）：
-    uv run python data_process/fill_method_backtest.py
-    uv run python data_process/fill_method_backtest.py --route A --seed 42
+    env -u PYTHONPATH .venv/bin/python data_process/fill_method_backtest.py
+    env -u PYTHONPATH .venv/bin/python data_process/fill_method_backtest.py --route A --seed 42
 """
 
 import argparse

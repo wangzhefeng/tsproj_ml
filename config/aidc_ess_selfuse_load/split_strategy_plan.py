@@ -6,7 +6,7 @@
   - future:  {A,B}_PCS_plan_future_5min_20260729_20260731.csv（07-29~07-31，forecast 用）
 
 用法（仓库根目录）：
-    uv run python config/aidc_ess_selfuse_load/split_strategy_plan.py
+    env -u PYTHONPATH .venv/bin/python config/aidc_ess_selfuse_load/split_strategy_plan.py
 """
 from pathlib import Path
 

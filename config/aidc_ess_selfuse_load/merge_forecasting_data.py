@@ -9,7 +9,7 @@
 列: time, ess_power（站用电 kW）, pcs_power（PCS 充放电功率 kW，负=充电，正=放电）
 
 用法（仓库根目录）：
-    uv run python config/aidc_ess_selfuse_load/merge_forecasting_data.py
+    env -u PYTHONPATH .venv/bin/python config/aidc_ess_selfuse_load/merge_forecasting_data.py
 """
 from pathlib import Path
 

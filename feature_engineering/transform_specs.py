@@ -4,16 +4,12 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from types import SimpleNamespace
 from typing import Any
 
-from decomposition import resolve_decomposition_spec
+from decomposition.configuration.spec import normalize_decomposition_config
 
 _FEATURE_SCALING_METHODS = frozenset({"none", "minmax", "standard", "robust"})
 _CALENDAR_METHODS = frozenset({"none", "per_calendar_day"})
-_DECOMPOSITION_METHODS = frozenset(
-    {"none", "linear", "quadratic", "damped", "stl", "mstl"}
-)
 _TARGET_SCALING_METHODS = _FEATURE_SCALING_METHODS
 
 
@@ -73,46 +69,7 @@ def normalize_target_transformations(value: Any) -> dict[str, dict[str, Any]]:
             f"expected one of {sorted(_CALENDAR_METHODS)}"
         )
 
-    decomposition = value.get("decomposition", {})
-    if not isinstance(decomposition, Mapping):
-        raise TypeError("transformations.target.decomposition must be a mapping")
-    decomposition_payload = dict(decomposition)
-    fit_history_steps = decomposition_payload.pop("fit_history_steps", None)
-    if fit_history_steps is not None and (
-        isinstance(fit_history_steps, bool) or not isinstance(fit_history_steps, int) or fit_history_steps < 1
-    ):
-        raise ValueError("decomposition.fit_history_steps must be a positive integer")
-    decomposition_method = str(
-        decomposition_payload.get("method", "none") or "none"
-    ).lower()
-    if decomposition_method not in _DECOMPOSITION_METHODS:
-        raise ValueError(
-            f"unsupported decomposition method {decomposition_method!r}; "
-            f"expected one of {sorted(_DECOMPOSITION_METHODS)}"
-        )
-    if decomposition_method == "quadratic":
-        configured_degree = int(decomposition_payload.get("trend_degree", 2))
-        if configured_degree != 2:
-            raise ValueError("quadratic decomposition requires trend_degree=2")
-        decomposition_payload["method"] = "linear"
-        decomposition_payload["trend_degree"] = 2
-    elif decomposition_method == "damped":
-        configured_forecast = str(
-            decomposition_payload.get("trend_forecast", "damped") or "damped"
-        ).lower()
-        if configured_forecast != "damped":
-            raise ValueError("damped decomposition requires trend_forecast='damped'")
-        decomposition_payload["method"] = "linear"
-        decomposition_payload["trend_forecast"] = "damped"
-    else:
-        decomposition_payload["method"] = decomposition_method
-    resolve_decomposition_spec(
-        SimpleNamespace(decomposition=dict(decomposition_payload))
-    )
-    if fit_history_steps is not None:
-        if decomposition_method == "none":
-            raise ValueError("decomposition.fit_history_steps requires an enabled decomposition")
-        decomposition_payload["fit_history_steps"] = fit_history_steps
+    decomposition_payload = normalize_decomposition_config(value.get("decomposition", {}))
 
     scaling = value.get("scaling", {})
     if not isinstance(scaling, Mapping):

@@ -239,6 +239,8 @@ class ForecastConfigSpec:
         if self.validation.get("schedule_mode") == "intraday":
             payload["intraday_schedule_semantics"] = "formal_origin_grid_v1"
         target = self.features.transformations.get("target", {})
+        if target.get("decomposition", {}).get("method", "none") != "none":
+            payload["decomposition_semantics"] = "component_fit_v2"
         if any(target.get(name, {}).get("method", "none") != "none" for name in ("decomposition", "scaling")):
             payload["target_fit_window_semantics"] = "unique_training_labels_v1"
         return payload

@@ -191,7 +191,7 @@ class PickleTest(unittest.TestCase):
 
 class RegistryFailFastTest(unittest.TestCase):
     def test_custom_rejected_at_registry(self):
-        from decomposition.registry import build_pipeline
+        from decomposition.construction.registry import build_pipeline
 
         with self.assertRaisesRegex(ValueError, "not implemented"):
             build_pipeline(resolve_decomposition_spec(

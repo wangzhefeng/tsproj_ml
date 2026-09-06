@@ -79,7 +79,22 @@ class ModelDeployPkl:
         if not os.path.exists(self.save_file_path):
             raise Exception("参数 save_file_path 指向的文件路径不存在, 请检查.")
 
-        model = joblib.load(self.save_file_path)
+        try:
+            model = joblib.load(self.save_file_path)
+        except ModuleNotFoundError as exc:
+            if exc.name in {
+                "decomposition.extractors", "decomposition.forecasters",
+                "decomposition.pipeline", "decomposition.spec", "decomposition.presets",
+                "decomposition.component_factory", "decomposition.types",
+                "decomposition.composers", "decomposition.base",
+                "decomposition.residual_diagnostics", "decomposition.registry",
+                "decomposition.time_axis",
+            }:
+                raise ValueError(
+                    "incompatible decomposition artifact: explicitly refit with component_fit_v2; "
+                    "removed component paths are not supported"
+                ) from exc
+            raise
 
         # 加载结果原样返回，调用方自行判型；
         # 不做类型检查导入（架构收敛 F8：低层不得反向 import 高层，duck-typing 收口）。

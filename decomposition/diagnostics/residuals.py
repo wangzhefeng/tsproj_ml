@@ -6,18 +6,16 @@
 FFT 主导周期一致且 ACF 峰显著，说明 decomposition 之后仍有
 未被 linear/STL/MSTL 吸收的周期成分；反之则说明现有方法已足够。
 
-本模块只做诊断，不改预测链路，不写入结果目录之外的位置。
+本模块只做诊断并返回数据，不改预测链路、不写文件。稳定频带标志是启发式证据，不是自动启用更多分解方法的决策。
 """
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from pathlib import Path
-from typing import Any
 
 import numpy as np
 import pandas as pd
 
-from decomposition.periods import acf_periods, fft_dominant_period
+from timeseries_analysis.periods import acf_periods, fft_dominant_period
 
 
 @dataclass
@@ -107,31 +105,21 @@ def summarize_window_residuals(
     return summary
 
 
-def write_residual_diagnostics(
-    summary: ResidualDiagnosticsSummary,
-    output_path: Path,
-) -> Path:
-    """把残差诊断结果写为 CSV（只新增，不覆盖旧文件）。"""
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    rows = []
-    for r in summary.rows:
-        top = ";".join(f"{lag}:{val:.3f}" for lag, val in r.acf_top_periods[:2])
-        rows.append(
-            {
-                "window_idx": r.window_idx,
-                "fft_dominant_period_samples": r.fft_dominant_period_samples,
-                "fft_dominant_amplitude": r.fft_dominant_amplitude,
-                "acf_top_periods": top,
-                "n_obs": r.n_obs,
-            }
-        )
-    summary_row = {
-        "window_idx": -1,  # 汇总行
-        "fft_dominant_period_samples": summary.fft_period_median,
-        "fft_dominant_amplitude": summary.fft_period_cv,  # 借用该列存 CV
-        "acf_top_periods": f"max={summary.acf_max_value}",
-        "n_obs": int(summary.stable_band_detected),
-    }
-    rows.append(summary_row)
-    pd.DataFrame(rows).to_csv(output_path, index=False, encoding="utf-8")
-    return output_path
+def residual_diagnostics_frame(summary: ResidualDiagnosticsSummary) -> pd.DataFrame:
+    """窗口与汇总使用显式字段；不借用 amplitude/n_obs 存放其他量。"""
+    rows = [{
+        "record_type": "window", "window_idx": row.window_idx,
+        "fft_dominant_period_samples": row.fft_dominant_period_samples,
+        "fft_dominant_amplitude": row.fft_dominant_amplitude,
+        "acf_top_periods": ";".join(f"{lag}:{value:.3f}" for lag, value in row.acf_top_periods),
+        "n_obs": row.n_obs,
+    } for row in summary.rows]
+    rows.append({
+        "record_type": "summary", "fft_period_median": summary.fft_period_median,
+        "fft_period_std": summary.fft_period_std, "fft_period_cv": summary.fft_period_cv,
+        "acf_max_value": summary.acf_max_value, "stable_band_detected": summary.stable_band_detected,
+    })
+    columns = ["record_type", "window_idx", "fft_dominant_period_samples", "fft_dominant_amplitude",
+               "acf_top_periods", "n_obs", "fft_period_median", "fft_period_std", "fft_period_cv",
+               "acf_max_value", "stable_band_detected"]
+    return pd.DataFrame(rows, columns=columns)

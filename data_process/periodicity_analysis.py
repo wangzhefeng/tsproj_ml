@@ -1,9 +1,9 @@
 # -*- coding: utf-8 -*-
 """时间序列周期自动检测工具（配置驱动）。
 
-检测算法核心位于 decomposition/periods.py（FFT/ACF/STL 纯数值实现，
-与 decomposition 残差频谱诊断共用同一事实源）；本模块只承载
-规格、可视化、报告落盘、协整诊断与配置驱动 CLI。
+检测算法核心位于 timeseries_analysis/periods.py（FFT/ACF/STL 纯数值实现）。
+本模块承载 DataFrame 整理、时间换算、规格、可视化、报告落盘、
+协整诊断与配置驱动 CLI。
 
 输出（源文件同级的 periodicity_analysis/ 子目录，文件名从源文件名派生）：
   <stem>_periodicity_report.csv  结构化报告（指标名/值/说明）
@@ -52,12 +52,76 @@ from statsmodels.tsa.stattools import acf
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from decomposition.periods import (  # noqa: E402
+from timeseries_analysis.periods import (  # noqa: E402
     DEFAULT_MAX_LAGS,
     DEFAULT_MIN_ACF,
     DEFAULT_TOP_N_PERIODS,
-    detect_periodicity,
+    fft_dominant_period,
+    fft_top_periods,
+    acf_periods,
+    stl_strength,
 )
+
+
+def detect_periodicity(
+    df: pd.DataFrame,
+    time_col: str,
+    target_col: str,
+    *,
+    max_lags: int = DEFAULT_MAX_LAGS,
+    seasonal_period: Optional[int] = None,
+    top_n_periods: int = DEFAULT_TOP_N_PERIODS,
+    min_acf: float = DEFAULT_MIN_ACF,
+    fft_top_k: int = 1,
+) -> dict:
+    """对 DataFrame 执行周期检测，返回结构化报告字典。"""
+    frame = df[[time_col, target_col]].copy()
+    frame[time_col] = pd.to_datetime(frame[time_col])
+    frame = frame.sort_values(time_col)
+    y = pd.to_numeric(frame[target_col], errors="coerce").dropna().to_numpy()
+    if len(y) < 4:
+        raise ValueError(f"目标列有效样本不足（<4）：{target_col}")
+
+    # 采样间隔（秒）
+    ts = frame[time_col].to_numpy()
+    diff_seconds = float(np.median(np.diff(ts.astype("datetime64[ns]")).astype("int64")) / 1e9) if len(ts) > 1 else None
+
+    # 线性去趋势：强趋势会淹没周期信号（ACF 单调下降无局部峰、FFT 主导=序列长度级）
+    x = np.arange(len(y), dtype=float)
+    slope, intercept = np.polyfit(x, y, 1)
+    y_detrended = y - (slope * x + intercept)
+
+    report: dict[str, Any] = {
+        "n_samples": int(len(y)),
+        "sample_interval_seconds": diff_seconds,
+    }
+
+    # 1. FFT 主导周期（在去趋势序列上）
+    fft_info = fft_dominant_period(y_detrended)
+    report["fft_dominant_period_samples"] = fft_info["dominant_period_samples"]
+    report["fft_dominant_amplitude"] = fft_info["dominant_amplitude"]
+    if fft_info["dominant_period_samples"] and diff_seconds:
+        report["fft_dominant_period_seconds"] = fft_info["dominant_period_samples"] * diff_seconds
+        report["fft_dominant_period_days"] = fft_info["dominant_period_samples"] * diff_seconds / 86400.0
+    if fft_top_k > 1:
+        report["fft_top_periods"] = [
+            {"period_samples": period, "frequency": freq, "amplitude": amp}
+            for period, freq, amp in fft_top_periods(y_detrended, fft_top_k)
+        ]
+
+    # 2. ACF 周期候选（在去趋势序列上）
+    acf_result = acf_periods(y_detrended, max_lags, top_n_periods, min_acf)
+    report["acf_periods"] = [
+        {"lag": lag, "acf": value} for lag, value in acf_result
+    ]
+    report["acf_dominant_period_samples"] = acf_result[0][0] if acf_result else None
+    if acf_result and diff_seconds:
+        report["acf_dominant_period_days"] = acf_result[0][0] * diff_seconds / 86400.0
+
+    # 3. STL 季节性成分（可选）
+    period = seasonal_period if seasonal_period is not None else (acf_result[0][0] if acf_result else None)
+    report.update(stl_strength(y, period))
+    return report
 
 
 # ---------------------------------------------------------------------------

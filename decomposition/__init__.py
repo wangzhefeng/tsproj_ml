@@ -1,19 +1,14 @@
 # -*- coding: utf-8 -*-
 """时间序列分解模块（重构后主入口）。
 
-架构：Extractor → Forecaster → Composer → Pipeline（编排）→ Registry（构造）。
-配置契约见 decomposition/spec.py；设计文档 docs/redesign/decomposition.md。
+构造：Configuration / Presets → Registry / Component Factory。
+运行：Pipeline 编排 Extraction、Extrapolation、Composition。
+基础契约：Contracts；诊断旁路：Diagnostics。
+配置契约见 decomposition/configuration/spec.py；设计文档 docs/redesign/decomposition.md。
 """
-from decomposition.pipeline import DecompositionPipeline
-from decomposition.registry import build_pipeline, build_pipeline_from_args
-from decomposition.diagnostics import write_diagnostics_report
-from decomposition.residual_diagnostics import (
-    diagnose_window_residual,
-    summarize_window_residuals,
-    write_residual_diagnostics,
-)
-from decomposition.periods import acf_periods, detect_periodicity, fft_dominant_period
-from decomposition.spec import (
+from decomposition.orchestration.pipeline import DecompositionPipeline
+from decomposition.construction.registry import build_pipeline, build_pipeline_from_args
+from decomposition.configuration.spec import (
     RESERVED_METHODS,
     TREND_FORECAST_MODES,
     ComponentSpec,
@@ -21,7 +16,7 @@ from decomposition.spec import (
     PresetParams,
     resolve_decomposition_spec,
 )
-from decomposition.types import ComponentForecast, ComponentFrame
+from decomposition.contracts.types import ComponentForecast, ComponentFrame
 
 __all__ = [
     "RESERVED_METHODS",
@@ -35,11 +30,4 @@ __all__ = [
     "build_pipeline",
     "build_pipeline_from_args",
     "resolve_decomposition_spec",
-    "write_diagnostics_report",
-    "acf_periods",
-    "detect_periodicity",
-    "fft_dominant_period",
-    "diagnose_window_residual",
-    "summarize_window_residuals",
-    "write_residual_diagnostics",
 ]

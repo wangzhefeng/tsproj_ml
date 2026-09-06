@@ -31,7 +31,7 @@ from typing import Any
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from config.config_loader import is_model_yaml, load_yaml_config  # noqa: E402
-from decomposition import TREND_FORECAST_MODES  # noqa: E402
+from decomposition.configuration.spec import normalize_decomposition_config  # noqa: E402
 from feature_engineering.compiler import FeatureCompiler  # noqa: E402
 from forecasting_core.specs import ForecastConfigSpec  # noqa: E402
 from model_ensemble.specs import EnsembleConfigSpec  # noqa: E402
@@ -242,7 +242,7 @@ _CANONICAL_DATETIME_FEATURES = frozenset(
 )
 _DIRECT_LAYOUTS = frozenset({"independent_models", "single_model_horizon"})
 _CALENDAR_NORMALIZATION_METHODS = frozenset({"none", "per_calendar_day"})
-_DECOMPOSITION_METHODS = frozenset({"none", "linear", "quadratic", "damped", "stl", "mstl"})
+
 _TARGET_SCALING_METHODS = frozenset({"none", "minmax", "standard", "robust"})
 
 
@@ -491,36 +491,10 @@ def _check_target_transform(value: Any) -> list[str]:
         method = calendar.get("method", "none")
         if method not in _CALENDAR_NORMALIZATION_METHODS:
             problems.append(f"{path}.calendar_normalization.method 不合法: {method!r}")
-    decomposition = value.get("decomposition")
-    if isinstance(decomposition, Mapping):
-        method = decomposition.get("method", "none")
-        if method not in _DECOMPOSITION_METHODS:
-            problems.append(f"{path}.decomposition.method 不合法: {method!r}")
-        composition = decomposition.get("composition", "additive")
-        if composition != "additive":
-            problems.append(f"{path}.decomposition.composition 不合法: {composition!r}")
-        periods = decomposition.get("periods") or []
-        if method == "stl" and len(periods) != 1:
-            problems.append(f"{path}.decomposition stl 需要且只能配置一个周期")
-        if method == "mstl" and len(periods) < 2:
-            problems.append(f"{path}.decomposition mstl 至少需要两个周期")
-        trend_forecast = str(
-            decomposition.get("trend_forecast", "polynomial")
-        ).lower()
-        if trend_forecast not in TREND_FORECAST_MODES:
-            problems.append(
-                f"{path}.decomposition.trend_forecast 不合法: "
-                f"{trend_forecast!r}"
-            )
-        if decomposition.get("periods"):
-            problems.extend(
-                _check_positive_integer_sequence(
-                    decomposition["periods"],
-                    f"{path}.decomposition.periods",
-                )
-            )
-        if "robust" in decomposition and not isinstance(decomposition["robust"], bool):
-            problems.append(f"{path}.decomposition.robust 必须是 bool")
+    try:
+        normalize_decomposition_config(value.get("decomposition"))
+    except (TypeError, ValueError) as exc:
+        problems.append(f"{path}.decomposition: {exc}")
     scaling = value.get("scaling")
     if isinstance(scaling, Mapping):
         method = scaling.get("method", "none")

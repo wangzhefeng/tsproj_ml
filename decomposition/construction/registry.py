@@ -7,8 +7,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from decomposition.pipeline import DecompositionPipeline
-from decomposition.spec import DecompositionSpec, resolve_decomposition_spec
+from decomposition.orchestration.pipeline import DecompositionPipeline
+from decomposition.configuration.spec import DecompositionSpec, resolve_decomposition_spec
 
 
 def build_pipeline(spec: DecompositionSpec) -> DecompositionPipeline:
@@ -22,7 +22,7 @@ def build_pipeline(spec: DecompositionSpec) -> DecompositionPipeline:
     return DecompositionPipeline(spec)
 
 
-def build_pipeline_from_args(args: Any, log_prefix: str = "[DecompositionPipeline]") -> DecompositionPipeline:
-    """主链入口：cfg → resolve → build pipeline。替代旧 TargetDecomposer(args)。"""
+def build_pipeline_from_args(args: Any) -> DecompositionPipeline:
+    """主链入口：cfg → resolve → build pipeline。运行时唯一配置构造入口。"""
     spec = resolve_decomposition_spec(args)
     return build_pipeline(spec)

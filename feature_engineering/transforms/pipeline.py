@@ -17,7 +17,7 @@ from sklearn.preprocessing import (
 )
 from sklearn.base import clone
 
-from decomposition import DecompositionPipeline
+from decomposition import DecompositionPipeline, build_pipeline_from_args
 from feature_engineering.transform_specs import (
     normalize_feature_scaling,
     normalize_target_transformations,
@@ -518,7 +518,7 @@ class TargetTransformPipeline:
         return cls(
             args=args,
             calendar_normalizer=CalendarDayTargetNormalizer(args),
-            decomposition_pipeline=DecompositionPipeline.from_args(args),
+            decomposition_pipeline=build_pipeline_from_args(args),
             target_scaler=TargetScaler(
                 args,
                 scaler_type=resolve_target_scaler_type(args),

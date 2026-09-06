@@ -13,10 +13,12 @@ import numpy as np
 import pandas as pd
 
 from decomposition import (
-    DecompositionPipeline,
+    build_pipeline_from_args,
     resolve_decomposition_spec,
-    write_diagnostics_report,
 )
+
+from decomposition.diagnostics.components import summarize_components
+from model_testing.decomposition_reports import write_diagnostics_report
 
 
 def _stl_args(periods=(24,), method="stl"):
@@ -37,10 +39,10 @@ def _make_frame(n=60):
 class DiagnosticsTest(unittest.TestCase):
     def test_diagnostics_written_for_stl(self):
         frame = _make_frame()
-        pipe = DecompositionPipeline.from_args(_stl_args()).fit(frame)
+        pipe = build_pipeline_from_args(_stl_args()).fit(frame)
         with tempfile.TemporaryDirectory() as tmp:
             out = write_diagnostics_report(
-                pipe, frame, "time", "y", Path(tmp)
+                summarize_components(pipe.history_frame), Path(tmp)
             )
             self.assertIsNotNone(out)
             assert out is not None
@@ -51,23 +53,26 @@ class DiagnosticsTest(unittest.TestCase):
             self.assertIn("residual", names)
             self.assertIn("trend", names)
             self.assertIn("seasonal", names)
+            self.assertNotIn("__exact_deterministic__", names)
+            with self.assertRaises(FileExistsError):
+                write_diagnostics_report(summarize_components(pipe.history_frame), Path(tmp))
 
     def test_diagnostics_skipped_for_none(self):
         frame = _make_frame()
-        pipe = DecompositionPipeline.from_args(_stl_args(method="none"))
+        pipe = build_pipeline_from_args(_stl_args(method="none"))
         with tempfile.TemporaryDirectory() as tmp:
-            out = write_diagnostics_report(pipe, frame, "time", "y", Path(tmp))
+            out = write_diagnostics_report(None, Path(tmp))
             self.assertIsNone(out)
 
     def test_diagnostics_suffix_avoids_overwrite(self):
         frame = _make_frame()
-        pipe = DecompositionPipeline.from_args(_stl_args()).fit(frame)
+        pipe = build_pipeline_from_args(_stl_args()).fit(frame)
         with tempfile.TemporaryDirectory() as tmp:
             out1 = write_diagnostics_report(
-                pipe, frame, "time", "y", Path(tmp), suffix="_win1"
+                summarize_components(pipe.history_frame), Path(tmp), suffix="_win1"
             )
             out2 = write_diagnostics_report(
-                pipe, frame, "time", "y", Path(tmp), suffix="_win2"
+                summarize_components(pipe.history_frame), Path(tmp), suffix="_win2"
             )
             self.assertNotEqual(out1, out2)
             assert out1 is not None and out2 is not None

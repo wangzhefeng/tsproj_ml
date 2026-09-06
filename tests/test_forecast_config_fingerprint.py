@@ -2,6 +2,7 @@
 """Canonical config fingerprint and ensemble parsing tests."""
 
 import copy
+from dataclasses import replace
 import unittest
 
 from forecasting_core.specs import (
@@ -18,6 +19,15 @@ from forecasting_core.specs import (
 
 
 class CanonicalConfigFingerprintTest(unittest.TestCase):
+    def test_decomposition_semantic_revision_is_explicit(self):
+        config = self.config()
+        self.assertNotIn("decomposition_semantics", config.semantic_payload())
+        for method in ("linear", "stl", "mstl"):
+            periods = {} if method == "linear" else {"periods": [24] if method == "stl" else [24, 72]}
+            features = replace(config.features, transformations={"target": {"decomposition": {"method": method, **periods}}})
+            enabled = replace(config, features=features)
+            self.assertEqual(enabled.semantic_payload().get("decomposition_semantics"), "component_fit_v2")
+
     @staticmethod
     def components():
         problem = ForecastProblemSpec(

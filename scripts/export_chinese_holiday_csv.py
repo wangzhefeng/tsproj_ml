@@ -10,7 +10,7 @@
 
     env -u PYTHONPATH .venv/bin/python \\
         scripts/export_chinese_holiday_csv.py --start 2025-10-01 --end 2026-12-31 \\
-        --output dataset/shared/chinese_holiday_20251001_20261231.csv
+        --output dataset/shared/holidays/chinese_holiday_20251001_20261231.csv
     # --freq 1D|1h|15min|5min（默认 1D；日内频率同日多点继承当日状态）
 
 列：time, is_holiday, holiday_name, next_holiday_days, prev_holiday_days,

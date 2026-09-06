@@ -22,3 +22,13 @@ env -u PYTHONPATH .venv/bin/python scripts/audit_ensemble_configs.py
 ```
 
 迁移期一次性脚本不驻留本目录，历史通过 Git 追溯。
+
+## 日历与节假日数据导出
+
+跨场景日历、节假日数据文件统一放在 `dataset/shared/holidays/`；生成逻辑仍位于 `data_loading/calendar_generator/`。导出脚本的 `--output` 保持必填，不强制限制目录，测试可使用临时路径。
+
+```bash
+env -u PYTHONPATH .venv/bin/python scripts/export_chinese_holiday_csv.py --start 2025-10-01 --end 2026-12-31 --output dataset/shared/holidays/chinese_holiday_20251001_20261231.csv
+```
+
+存入该目录不会自动入模。使用 CSV 的配置需显式声明对应 source 路径、列角色和可得性；在线 generated source 不依赖此目录，无需改为 file source。

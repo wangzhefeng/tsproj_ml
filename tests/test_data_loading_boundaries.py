@@ -215,7 +215,11 @@ class DataLoadingBehaviorTest(unittest.TestCase):
         self.assertEqual(data_loading.chinese_holiday_frame.__module__, 'data_loading.calendar_generator.calendar_features')
         self.assertEqual(BUILTIN_GENERATORS['chinese_holiday'].__module__, 'data_loading.calendar_generator.chinese_holiday')
         generators = importlib.import_module('data_loading.calendar_generator')
-        self.assertIs(generators.BUILTIN_GENERATORS, BUILTIN_GENERATORS)
+        self.assertIs(generators.BUILTIN_GENERATORS['chinese_holiday'], BUILTIN_GENERATORS['chinese_holiday'])
+        self.assertEqual(set(generators.BUILTIN_GENERATORS), {'chinese_holiday'})
+        unified = importlib.import_module('data_loading.generator_registry')
+        self.assertIs(unified.BUILTIN_GENERATORS, BUILTIN_GENERATORS)
+        self.assertEqual(set(BUILTIN_GENERATORS), {'chinese_holiday', 'weather'})
         legacy = json.loads((GOLDEN.parent / 'data_loading_legacy_provider.json').read_text())
         with self.assertRaises((AttributeError, ModuleNotFoundError)):
             pickle.loads(bytes.fromhex(legacy['pickle_hex']))

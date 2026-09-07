@@ -22,6 +22,7 @@ if str(ROOT) not in sys.path:
 
 from config.config_loader import is_model_yaml, load_yaml_config  # noqa: E402
 from data_loading.sources.assets import asset_columns, required_columns, source_paths  # noqa: E402
+from data_loading.weather_generator.assets import WeatherAssetStore  # noqa: E402
 from forecasting_core.specs import DataSourceSpec, ForecastConfigSpec  # noqa: E402
 from model_ensemble.specs import EnsembleConfigSpec  # noqa: E402
 
@@ -44,12 +45,23 @@ def audit_runtime_assets(
     )
     references: dict[str, list[dict[str, Any]]] = defaultdict(list)
     affected_configs: set[str] = set()
+    weather_source_count = 0
+    weather_errors = []
+    weather_store = WeatherAssetStore(repo)
 
     for config_path in model_paths:
         config = load_yaml_config(config_path)
         relative_config = config_path.resolve().relative_to(repo).as_posix()
         for source in _config_sources(config):
             source_name = source.name
+            if source.generator == 'weather':
+                weather_source_count += 1
+                try:
+                    for reference in source.generator_options.inputs:
+                        weather_store.load(reference)
+                except (ValueError, TypeError, OSError, KeyError) as exc:
+                    weather_errors.append({'config': relative_config, 'source': source_name, 'error': str(exc)})
+                continue
             for path_role, normalized in source_paths(source):
                 references[normalized].append(
                     {
@@ -114,6 +126,8 @@ def audit_runtime_assets(
         )
 
     return {
+        'weather_source_count': weather_source_count,
+        'weather_errors': weather_errors,
         "model_config_count": len(model_paths),
         "unique_source_path_count": len(references),
         "missing_unique_path_count": len(missing_paths),
@@ -154,9 +168,12 @@ def main() -> int:
             print(f"MISSING {item['path']} refs={item['reference_count']}")
         for item in payload["missing_declared_columns"]:
             print(f"MISSING_COLUMNS {item['path']} refs={item['reference_count']}")
+        for item in payload['weather_errors']:
+            print(f"WEATHER_ERROR {item['config']} {item['source']}: {item['error']}")
     return 1 if (
         payload["missing_unique_path_count"]
         or payload["missing_declared_column_reference_count"]
+        or payload['weather_errors']
     ) else 0
 
 

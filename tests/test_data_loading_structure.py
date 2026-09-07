@@ -14,6 +14,7 @@ GROUPS = {
     'sources': ('source_io', 'discovery', 'assets', 'provenance'),
     'processing': ('validation', 'visibility', 'alignment'),
     'information': ('information_set', 'indexing', 'providers'),
+    'weather_generator': ('contracts', 'assets', 'adapters', 'derivation', 'resampling', 'scenarios', 'pipeline', 'generator'),
 }
 
 
@@ -28,7 +29,7 @@ class DataLoadingStructureTest(unittest.TestCase):
                     self.assertEqual(Path(loaded.__file__).resolve(), ROOT / group / f'{module}.py')
         self.assertEqual(
             {path.name for path in ROOT.glob('*.py')},
-            {'__init__.py', 'registry.py'},
+            {'__init__.py', 'registry.py', 'generator_registry.py'},
         )
 
 

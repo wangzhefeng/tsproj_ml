@@ -51,7 +51,7 @@ class AidcDateWindowProcessConfigTest(unittest.TestCase):
                     Path("dataset/aidc_electricity_computility/electricity") / date / scene,
                 )
                 self.assertTrue((ROOT / config["dataset_dir"]).is_dir())
-                for required_pattern in ["date_*.csv", "weather_*.csv", "df_power.csv"]:
+                for required_pattern in ["weather_*.csv", "df_power.csv"]:
                     self.assertIn(required_pattern, config["exclude_globs"])
                 self.assertEqual(config["outlier"]["spike_half_window"], 2)
                 self.assertEqual(config["outlier"]["spike_z_threshold"], 8.0)
@@ -147,7 +147,6 @@ class AidcDateWindowModelConfigTest(unittest.TestCase):
 
                     cfg = load_yaml_config(config_path)
                     target = self._source(cfg, "target_history")
-                    date_type = self._source(cfg, "date_type")
                     weather = self._source(cfg, "weather")
                     self.assertEqual(cfg.estimator.model_type, "lightgbm")
                     # 固定步长几何统一按监督 origin steps 保存：32 天历史、
@@ -160,9 +159,7 @@ class AidcDateWindowModelConfigTest(unittest.TestCase):
                     self.assertEqual(cfg.problem.time_col, "time")
                     self.assertEqual(cfg.problem.targets, ("value",))
                     self.assertTrue(Path(target.history_path).exists())
-                    self.assertEqual(date_type.history_path, date_type.future_path)
                     self.assertEqual(weather.history_path, weather.future_path)
-                    self.assertTrue(Path(date_type.history_path).exists())
                     self.assertTrue(Path(weather.history_path).exists())
 
     def test_all_active_configs_explicitly_define_exogenous_features(self):
@@ -181,12 +178,7 @@ class AidcDateWindowModelConfigTest(unittest.TestCase):
                 config_path,
             )
             sources = {source["name"]: source for source in raw["data"]["sources"]}
-            self.assertEqual(
-                [column["name"] for column in sources["date_type"]["columns"]],
-                ["date_type"],
-                config_path,
-            )
-            self.assertTrue(sources["date_type"]["columns"][0]["categorical"], config_path)
+            self.assertNotIn("date_type", sources, config_path)
             self.assertEqual(
                 [column["name"] for column in sources["weather"]["columns"]],
                 self.WEATHER_FEATURES,
@@ -201,10 +193,7 @@ class AidcDateWindowModelConfigTest(unittest.TestCase):
             self.assertNotIn("week", raw["features"]["datetime_features"], config_path)
 
             cfg = load_yaml_config(config_path)
-            date_type = self._source(cfg, "date_type")
             weather = self._source(cfg, "weather")
-            self.assertEqual(tuple(column.name for column in date_type.columns), ("date_type",), config_path)
-            self.assertTrue(date_type.columns[0].categorical, config_path)
             self.assertEqual(tuple(column.name for column in weather.columns), tuple(self.WEATHER_FEATURES), config_path)
             self.assertTrue(all(not column.categorical for column in weather.columns), config_path)
             self.assertEqual(cfg.features.datetime_features, tuple(self.DATETIME_FEATURES), config_path)

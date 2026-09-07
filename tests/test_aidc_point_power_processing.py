@@ -51,7 +51,6 @@ class AidcPointPowerProcessingTest(unittest.TestCase):
             "value_col": "value",
             "input_glob": "*.csv",
             "exclude_globs": [
-                "date_*.csv",
                 "weather_*.csv",
                 "df_power.csv",
                 "df_power_audit.json",
@@ -88,7 +87,6 @@ class AidcPointPowerProcessingTest(unittest.TestCase):
             for name in [
                 "point_b.csv",
                 "point_a.csv",
-                "date_in.csv",
                 "weather_in.csv",
                 "df_power.csv",
             ]:

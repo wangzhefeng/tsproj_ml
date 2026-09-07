@@ -23,6 +23,20 @@ env -u PYTHONPATH .venv/bin/python scripts/audit_ensemble_configs.py
 
 迁移期一次性脚本不驻留本目录，历史通过 Git 追溯。
 
+## 天气资产准备
+
+> 注（2026-09-07）：本节工具链（`prepare_weather.py`/`audit_runtime_assets.py` 的 generated weather 核验）现属研究回放/取证用途，非活动链；活动配置全部走 file 两段制 + `inference_columns` 合同。`build_scenario_weather.py` 是活动场景数据（`weather_history_*`/`weather_future_*`）的构建入口。
+
+`prepare_weather.py --help` 提供本地 `archive` 和 `register` 子命令；默认 dry-run，只有显式 `--write` 才发布。不会联网、猜测发布时间或覆盖旧版本。`archive` 只按 SHA 保全原字节；`register` 需要完整 metadata 与哈希证据，生成 normalized 和不可变 manifest。实际参数以各子命令 `--help` 为准。真实源的单位、地点或证据未齐时只能归档，不能注册为合格模型输入。
+
+供应商 CSV 的行级可得性使用 `--available-at-col`；Open-Meteo UTC ISO hourly JSON 使用 `--availability-csv <path>` 提供严格一对一的 `time,available_at` 证据表，该 CSV 必须作为 metadata 的 raw 哈希依赖。两个适配器的参数不能混用。历史 JSON 不根据抓取日期倒推发布时间；没有证据只能保全 raw。
+
+`audit_runtime_assets.py` 已识别 generated weather 并核验 manifest/raw/normalized 的传递哈希，`weather_errors` 非空时 CLI 退出 1。此静态审计不证明逐 origin 覆盖，也不能替代 P6 模型闭环。
+
+`audit_weather_configs.py --root <repository> --report <json>` 是迁移前置只读审计：清点全部模型中的天气消费者，保留配置身份、列、几何与实验定义，核验 generated 资产，列出 legacy/缺资产/尚未逐窗口验收的阻塞。当前不执行训练或逐窗口 materialize；不能将其报告当作完整 P6 窗口验收。存在阻塞或扫描不到模型均返回非零。
+
+`plan_weather_requests.py --inventory <上述审计JSON> --report <json>` 在配置字节哈希仍匹配时读取真实目标覆盖，规划监督候选原点和最终输出包络；包含calendar-month动态horizon及融合成员引用，按相同几何去重。窗口之外的旧时间缺口不扩大检查范围；正式源校验拒绝的业务缺值保持报错。此工具不读取旧天气值、不训练、不枚举OOF逐折/target-history辅助请求，也未把输出标签映射为proxy年份或原生区间依赖；不能直接当作完整下载清单或as-of验收。存在任何配置规划错误时输出部分结果并返回1，禁止把该部分结果称为全量完成。
+
 ## 日历与节假日数据导出
 
 跨场景日历、节假日数据文件统一放在 `dataset/shared/holidays/`；生成逻辑仍位于 `data_loading/calendar_generator/`。导出脚本的 `--output` 保持必填，不强制限制目录，测试可使用临时路径。

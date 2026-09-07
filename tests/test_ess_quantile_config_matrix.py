@@ -69,9 +69,9 @@ class EssQuantileConfigMatrixTest(unittest.TestCase):
         expected_counts = {
             "baseline": 5,
             "add_decomposition": 12,
-            "add_exogenous_weather_date": 4,
+            "add_exogenous_weather": 4,
             "add_exogenous_plan_strategy": 4,
-            "add_exogenous_weather_date_plan_strategy": 4,
+            "add_exogenous_weather_plan_strategy": 4,
             "add_strategy_features": 5,
         }
         for route in ("A", "B"):
@@ -130,27 +130,22 @@ class EssQuantileConfigMatrixTest(unittest.TestCase):
                 self.assertEqual(tuple(source.name for source in cfg.data.sources), ("target_history",), path)
                 self.assertEqual(self._decomposition_method(cfg), "none", path)
 
-    def test_weather_date_uses_strict_native_weather_and_date_type(self):
+    def test_weather_uses_strict_native_weather(self):
         for route in ("A", "B"):
             for group, suffix in (
-                ("add_exogenous_weather_date", "weather_date"),
-                ("add_exogenous_weather_date_plan_strategy", "all"),
+                ("add_exogenous_weather", "weather"),
+                ("add_exogenous_weather_plan_strategy", "all"),
             ):
                 folder = CONFIG_ROOT / f"route_{route}" / group
                 for method in METHODS:
                     cfg = load_yaml_config(str(folder / f"lgbm_{method}_prob_mean_{suffix}.yaml"))
-                    date_type = self._source(cfg, "date_type")
                     weather = self._source(cfg, "weather")
                     self.assertTrue(cfg.features.datetime_features)
-                    self.assertEqual(tuple(column.name for column in date_type.columns), ("date_type",))
-                    self.assertTrue(date_type.columns[0].categorical)
-                    self.assertEqual(date_type.availability.value, "column")
-                    self.assertEqual(date_type.available_at_col, "available_at")
                     self.assertEqual(weather.availability.value, "column")
                     self.assertEqual(weather.available_at_col, "available_at")
                     self.assertEqual([column.name for column in weather.columns], WEATHER_COLS)
-                    if group == "add_exogenous_weather_date":
-                        self.assertEqual(tuple(source.name for source in cfg.data.sources), ("target_history", "date_type", "weather"))
+                    if group == "add_exogenous_weather":
+                        self.assertEqual(tuple(source.name for source in cfg.data.sources), ("target_history", "weather"))
                     self.assertEqual(self._decomposition_method(cfg), "none")
                     self.assertEqual(
                         cfg.output["scenario_subpath"],
@@ -164,7 +159,7 @@ class EssQuantileConfigMatrixTest(unittest.TestCase):
         for route in ("A", "B"):
             for group, suffix in (
                 ("add_exogenous_plan_strategy", "plan"),
-                ("add_exogenous_weather_date_plan_strategy", "all"),
+                ("add_exogenous_weather_plan_strategy", "all"),
             ):
                 folder = CONFIG_ROOT / f"route_{route}" / group
                 for method in METHODS:
@@ -249,9 +244,9 @@ class EssQuantileConfigMatrixTest(unittest.TestCase):
         for route in ("A", "B"):
             for group, filename in (
                 ("baseline", "lgbm_usmdp_prob_mean.yaml"),
-                ("add_exogenous_weather_date", "lgbm_usmdp_prob_mean_weather_date.yaml"),
+                ("add_exogenous_weather", "lgbm_usmdp_prob_mean_weather.yaml"),
                 ("add_exogenous_plan_strategy", "lgbm_usmdp_prob_mean_plan.yaml"),
-                ("add_exogenous_weather_date_plan_strategy", "lgbm_usmdp_prob_mean_all.yaml"),
+                ("add_exogenous_weather_plan_strategy", "lgbm_usmdp_prob_mean_all.yaml"),
             ):
                 cfg = load_yaml_config(str(CONFIG_ROOT / f"route_{route}" / group / filename))
                 lags = cfg.features.target_lags["value"]
@@ -268,9 +263,9 @@ class EssQuantileConfigMatrixTest(unittest.TestCase):
                 ("baseline", "lgbm_usmdr_prob_mean.yaml"),
                 ("add_decomposition", "lgbm_usmdr_prob_mean_decomp_linear.yaml"),
                 ("add_decomposition", "lgbm_usmdr_prob_mean_decomp_stl288.yaml"),
-                ("add_exogenous_weather_date", "lgbm_usmdr_prob_mean_weather_date.yaml"),
+                ("add_exogenous_weather", "lgbm_usmdr_prob_mean_weather.yaml"),
                 ("add_exogenous_plan_strategy", "lgbm_usmdr_prob_mean_plan.yaml"),
-                ("add_exogenous_weather_date_plan_strategy", "lgbm_usmdr_prob_mean_all.yaml"),
+                ("add_exogenous_weather_plan_strategy", "lgbm_usmdr_prob_mean_all.yaml"),
             ):
                 cfg = load_yaml_config(str(CONFIG_ROOT / f"route_{route}" / group / filename))
                 self.assertEqual(cfg.strategy.output_chunk_length, 96)

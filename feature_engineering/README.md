@@ -24,4 +24,6 @@
 
 known-future 按目标时刻取值；Direct 历史 lag/rolling/diff 的锚点由 `features.transformations.direct.align_to_target` 决定。目标日对齐且 lag 足够深时消费原点前真实历史；越过原点的 observed-past 访问必须显式 provider，不能隐式填补。
 
+single/batch 都保留请求时间的时区；`generator_defined` 的 proof 必须使用生成帧逐行 `available_at`，不可替换为请求原点。天气的 manifest/raw/normalized 及计算内核进入设计缓存身份，完整天气依赖证据随 source lineage 传递。
+
 目标变换规格归一化（`transform_specs.py`）与实际拟合恢复（`transforms/pipeline.py`）都在本包；runtime 只按 fold 调用。raw-design 缓存不是 `.uv_cache/`：删除依赖下载缓存不应清理模型设计缓存。

@@ -6,6 +6,10 @@
 
 改动数据链时必须先确认 source、派生产物、配置引用和审计 sidecar，再按依赖顺序重建。
 
+## 显式因果缺失编码
+
+`causal_feature_encoding.py` 对显式指定的数值特征生成独立建模视图：原观测保持不变，缺失数值采用最后一次历史观测；尚无历史观测时使用0作为编码占位。每列固定附加`__missing`与`__no_history`标记，必须与数值共同消费；占位0不是物理零，估计值不是实测，不能用来认证原始采集完整性。目标和时间列禁止填补。比值无定义保持缺失状态编码，不加epsilon改变数学定义。不使用后向填补、未来统计或目标值。原始CSV保持不变，派生视图与处理证据独立保存。
+
 ## AIDC 负荷事件标签工具链
 
 - **共享检测核心** `data_process/load_event_detection.py`（单测 `tests/test_load_event_detection.py`）：事件分类 shift_up/down（持久阶跃=集中上下架）、stress_up/down（1~21 天临时偏移=压测/临时操作）、burst_up/down（1.25h~24h 日内冲击）、spike_up/down（≤1h 功率突变）；三个探测器（自顶向下日级分段 + 短时偏移 + 15min 残差 MAD 突变）+ 边界伪影抑制 + 事件→逐点/逐日投影。

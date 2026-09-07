@@ -390,3 +390,7 @@ Latin-square × 四方法共 12 个，仍直接引用 baseline 九个成员且�
 按用户要求未运行 `audit_aidc_load_15min_designs.py`、estimator fit、rolling backtest、
 forecast、融合 OOF 或 bundle smoke。上述证据只证明配置、引用、资产与静态合同成立，
 不证明 4,617 个机械组合可实际训练或有预测收益。
+
+### 补记（2026-09-07）：date_type 数据资产全量清除
+
+用户裁决移除全仓 `date_type` file source 与 `date_*.csv` 数据资产，本场景 §1.2 表中的 `exogenous_date_raw/date_in_*.csv`（当时即为零引用孤儿）已删除；§4.2 裁决 2 的结论不变——节假日特征唯一载体为 `chinese_holiday` generated source，`date_type` 通路已不存在。历史设计与决策记录不回改。

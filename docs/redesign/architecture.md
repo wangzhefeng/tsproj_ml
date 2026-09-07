@@ -524,6 +524,8 @@ env -u PYTHONPATH UV_CACHE_DIR=.uv_cache uv run python scripts/audit_ensemble_co
 
 **结论**：把配置审计拆为 schema audit 与 runtime asset audit；活动配置必须满足文件、列、时间范围、future horizon、available_at 合同。可再生数据需有已实跑的唯一生成命令，否则配置降为非现役或删除。
 
+> 2026-09-07 补记：经用户裁决，全仓 172 个配置的 `date_type` file source 已移除，`df_date*.csv`/`date_in_*.csv` 数据资产删除；本条所列缺失引用中的日期类资产随之消解，其余结论不变。
+
 #### RF9 — P1：所谓 strict loader 仍接受未知 validation/output 字段
 
 - `ForecastConfigSpec.probabilistic/validation/output` 仍是无类型 Mapping（`model_forecasting/specs/config.py:178-188`）。

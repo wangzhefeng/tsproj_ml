@@ -18,4 +18,6 @@ fixed-step/calendar-month 循环分别位于 `model_testing/fixed_step.py` 与 `
 
 `CanonicalBaseModelRunner.execution_evidence(artifact, target_transform)` 提供公开只读证据能力，供回测与融合成员通过协议调用；不为收集证据再次拟合或预测。CQR 收集在 final fit 前完成，部署只应用已保存校准状态。
 
+天气源的 `weather_evidence` 随 source lineage 持久化到生命周期产物与 bundle；去重身份包含证据，不能把不同原点/快照折叠为同一来源路径。非天气源保持既有字段格式。
+
 资源规划、checkpoint、性能档和内存缓存属于 `model_performance/`；目标/特征变换属于 `feature_engineering/transforms/`。raw-design 缓存同时绑定源内容、生成器、依赖清单与编译链实现，修改设计或 compiler 后不得误用旧设计；缓存身份不等于配置语义 fingerprint，不自动删除正式结果。

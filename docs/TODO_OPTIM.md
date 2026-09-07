@@ -12,15 +12,15 @@
 
 ---
 
-## 当前待办总览（2026-09-05 实现核对）
+## 当前待办总览（2026-09-07 更新）
 
-初次复核重新打开 OPT-010、OPT-016、OPT-017；经本次获准实施及最终证据验收，19个条目全部完成，当前无未完成项。历史事实和测量保留，新增证据另记，不将历史基准冒充当前代码重测。最后收口遵守用户“不进行全量测试”的要求，没有重跑已通过的267项定向回归。
+2026-09-05 实现核对时 19 个条目全部完成；2026-09-07 天气迁移收尾后新增 OPT-020/OPT-021 两条待办（外部数据依赖与正式产物重建），其余 OPT-001~019 状态不变。历史事实和测量保留，新增证据另记，不将历史基准冒充当前代码重测。最后收口遵守用户“不进行全量测试”的要求，没有重跑已通过的267项定向回归。
 
 | 条目 | 当前状态 | 剩余工作 | 执行边界 |
 | --- | --- | --- | --- |
-| OPT-010 | 已完成 | 正式24份及27次分解标定均通过证据验收；三个分解代表保留默认 | 正式31fold与开发5fold证据分开，串行排队 |
-| OPT-016 | 已完成 | 预算/完整性/checkpoint通过统一定向回归，规范已同步 | 估算内存准入+有限缓存+采样RSS，不宣称OS硬内存隔离 |
-| OPT-017 | 已完成 | 唯一CatBoost签名、metadata/checker接线通过 | 不扩大采用范围；原5fold证据不冒充31fold性能 |
+| OPT-001~019 | 已完成 | — | 见各条目实施记录；no-op 与签名边界为有证据结论，不重新打开 |
+| OPT-020 | 阻塞 | 月频 2026-05 fold pred 13h 缺口待供应商历史预报数据（Open-Meteo IFS 轨迹已下载可用但用户裁决不混源） | 不混源、不改业务窗口；数据到位后重建月频 weather 并重跑 |
+| OPT-021 | 待处理 | 全部场景正式结果目录已清空待按需重建；月频最终预测阻塞于 2026-08 未来天气数据 | 重跑 identity 与当前配置一致；不回填旧身份目录 |
 
 **执行顺序**：用户已确认完整实施方案和正式长跑。预算/产物/checkpoint/profile先通过门禁；正式24份清单验收完成后才开始分解标定，最后汇总产物及文档。不启动互抢CPU的并行性能实验。
 
@@ -1105,3 +1105,80 @@ RawDesign 内存共享、transform single-flight、同 batch 锁、普通两配�
 - 生成器与 972 份活动 STL/MSTL YAML 已由 `seasonal_naive` 迁为 `polynomial`。写盘前计划为 `create=0/rewrite=972/delete=0`；写盘后复查 4,689 份矩阵为 `create=0/rewrite=0/delete=0`。这 972 份配置获得新 canonical fingerprint/result identity；旧结果不复用、不在本项删除。target decomposition 不进入 RawDesignFingerprint，因此既有 raw design cache 可继续按其独立合同复用。
 - 按用户要求，真实模型测试使用显式派生的 5-fold 配置并隔离在 `/tmp/tsproj-opt019-5fold-OizTwp/`，不修改活动 YAML 的 31-fold 几何。Ridge Direct 的 linear/STL/MSTL 三份代表均完成 5 折回测、final fit、16 步预测和 schema-2 bundle 加载；metadata 回读均为 5 个窗口。bundle reload prediction 与 `prediction.csv` 的最大绝对差均为 `1.8189894035458565e-12`（仅 CSV 十进制往返）。
 - 验证：`python -m unittest tests.test_decomposition_spec tests.test_decomposition_equivalence tests.test_canonical_transforms tests.test_generate_load_15min_matrix tests.test_check_model_configs tests.test_package_layering` 共 75 项通过；`scripts/check_model_configs.py` 为 `checked=5150 passed=5150 hard_failures=0 warnings=0`；目标 changeset 的 `git diff --check` 通过。真实模型运行按本项 5-fold 协议验收，不宣称 31 折正式结果已重跑。
+
+---
+
+## OPT-020：补齐月频 2026-05 fold 的供应商 pred 13 小时缺口
+
+- **状态**：阻塞
+- **优先级**：P1
+- **类型**：外部数据依赖 / 天气预报数据缺口
+- **来源**：2026-09-07 统一天气资产迁移收尾汇报「未完成 / 如实 blocked」
+- **涉及范围**：`aidc_power_month` 月频配置 2026-05 回测 fold、`dataset/shared/weather/extracted/actual/weather_in_20250101_20260814.csv`、`dataset/aidc_power_month/freq_1month/` 天气 future 数据
+
+### 当前事实
+
+1. 权威源并集（`weather_in_20250101_20260814.csv`）中 pred_ 12 列在 **2026-05-13 19:00 → 2026-05-14 07:00（本地 UTC+8）** 连续 13 小时全部缺失；时区已经由 rt_ssr 辐射日周期（>0 集中于 5~18 时）核实，缺口两端（05-13 18:00 与 05-14 08:00）均有值。
+2. 该缺口落在月频 2026-05 回测 fold 的推理窗口内；两段文件合同（future=pred_ 预报 + `inference_columns`）下，推理请求触及 pred 缺失即 RAISE，月频回测无法跨该 fold。
+3. ERA5 替代源导出仅覆盖至 2025-09-02，缺口填补政策（>3h 用 ERA5 替代）对本缺口不可用。
+4. 2026-09-07 已按用户授权尝试 Open-Meteo 补数：Single Runs API `run=2026-05-13T00:00` UTC 完整覆盖缺口 13/13 小时、12 变量有限，raw/capture 已按内容哈希保全（`.hermes/plans/weather-may-gap-download-report.json`，与既有研究下载记录逐值一致）。数据性质为 **ECMWF IFS 模式预报轨迹，非供应商 pred 快照**，当时发布批次不可证（早期档案含 hindcast，初始化时间不等于发布时间）。
+5. 用户裁决（2026-09-07 表单确认）：**保持 blocked、不混源**，缺口留待供应商数据；理由为训练窗口 rt_ 与推理 pred_ 的语义一致性优先，异源预报冒充 pred 会引入不可审计的分布偏移。
+
+### 问题与影响
+
+- 月频（power_month freq_1month）主链回测触及 2026-05 fold 即失败，该场景无法完成完整回测验收。
+- IFS 轨迹数值本身可用但与供应商 pred_ 不同源；若混入 pred_ 列，月度聚合统计将包含不可审计的异源贡献。
+
+### 建议方向
+
+1. 等待从公司订阅气象服务导出 2026-05-13/14 的历史预报数据（供应商 pred 快照，口径与既有 pred_ 12 列一致），补入权威源后由 `scripts/build_scenario_weather.py` 重建月频 weather 数据。
+2. 不采用 Open-Meteo IFS 轨迹冒充 pred_（已裁决）；如未来改变裁决，须单独确认混源标记与审计方案后再接线。
+3. 数据到位后重跑月频回测 + 最终预测 + final fit 完整验收（结果目录已清空，见 OPT-021）。
+
+### 实施风险
+
+- 供应商历史预报快照是否仍可导出、列口径/单位是否与既有 pred_ 列一致，均未核实。
+- 补数后需重建月频 weather_history/future 并重跑受影响 fold；重跑首跑含冷编译，时间变长但结果语义不变。
+
+### 验收标准
+
+- [ ] 权威源 2026-05-13 19:00 → 05-14 07:00 的 pred_ 12 列无缺失（或经用户明确裁决的替代口径落地并留档）。
+- [ ] 月频回测跨 2026-05 fold 运行通过，评分/predict/final fit 产物完整且身份为当前合同 identity。
+
+---
+
+## OPT-021：月频当前合同身份收口与正式结果目录重建
+
+- **状态**：待处理（月频部分阻塞于 2026-08 未来天气数据）
+- **优先级**：P2
+- **类型**：运行任务 / 正式产物重建
+- **来源**：2026-09-07 统一天气资产迁移收尾汇报「未完成 / 如实 blocked」
+- **涉及范围**：`aidc_power_month` 月频与日频最终预测、15min×3 与 ESS 场景正式结果目录、`results/_compiled_features` 特征缓存
+
+### 当前事实
+
+1. 月频配置已切换两段文件 + `inference_columns` 合同，当前 `result_identity` 为 `direct-enet-local-k1-6e80334062b1`，**从未产生正式结果**：回测段可运行，但 2026-08 最终预测段因供应商 pred 只覆盖到 2026-08-14 23:00 如实 RAISE（日频 missing=17 天、月频 missing=1 个月）。
+2. 用户裁决（2026-09-07）：2026-08 最终预测接受 blocked，用户后续手动补充气象数据；配置已按新合同改好，不为该范围绕行。
+3. 2026-09-07 用户进一步指令**清空整个 `results/`**（47,357 文件 / 28 GB，含 63 个当前身份结果、8.6G 特征缓存、17G 优化收口验证证据），当前全部场景正式结果目录为空；证据见 `.hermes/plans/weather-generator-implementation.md` 收尾增量记录。
+4. 此前 4 个天气试点（15min×3 + ESS，身份 bf8f772444f6/662e271b3190/989b27de4e50/5e4727ff6fec）与 daily 无天气组结果均已验证完整生命周期（回测/预测/final fit/bundle 重载），合同与配置此后未再变化，重跑可复现。
+
+### 问题与影响
+
+- 月频 8 月最终预测无未来天气数据无法收口，当前合同 identity 无任何产物。
+- 全部场景正式 results 为空，报告与下游消费无产物可用；`_optimization_closeout` 的一次性验证证据（decomposition 27 轮标定等）已随清空移除，如需复证须重跑。
+
+### 建议方向
+
+1. 月频/日频：等用户补充 2026-08-15 起的未来天气数据（覆盖配置预测窗口）后，重建 future 数据并跑完整生命周期（回测 + 最终预测 + final fit + bundle 重载）。
+2. 其余场景：按需用 `run.py`/`batch_run.py` 重跑恢复正式结果；特征缓存已清空，首跑全量重编译（结果不变、耗时变长）。
+3. 重跑产物 identity 与当前配置一致，不回填、不复用旧身份目录。
+
+### 实施风险
+
+- 2026-08 补数据的供应商口径需与 pred_ 列一致；月频整月 horizon 的覆盖完整性需在补数时确认。
+- 全量重跑耗时（含冷编译），批量运行注意 CPU 互抢（沿用既定串行/定向策略）。
+
+### 验收标准
+
+- [ ] 月频当前身份 `6e80334062b1` 完成回测 + 最终预测 + final fit + bundle 重载（依赖 2026-08 数据补齐；2026-05 fold 另依赖 OPT-020）。
+- [ ] 需要结果的场景按需重建正式产物，回读核验产物 schema、身份与既有验收口径一致。

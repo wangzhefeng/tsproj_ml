@@ -10,7 +10,6 @@ time_col: time
 value_col: value
 input_glob: '*.csv'
 exclude_globs:
-  - date_*.csv
   - weather_*.csv
   - df_power.csv
   - df_power_audit.json

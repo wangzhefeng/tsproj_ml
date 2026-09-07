@@ -39,25 +39,22 @@
 | 范围 | 2025-10-01 ~ 2026-07-31，A/B 各 304 行，无缺失 | 覆盖 10 个自然月，保证 6 个回测 fold + 120 天训练窗 |
 | `now_time` | 2026-07-31（最后一个已知数据点） | 预测原点；正式预测目标 = 2026-08 全月 |
 
-### 2.2 天气三段式严格信息集
+### 2.2 天气两段文件 + inference_columns（2026-09-07 迁移后现行合同）
 
-月度/日度预测最易踩的坑是"用测试月的真实天气预测测试月"。本场景把天气数据按可得时间切成三段，并 fail-fast 校验：
+月度/日度预测最易踩的坑是"用测试月的真实天气预测测试月"。2026-09-07 迁移后现行合同为两段文件 + `inference_columns`，并 fail-fast 校验：
 
-| 段 | 文件 | 内容 | 为什么需要 |
+| 段 | 文件 | 内容 | 说明 |
 |---|---|---|---|
-| 历史（训练） | `weather_daily_stats_20251001_20260731.csv` | 1h 实测聚合的日统计（actual） | 训练期天气已知，可用实测 |
-| 回测（测试期"未来"） | `weather_daily_stats_backtest_proxy_20260101_20260731.csv`（212 天） | 目标日取**上一年同日**实测，`available_at` 早于目标月 | 模拟回测时点真实可得的信息；禁止读测试月实测 |
-| 正式未来 | `weather_daily_stats_future_20260801_20260831.csv`（31 天） | 2025-08 同日纯代理，`available_at = 2026-07-31` | 站在 7-31 原点，8 月任何实测都不存在 |
+| 历史（训练+回测） | `weather_history_1day_20250101_20260731.csv` | rt_ 实测日聚合 + pred_ 并列 | 训练读 rt_；fold 推理时段经 `inference_columns` 读同文件 pred_ 列 |
+| 正式未来 | `weather_future_1day_20260801_20260814.csv` | pred_ 日聚合 | pred 覆盖止 08-14，8 月 15-31 最终预测如实 RAISE，待补数据 |
 
 ```yaml
-# 所有启用天气的配置（100 个）统一契约
-strict_weather_information_set: true
-weather_history_source: actual
-weather_backtest_source: proxy
-weather_future_source: proxy
+# 迁移后现行契约（weather source 内联声明，旧顶层开关已废弃）
+availability: forecast_origin
+inference_columns: {rt_tt2: pred_tt2, cal_rh: pred_rh, rt_ssr: pred_ssrd, rt_ws10: pred_ws10}
 ```
 
-> **核心认识**：校验是硬性的——backtest 行 `available_at` 必须早于目标月、future 行不得晚于 `now_time`、目标日期缺失直接 RAISE。泄露差分实证：扰动 7 月实测天气回测预测完全不变，扰动 proxy 预测才变（11,105,254 → 11,096,473 kWh）。
+> **核心认识**：校验是硬性的——推理请求点触及 pred_ 缺失直接 RAISE、future 行不得超出 pred 覆盖、目标日期缺失直接 RAISE。历史泄露差分实证：扰动 7 月实测天气回测预测完全不变，扰动 proxy 预测才变（11,105,254 → 11,096,473 kWh）。
 
 ### 2.3 负荷状态特征（add_load_state 组）
 

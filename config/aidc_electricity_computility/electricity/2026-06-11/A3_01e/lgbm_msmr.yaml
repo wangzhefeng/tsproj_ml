@@ -207,22 +207,395 @@ data:
     - name: training_gpu_power_usage_mean
       role: observed_past
       categorical: false
-    history_path: dataset/aidc_electricity_computility/electricity/2026-06-11/demand_load/A3_01e/df_selected.csv
+    - name: pod_cpu_util_mean__missing
+      role: observed_past
+      categorical: false
+    - name: pod_cpu_util_mean__no_history
+      role: observed_past
+      categorical: false
+    - name: pod_gpu_util_count__missing
+      role: observed_past
+      categorical: false
+    - name: pod_gpu_util_count__no_history
+      role: observed_past
+      categorical: false
+    - name: pod_active_count__missing
+      role: observed_past
+      categorical: false
+    - name: pod_active_count__no_history
+      role: observed_past
+      categorical: false
+    - name: pod_gpu_power_usage_count__missing
+      role: observed_past
+      categorical: false
+    - name: pod_gpu_power_usage_count__no_history
+      role: observed_past
+      categorical: false
+    - name: pod_gpu_memory_total_count__missing
+      role: observed_past
+      categorical: false
+    - name: pod_gpu_memory_total_count__no_history
+      role: observed_past
+      categorical: false
+    - name: pod_gpu_memory_util_count__missing
+      role: observed_past
+      categorical: false
+    - name: pod_gpu_memory_util_count__no_history
+      role: observed_past
+      categorical: false
+    - name: pod_gpu_memory_amount_count__missing
+      role: observed_past
+      categorical: false
+    - name: pod_gpu_memory_amount_count__no_history
+      role: observed_past
+      categorical: false
+    - name: pod_cpu_util_count__missing
+      role: observed_past
+      categorical: false
+    - name: pod_cpu_util_count__no_history
+      role: observed_past
+      categorical: false
+    - name: pod_memory_total_count__missing
+      role: observed_past
+      categorical: false
+    - name: pod_memory_total_count__no_history
+      role: observed_past
+      categorical: false
+    - name: pod_memory_amount_count__missing
+      role: observed_past
+      categorical: false
+    - name: pod_memory_amount_count__no_history
+      role: observed_past
+      categorical: false
+    - name: pod_memory_util_count__missing
+      role: observed_past
+      categorical: false
+    - name: pod_memory_util_count__no_history
+      role: observed_past
+      categorical: false
+    - name: pod_gpu_power_usage_sum_roll_mean_3__missing
+      role: observed_past
+      categorical: false
+    - name: pod_gpu_power_usage_sum_roll_mean_3__no_history
+      role: observed_past
+      categorical: false
+    - name: training_cpu_util_mean__missing
+      role: observed_past
+      categorical: false
+    - name: training_cpu_util_mean__no_history
+      role: observed_past
+      categorical: false
+    - name: pod_gpu_power_usage_sum__missing
+      role: observed_past
+      categorical: false
+    - name: pod_gpu_power_usage_sum__no_history
+      role: observed_past
+      categorical: false
+    - name: pod_gpu_memory_total_mean__missing
+      role: observed_past
+      categorical: false
+    - name: pod_gpu_memory_total_mean__no_history
+      role: observed_past
+      categorical: false
+    - name: training_memory_total_count__missing
+      role: observed_past
+      categorical: false
+    - name: training_memory_total_count__no_history
+      role: observed_past
+      categorical: false
+    - name: training_cpu_util_count__missing
+      role: observed_past
+      categorical: false
+    - name: training_cpu_util_count__no_history
+      role: observed_past
+      categorical: false
+    - name: training_active_jobs_roll_mean_3__missing
+      role: observed_past
+      categorical: false
+    - name: training_active_jobs_roll_mean_3__no_history
+      role: observed_past
+      categorical: false
+    - name: pod_gpu_power_usage_sum_roll_mean_12__missing
+      role: observed_past
+      categorical: false
+    - name: pod_gpu_power_usage_sum_roll_mean_12__no_history
+      role: observed_past
+      categorical: false
+    - name: training_memory_amount_count__missing
+      role: observed_past
+      categorical: false
+    - name: training_memory_amount_count__no_history
+      role: observed_past
+      categorical: false
+    - name: training_memory_util_count__missing
+      role: observed_past
+      categorical: false
+    - name: training_memory_util_count__no_history
+      role: observed_past
+      categorical: false
+    - name: training_active_jobs__missing
+      role: observed_past
+      categorical: false
+    - name: training_active_jobs__no_history
+      role: observed_past
+      categorical: false
+    - name: pod_memory_total_mean__missing
+      role: observed_past
+      categorical: false
+    - name: pod_memory_total_mean__no_history
+      role: observed_past
+      categorical: false
+    - name: training_gpu_memory_util_count__missing
+      role: observed_past
+      categorical: false
+    - name: training_gpu_memory_util_count__no_history
+      role: observed_past
+      categorical: false
+    - name: training_gpu_memory_amount_count__missing
+      role: observed_past
+      categorical: false
+    - name: training_gpu_memory_amount_count__no_history
+      role: observed_past
+      categorical: false
+    - name: training_gpu_power_usage_count__missing
+      role: observed_past
+      categorical: false
+    - name: training_gpu_power_usage_count__no_history
+      role: observed_past
+      categorical: false
+    - name: training_gpu_util_count__missing
+      role: observed_past
+      categorical: false
+    - name: training_gpu_util_count__no_history
+      role: observed_past
+      categorical: false
+    - name: training_gpu_memory_total_count__missing
+      role: observed_past
+      categorical: false
+    - name: training_gpu_memory_total_count__no_history
+      role: observed_past
+      categorical: false
+    - name: pod_minus_jobs_gpu_power_usage_sum__missing
+      role: observed_past
+      categorical: false
+    - name: pod_minus_jobs_gpu_power_usage_sum__no_history
+      role: observed_past
+      categorical: false
+    - name: training_active_jobs_roll_mean_12__missing
+      role: observed_past
+      categorical: false
+    - name: training_active_jobs_roll_mean_12__no_history
+      role: observed_past
+      categorical: false
+    - name: pod_memory_amount_mean__missing
+      role: observed_past
+      categorical: false
+    - name: pod_memory_amount_mean__no_history
+      role: observed_past
+      categorical: false
+    - name: pod_gpu_memory_util_mean__missing
+      role: observed_past
+      categorical: false
+    - name: pod_gpu_memory_util_mean__no_history
+      role: observed_past
+      categorical: false
+    - name: training_gpu_memory_total_mean__missing
+      role: observed_past
+      categorical: false
+    - name: training_gpu_memory_total_mean__no_history
+      role: observed_past
+      categorical: false
+    - name: pod_memory_amount_std__missing
+      role: observed_past
+      categorical: false
+    - name: pod_memory_amount_std__no_history
+      role: observed_past
+      categorical: false
+    - name: pod_cpu_util_std__missing
+      role: observed_past
+      categorical: false
+    - name: pod_cpu_util_std__no_history
+      role: observed_past
+      categorical: false
+    - name: training_memory_total_mean__missing
+      role: observed_past
+      categorical: false
+    - name: training_memory_total_mean__no_history
+      role: observed_past
+      categorical: false
+    - name: pod_gpu_memory_amount_sum__missing
+      role: observed_past
+      categorical: false
+    - name: pod_gpu_memory_amount_sum__no_history
+      role: observed_past
+      categorical: false
+    - name: training_gpu_memory_amount_mean__missing
+      role: observed_past
+      categorical: false
+    - name: training_gpu_memory_amount_mean__no_history
+      role: observed_past
+      categorical: false
+    - name: training_gpu_power_usage_sum_roll_mean_3__missing
+      role: observed_past
+      categorical: false
+    - name: training_gpu_power_usage_sum_roll_mean_3__no_history
+      role: observed_past
+      categorical: false
+    - name: jobs_total_gpu_power_usage_sum_roll_mean_3__missing
+      role: observed_past
+      categorical: false
+    - name: jobs_total_gpu_power_usage_sum_roll_mean_3__no_history
+      role: observed_past
+      categorical: false
+    - name: training_gpu_util_mean__missing
+      role: observed_past
+      categorical: false
+    - name: training_gpu_util_mean__no_history
+      role: observed_past
+      categorical: false
+    - name: jobs_total_gpu_power_usage_sum__missing
+      role: observed_past
+      categorical: false
+    - name: jobs_total_gpu_power_usage_sum__no_history
+      role: observed_past
+      categorical: false
+    - name: training_minus_inference_power_sum__missing
+      role: observed_past
+      categorical: false
+    - name: training_minus_inference_power_sum__no_history
+      role: observed_past
+      categorical: false
+    - name: pod_gpu_power_usage_std__missing
+      role: observed_past
+      categorical: false
+    - name: pod_gpu_power_usage_std__no_history
+      role: observed_past
+      categorical: false
+    - name: training_gpu_power_usage_sum__missing
+      role: observed_past
+      categorical: false
+    - name: training_gpu_power_usage_sum__no_history
+      role: observed_past
+      categorical: false
+    - name: training_gpu_memory_amount_std__missing
+      role: observed_past
+      categorical: false
+    - name: training_gpu_memory_amount_std__no_history
+      role: observed_past
+      categorical: false
+    - name: pod_gpu_memory_amount_mean__missing
+      role: observed_past
+      categorical: false
+    - name: pod_gpu_memory_amount_mean__no_history
+      role: observed_past
+      categorical: false
+    - name: training_gpu_memory_util_std__missing
+      role: observed_past
+      categorical: false
+    - name: training_gpu_memory_util_std__no_history
+      role: observed_past
+      categorical: false
+    - name: training_gpu_util_std__missing
+      role: observed_past
+      categorical: false
+    - name: training_gpu_util_std__no_history
+      role: observed_past
+      categorical: false
+    - name: training_gpu_busy_ratio__missing
+      role: observed_past
+      categorical: false
+    - name: training_gpu_busy_ratio__no_history
+      role: observed_past
+      categorical: false
+    - name: training_gpu_util_busy_ratio__missing
+      role: observed_past
+      categorical: false
+    - name: training_gpu_util_busy_ratio__no_history
+      role: observed_past
+      categorical: false
+    - name: pod_memory_util_std__missing
+      role: observed_past
+      categorical: false
+    - name: pod_memory_util_std__no_history
+      role: observed_past
+      categorical: false
+    - name: pod_gpu_util_mean__missing
+      role: observed_past
+      categorical: false
+    - name: pod_gpu_util_mean__no_history
+      role: observed_past
+      categorical: false
+    - name: jobs_total_gpu_power_usage_sum_roll_mean_12__missing
+      role: observed_past
+      categorical: false
+    - name: jobs_total_gpu_power_usage_sum_roll_mean_12__no_history
+      role: observed_past
+      categorical: false
+    - name: training_gpu_power_usage_sum_roll_mean_12__missing
+      role: observed_past
+      categorical: false
+    - name: training_gpu_power_usage_sum_roll_mean_12__no_history
+      role: observed_past
+      categorical: false
+    - name: pod_gpu_power_usage_mean__missing
+      role: observed_past
+      categorical: false
+    - name: pod_gpu_power_usage_mean__no_history
+      role: observed_past
+      categorical: false
+    - name: training_memory_amount_mean__missing
+      role: observed_past
+      categorical: false
+    - name: training_memory_amount_mean__no_history
+      role: observed_past
+      categorical: false
+    - name: inference_memory_util_std__missing
+      role: observed_past
+      categorical: false
+    - name: inference_memory_util_std__no_history
+      role: observed_past
+      categorical: false
+    - name: training_gpu_power_usage_high_power_ratio__missing
+      role: observed_past
+      categorical: false
+    - name: training_gpu_power_usage_high_power_ratio__no_history
+      role: observed_past
+      categorical: false
+    - name: training_high_power_job_ratio__missing
+      role: observed_past
+      categorical: false
+    - name: training_high_power_job_ratio__no_history
+      role: observed_past
+      categorical: false
+    - name: inference_memory_amount_std__missing
+      role: observed_past
+      categorical: false
+    - name: inference_memory_amount_std__no_history
+      role: observed_past
+      categorical: false
+    - name: training_gpu_memory_util_mean__missing
+      role: observed_past
+      categorical: false
+    - name: training_gpu_memory_util_mean__no_history
+      role: observed_past
+      categorical: false
+    - name: inference_memory_total_mean__missing
+      role: observed_past
+      categorical: false
+    - name: inference_memory_total_mean__no_history
+      role: observed_past
+      categorical: false
+    - name: training_gpu_power_usage_mean__missing
+      role: observed_past
+      categorical: false
+    - name: training_gpu_power_usage_mean__no_history
+      role: observed_past
+      categorical: false
+    history_path: dataset/aidc_electricity_computility/electricity/2026-06-11/demand_load/A3_01e/df_selected_causal_v1.csv
     time_col: count_data_time
     series_id_cols: []
     availability: source_time
     provider: persistence
-  - name: date_type
-    source_type: file
-    columns:
-    - name: date_type
-      role: known_future
-      categorical: true
-    history_path: dataset/aidc_electricity_computility/electricity/2026-06-11/demand_load/A3_01e/df_date.csv
-    future_path: dataset/aidc_electricity_computility/electricity/2026-06-11/demand_load/A3_01e/df_date_future.csv
-    time_col: date
-    series_id_cols: []
-    availability: forecast_origin
   - name: weather
     source_type: file
     columns:
@@ -766,6 +1139,1030 @@ features:
     - 1728
     - 2016
     training_gpu_power_usage_mean:
+    - 288
+    - 576
+    - 864
+    - 1152
+    - 1440
+    - 1728
+    - 2016
+    pod_cpu_util_mean__missing:
+    - 288
+    - 576
+    - 864
+    - 1152
+    - 1440
+    - 1728
+    - 2016
+    pod_cpu_util_mean__no_history:
+    - 288
+    - 576
+    - 864
+    - 1152
+    - 1440
+    - 1728
+    - 2016
+    pod_gpu_util_count__missing:
+    - 288
+    - 576
+    - 864
+    - 1152
+    - 1440
+    - 1728
+    - 2016
+    pod_gpu_util_count__no_history:
+    - 288
+    - 576
+    - 864
+    - 1152
+    - 1440
+    - 1728
+    - 2016
+    pod_active_count__missing:
+    - 288
+    - 576
+    - 864
+    - 1152
+    - 1440
+    - 1728
+    - 2016
+    pod_active_count__no_history:
+    - 288
+    - 576
+    - 864
+    - 1152
+    - 1440
+    - 1728
+    - 2016
+    pod_gpu_power_usage_count__missing:
+    - 288
+    - 576
+    - 864
+    - 1152
+    - 1440
+    - 1728
+    - 2016
+    pod_gpu_power_usage_count__no_history:
+    - 288
+    - 576
+    - 864
+    - 1152
+    - 1440
+    - 1728
+    - 2016
+    pod_gpu_memory_total_count__missing:
+    - 288
+    - 576
+    - 864
+    - 1152
+    - 1440
+    - 1728
+    - 2016
+    pod_gpu_memory_total_count__no_history:
+    - 288
+    - 576
+    - 864
+    - 1152
+    - 1440
+    - 1728
+    - 2016
+    pod_gpu_memory_util_count__missing:
+    - 288
+    - 576
+    - 864
+    - 1152
+    - 1440
+    - 1728
+    - 2016
+    pod_gpu_memory_util_count__no_history:
+    - 288
+    - 576
+    - 864
+    - 1152
+    - 1440
+    - 1728
+    - 2016
+    pod_gpu_memory_amount_count__missing:
+    - 288
+    - 576
+    - 864
+    - 1152
+    - 1440
+    - 1728
+    - 2016
+    pod_gpu_memory_amount_count__no_history:
+    - 288
+    - 576
+    - 864
+    - 1152
+    - 1440
+    - 1728
+    - 2016
+    pod_cpu_util_count__missing:
+    - 288
+    - 576
+    - 864
+    - 1152
+    - 1440
+    - 1728
+    - 2016
+    pod_cpu_util_count__no_history:
+    - 288
+    - 576
+    - 864
+    - 1152
+    - 1440
+    - 1728
+    - 2016
+    pod_memory_total_count__missing:
+    - 288
+    - 576
+    - 864
+    - 1152
+    - 1440
+    - 1728
+    - 2016
+    pod_memory_total_count__no_history:
+    - 288
+    - 576
+    - 864
+    - 1152
+    - 1440
+    - 1728
+    - 2016
+    pod_memory_amount_count__missing:
+    - 288
+    - 576
+    - 864
+    - 1152
+    - 1440
+    - 1728
+    - 2016
+    pod_memory_amount_count__no_history:
+    - 288
+    - 576
+    - 864
+    - 1152
+    - 1440
+    - 1728
+    - 2016
+    pod_memory_util_count__missing:
+    - 288
+    - 576
+    - 864
+    - 1152
+    - 1440
+    - 1728
+    - 2016
+    pod_memory_util_count__no_history:
+    - 288
+    - 576
+    - 864
+    - 1152
+    - 1440
+    - 1728
+    - 2016
+    pod_gpu_power_usage_sum_roll_mean_3__missing:
+    - 288
+    - 576
+    - 864
+    - 1152
+    - 1440
+    - 1728
+    - 2016
+    pod_gpu_power_usage_sum_roll_mean_3__no_history:
+    - 288
+    - 576
+    - 864
+    - 1152
+    - 1440
+    - 1728
+    - 2016
+    training_cpu_util_mean__missing:
+    - 288
+    - 576
+    - 864
+    - 1152
+    - 1440
+    - 1728
+    - 2016
+    training_cpu_util_mean__no_history:
+    - 288
+    - 576
+    - 864
+    - 1152
+    - 1440
+    - 1728
+    - 2016
+    pod_gpu_power_usage_sum__missing:
+    - 288
+    - 576
+    - 864
+    - 1152
+    - 1440
+    - 1728
+    - 2016
+    pod_gpu_power_usage_sum__no_history:
+    - 288
+    - 576
+    - 864
+    - 1152
+    - 1440
+    - 1728
+    - 2016
+    pod_gpu_memory_total_mean__missing:
+    - 288
+    - 576
+    - 864
+    - 1152
+    - 1440
+    - 1728
+    - 2016
+    pod_gpu_memory_total_mean__no_history:
+    - 288
+    - 576
+    - 864
+    - 1152
+    - 1440
+    - 1728
+    - 2016
+    training_memory_total_count__missing:
+    - 288
+    - 576
+    - 864
+    - 1152
+    - 1440
+    - 1728
+    - 2016
+    training_memory_total_count__no_history:
+    - 288
+    - 576
+    - 864
+    - 1152
+    - 1440
+    - 1728
+    - 2016
+    training_cpu_util_count__missing:
+    - 288
+    - 576
+    - 864
+    - 1152
+    - 1440
+    - 1728
+    - 2016
+    training_cpu_util_count__no_history:
+    - 288
+    - 576
+    - 864
+    - 1152
+    - 1440
+    - 1728
+    - 2016
+    training_active_jobs_roll_mean_3__missing:
+    - 288
+    - 576
+    - 864
+    - 1152
+    - 1440
+    - 1728
+    - 2016
+    training_active_jobs_roll_mean_3__no_history:
+    - 288
+    - 576
+    - 864
+    - 1152
+    - 1440
+    - 1728
+    - 2016
+    pod_gpu_power_usage_sum_roll_mean_12__missing:
+    - 288
+    - 576
+    - 864
+    - 1152
+    - 1440
+    - 1728
+    - 2016
+    pod_gpu_power_usage_sum_roll_mean_12__no_history:
+    - 288
+    - 576
+    - 864
+    - 1152
+    - 1440
+    - 1728
+    - 2016
+    training_memory_amount_count__missing:
+    - 288
+    - 576
+    - 864
+    - 1152
+    - 1440
+    - 1728
+    - 2016
+    training_memory_amount_count__no_history:
+    - 288
+    - 576
+    - 864
+    - 1152
+    - 1440
+    - 1728
+    - 2016
+    training_memory_util_count__missing:
+    - 288
+    - 576
+    - 864
+    - 1152
+    - 1440
+    - 1728
+    - 2016
+    training_memory_util_count__no_history:
+    - 288
+    - 576
+    - 864
+    - 1152
+    - 1440
+    - 1728
+    - 2016
+    training_active_jobs__missing:
+    - 288
+    - 576
+    - 864
+    - 1152
+    - 1440
+    - 1728
+    - 2016
+    training_active_jobs__no_history:
+    - 288
+    - 576
+    - 864
+    - 1152
+    - 1440
+    - 1728
+    - 2016
+    pod_memory_total_mean__missing:
+    - 288
+    - 576
+    - 864
+    - 1152
+    - 1440
+    - 1728
+    - 2016
+    pod_memory_total_mean__no_history:
+    - 288
+    - 576
+    - 864
+    - 1152
+    - 1440
+    - 1728
+    - 2016
+    training_gpu_memory_util_count__missing:
+    - 288
+    - 576
+    - 864
+    - 1152
+    - 1440
+    - 1728
+    - 2016
+    training_gpu_memory_util_count__no_history:
+    - 288
+    - 576
+    - 864
+    - 1152
+    - 1440
+    - 1728
+    - 2016
+    training_gpu_memory_amount_count__missing:
+    - 288
+    - 576
+    - 864
+    - 1152
+    - 1440
+    - 1728
+    - 2016
+    training_gpu_memory_amount_count__no_history:
+    - 288
+    - 576
+    - 864
+    - 1152
+    - 1440
+    - 1728
+    - 2016
+    training_gpu_power_usage_count__missing:
+    - 288
+    - 576
+    - 864
+    - 1152
+    - 1440
+    - 1728
+    - 2016
+    training_gpu_power_usage_count__no_history:
+    - 288
+    - 576
+    - 864
+    - 1152
+    - 1440
+    - 1728
+    - 2016
+    training_gpu_util_count__missing:
+    - 288
+    - 576
+    - 864
+    - 1152
+    - 1440
+    - 1728
+    - 2016
+    training_gpu_util_count__no_history:
+    - 288
+    - 576
+    - 864
+    - 1152
+    - 1440
+    - 1728
+    - 2016
+    training_gpu_memory_total_count__missing:
+    - 288
+    - 576
+    - 864
+    - 1152
+    - 1440
+    - 1728
+    - 2016
+    training_gpu_memory_total_count__no_history:
+    - 288
+    - 576
+    - 864
+    - 1152
+    - 1440
+    - 1728
+    - 2016
+    pod_minus_jobs_gpu_power_usage_sum__missing:
+    - 288
+    - 576
+    - 864
+    - 1152
+    - 1440
+    - 1728
+    - 2016
+    pod_minus_jobs_gpu_power_usage_sum__no_history:
+    - 288
+    - 576
+    - 864
+    - 1152
+    - 1440
+    - 1728
+    - 2016
+    training_active_jobs_roll_mean_12__missing:
+    - 288
+    - 576
+    - 864
+    - 1152
+    - 1440
+    - 1728
+    - 2016
+    training_active_jobs_roll_mean_12__no_history:
+    - 288
+    - 576
+    - 864
+    - 1152
+    - 1440
+    - 1728
+    - 2016
+    pod_memory_amount_mean__missing:
+    - 288
+    - 576
+    - 864
+    - 1152
+    - 1440
+    - 1728
+    - 2016
+    pod_memory_amount_mean__no_history:
+    - 288
+    - 576
+    - 864
+    - 1152
+    - 1440
+    - 1728
+    - 2016
+    pod_gpu_memory_util_mean__missing:
+    - 288
+    - 576
+    - 864
+    - 1152
+    - 1440
+    - 1728
+    - 2016
+    pod_gpu_memory_util_mean__no_history:
+    - 288
+    - 576
+    - 864
+    - 1152
+    - 1440
+    - 1728
+    - 2016
+    training_gpu_memory_total_mean__missing:
+    - 288
+    - 576
+    - 864
+    - 1152
+    - 1440
+    - 1728
+    - 2016
+    training_gpu_memory_total_mean__no_history:
+    - 288
+    - 576
+    - 864
+    - 1152
+    - 1440
+    - 1728
+    - 2016
+    pod_memory_amount_std__missing:
+    - 288
+    - 576
+    - 864
+    - 1152
+    - 1440
+    - 1728
+    - 2016
+    pod_memory_amount_std__no_history:
+    - 288
+    - 576
+    - 864
+    - 1152
+    - 1440
+    - 1728
+    - 2016
+    pod_cpu_util_std__missing:
+    - 288
+    - 576
+    - 864
+    - 1152
+    - 1440
+    - 1728
+    - 2016
+    pod_cpu_util_std__no_history:
+    - 288
+    - 576
+    - 864
+    - 1152
+    - 1440
+    - 1728
+    - 2016
+    training_memory_total_mean__missing:
+    - 288
+    - 576
+    - 864
+    - 1152
+    - 1440
+    - 1728
+    - 2016
+    training_memory_total_mean__no_history:
+    - 288
+    - 576
+    - 864
+    - 1152
+    - 1440
+    - 1728
+    - 2016
+    pod_gpu_memory_amount_sum__missing:
+    - 288
+    - 576
+    - 864
+    - 1152
+    - 1440
+    - 1728
+    - 2016
+    pod_gpu_memory_amount_sum__no_history:
+    - 288
+    - 576
+    - 864
+    - 1152
+    - 1440
+    - 1728
+    - 2016
+    training_gpu_memory_amount_mean__missing:
+    - 288
+    - 576
+    - 864
+    - 1152
+    - 1440
+    - 1728
+    - 2016
+    training_gpu_memory_amount_mean__no_history:
+    - 288
+    - 576
+    - 864
+    - 1152
+    - 1440
+    - 1728
+    - 2016
+    training_gpu_power_usage_sum_roll_mean_3__missing:
+    - 288
+    - 576
+    - 864
+    - 1152
+    - 1440
+    - 1728
+    - 2016
+    training_gpu_power_usage_sum_roll_mean_3__no_history:
+    - 288
+    - 576
+    - 864
+    - 1152
+    - 1440
+    - 1728
+    - 2016
+    jobs_total_gpu_power_usage_sum_roll_mean_3__missing:
+    - 288
+    - 576
+    - 864
+    - 1152
+    - 1440
+    - 1728
+    - 2016
+    jobs_total_gpu_power_usage_sum_roll_mean_3__no_history:
+    - 288
+    - 576
+    - 864
+    - 1152
+    - 1440
+    - 1728
+    - 2016
+    training_gpu_util_mean__missing:
+    - 288
+    - 576
+    - 864
+    - 1152
+    - 1440
+    - 1728
+    - 2016
+    training_gpu_util_mean__no_history:
+    - 288
+    - 576
+    - 864
+    - 1152
+    - 1440
+    - 1728
+    - 2016
+    jobs_total_gpu_power_usage_sum__missing:
+    - 288
+    - 576
+    - 864
+    - 1152
+    - 1440
+    - 1728
+    - 2016
+    jobs_total_gpu_power_usage_sum__no_history:
+    - 288
+    - 576
+    - 864
+    - 1152
+    - 1440
+    - 1728
+    - 2016
+    training_minus_inference_power_sum__missing:
+    - 288
+    - 576
+    - 864
+    - 1152
+    - 1440
+    - 1728
+    - 2016
+    training_minus_inference_power_sum__no_history:
+    - 288
+    - 576
+    - 864
+    - 1152
+    - 1440
+    - 1728
+    - 2016
+    pod_gpu_power_usage_std__missing:
+    - 288
+    - 576
+    - 864
+    - 1152
+    - 1440
+    - 1728
+    - 2016
+    pod_gpu_power_usage_std__no_history:
+    - 288
+    - 576
+    - 864
+    - 1152
+    - 1440
+    - 1728
+    - 2016
+    training_gpu_power_usage_sum__missing:
+    - 288
+    - 576
+    - 864
+    - 1152
+    - 1440
+    - 1728
+    - 2016
+    training_gpu_power_usage_sum__no_history:
+    - 288
+    - 576
+    - 864
+    - 1152
+    - 1440
+    - 1728
+    - 2016
+    training_gpu_memory_amount_std__missing:
+    - 288
+    - 576
+    - 864
+    - 1152
+    - 1440
+    - 1728
+    - 2016
+    training_gpu_memory_amount_std__no_history:
+    - 288
+    - 576
+    - 864
+    - 1152
+    - 1440
+    - 1728
+    - 2016
+    pod_gpu_memory_amount_mean__missing:
+    - 288
+    - 576
+    - 864
+    - 1152
+    - 1440
+    - 1728
+    - 2016
+    pod_gpu_memory_amount_mean__no_history:
+    - 288
+    - 576
+    - 864
+    - 1152
+    - 1440
+    - 1728
+    - 2016
+    training_gpu_memory_util_std__missing:
+    - 288
+    - 576
+    - 864
+    - 1152
+    - 1440
+    - 1728
+    - 2016
+    training_gpu_memory_util_std__no_history:
+    - 288
+    - 576
+    - 864
+    - 1152
+    - 1440
+    - 1728
+    - 2016
+    training_gpu_util_std__missing:
+    - 288
+    - 576
+    - 864
+    - 1152
+    - 1440
+    - 1728
+    - 2016
+    training_gpu_util_std__no_history:
+    - 288
+    - 576
+    - 864
+    - 1152
+    - 1440
+    - 1728
+    - 2016
+    training_gpu_busy_ratio__missing:
+    - 288
+    - 576
+    - 864
+    - 1152
+    - 1440
+    - 1728
+    - 2016
+    training_gpu_busy_ratio__no_history:
+    - 288
+    - 576
+    - 864
+    - 1152
+    - 1440
+    - 1728
+    - 2016
+    training_gpu_util_busy_ratio__missing:
+    - 288
+    - 576
+    - 864
+    - 1152
+    - 1440
+    - 1728
+    - 2016
+    training_gpu_util_busy_ratio__no_history:
+    - 288
+    - 576
+    - 864
+    - 1152
+    - 1440
+    - 1728
+    - 2016
+    pod_memory_util_std__missing:
+    - 288
+    - 576
+    - 864
+    - 1152
+    - 1440
+    - 1728
+    - 2016
+    pod_memory_util_std__no_history:
+    - 288
+    - 576
+    - 864
+    - 1152
+    - 1440
+    - 1728
+    - 2016
+    pod_gpu_util_mean__missing:
+    - 288
+    - 576
+    - 864
+    - 1152
+    - 1440
+    - 1728
+    - 2016
+    pod_gpu_util_mean__no_history:
+    - 288
+    - 576
+    - 864
+    - 1152
+    - 1440
+    - 1728
+    - 2016
+    jobs_total_gpu_power_usage_sum_roll_mean_12__missing:
+    - 288
+    - 576
+    - 864
+    - 1152
+    - 1440
+    - 1728
+    - 2016
+    jobs_total_gpu_power_usage_sum_roll_mean_12__no_history:
+    - 288
+    - 576
+    - 864
+    - 1152
+    - 1440
+    - 1728
+    - 2016
+    training_gpu_power_usage_sum_roll_mean_12__missing:
+    - 288
+    - 576
+    - 864
+    - 1152
+    - 1440
+    - 1728
+    - 2016
+    training_gpu_power_usage_sum_roll_mean_12__no_history:
+    - 288
+    - 576
+    - 864
+    - 1152
+    - 1440
+    - 1728
+    - 2016
+    pod_gpu_power_usage_mean__missing:
+    - 288
+    - 576
+    - 864
+    - 1152
+    - 1440
+    - 1728
+    - 2016
+    pod_gpu_power_usage_mean__no_history:
+    - 288
+    - 576
+    - 864
+    - 1152
+    - 1440
+    - 1728
+    - 2016
+    training_memory_amount_mean__missing:
+    - 288
+    - 576
+    - 864
+    - 1152
+    - 1440
+    - 1728
+    - 2016
+    training_memory_amount_mean__no_history:
+    - 288
+    - 576
+    - 864
+    - 1152
+    - 1440
+    - 1728
+    - 2016
+    inference_memory_util_std__missing:
+    - 288
+    - 576
+    - 864
+    - 1152
+    - 1440
+    - 1728
+    - 2016
+    inference_memory_util_std__no_history:
+    - 288
+    - 576
+    - 864
+    - 1152
+    - 1440
+    - 1728
+    - 2016
+    training_gpu_power_usage_high_power_ratio__missing:
+    - 288
+    - 576
+    - 864
+    - 1152
+    - 1440
+    - 1728
+    - 2016
+    training_gpu_power_usage_high_power_ratio__no_history:
+    - 288
+    - 576
+    - 864
+    - 1152
+    - 1440
+    - 1728
+    - 2016
+    training_high_power_job_ratio__missing:
+    - 288
+    - 576
+    - 864
+    - 1152
+    - 1440
+    - 1728
+    - 2016
+    training_high_power_job_ratio__no_history:
+    - 288
+    - 576
+    - 864
+    - 1152
+    - 1440
+    - 1728
+    - 2016
+    inference_memory_amount_std__missing:
+    - 288
+    - 576
+    - 864
+    - 1152
+    - 1440
+    - 1728
+    - 2016
+    inference_memory_amount_std__no_history:
+    - 288
+    - 576
+    - 864
+    - 1152
+    - 1440
+    - 1728
+    - 2016
+    training_gpu_memory_util_mean__missing:
+    - 288
+    - 576
+    - 864
+    - 1152
+    - 1440
+    - 1728
+    - 2016
+    training_gpu_memory_util_mean__no_history:
+    - 288
+    - 576
+    - 864
+    - 1152
+    - 1440
+    - 1728
+    - 2016
+    inference_memory_total_mean__missing:
+    - 288
+    - 576
+    - 864
+    - 1152
+    - 1440
+    - 1728
+    - 2016
+    inference_memory_total_mean__no_history:
+    - 288
+    - 576
+    - 864
+    - 1152
+    - 1440
+    - 1728
+    - 2016
+    training_gpu_power_usage_mean__missing:
+    - 288
+    - 576
+    - 864
+    - 1152
+    - 1440
+    - 1728
+    - 2016
+    training_gpu_power_usage_mean__no_history:
     - 288
     - 576
     - 864

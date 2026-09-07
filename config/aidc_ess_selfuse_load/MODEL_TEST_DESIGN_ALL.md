@@ -9,9 +9,9 @@
 | baseline | 5 | USBR/USMD/USMDP/USMDR/USMR | 概率预测方法基线 |
 | add_decomposition | 12 | USMD/USMDP/USMDR/USMR × 3 | linear、STL(288)、MSTL(288,2016) 分解 |
 | add_endogenous_actual_strategy | 7 | MSBR/MSMD/MSMDR/MSMR | 实际PCS内生变量、horizon与auxiliary；仅point |
-| add_exogenous_weather_date | 4 | USMD/USMDP/USMDR/USMR | 严格天气 + date_type + datetime |
+| add_exogenous_weather | 4 | USMD/USMDP/USMDR/USMR | 严格天气 + datetime |
 | add_exogenous_plan_strategy | 4 | USMD/USMDP/USMDR/USMR | 显式未来 PCS 计划 |
-| add_exogenous_weather_date_plan_strategy | 4 | USMD/USMDP/USMDR/USMR | 严格天气 + 日期 + PCS计划；无分解 |
+| add_exogenous_weather_plan_strategy | 4 | USMD/USMDP/USMDR/USMR | 严格天气 + PCS计划；无分解 |
 | add_strategy_features | 5 | USMD/USMD-horizon/USMDP/USMDR/USMR | baseline + C5完整策略特征；quantile+CQR |
 
 ## 共用口径
@@ -55,12 +55,10 @@ baseline关闭datetime/date/weather/custom和`ModelEnsemble`，只使用目标se
 
 目标`ess_power`，附加内生变量`pcs_power`；每路保留MSBR、MSMD、MSMD-horizon、MSMDR persistence/auxiliary、MSMR persistence/auxiliary共7个point配置，全部`decomposition_method=none`。auxiliary只适用于需要逐步回填的MSMR/MSMDR；MSMD/MSBR不支持用单一开关接入辅助PCS轨迹。结果路径与目录同名：`add_endogenous_actual_strategy`。
 
-## 4. Weather + date
+## 4. Weather
 
-- 日期：开启 `date_type`，按 categorical 处理；同时保留 datetime。
-- 天气：7 列派生量 `rt_ssr/rt_tt2/cal_rh/rt_ws10/tt2_mean_3h/tt2_diff_1h/ssr_mean_3h`。
-- 严格三角色：actual history 截止 07-28；backtest 使用历史raw中06-28～07-28的 `pred_*`；final future 从07-29起使用future raw的 `pred_*`。
-- 来源契约：history=`actual`、backtest=`forecast`、future=`forecast`；backtest/future 带 `source_ts/available_at`。每个CV fold要求 `available_at <= fold_origin` 且精确覆盖288个目标点。
+- 天气：4 列原始量 `rt_ssr/rt_tt2/cal_rh/rt_ws10`（2026-09-07 裁决：ESS 不构造统计特征；推理期经 inference_columns 读 pred_ssrd/pred_tt2/pred_rh/pred_ws10）。
+- 两段文件合同：history=`exogenous_weather_raw/weather_history_5min_20250101_20260728.csv`（rt_ 实测，训练+回测）；future=`weather_future_5min_20260729_20260814.csv`（pred_，真实预测）。fold 推理时段的 pred_ 在 history 文件内按 `inference_columns` 映射读取；数据文件不含 available_at。
 - 方法对齐：USMD/USMDR启用horizon-aware外生，但第h个输出模型只消费第h个目标时刻外生；USMR逐步使用future weather；USMDP按未来时间戳逐点使用。
 
 ## 5. PCS plan
@@ -78,9 +76,9 @@ available_at_col: available_at
 
 本组关闭datetime，只增加显式PCS计划；当前仍使用linear分解。
 
-## 6. Weather + date + plan
+## 6. Weather + plan
 
-组合严格天气、categorical`date_type`、datetime和显式`pcs_plan`，全部`decomposition_method=none`。结果路径与目录同名：`add_exogenous_weather_date_plan_strategy`。
+组合严格天气、datetime和显式`pcs_plan`，全部`decomposition_method=none`。结果路径与目录同名：`add_exogenous_weather_plan_strategy`。
 
 USBR 不进入外生组：Direct/Recursive 子模型共享 X，当前不能同时表达 Direct 的 horizon-aware 外生轨迹和 Recursive 的逐步外生量；baseline USBR 作为 no-exogenous control。
 

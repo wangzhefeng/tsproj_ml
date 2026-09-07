@@ -19,17 +19,6 @@ data:
     time_col: time
     series_id_cols: []
     availability: source_time
-  - name: date_type
-    source_type: file
-    columns:
-    - name: date_type
-      role: known_future
-      categorical: true
-    history_path: dataset/aidc_electricity_computility/electricity/2026-08-14/AIDC/route_A/date_in_20260611_20260814.csv
-    future_path: dataset/aidc_electricity_computility/electricity/2026-08-14/AIDC/route_A/date_in_20260611_20260814.csv
-    time_col: date
-    series_id_cols: []
-    availability: forecast_origin
   - name: weather
     source_type: file
     columns:

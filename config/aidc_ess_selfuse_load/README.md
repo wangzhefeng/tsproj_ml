@@ -9,13 +9,12 @@
 | `build_strategy_features.py` | 薄 CLI 入口，只负责参数解析和调用流水线 |
 | `strategy_features.yaml` | v2 数据边界、运行阈值、相似日参数和 A/B 路数据源 |
 | `strategy_features/` | v2 可测试实现：时间窗口、状态编码、周期画像、相似日与主流水线 |
-| `derive_weather.py` | 构建 5min actual history、historical forecast backtest、final forecast 三段派生天气 |
 | `route_{A,B}/baseline/` | 纯目标 self-lag quantile 基线：USBR/USMD/USMDP/USMDR/USMR |
 | `route_{A,B}/add_decomposition/` | 关闭 datetime；USMD/USMDP/USMDR/USMR × linear/STL(288)/MSTL(288,2016) |
 | `route_{A,B}/add_endogenous_actual_strategy/` | `ess_power + pcs_power` 多变量 point 测试，含 horizon 与 auxiliary 对照 |
-| `route_{A,B}/add_exogenous_weather_date/` | 无目标分解；baseline + datetime + date_type + 严格天气 |
+| `route_{A,B}/add_exogenous_weather/` | 无目标分解；baseline + datetime + 严格天气（2026-09-07 移除 date_type 后由 weather_date 更名） |
 | `route_{A,B}/add_exogenous_plan_strategy/` | 关闭 datetime；显式未来 PCS 计划 quantile 测试 |
-| `route_{A,B}/add_exogenous_weather_date_plan_strategy/` | 无目标分解；datetime + 日期 + 天气 + PCS 计划联合测试 |
+| `route_{A,B}/add_exogenous_weather_plan_strategy/` | 无目标分解；datetime + 天气 + PCS 计划联合测试 |
 | `route_{A,B}/add_strategy_features/` | 无目标分解；baseline + C5 全量策略特征的5种 LightGBM+CQR 配置 |
 
 生成数据落在 `dataset/aidc_ess_selfuse_load/forecasting_data/strategy_features/`，由仓库级 `dataset/` 忽略规则排除，不提交 Git。
@@ -29,9 +28,9 @@
 | baseline | 5 | USBR、USMD、USMDP、USMDR、USMR；quantile；无分解、无外生、无 datetime |
 | add_decomposition | 12 | 四种非 blend 方法 × linear/STL(288)/MSTL(288,2016)；quantile；关闭 datetime |
 | add_endogenous_actual_strategy | 7 | MSBR、MSMD、MSMD-horizon、MSMDR/MSMR persistence 与 auxiliary；point；无分解 |
-| add_exogenous_weather_date | 4 | USMD、USMDP、USMDR、USMR |
+| add_exogenous_weather | 4 | USMD、USMDP、USMDR、USMR |
 | add_exogenous_plan_strategy | 4 | USMD、USMDP、USMDR、USMR；关闭 datetime |
-| add_exogenous_weather_date_plan_strategy | 4 | USMD、USMDP、USMDR、USMR；无分解 |
+| add_exogenous_weather_plan_strategy | 4 | USMD、USMDP、USMDR、USMR；无分解 |
 | add_strategy_features | 5 | USMD、USMD-horizon、USMDP、USMDR、USMR；baseline + C5；quantile+CQR；无分解 |
 
 route_A/route_B 的 `baseline/lgbm_usbr_prob_mean.yaml` 是引用式 Quantile Ensemble：分别引用一个 Direct 基模型和 `ensemble_members/` 下的 Recursive 基模型，以 `linear_blending` 融合；它不是第八种预测策略。其余单模型仍只使用七种标准 strategy，Direct/Recursive 的外生时点和回填语义由各自 canonical feature/data 合同独立表达。
@@ -42,22 +41,14 @@ route_A/route_B 的 `baseline/lgbm_usbr_prob_mean.yaml` 是引用式 Quantile En
 
 ## 严格天气信息集
 
-执行：
-
-```bash
-env -u PYTHONPATH .venv/bin/python \
-  config/aidc_ess_selfuse_load/derive_weather.py
-```
-
-生成：
+2026-09-07 起旧 `derive_weather.py` 已随天气资产重构删除（其历史语义见 Git 历史与 `.hermes/plans/weather-generator-implementation.md`）。当前天气数据：
 
 | 文件 | 角色 |
 |---|---|
-| `weather_derived_in_20250101_20260728.csv` | 仅含截至 07-28 的 `rt_*` actual history |
-| `weather_derived_backtest_forecast_20260628_20260728.csv` | 历史raw中的 `pred_*` 归档，覆盖31日；当前5窗测试消费07-24～07-28，带 `source_ts/available_at` |
-| `weather_derived_future_20260729_20260814.csv` | 仅由 `pred_*` 派生的 forecast future，带 `available_at` |
+| `weather_actual_5min_20250101_20260814.csv` | 由共享供应商实测并集严格生成的 5min actual（`scripts/build_scenario_weather.py`；不填补、原生窗口预热不足为 NaN、逐行 available_at 证据） |
+| `aidc_ess_selfuse_load_future_pred_20260729T0000_20260814T2300.csv` | 场景未来预报（仅 pred_* 完整行；available_at=2026-07-28 23:55 为旧流水线拉取常量，供应商批次 vintage 无证据） |
 
-天气配置使用原生 strict weather 通路：history=`actual`、backtest=`forecast`、future=`forecast`。每个CV fold按 `available_at <= fold_origin` 选择目标日历史预报；测试/预测时间戳缺失时直接失败。7 个派生列由 `weather_features` 显式声明；预计算 `cal_rh` 保持原值，不重复覆盖。
+活动 YAML 已全部切换到 `exogenous_weather_raw/weather_history_5min_*` + `weather_future_5min_*` 两段文件合同（2026-09-07，1148 份含 ESS 16 份；推理期经 `inference_columns` 读 pred_ 列，ESS 只用原始特征无统计派生）。旧 `weather_derived_*` 文件已无任何活动配置引用，删除走 `.hermes/plans/weather-cleanup-review.json` 清单审批。
 
 PCS 计划继续使用通用 `custom_features` 注册表，而不是增加 PCS 专用 loader：计划历史/未来列同名、无 weather 的 `pred_*→rt_*` 映射需求。当前业务契约把目标日完整计划的 `available_at` 设为前一日23:55；`future_strategy: explicit`、`availability: forecast_origin` 和 strict coverage 保证每个fold只读取预测原点前已发布的完整288点计划。
 

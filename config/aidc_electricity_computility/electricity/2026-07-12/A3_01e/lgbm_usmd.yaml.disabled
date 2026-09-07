@@ -23,15 +23,6 @@ overrides:
     weather_history_source: ''
     weather_backtest_source: ''
     weather_future_source: ''
-    # 日期类型：显式启用，并按离散类别传给 LightGBM。
-    enable_date_features: true
-    date_history_path: date_in_20260611_20260814.csv
-    date_future_path: date_in_20260611_20260814.csv
-    date_ts_feat: date
-    datetype_features:
-    - date_type
-    datetype_categorical_features:
-    - date_type
     # 原生气象：历史 rt_* 与未来 pred_* 在特征工程中统一为以下字段。
     enable_weather_features: true
     weather_history_path: weather_in_20260611_20260814.csv

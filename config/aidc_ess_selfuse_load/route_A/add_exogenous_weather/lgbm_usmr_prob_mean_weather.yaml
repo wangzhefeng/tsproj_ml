@@ -1,0 +1,112 @@
+schema_version: 2
+problem:
+  time_col: time
+  freq: 5min
+  horizon: 288
+  targets:
+  - value
+  training_scope: local
+  series_id_cols: []
+data:
+  sources:
+  - name: target_history
+    source_type: file
+    columns:
+    - name: value
+      role: target
+      categorical: false
+    history_path: dataset/aidc_ess_selfuse_load/forecasting_data/A_GateEnergys_5min_20251001_20260728_remove_outlier.csv
+    time_col: time
+    series_id_cols: []
+    availability: source_time
+  - name: weather
+    source_type: file
+    columns:
+    - name: rt_ssr
+      role: known_future
+      categorical: false
+    - name: rt_tt2
+      role: known_future
+      categorical: false
+    - name: cal_rh
+      role: known_future
+      categorical: false
+    - name: rt_ws10
+      role: known_future
+      categorical: false
+    - name: pred_rh
+      role: ignored
+      categorical: false
+    - name: pred_ssrd
+      role: ignored
+      categorical: false
+    - name: pred_tt2
+      role: ignored
+      categorical: false
+    - name: pred_ws10
+      role: ignored
+      categorical: false
+    history_path: dataset/aidc_ess_selfuse_load/exogenous_weather_raw/weather_history_5min_20250101_20260728.csv
+    future_path: dataset/aidc_ess_selfuse_load/exogenous_weather_raw/weather_future_5min_20260729_20260814.csv
+    time_col: ts
+    series_id_cols: []
+    availability: forecast_origin
+    inference_columns:
+      rt_ssr: pred_ssrd
+      rt_tt2: pred_tt2
+      cal_rh: pred_rh
+      rt_ws10: pred_ws10
+features:
+  target_lags:
+    value:
+    - 288
+    - 576
+    - 864
+    - 1152
+    - 1440
+    - 1728
+    - 2016
+  observed_past_lags: {}
+  datetime_features:
+  - hour
+  - minute
+  - day
+  - day_of_week
+  - week_of_year
+  - month
+  - days_in_month
+  - quarter
+  - day_of_year
+  - year
+  transformations: {}
+strategy:
+  name: recursive
+estimator:
+  model_type: lightgbm
+  target_adapter: independent
+  params: {}
+probabilistic:
+  mode: quantile
+  quantiles:
+  - 0.1
+  - 0.5
+  - 0.9
+  point_quantile: 0.5
+  crossing:
+    method: median_preserving_isotonic
+    report_raw: true
+validation:
+  forecast_origin: '2026-07-28T23:55:00'
+  schedule_mode: daily
+  horizon_mode: fixed_steps
+  history_steps: 9792
+  train_window_steps: 8352
+  fold_count: 5
+  stride_steps: 288
+output:
+  scenario_subpath: aidc_ess_selfuse_load/route_A/add_exogenous_weather
+  results_root: results
+  directories:
+    checkpoints: ./results/pretrained_models/
+    tests: ./results/results_test/
+    forecast: ./results/results_forecast/

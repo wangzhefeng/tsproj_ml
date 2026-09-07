@@ -19,18 +19,6 @@ data:
     time_col: time
     series_id_cols: []
     availability: source_time
-  - name: date_type
-    source_type: file
-    columns:
-    - name: date_type
-      role: known_future
-      categorical: true
-    history_path: dataset/aidc_ess_selfuse_load/exogenous_date_raw/date_in_20251001_20260728.csv
-    future_path: dataset/aidc_ess_selfuse_load/exogenous_date_raw/date_future_in_20260729_20260814.csv
-    time_col: date
-    series_id_cols: []
-    availability: column
-    available_at_col: available_at
   - name: weather
     source_type: file
     columns:
@@ -46,18 +34,36 @@ data:
     - name: rt_ws10
       role: known_future
       categorical: false
-    - name: tt2_mean_3h
+    - name: pred_rh
+      role: ignored
+      categorical: false
+    - name: pred_ssrd
+      role: ignored
+      categorical: false
+    - name: pred_tt2
+      role: ignored
+      categorical: false
+    - name: pred_ws10
+      role: ignored
+      categorical: false
+    history_path: dataset/aidc_ess_selfuse_load/exogenous_weather_raw/weather_history_5min_20250101_20260728.csv
+    future_path: dataset/aidc_ess_selfuse_load/exogenous_weather_raw/weather_future_5min_20260729_20260814.csv
+    time_col: ts
+    series_id_cols: []
+    availability: forecast_origin
+    inference_columns:
+      rt_ssr: pred_ssrd
+      rt_tt2: pred_tt2
+      cal_rh: pred_rh
+      rt_ws10: pred_ws10
+  - name: pcs_plan
+    source_type: file
+    columns:
+    - name: pcs_plan
       role: known_future
       categorical: false
-    - name: tt2_diff_1h
-      role: known_future
-      categorical: false
-    - name: ssr_mean_3h
-      role: known_future
-      categorical: false
-    history_path: dataset/aidc_ess_selfuse_load/exogenous_weather_raw/weather_derived_in_20250101_20260728.csv
-    backtest_path: dataset/aidc_ess_selfuse_load/exogenous_weather_raw/weather_derived_backtest_forecast_20260628_20260728.csv
-    future_path: dataset/aidc_ess_selfuse_load/exogenous_weather_raw/weather_derived_future_20260729_20260814.csv
+    history_path: dataset/aidc_ess_selfuse_load/exogenous_strategy_plan/A_PCS_plan_5min_20251001_20260728.csv
+    future_path: dataset/aidc_ess_selfuse_load/exogenous_strategy_plan/A_PCS_plan_future_5min_20260729_20260731.csv
     time_col: time
     series_id_cols: []
     availability: column
@@ -84,10 +90,32 @@ features:
   - quarter
   - day_of_year
   - year
-  transformations: {}
+  transformations:
+    direct:
+      layout: independent_models
+      align_to_target: false
+    advanced:
+      rolling:
+        columns:
+        - value
+        windows:
+        - 2016
+        - 4032
+        - 8064
+        stats:
+        - mean
+        - std
+        - min
+        - max
+      difference:
+        columns:
+        - value
+        periods:
+        - 288
+        - 2016
+        - 8064
 strategy:
-  name: recmo
-  output_chunk_length: 96
+  name: direct
 estimator:
   model_type: lightgbm
   target_adapter: independent
@@ -111,7 +139,7 @@ validation:
   fold_count: 5
   stride_steps: 288
 output:
-  scenario_subpath: aidc_ess_selfuse_load/route_A/add_exogenous_weather_date
+  scenario_subpath: aidc_ess_selfuse_load/route_A/add_exogenous_weather_plan_strategy
   results_root: results
   directories:
     checkpoints: ./results/pretrained_models/

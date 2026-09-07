@@ -34,13 +34,28 @@ data:
     - name: rt_ws10
       role: known_future
       categorical: false
-    history_path: dataset/aidc_power_month/freq_1day/weather_daily_stats_20251001_20260731.csv
-    backtest_path: dataset/aidc_power_month/freq_1day/weather_daily_stats_backtest_proxy_20260101_20260731.csv
-    future_path: dataset/aidc_power_month/freq_1day/weather_daily_stats_future_20260801_20260831.csv
+    - name: pred_rh
+      role: ignored
+      categorical: false
+    - name: pred_ssrd
+      role: ignored
+      categorical: false
+    - name: pred_tt2
+      role: ignored
+      categorical: false
+    - name: pred_ws10
+      role: ignored
+      categorical: false
+    history_path: dataset/aidc_power_month/freq_1day/weather_history_1day_20250101_20260731.csv
+    future_path: dataset/aidc_power_month/freq_1day/weather_future_1day_20260801_20260814.csv
     time_col: ts
     series_id_cols: []
-    availability: column
-    available_at_col: available_at
+    availability: forecast_origin
+    inference_columns:
+      rt_tt2: pred_tt2
+      cal_rh: pred_rh
+      rt_ssr: pred_ssrd
+      rt_ws10: pred_ws10
 features:
   target_lags:
     value:

@@ -40,23 +40,16 @@
 | 范围 | 2025-10 ~ 2026-07，A/B 各 10 行 | 数据上线仅 10 个月，决定了整个实验的小样本性质 |
 | 时间标签 | `freq: 1ME`，月末 00:00 | 与聚合产物对齐；`now_time = 2026-07-31` |
 
-### 2.2 天气三段式严格信息集（与日频同一契约）
+### 2.2 天气两段文件 + inference_columns（2026-09-07 迁移后现行合同）
 
-| 段 | 文件 | 内容 | 为什么需要 |
+| 段 | 文件 | 内容 | 说明 |
 |---|---|---|---|
-| 历史（训练） | `weather_monthly_stats_202510_202607.csv` | 1h 实测聚合的月统计（actual） | 训练期天气已知 |
-| 回测 | `weather_monthly_stats_backtest_proxy_202604_202607.csv` | 目标月取**上一年同月**实测，`available_at` = 前一月末 | 回测月真实天气在预测原点不可得 |
-| 正式未来 | `weather_monthly_stats_future_202608.csv` | 2025-08 同月纯代理 | 不含 2026-08 任何实测 |
+| 历史（训练+回测） | `weather_history_1month_20250131_20260731.csv` | rt_ 实测月聚合 + pred_ 并列 | 训练读 rt_；fold 推理时段经 `inference_columns` 读同文件 pred_ 列 |
+| 正式未来 | `weather_future_1month_20260831_20260831.csv` | pred_ 月聚合 | 当前 0 行（pred 覆盖止 08-14），2026-08 最终预测如实 RAISE，待补数据 |
 
-```yaml
-strict_weather_information_set: true
-weather_history_source: actual   # 训练段
-weather_backtest_source: proxy   # 回测段
-weather_future_source: proxy     # 正式预测段
-forecast_mode: forecast
-```
+数据源：`scripts/build_scenario_weather.py` 从 `dataset/shared/weather/extracted/actual/weather_in_20250101_20260814.csv`（供应商权威并集）小时级聚合，完整覆盖否则整行 NaN 剔除并由请求级校验 RAISE；数据文件不含 available_at。
 
-> **核心认识**：历史教训——修复前回测曾直接使用测试月实测气象（oracle 泄露），泄露差分实证（扰动 7 月实测预测不变 10,501,740；扰动 proxy 预测变为 11,512,484）后才确认契约生效。任何"回测分数异常好"的月频结果都应先怀疑天气泄露。
+> **核心认识**：历史教训——修复前回测曾直接使用测试月实测气象（oracle 泄露），泄露差分实证（扰动 7 月实测预测不变 10,501,740；扰动 proxy 预测变为 11,512,484）后才确认契约生效。任何"回测分数异常好"的月频结果都应先怀疑天气泄露。旧三段式 proxy（上一年同月代理）已于本轮废弃，旧 stats/proxy CSV 的删除走清理清单审批。
 
 ### 2.3 one-step Direct 的目标月对齐（`align_direct_features_to_target: true`）
 

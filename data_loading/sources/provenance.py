@@ -6,6 +6,8 @@ from pathlib import Path
 from typing import Any, Mapping
 
 from forecasting_core.specs.data import DataSpec
+from data_loading.weather_generator.assets import WeatherAssetStore
+from data_loading.weather_generator.generator import weather_implementation_hash
 
 
 def file_sha256(path: str | Path) -> str:
@@ -27,6 +29,13 @@ def source_hashes(
 ) -> dict[str, str]:
     hashes = {}
     for source in data_spec.sources:
+        if source.source_type == 'generated' and source.generator == 'weather':
+            store = WeatherAssetStore(base_dir)
+            for ref in source.generator_options.inputs:
+                for snapshot in store.load(ref):
+                    for path, digest in snapshot.dependency_hashes:
+                        hashes[f'{source.name}:weather:{path}'] = digest
+            continue
         if source.source_type != "file":
             continue
         for path_role in ("history_path", "backtest_path", "future_path"):
@@ -48,6 +57,11 @@ def generator_hashes(
         if source.source_type != "generated":
             continue
         generator_name = source.generator or ""
+        if generator_name == 'weather':
+            if generator_name not in generators:
+                raise ValueError('no weather generator registered')
+            hashes[source.name] = weather_implementation_hash()
+            continue
         generator = generators.get(generator_name)
         if generator is None:
             raise ValueError(

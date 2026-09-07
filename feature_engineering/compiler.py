@@ -583,7 +583,7 @@ class FeatureCompiler:
         )
         selected_target_times = request.forecast_times.take(steps)
         target_times = pd.DatetimeIndex(
-            np.tile(selected_target_times.asi8, len(identities))
+            selected_target_times.take(np.tile(np.arange(step_count), len(identities)))
         )
         history_anchors = pd.DatetimeIndex(
             [
@@ -664,7 +664,9 @@ class FeatureCompiler:
                     steps = cast(tuple[int, ...], item["selected_steps"])
                     anchors = cast(pd.DatetimeIndex, item["history_anchors"])
                     source_times = pd.DatetimeIndex(
-                        np.tile((anchors - lag * offset).asi8, len(item["identities"]))
+                        (anchors - lag * offset).take(
+                            np.tile(np.arange(len(anchors)), len(item["identities"]))
+                        )
                     )
                     values = np.empty(len(source_times), dtype=object)
                     available_at = np.empty(len(source_times), dtype=object)
@@ -827,11 +829,14 @@ class FeatureCompiler:
                     available_at_col = (
                         source.available_at_col
                         if source.availability is AvailabilityPolicy.COLUMN
-                        else None
+                        else (
+                            "available_at"
+                            if source.availability is AvailabilityPolicy.GENERATOR_DEFINED
+                            else None
+                        )
                     )
                     if available_at_col is None:
-                        # generated known-future 天然在各自 forecast origin 可得；
-                        # batch 可共享 union materialization，但 proof 仍按请求原点。
+                        # 只有无逐行可得时间的原点情景使用请求原点。
                         available_at[row_slice] = request.forecast_origin
                     else:
                         available_at[row_slice] = selected[

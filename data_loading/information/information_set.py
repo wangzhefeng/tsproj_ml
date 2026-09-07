@@ -88,6 +88,13 @@ class SourceLineage:
     includes_target_labels: bool
 
 
+@dataclass(frozen=True, slots=True)
+class WeatherSourceLineage(SourceLineage):
+    """天气独有审计证据；JSON 字符串保证信息集不可变。"""
+
+    weather_evidence: str
+
+
 class MaterializedInformationSet:
     """Source-qualified frames with defensive copies at every access boundary."""
 

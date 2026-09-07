@@ -56,7 +56,9 @@ _SOURCE_FIELDS = frozenset(
         "series_id_cols",
         "availability",
         "available_at_col",
+        "inference_columns",
         "generator",
+        "generator_options",
         "provider",
     }
 )
@@ -205,6 +207,7 @@ class ForecastConfigSpec:
                 "problem.targets must exactly match data.target_columns in the same order"
             )
         strategy.resolve(problem.horizon)
+        data.validate_weather_frequency(problem.freq)
         _validate_global_source_keys(problem, data)
         _validate_feature_columns(data, features)
         _validate_time_geometry(problem, validation_spec)

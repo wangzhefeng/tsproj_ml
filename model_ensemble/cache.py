@@ -29,9 +29,9 @@ else:
 import numpy as np
 import pandas as pd
 
-from data_loading.sources.provenance import file_sha256
+from data_loading.sources.provenance import file_sha256, source_hashes, generator_hashes
 from model_ensemble.artifacts import OOFPredictionArtifact
-from model_ensemble.specs import OOF_GAP_SEMANTICS
+from model_ensemble.specs import OOF_GAP_SEMANTICS, EnsembleSpecError
 
 OOF_SCHEMA_VERSION = 2
 
@@ -82,6 +82,17 @@ def _release_process_lock(lock_file: BinaryIO) -> None:
         _process_lock_backend.LK_UNLCK,
         1,
     )
+
+
+def member_source_hashes(member_name, data_spec, base_dir, generators):
+    """保持纯文件键不变，仅为有完整传递合同的天气开放 generated。"""
+    for source in data_spec.sources:
+        if source.source_type != 'file' and source.generator != 'weather':
+            raise EnsembleSpecError('ensemble OOF requires file or contracted weather sources')
+    result = {f'{member_name}:{key}': digest for key, digest in source_hashes(data_spec, Path(base_dir)).items()}
+    for name, digest in generator_hashes(data_spec, generators).items():
+        result[f'{member_name}:{name}:generator_implementation'] = digest
+    return result
 
 
 def compute_oof_fingerprint(

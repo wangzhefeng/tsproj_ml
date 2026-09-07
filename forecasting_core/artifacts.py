@@ -200,9 +200,12 @@ class ForecastModelBundle:
     # CQR 校准状态（2026-09-01 激活）：final fit 时由回测折的 as-of 校准池
     # 计算，部署期据此产出 predict_pi 区间；未配置 calibration 时为 None。
     calibration_state: dict[str, Any] | None = None
+    execution_mode: str = 'strict'
 
     def __post_init__(self) -> None:
         version = int(self.schema_version)
+        if self.execution_mode not in {'strict', 'research_replay'}:
+            raise ValueError('invalid bundle execution_mode')
         if version not in {1, 2}:
             raise ValueError(
                 f"Unsupported ForecastModelBundle schema_version={self.schema_version}"
@@ -328,6 +331,7 @@ class ForecastModelBundle:
                 "result_schema_version": self.result_schema_version,
                 "config_fingerprint": self.config_fingerprint,
                 "calibration_state": self.calibration_state,
+                "execution_mode": self.execution_mode,
             }
         )
         return payload

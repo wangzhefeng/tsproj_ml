@@ -170,6 +170,7 @@ class EnsembleConfigSpec:
             raise EnsembleSpecError(
                 "problem.targets must exactly match data.target_columns in the same order"
             )
+        self.data.validate_weather_frequency(self.problem.freq)
         if not isinstance(self.members, tuple) or len(self.members) < 2:
             raise EnsembleSpecError("ensemble requires at least two members")
         names = [member.name for member in self.members]

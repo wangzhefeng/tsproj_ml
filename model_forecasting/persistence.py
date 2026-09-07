@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any, Mapping, Sequence
 
 from forecasting_core.artifacts import ForecastModelBundle
+from forecasting_core.specs.weather import WeatherGenerationSpec
 from forecasting_core.probabilistic_spec import probabilistic_spec_from_mapping
 from model_training.strategies import CanonicalStrategyArtifact
 from model_training.trainer import CanonicalTrainer
@@ -65,6 +66,11 @@ def build_strategy_model_bundle(
         training_scope=config.problem.training_scope,
         result_schema_version=2,
         config_fingerprint=config.fingerprint(),
+        execution_mode=('research_replay' if any(
+            isinstance(source.generator_options, WeatherGenerationSpec)
+            and source.generator_options.research is not None
+            for source in config.data.sources
+        ) else 'strict'),
         calibration_state=(
             dict(calibration_state) if calibration_state is not None else None
         ),

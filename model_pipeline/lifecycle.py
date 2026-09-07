@@ -7,6 +7,7 @@ from pathlib import Path
 from time import perf_counter
 from typing import Any, Mapping, cast
 
+from data_loading.information.information_set import WeatherSourceLineage
 from feature_engineering import CompiledFeatures
 from feature_engineering import cache as compiled_cache
 from forecasting_core.artifacts import ForecastModelBundle, MarginalForecastDistribution
@@ -168,6 +169,8 @@ def _source_lineage_payload(
                 "availability": lineage.availability_policy,
                 "includes_target_labels": lineage.includes_target_labels,
             }
+            if isinstance(lineage, WeatherSourceLineage):
+                item["weather_evidence"] = lineage.weather_evidence
             key = tuple(item.items())
             if key not in seen:
                 seen.add(key)

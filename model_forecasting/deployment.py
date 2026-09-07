@@ -37,10 +37,17 @@ def predict_strategy_bundle(
     forecast_times: pd.DatetimeIndex,
     series_ids: tuple[Any, ...] | None = None,
     raw_feature_provider: FeatureProvider | None = None,
+    purpose: str = 'production',
 ) -> PointForecastTensor | MarginalForecastDistribution:
     """Predict from one schema-2 strategy bundle without config or cache IO."""
     if not isinstance(bundle, ForecastModelBundle) or bundle.schema_version != 2:
         raise TypeError("bundle must be a schema-2 ForecastModelBundle")
+    if purpose not in {'production', 'research_replay'}:
+        raise ValueError('invalid deployment purpose')
+    if bundle.execution_mode not in {'strict', 'research_replay'}:
+        raise ValueError('invalid bundle execution_mode')
+    if bundle.execution_mode == 'research_replay' and purpose != 'research_replay':
+        raise ValueError('research bundle is not eligible for production deployment')
     if bundle.strategy_spec is None or bundle.ensemble_spec is not None:
         raise ValueError("predict_strategy_bundle requires a single-model bundle")
     strategy = ForecastStrategySpec(**bundle.strategy_spec)

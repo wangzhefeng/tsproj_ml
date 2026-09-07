@@ -4,6 +4,7 @@
 
 - `loader/specs`：成员引用、顶层共享 problem/data/probabilistic/origin 合同。
 - `oof/cache`：严格时间 OOF 与 `(member,source,path_role,file_sha256)` 内容寻址缓存。文件 SHA 实现复用 `data_loading.sources.provenance.file_sha256`，本包保留原导出；成员身份组合、OOF 缓存读写与校验仍由本包负责。
+- generated weather 的 OOF 身份同时绑定 manifest/raw/normalized 和天气实现哈希；其他尚无传递资产合同的生成器继续 RAISE。纯文件成员原缓存键格式不变。天气融合真实场景仍需完成逐 origin 与模型闭环验收。
 - `methods/`：averaging、weighted、linear blending、stacking。
 - `predictor.combine_members` 校验成员顺序后委托各 `combine_*`；weighted 与 linear blending 共用预测期加权运算，但学习权重的算法独立。旧 NNLS 函数只保留在 `tests/fixtures/legacy_nnls.py` 作独立黄金参照，生产包不再导出。
 - `trainer/predictor/runtime`：融合器学习、成员 final fit、自包含 Ensemble bundle 和 canonical result。

@@ -22,10 +22,17 @@ def predict_ensemble_bundle(
     forecast_times: pd.DatetimeIndex,
     series_ids: tuple[Any, ...] | None = None,
     raw_feature_providers: Mapping[str, FeatureProvider] | None = None,
+    purpose: str = 'production',
 ) -> PointForecastTensor | MarginalForecastDistribution:
     """Predict only from the saved bundle plus explicit deployment features."""
     if not isinstance(bundle, ForecastModelBundle) or bundle.schema_version != 2:
         raise TypeError("bundle must be a schema-2 ForecastModelBundle")
+    if purpose not in {'production', 'research_replay'}:
+        raise ValueError('invalid deployment purpose')
+    if bundle.execution_mode not in {'strict', 'research_replay'}:
+        raise ValueError('invalid bundle execution_mode')
+    if bundle.execution_mode == 'research_replay' and purpose != 'research_replay':
+        raise ValueError('research ensemble is not eligible for production deployment')
     if bundle.ensemble_spec is None or bundle.strategy_spec is not None:
         raise ValueError("predict_ensemble_bundle requires an ensemble bundle")
     if not isinstance(bundle.model, dict):
@@ -52,6 +59,7 @@ def predict_ensemble_bundle(
             member_bundles[name],
             raw_designs_by_member[name],
             forecast_times=times,
+            purpose=purpose,
             series_ids=resolved_series_ids,
             raw_feature_provider=(
                 raw_feature_providers.get(name)

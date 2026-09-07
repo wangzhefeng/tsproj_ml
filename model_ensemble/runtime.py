@@ -245,19 +245,9 @@ def run_ensemble_config(
             raise ValueError(
                 "ensemble member designs exceed the parent memory budget"
             )
-        for source in member_config.data.sources:
-            if source.source_type != "file":
-                raise EnsembleSpecError(
-                    "ensemble OOF caching supports file sources only; generator "
-                    "sources must RAISE (v4 §7.2)"
-                )
-            for path_role in ("history_path", "backtest_path", "future_path"):
-                raw_path = getattr(source, path_role)
-                if raw_path is None:
-                    continue
-                source_hashes[
-                    f"{member.name}:{source.name}:{path_role}"
-                ] = oof_cache.file_sha256(source_root / raw_path)
+        source_hashes.update(oof_cache.member_source_hashes(
+            member.name, member_config.data, source_root, registry.generators,
+        ))
 
     plan_kwargs = {"budget": parent_budget} if parent_budget is not None else {}
     resource_workload, resource_budget, execution_plan = services.plan_resources(
@@ -385,6 +375,9 @@ def run_ensemble_config(
         training_scope=config.problem.training_scope,
         result_schema_version=2,
         config_fingerprint=config.fingerprint(),
+        execution_mode=('research_replay' if any(
+            member.execution_mode == 'research_replay' for member in member_bundles.values()
+        ) else 'strict'),
     )
 
     services.persist_bundle(bundle, model_dir)

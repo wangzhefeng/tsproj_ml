@@ -1,9 +1,11 @@
 """Explicit data-source and column-role specifications."""
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Literal
+
+from forecasting_core.specs.weather import WeatherGenerationSpec
 
 
 class ColumnRole(str, Enum):
@@ -145,6 +147,9 @@ class DataSourceSpec:
     available_at_col: str | None = None
     generator: str | None = None
     provider: str | None = None
+    inference_columns: tuple[tuple[str, str], ...] | None = None
+
+    generator_options: WeatherGenerationSpec | None = None
 
     def __init__(
         self,
@@ -160,6 +165,8 @@ class DataSourceSpec:
         available_at_col: str | None = None,
         generator: str | None = None,
         provider: str | None = None,
+        generator_options: WeatherGenerationSpec | None = None,
+        inference_columns: Mapping[str, str] | None = None,
     ) -> None:
         normalized_name = _required_string(name, "name")
         if not isinstance(source_type, str):
@@ -329,6 +336,44 @@ class DataSourceSpec:
         object.__setattr__(self, "available_at_col", normalized_available_at_col)
         object.__setattr__(self, "generator", normalized_generator)
         object.__setattr__(self, "provider", normalized_provider)
+        normalized_options = None
+        if normalized_generator == "weather":
+            if normalized_time_col is None or normalized_time_col == 'available_at':
+                raise ValueError('weather requires explicit non-reserved time_col')
+            normalized_options = WeatherGenerationSpec.from_mapping(generator_options)
+            outputs = {v.name for v in normalized_options.variables}
+            declared = {c.name for c in normalized_columns if c.role is ColumnRole.KNOWN_FUTURE}
+            if outputs != declared or any(c.categorical for c in normalized_columns if c.role is ColumnRole.KNOWN_FUTURE):
+                raise ValueError("weather variables must exactly match numeric known_future columns")
+            if any(len(v.series_id) != len(normalized_series_id_cols) for v in normalized_options.location_map):
+                raise ValueError("weather location_map must match source series_id_cols arity")
+        elif generator_options is not None:
+            raise ValueError("generator_options is only supported for generated weather")
+        object.__setattr__(self, "generator_options", normalized_options)
+
+        normalized_inference_columns = None
+        if inference_columns is not None:
+            if source_type != "file" or ColumnRole.KNOWN_FUTURE not in roles:
+                raise ValueError("inference_columns is only valid for file known_future sources")
+            if not isinstance(inference_columns, Mapping) or isinstance(inference_columns, (str, bytes)):
+                raise TypeError("inference_columns must map known_future names to physical columns")
+            known_future_names = {c.name for c in normalized_columns if c.role is ColumnRole.KNOWN_FUTURE}
+            ignored_names = {c.name for c in normalized_columns if c.role is ColumnRole.IGNORED}
+            pairs = []
+            for key, value in inference_columns.items():
+                if key not in known_future_names:
+                    raise ValueError(f"inference_columns key {key!r} is not a declared known_future column")
+                if not isinstance(value, str) or not value:
+                    raise TypeError("inference_columns values must be non-empty strings")
+                if value not in ignored_names:
+                    raise ValueError(f"inference_columns value {value!r} must be declared as an ignored column")
+                if key == value:
+                    raise ValueError("inference_columns key and value must differ")
+                pairs.append((key, value))
+            if not pairs:
+                raise ValueError("inference_columns must not be empty")
+            normalized_inference_columns = tuple(sorted(pairs))
+        object.__setattr__(self, "inference_columns", normalized_inference_columns)
 
 
 @dataclass(frozen=True, slots=True, init=False)
@@ -386,6 +431,13 @@ class DataSpec:
         )
         return tuple(dict.fromkeys(names))
 
+    def validate_weather_frequency(self, frequency: str) -> None:
+        """单模型和融合共享的天气聚合频率合同。"""
+        for source in self.sources:
+            options = source.generator_options
+            if options is not None and options.temporal.freq != frequency:
+                raise ValueError('weather frequency must match problem.freq')
+
     def canonical_payload(self) -> dict[str, object]:
         payload_sources = []
         for source in self.sources:
@@ -413,9 +465,13 @@ class DataSpec:
                 if value is not None:
                     source_payload[key] = value
             if source.availability is not None:
+                if source.generator_options is not None:
+                    source_payload["generator_options"] = source.generator_options.canonical_payload()
                 source_payload["availability"] = source.availability.value
             if source.availability is AvailabilityPolicy.COLUMN:
                 source_payload["available_at_col"] = source.available_at_col
+            if source.inference_columns is not None:
+                source_payload["inference_columns"] = dict(source.inference_columns)
             if source.provider is not None:
                 source_payload["provider"] = source.provider
             payload_sources.append(source_payload)

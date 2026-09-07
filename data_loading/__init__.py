@@ -15,12 +15,13 @@ from data_loading.information.providers import (
     create_endogenous_future_provider,
 )
 from data_loading.calendar_generator import (
-    BUILTIN_GENERATORS,
+
     chinese_holiday_frame,
     chinese_holiday_generator,
     GENERATOR_NAME as CHINESE_HOLIDAY_GENERATOR_NAME,
 )
 from data_loading.registry import FrameReader, SourceGenerator, SourceRegistry
+from data_loading.generator_registry import BUILTIN_GENERATORS
 
 
 __all__ = [

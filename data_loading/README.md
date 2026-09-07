@@ -16,6 +16,15 @@
 
 ## 职责收敛约定
 
+### 天气生成扩展（实施中）
+
+拟建 `weather_generator/` 按合同、适配、资产、气象派生、重采样、情景、请求编排分文件。
+输入资产集中 `dataset/shared/weather/`，源/地点/版本事实在 manifest，模型处理规则在 YAML。
+运行时纯本地、严格 as-of；供应商前缀不是单位或发布证明，init_time 不是 available_at。
+首版生成 known_future；历史天气 lag 仍需显式规范 file source 与 observed-past provider，不扩大 generated 角色。
+`sources` 负责生成器绑定、输入依赖与哈希审计；内核不得反向 import registry。
+真实来源尚未验证，现有天气活动路径不因新增合同自动切换或删除。
+
 目录按职责归组：`sources/` 管理读取、覆盖发现、资产与溯源；`processing/` 管理校验、可见性和对齐；`information/` 管理请求、结果、索引及 provider。根目录只保留 registry 和公共导出。子包不是互不依赖的层：provider 调用读取与处理规则，discovery 调用读取与对齐；禁止内部反向导入 registry。旧 information_set/providers 文件及 registry 的旧 provider 别名已删除，不支持对应旧 pickle 路径，不自动迁移或删除存量结果。
 
 内部拆分按职责而非类数进行：`source_io` 拥有一次运行内的读取与验证帧缓存，`validation` 校验物理数据，`visibility` 处理 as-of/标签边界，`alignment` 处理序列与时间对齐，`indexing` 实现行索引。`registry` 保留统一请求编排入口，不采用 mixin 聚合。

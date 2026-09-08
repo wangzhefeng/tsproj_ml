@@ -1882,6 +1882,11 @@ class FeatureCompiler:
         horizon_feature = direct.get("horizon_feature", {})
         if not isinstance(horizon_feature, Mapping):
             raise TypeError("transformations.direct.horizon_feature must be a mapping")
+        enabled = horizon_feature.get("enabled", True)
+        if not isinstance(enabled, bool):
+            raise TypeError("transformations.direct.horizon_feature.enabled must be a boolean")
+        if not enabled:
+            return None
         return horizon_feature
 
     @staticmethod

@@ -95,10 +95,13 @@ def _forecast_designs_with_scaler(
     origin: pd.Timestamp,
     feature_scaler: CanonicalFeatureScaler,
     target_transform: CanonicalTargetTransform,
+    *,
+    data_phase: str = "historical",
 ):
     raw_designs, raw_provider = builder.forecast_designs(
         origin,
         target_transform=target_transform,
+        data_phase=data_phase,
     )
 
     def provider(call_index, coordinates, dependencies, predicted):

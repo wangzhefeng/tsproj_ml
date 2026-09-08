@@ -41,14 +41,9 @@ route_A/route_B 的 `baseline/lgbm_usbr_prob_mean.yaml` 是引用式 Quantile En
 
 ## 严格天气信息集
 
-2026-09-07 起旧 `derive_weather.py` 已随天气资产重构删除（其历史语义见 Git 历史与 `.hermes/plans/weather-generator-implementation.md`）。当前天气数据：
+天气组统一使用温度、相对湿度、辐射、风速、气压、降雨六项，模型列为 `rt_tt2/cal_rh/rt_ssr/rt_ws10/rt_ps/rt_rain`，预报列由 `inference_columns` 一一对应。气压缺口已在共享 extracted/actual 中离线补齐，ERA5 替代来源保留在源旁 repair JSON 及派生资产 metadata；不把再分析替代记作供应商实测。
 
-| 文件 | 角色 |
-|---|---|
-| `weather_actual_5min_20250101_20260814.csv` | 由共享供应商实测并集严格生成的 5min actual（`scripts/build_scenario_weather.py`；不填补、原生窗口预热不足为 NaN、逐行 available_at 证据） |
-| `aidc_ess_selfuse_load_future_pred_20260729T0000_20260814T2300.csv` | 场景未来预报（仅 pred_* 完整行；available_at=2026-07-28 23:55 为旧流水线拉取常量，供应商批次 vintage 无证据） |
-
-活动 YAML 已全部切换到 `exogenous_weather_raw/weather_history_5min_*` + `weather_future_5min_*` 两段文件合同（2026-09-07，1148 份含 ESS 16 份；推理期经 `inference_columns` 读 pred_ 列，ESS 只用原始特征无统计派生）。旧 `weather_derived_*` 文件已无任何活动配置引用，删除走 `.hermes/plans/weather-cleanup-review.json` 清单审批。
+活动 YAML 使用 `exogenous_weather_raw/weather_history_5min_20250101_20260831.csv`，由 `scripts/build_scenario_weather.py` 构建。history 覆盖全部历史训练/测试：训练用 rt_/cal_rh，测试预测经 `inference_columns` 读同文件 pred_；只用原始特征，无统计派生。当前无真正未来任务，不引用 future。离线缺口处理和来源记入 metadata；可得性假设不等于真实供应商发布时间证明。旧天气文件停用但不在本次自动删除。
 
 PCS 计划继续使用通用 `custom_features` 注册表，而不是增加 PCS 专用 loader：计划历史/未来列同名、无 weather 的 `pred_*→rt_*` 映射需求。当前业务契约把目标日完整计划的 `available_at` 设为前一日23:55；`future_strategy: explicit`、`availability: forecast_origin` 和 strict coverage 保证每个fold只读取预测原点前已发布的完整288点计划。
 

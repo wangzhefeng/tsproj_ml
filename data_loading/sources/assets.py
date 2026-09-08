@@ -7,9 +7,14 @@ from forecasting_core.specs.data import ColumnRole, DataSourceSpec
 _PATH_FIELDS = ("history_path", "backtest_path", "future_path")
 
 
-def required_columns(source: DataSourceSpec) -> set[str]:
-    """维持原审计强度：非 ignored 列、时间和序列键；不检查 available_at。"""
+def required_columns(source: DataSourceSpec, *, path_role: str | None = None) -> set[str]:
+    """按文件角色核对模型所需列；映射源 history 双列、future 只需预报列。"""
     required = {column.name for column in source.columns if column.role is not ColumnRole.IGNORED}
+    if source.inference_columns and path_role is not None:
+        mapping = dict(source.inference_columns)
+        if path_role == "future_path":
+            required.difference_update(mapping)
+        required.update(mapping.values())
     if source.time_col:
         required.add(source.time_col)
     required.update(source.series_id_cols)

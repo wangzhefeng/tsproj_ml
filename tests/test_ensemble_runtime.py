@@ -27,6 +27,7 @@ from feature_engineering.cache import COMPILED_CACHE_DIR_NAME
 from model_ensemble.contracts import EnsembleRuntimeServices
 from model_ensemble.loader import load_ensemble_config
 from model_ensemble.runtime import run_ensemble_config
+from model_ensemble.specs import EnsembleSpecError
 from model_pipeline.runner import CanonicalBaseModelRunner, persist_model_bundle
 from model_performance.resource_planner import plan_ensemble_resources
 
@@ -166,6 +167,21 @@ class EnsembleRuntimeTestBase(unittest.TestCase):
 
 
 class EnsembleRuntimeMatrixTest(EnsembleRuntimeTestBase):
+    def test_raw_history_top_level_is_rejected(self):
+        doc = _ensemble_doc("averaging")
+        doc["validation"]["train_history_steps"] = 20
+        path = self.root / "unsupported.yaml"
+        path.write_text(yaml.safe_dump(doc))
+        with self.assertRaisesRegex(EnsembleSpecError, "train_history_steps"):
+            load_ensemble_config(path)
+
+    def test_raw_history_member_is_rejected_before_fitting(self):
+        doc = _member_doc("direct", "ridge", "direct")
+        doc["validation"].update(train_history_steps=20, train_window_steps=16)
+        (self.root / "member_direct.yaml").write_text(yaml.safe_dump(doc))
+        with self.assertRaisesRegex(EnsembleSpecError, "train_history_steps"):
+            self._run("averaging")
+
     def test_oof_cache_miss_runs_inside_process_thread_limit(self):
         active = 0
         original_generate = runtime_module.generate_oof_for_config

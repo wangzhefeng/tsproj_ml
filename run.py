@@ -106,6 +106,11 @@ def args_parse():
 
     parser.add_argument("--seed", type=int, default=2025)
     parser.add_argument(
+        "--backtest-only",
+        action="store_true",
+        help="Single-model rolling backtest only; no final fit, bundle, or final forecast.",
+    )
+    parser.add_argument(
         "--output-root",
         type=str,
         default=None,
@@ -116,8 +121,11 @@ def args_parse():
 
 def run(args):
     cfg = _load_config(args.config_yaml)
+    backtest_only = getattr(args, "backtest_only", False)
 
     if isinstance(cfg, EnsembleConfigSpec):
+        if backtest_only:
+            raise ValueError("--backtest-only supports single-model configs, not Ensemble")
         logger.info(
             "[run.py] config=%s schema=2 kind=ensemble method=%s",
             args.config_yaml,
@@ -160,6 +168,13 @@ def run(args):
         cfg.estimator.model_type,
         identity,
     )
+
+    if backtest_only:
+        result = run_canonical_config(
+            cfg, output_root=args.output_root, backtest_only=True,
+        )
+        logger.info("[run.py] 仅回测完成；未执行 final fit、bundle 保存或最终预测。")
+        return result
 
     model = build_model(cfg)
     try:

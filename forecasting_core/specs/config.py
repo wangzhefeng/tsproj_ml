@@ -211,6 +211,11 @@ class ForecastConfigSpec:
         _validate_global_source_keys(problem, data)
         _validate_feature_columns(data, features)
         _validate_time_geometry(problem, validation_spec)
+        if validation_spec.get("train_history_steps") is not None:
+            if problem.is_global or probabilistic_spec.get("mode", "point") != "point" or features.transformations.get("target"):
+                raise ValueError(
+                    "train_history_steps supports Local point without target transforms only"
+                )
 
         object.__setattr__(self, "schema_version", 2)
         object.__setattr__(self, "problem", problem)

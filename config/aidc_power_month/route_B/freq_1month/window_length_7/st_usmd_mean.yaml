@@ -46,8 +46,7 @@ data:
     - name: pred_ws10
       role: ignored
       categorical: false
-    history_path: dataset/aidc_power_month/freq_1month/weather_history_1month_20250131_20260731.csv
-    future_path: dataset/aidc_power_month/freq_1month/weather_future_1month_20260831_20260831.csv
+    history_path: dataset/aidc_power_month/freq_1month/weather_history_1month_20250131_20260831.csv
     time_col: ts
     series_id_cols: []
     availability: forecast_origin

@@ -18,6 +18,8 @@ Quantile linear blending 按 target 最小化 simplex 约束 pooled pinball；�
 
 ## 生命周期与依赖注入
 
+显式 `validation.train_history_steps` 当前仅为单模型 backtest-only 合同；Ensemble 顶层及引用此字段的成员均拒绝，避免 OOF/final 绕过原始历史边界。
+
 1. `run_ensemble_config_file()` 解析引用式 YAML 并校验成员共享合同，不接受 ensemble-of-ensemble。
 2. `generate_oof_for_config()` 生成或读取成员 OOF；验证标签与训练标签用 `is_label_safe` 隔离（`ensemble.oof.gap_steps` 隔离合同），不能用成员 final fit 的训练内预测学习融合权重。
 3. `fit_ensemble()` 学习融合参数，`evaluation.py::evaluate_fused_oof()` 给出融合 OOF 评分（挂在 `run_ensemble_config` 返回的 `fused_oof_scores` 与 audit）；该评分与 final 预测结果分开记录。

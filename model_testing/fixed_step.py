@@ -3,14 +3,14 @@ from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any, Iterator, Mapping
 
 import pandas as pd
 from pandas.tseries.frequencies import to_offset
 from forecasting_core.probabilistic_spec import probabilistic_spec_from_mapping
 from forecasting_core.specs import FixedStepBacktestSpec
 from model_evaluation.point import resolve_aggregate_weighting
-from model_testing.contracts import BacktestRunner
+from model_testing.contracts import BacktestRunner, BacktestWindow, FitResult
 from model_testing.reporting import write_backtest_results
 from model_testing.scoring import score_holdout_fold
 from probabilistic.calibration import ConformalCalibrationTracker
@@ -60,6 +60,28 @@ def _log_provider_usage(audits: Any) -> None:
     )
 
 
+def _fit_raw_history_windows(
+    runner: BacktestRunner, windows: tuple[BacktestWindow, ...], workers: int,
+) -> Iterator[tuple[BacktestRunner, FitResult]]:
+    """有界批次：不一次保留所有折的独立设计矩阵。"""
+    for start in range(0, len(windows), workers):
+        batch = windows[start:start + workers]
+        contexts = tuple(runner.for_backtest_window(window) for window in batch)
+
+        def fit(item):
+            context, window = item
+            return context.fit(window.train_indices, force_serial=workers > 1)
+
+        if workers > 1:
+            with ThreadPoolExecutor(max_workers=workers) as executor:
+                results = tuple(executor.map(fit, zip(contexts, batch)))
+        else:
+            results = (fit((contexts[0], batch[0])),)
+        yield from zip(contexts, results)
+        # 先释放上一批，再创建下一批；避免同时驻留两批大矩阵。
+        del contexts, results
+
+
 def run_fixed_step_backtest(
     runner: BacktestRunner, test_dir: Path, *, mode: str,
 ) -> tuple[dict[str, Any] | None, ConformalCalibrationTracker | None, tuple[Any, ...]]:
@@ -93,12 +115,15 @@ def run_fixed_step_backtest(
             )
     calibration_audits: list[dict[str, Any]] = []
     backtest_windows = runner.backtest_windows()
+    strict_history = config.validation.get("train_history_steps") is not None
+
     window_workers = min(
         runner.execution_plan.window_workers,
         max(1, len(backtest_windows)),
     )
     parallel_fits = None
-    if window_workers > 1 and backtest_windows:
+    strict_fits = _fit_raw_history_windows(runner, backtest_windows, window_workers) if strict_history else None
+    if not strict_history and window_workers > 1 and backtest_windows:
         target_histories = runner.backtest_target_histories(backtest_windows)
 
         def fit_window(item):
@@ -118,14 +143,19 @@ def run_fixed_step_backtest(
             )
 
     for window_index, backtest_window in enumerate(backtest_windows):
-        fit_result = (
-            parallel_fits[window_index]
-            if parallel_fits is not None
-            else runner.fit(backtest_window.train_indices)
-        )
+        if strict_fits is not None:
+            fold_runner, fit_result = next(strict_fits)
+        else:
+            fold_runner = runner
+            fit_result = (
+                parallel_fits[window_index]
+                if parallel_fits is not None
+                else runner.fit(backtest_window.train_indices)
+            )
+        builder = fold_runner.builder
         builder.reset_audit()
         fold = score_holdout_fold(
-            runner=runner,
+            runner=fold_runner,
             fit_result=fit_result,
             origin=backtest_window.origin,
             origin_index=backtest_window.origin_index,
@@ -148,6 +178,8 @@ def run_fixed_step_backtest(
             "origin": fold.origin.isoformat(),
             **fold.execution_evidence,
         })
+        if strict_history:
+            del fold_runner, fit_result, builder
     holdout_audit = tuple(holdout_audits)
     _log_provider_usage(holdout_audit)
     if cv_frames:

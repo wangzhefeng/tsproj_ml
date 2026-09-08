@@ -51,9 +51,20 @@ class SourceRegistry:
         self._generators = normalized_generators
         self._frames = SourceFrames(self._base_dir, reader)
 
-    def materialize(self, request: InformationSetRequest) -> MaterializedInformationSet:
+    def materialize(
+        self, request: InformationSetRequest, *, source_names: tuple[str, ...] | None = None,
+    ) -> MaterializedInformationSet:
         if not isinstance(request, InformationSetRequest):
             raise TypeError("request must be an InformationSetRequest")
+        sources = self._data_spec.sources
+        if source_names is not None:
+            if not isinstance(source_names, tuple) or any(not isinstance(name, str) for name in source_names):
+                raise TypeError("source_names must be a tuple of source names")
+            selected = set(source_names)
+            configured = {source.name for source in sources}
+            if not selected or len(selected) != len(source_names) or not selected <= configured:
+                raise ValueError("source_names must be nonempty, unique, and configured")
+            sources = tuple(source for source in sources if source.name in selected)
         target_history: dict[str, pd.DataFrame] = {}
         observed_past: dict[str, pd.DataFrame] = {}
         known_future: dict[str, pd.DataFrame] = {}
@@ -65,7 +76,7 @@ class SourceRegistry:
         ] = {}
         lineage: list[SourceLineage] = []
 
-        for source in self._data_spec.sources:
+        for source in sources:
             frame, source_lineage = self._load_source(source, request)
             lineage.extend(source_lineage)
             roles = {column.role for column in source.columns}
@@ -170,6 +181,11 @@ class SourceRegistry:
                 if ColumnRole.KNOWN_FUTURE in roles
                 else (("history", "history_path"),)
             )
+            if source.inference_columns:
+                version = "future" if request.data_phase == "future" else "history"
+                path_fields = ((version, f"{version}_path"),)
+                if getattr(source, f"{version}_path") is None:
+                    raise ValueError(f"source {source.name!r} requires {version}_path for {request.data_phase}")
             for version, field_name in path_fields:
                 configured_path = getattr(source, field_name)
                 if configured_path is None:

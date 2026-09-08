@@ -74,7 +74,10 @@ DATETIME_FEATURES = (
     "day_of_year",
     "year",
 )
-WEATHER_COLUMNS = ("rt_tt2", "cal_rh", "rt_ssr", "rt_ws10", "rt_dt")
+WEATHER_COLUMNS = ("rt_tt2", "cal_rh", "rt_ssr", "rt_ws10", "rt_ps", "rt_rain")
+WEATHER_INFERENCE_COLUMNS = dict(zip(
+    WEATHER_COLUMNS, ("pred_tt2", "pred_rh", "pred_ssrd", "pred_ws10", "pred_ps", "pred_rain"),
+))
 STATE_COLUMNS = (
     "state_roll_1h_mean",
     "state_roll_1h_std",
@@ -263,20 +266,16 @@ def _holiday_source() -> dict[str, Any]:
 
 
 def _weather_source(scenario: str) -> dict[str, Any]:
-    spec = SCENARIO_SPECS[scenario]
-    return _file_source(
+    source = _file_source(
         name="weather",
-        columns=[_column(column, "known_future") for column in WEATHER_COLUMNS],
-        history_path=f"dataset/{scenario}/{spec['weather_history']}",
-        backtest_path=(
-            f"dataset/{scenario}/"
-            "weather_15min_backtest_proxy_20260101_20260731.csv"
-        ),
-        future_path=f"dataset/{scenario}/{spec['weather_future']}",
+        columns=[_column(column, "known_future") for column in WEATHER_COLUMNS]
+        + [_column(column, "ignored") for column in WEATHER_INFERENCE_COLUMNS.values()],
+        history_path=f"dataset/{scenario}/weather_history_15min_20250101_20260831.csv",
         time_col="ts",
-        availability="column",
-        available_at_col="available_at",
+        availability="forecast_origin",
     )
+    source["inference_columns"] = dict(WEATHER_INFERENCE_COLUMNS)
+    return source
 
 
 def _strategy_spec(

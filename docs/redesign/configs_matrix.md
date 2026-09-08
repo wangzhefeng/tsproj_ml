@@ -18,7 +18,7 @@ baseline：
     - recursive
     - dirrec
     - dirmo
-    - recom
+    - recmo
     - dirrecmo
     - mimo
 add_exogenous：
@@ -43,7 +43,7 @@ add_exogenous：
     - recursive
     - dirrec
     - dirmo
-    - recom
+    - recmo
     - dirrecmo
     - mimo
 add_endogenous_cross_route：
@@ -66,7 +66,7 @@ add_endogenous_cross_route：
     - recursive
     - dirrec
     - dirmo
-    - recom
+    - recmo
     - dirrecmo
     - mimo
 add_endogenous_state：
@@ -89,7 +89,7 @@ add_endogenous_state：
     - recursive
     - dirrec
     - dirmo
-    - recom
+    - recmo
     - dirrecmo
     - mimo
 add_decomposition：
@@ -112,7 +112,7 @@ add_decomposition：
     - recursive
     - dirrec
     - dirmo
-    - recom
+    - recmo
     - dirrecmo
     - mimo
   - 分解：
@@ -139,7 +139,7 @@ add_endogenous_joint：
     - recursive
     - dirrec
     - dirmo
-    - recom
+    - recmo
     - dirrecmo
     - mimo
 add_ensemble：

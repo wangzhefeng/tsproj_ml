@@ -29,3 +29,5 @@
 活动配置通常写入 `results/{pretrained_models,results_test,results_forecast}/<scenario>/<identity>/`，未声明目录时才采用 runtime 回退布局。`prediction.csv` 与 `cv_plot_df.csv` 分别使用 `(series_id,time,target)` 和追加 `window` 的 long 唯一键；quantile 评估另写概率评分文件。
 
 测试临时产物不替代正式模型验收。
+
+当前活动配置的生命周期末次预测仍是历史留出评估，天气从 history 的预报列取值。真正未来部署上游构造设计时须显式 `forecast_designs(..., data_phase="future")`，且配置 future_path；默认不会自动借用 future 文件。部署层只消费传入设计，不负责判断文件阶段。

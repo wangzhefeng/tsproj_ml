@@ -111,7 +111,7 @@ class CompilerBatchDesignTest(unittest.TestCase):
             new_callable=PropertyMock,
             side_effect=AssertionError("label extraction used DataFrame.iloc"),
         ):
-            values, trajectories = builder._labels_from_information_set(
+            values, trajectories = builder.labels_from_information_set(
                 request,
                 information_set,
             )

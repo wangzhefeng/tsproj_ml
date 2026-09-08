@@ -34,10 +34,13 @@ data:
     - name: rt_ws10
       role: known_future
       categorical: false
-    - name: rt_dt
+    - name: rt_ps
       role: known_future
       categorical: false
-    - name: pred_dt
+    - name: rt_rain
+      role: known_future
+      categorical: false
+    - name: pred_tt2
       role: ignored
       categorical: false
     - name: pred_rh
@@ -46,14 +49,16 @@ data:
     - name: pred_ssrd
       role: ignored
       categorical: false
-    - name: pred_tt2
-      role: ignored
-      categorical: false
     - name: pred_ws10
       role: ignored
       categorical: false
-    history_path: dataset/aidc_load_15min_short/weather_history_15min_20250101_20260731.csv
-    future_path: dataset/aidc_load_15min_short/weather_future_15min_20260801_20260831.csv
+    - name: pred_ps
+      role: ignored
+      categorical: false
+    - name: pred_rain
+      role: ignored
+      categorical: false
+    history_path: dataset/aidc_load_15min_short/weather_history_15min_20250101_20260831.csv
     time_col: ts
     series_id_cols: []
     availability: forecast_origin
@@ -62,7 +67,8 @@ data:
       cal_rh: pred_rh
       rt_ssr: pred_ssrd
       rt_ws10: pred_ws10
-      rt_dt: pred_dt
+      rt_ps: pred_ps
+      rt_rain: pred_rain
 features:
   target_lags:
     value:

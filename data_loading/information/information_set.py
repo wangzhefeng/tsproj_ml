@@ -34,6 +34,8 @@ class InformationSetRequest:
     forecast_times: pd.DatetimeIndex
     series_ids: tuple[Any, ...]
     target_access: TargetAccess
+    history_start: pd.Timestamp | None
+    data_phase: str
 
     def __init__(
         self,
@@ -41,6 +43,8 @@ class InformationSetRequest:
         forecast_times: pd.DatetimeIndex,
         series_ids: Sequence[Any],
         target_access: TargetAccess = "history_only",
+        history_start: Any = None,
+        data_phase: str = "historical",
     ) -> None:
         try:
             normalized_origin = pd.Timestamp(forecast_origin)
@@ -64,11 +68,21 @@ class InformationSetRequest:
             raise ValueError("series_ids must not contain duplicates")
         if target_access not in _TARGET_ACCESS_VALUES:
             raise ValueError(f"unknown target_access: {target_access!r}")
+        if data_phase not in {"historical", "future"}:
+            raise ValueError(f"unknown data_phase: {data_phase!r}")
+        if data_phase == "future" and target_access == "supervised_labels":
+            raise ValueError("future data_phase forbids supervised_labels")
+
+        normalized_start = None if history_start is None else pd.Timestamp(history_start)
+        if normalized_start is not None and (pd.isna(normalized_start) or normalized_start > normalized_origin):
+            raise ValueError("history_start must be valid and not after forecast_origin")
 
         object.__setattr__(self, "forecast_origin", normalized_origin)
         object.__setattr__(self, "forecast_times", normalized_times)
         object.__setattr__(self, "series_ids", normalized_series_ids)
         object.__setattr__(self, "target_access", target_access)
+        object.__setattr__(self, "history_start", normalized_start)
+        object.__setattr__(self, "data_phase", data_phase)
 
     @property
     def N(self) -> int:

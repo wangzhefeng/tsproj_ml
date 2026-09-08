@@ -68,7 +68,7 @@ def audit_runtime_assets(
                         "config": relative_config,
                         "source": source_name,
                         "path_role": path_role,
-                        "required_columns": sorted(required_columns(source)),
+                        "required_columns": sorted(required_columns(source, path_role=path_role)),
                     }
                 )
 

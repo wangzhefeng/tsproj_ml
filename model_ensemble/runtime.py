@@ -226,6 +226,8 @@ def run_ensemble_config(
     for member in config.members:
         member_raw = resolved[member.name]
         member_config = parse_model_config(member_raw, source=member.config_ref)
+        if member_config.validation.get("train_history_steps") is not None:
+            raise EnsembleSpecError("Ensemble members do not support train_history_steps")
         member_configs[member.name] = member_config
         member_fingerprints[member.name] = member_config.fingerprint()
         registry = SourceRegistry(member_config.data, source_root)

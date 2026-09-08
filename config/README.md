@@ -1,4 +1,10 @@
-# Config
+# config
+
+## 严格原始历史窗口（显式启用）
+
+fixed-step 的 `validation.train_history_steps: W` 表示每折仅读取原点前（含原点）W 个原始目标点；先截断再计算 lag/rolling/expanding。`train_window_steps` 必须等于 `W - minimum_history_rows(config) - horizon + 1`，不足或矛盾直接报错，`history_steps` 仍限制调度候选监督原点总数。缺省不改变原路径或配置身份。
+
+当前支持 Local、point、无 target transform 的单模型 `--backtest-only`；calendar-month、Global、quantile、target transform、Ensemble（含引用该字段的成员）、完整生命周期和 bundle 导出明确拒绝。W 与原点共同确定逐折缓存/checkpoint 边界。离线已填充值按普通值使用，来源审计不自动触发评分排除。
 
 `config/` 承载全部活动模型 YAML（`schema_version: 2` canonical）与数据工具 YAML。三个 AIDC 15min 负荷场景的 baseline 成员（ST/LightGBM/Ridge × Direct/Recursive/MIMO）由 `add_ensemble/` 的 Latin-square 组合直接引用，不维护重复 member。列族错配的历史配置已经批准移出活动集，内容由 Git 保留，不计入活动集。
 
@@ -41,7 +47,7 @@ Fixed-step validation 使用 `history_steps/train_window_steps/fold_count/stride
 ## 数据角色与外生来源
 
 - `DataSourceSpec.columns` 是进入模型的信息投影视图：每个声明列必须显式归为 target/observed_past/known_future/static/key/ignored；非 ignored 声明列在物理资产中缺失直接 RAISE；未声明列在 registry 边界丢弃，不会隐式入模。所有动态 source 执行严格 as-of。
-- 历史有真值、预测期无值的列挂 `observed_past` 角色 + 显式 provider 三选一（`persistence`/`auxiliary`/`provided_scenario`），禁止隐式 persistence；未来可知的列（天气预报/计划表）挂 `known_future` 角色并用 `history_path + backtest_path + future_path` 三段路径。
+- 历史有真值、预测期无值的列挂 `observed_past` 角色 + 显式 provider 三选一（`persistence`/`auxiliary`/`provided_scenario`），禁止隐式 persistence；未来可知的列（天气预报/计划表）挂 `known_future`。普通文件源保留既有路径合同；含 `inference_columns` 的天气源按下述历史/未来阶段合同选择文件。
 - **lag 深度与 provider 分工**：`min(lags) >= horizon` 的 safe-lag 声明全程消费 `<= forecast_origin` 的真实历史值，provider 机制不介入；浅于 horizon 的 lag 在 source_time 越过原点时必须显式选择 provider，persistence 是零假设兜底。两种声明可同时存在，由模型自学取舍。
 - 多文件外生一律走 `data.sources` 多 source 声明，不使用任何语义 hack 借道。
 
@@ -50,12 +56,20 @@ Fixed-step validation 使用 `history_steps/train_window_steps/fold_count/stride
 - **freq 必须写 `1D` 而非 `D`**：`default_lags_for_freq` 只认 `1D`，写 `D` 会落回 5min 基准 lags（`[288,576,...]`），与低频数据错配。
 - 月频（`1ME`/`1MS`）已支持，频率解析位于 `utils/frequency.py`；月频 seasonal-naive 使用月步 offset，不得转换为固定 Timedelta。
 - **中国节假日 builtin generator**：`source_type: generated` + `generator: chinese_holiday` + `availability: generator_defined`，列 `is_holiday`（含调休连休）/`holiday_name`（categorical）/`next_holiday_days`（节前倒计时，日历日；超出已知年历取删失哨兵 400，属有文档截断非编造值）。库覆盖 2004 起，覆盖外日期直接 RAISE 不静默降级；每年底国务院发布次年安排后需 `uv add chinese-calendar --upgrade`。审计兜底导出：`scripts/export_chinese_holiday_csv.py`。日频/日内频率适用；月频网格不适用（known_future 逐点精确匹配 RAISE）。新场景启用属语义变更，按消融流程单独验证。
-- **气象严格信息集**（aidc_power_month）：历史训练天气为 actual；滑窗测试必须消费独立 ex-ante forecast/proxy 文件 source；正式 future 只允许 forecast|proxy；禁止把测试期实测天气当未来天气。语义由 `DataSpec` 列角色 + SourceRegistry as-of 校验承载。
-- **气象两段文件 + inference_columns**（2026-09-07 起，aidc_load_15min_*/aidc_ess_selfuse_load/aidc_power_month）：`history_path` 指向 `weather_history_<freq>_*.csv`（rt_ 实测，训练用）、`future_path` 指向 `weather_future_<freq>_*.csv`（真实预测用 pred_）；不设 backtest_path（fold 时段在 history 文件内）；`availability: forecast_origin`；`inference_columns` 显式声明「模型面 rt_ 列名 → 推理期 pred_ 物理列」映射（pred_ 列须声明为 ignored）。训练请求（supervised_labels）读 rt_ 实测，推理请求（history_only）读 pred_ 预报；推理请求点触及 pred 缺失直接 RAISE。数据文件不含 available_at；可得性在处理/特征工程阶段按项目窗口考虑。pred 覆盖之外的预测（如月频 2026-08）按缺失 RAISE，不缩窗。
+- **气象文件与列分流**：`history_path` 覆盖完整历史训练/测试区间，并保留实测和预报列。训练读 rt_/cal_rh，滑窗测试预测读同一 history 的 pred_；日历/datetime 按对应时刻生成。`future_path` 仅用于真正未来推理，对应实测列即使存在也忽略。文件选择由显式 `data_phase=historical|future` 决定，不能通过 `target_access` 或文件日期猜测；`inference_columns` 仍声明模型面列到预报物理列的映射，pred_ 声明为 ignored。无未来任务时允许只配置 history，当前活动场景均采用此方式（history 截至 2026-08-31）；不拼接 future，不用 future 补历史覆盖，不隐式回退实测。
+- **天气证据边界**：活动文件的 `availability: forecast_origin` 是现行可得性假设，不是供应商发布时间证据。既有离线补值及 ERA5 替代来源保留审计，不能仅凭 pred_ 前缀宣称完全真实 ex-ante 回放；预报缺失/非有限仍 RAISE，不缩窗。
 - **Direct 目标日外生对齐**：known_future 外生按 `col(t+h)` 对目标时刻取值；历史锚点由 `features.transformations.direct.align_to_target` 控制（天气组配置为 `false` 即 lag/rolling/diff 冻结在预测原点）。需要逐步消费自身预测时使用 recursive 类策略。
 - 低频下 `datetime_features` 去掉 `minute`/`hour`，`datetime_categorical_features` 同步去对应 `dt_*` 项。
 
 ## 天气生成合同（分批迁移中）
+
+### 活动天气特征选择
+
+三个 `aidc_load_15min_{daily,rolling,short}`、`aidc_ess_selfuse_load` 与 `aidc_electricity_computility/electricity/2026-08-31/liantong_IT` 的天气组统一使用六项：`rt_tt2`（温度）、`cal_rh`（相对湿度）、`rt_ssr`（辐射）、`rt_ws10`（风速）、`rt_ps`（气压）、`rt_rain`（降雨）。对应预报为 `pred_tt2/pred_rh/pred_ssrd/pred_ws10/pred_ps/pred_rain`；露点只作为湿度派生原料，不再独立入模。无天气基线不添加天气，其他 `aidc_electricity_computility` 场景及 `aidc_power_month` 不在此次特征调整范围。
+
+共享 `extracted/actual` 中上述特征所需原料及预报列的缺口先离线填补，原非缺失值保持不变；ERA5 气压采用 `surface_pressure`（hPa→Pa），不是海平面气压。逐格来源见源 CSV 旁的 `.six_features_repair.json`；再分析替代不等于站点实测，既有预报缺口修补也不构成真实发布时间证据。本次气压已补齐，未启用用户授权的“无法补齐则跳过气压”例外；该例外不得实现为运行时静默降级。未入模的其他原始列不承诺完整。
+
+### Generated weather 配方
 
 `generator: weather` 的目标合同是 `source_type: generated`、
 `availability: generator_defined`，使用强类型 `generator_options`；禁止三段文件路径。
@@ -76,6 +90,7 @@ Fixed-step validation 使用 `history_steps/train_window_steps/fold_count/stride
 缺少证据、资产或覆盖保持 blocked，不缩短 horizon、不删除特征。已有天气文件尚未迁移，不作为新链路黄金参照。
 
 ## 场景数据备注
+
 
 - 算力房间数据文件、预处理权威入口与特征分层见 `config/aidc_electricity_computility/electricity/2026-06-11/scripts/README.md`。算力天气 `cal_rh` 在离线数据准备阶段由 `rt_tt2`/`rt_dt` 按 Magnus–Tetens 公式派生，权威迁移入口为 `config/aidc_electricity_computility/derive_cal_rh.py`；canonical runtime 不做现场派生或插值。
 - 2026-08-31 算力场景（A2_IT / A3_IT / liantong_IT / yancheng_IT）YAML 的 `data_dir` 指向 2026-06-11 数据（复用上批数据做配置模板），对应 `dataset/` 下房间目录为空。

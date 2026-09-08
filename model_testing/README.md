@@ -14,6 +14,10 @@
 
 两类回测循环均在本包，逐折体经 `scoring.score_holdout_fold` 共用同一实现。runner 与自然月 factory 通过显式 Protocol 注入，本包不导入上层 runner 实现，也不拥有 final fit、最终 bundle 或预测产物。
 
+fixed-step 显式原始历史窗口通过 runner 的 `for_backtest_window()` 取得独立有界上下文；串行、并行拟合均由同一折上下文评分，不共用可变历史起点。窗口 metadata 记录 raw_history_start/end、train_history_steps 与预热后的 training_sample_count。actual 正常评分，不按离线填充来源新增掩码。
+
 本包依赖 `forecasting_core`、`data_loading`、`model_evaluation`、`probabilistic`（CQR tracker 类型）及 `utils` 日志；不 import model_pipeline/model_forecasting/model_ensemble。指标计算属于 `model_evaluation/`。
 
 `model_testing` 不是 `tests/` 测试套件；不恢复旧 `ModelTesting` 类。
+
+天气滑窗训练/测试统一使用完整 history 文件：拟合用实测列，测试预测用对应预报列；future 只用于真正未来推理，不参与回测。目标实际值仍用于训练标签和测试评分，递归测试特征使用自身目标预测。节假日/datetime 按请求时刻提供已知特征，无天气式双列映射。

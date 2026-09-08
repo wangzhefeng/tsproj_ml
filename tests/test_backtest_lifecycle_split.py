@@ -33,7 +33,7 @@ class BacktestLifecycleSplitTest(unittest.TestCase):
     def test_running_completed_and_failed_order_with_base_exception(self):
         with tempfile.TemporaryDirectory() as directory:
             model_dir = Path(directory)
-            config = SimpleNamespace(fingerprint=lambda: "fixture")
+            config = SimpleNamespace(fingerprint=lambda: "fixture", validation={})
             runner = SimpleNamespace(config=config)
             state_path = model_dir / "run_state.json"
 

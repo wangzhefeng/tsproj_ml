@@ -1,0 +1,99 @@
+schema_version: 2
+problem:
+  time_col: time
+  freq: 5min
+  horizon: 288
+  targets: [value]
+  training_scope: local
+  series_id_cols: []
+data:
+  sources:
+  - name: target_history
+    source_type: file
+    columns:
+    - {name: value, role: target, categorical: false}
+    # 真实日期；8.19 按此前18天同槽均值补全后正常使用。
+    history_path: dataset/aidc_electricity_computility/electricity/2026-08-31/liantong_IT/target_power_5min_20260801_20260831.csv
+    time_col: time
+    series_id_cols: []
+    availability: source_time
+  - name: chinese_holiday
+    source_type: generated
+    generator: chinese_holiday
+    columns:
+    - {name: is_holiday, role: known_future, categorical: false}
+    - {name: next_holiday_days, role: known_future, categorical: false}
+    time_col: time
+    series_id_cols: []
+    availability: generator_defined
+  - name: weather
+    source_type: file
+    columns:
+    - {name: rt_ssr, role: known_future, categorical: false}
+    - {name: rt_tt2, role: known_future, categorical: false}
+    - {name: cal_rh, role: known_future, categorical: false}
+    - {name: rt_ws10, role: known_future, categorical: false}
+    - {name: rt_ps, role: known_future, categorical: false}
+    - {name: rt_rain, role: known_future, categorical: false}
+    - {name: pred_ssrd, role: ignored, categorical: false}
+    - {name: pred_tt2, role: ignored, categorical: false}
+    - {name: pred_rh, role: ignored, categorical: false}
+    - {name: pred_ws10, role: ignored, categorical: false}
+    - {name: pred_ps, role: ignored, categorical: false}
+    - {name: pred_rain, role: ignored, categorical: false}
+    # 六项天气：history 训练读实测，测试预测读对应预报
+    history_path: dataset/aidc_electricity_computility/electricity/2026-08-31/liantong_IT/weather_history_5min_20260801_20260831.csv
+    time_col: ts
+    series_id_cols: []
+    availability: forecast_origin
+    inference_columns:
+      rt_ssr: pred_ssrd
+      rt_tt2: pred_tt2
+      cal_rh: pred_rh
+      rt_ws10: pred_ws10
+      rt_ps: pred_ps
+      rt_rain: pred_rain
+features:
+  target_lags:
+    value: [288, 576, 864, 1152, 1440, 1728, 2016]
+  observed_past_lags: {}
+  datetime_features: [minute, hour, day, day_of_week, week_of_year, month, days_in_month, quarter, day_of_year, year]
+  transformations:
+    direct:
+      layout: independent_models
+      align_to_target: false
+    advanced:
+      rolling:
+        columns: [value]
+        windows: [288, 576, 1152, 2016]
+        stats: [mean, std, min, max]
+      expanding:
+        columns: [value]
+        stats: [mean, std]
+strategy:
+  name: dirmo
+  output_chunk_length: 24
+estimator:
+  model_type: lightgbm
+  target_adapter: independent
+  params: {}
+probabilistic:
+  mode: point
+validation:
+  # 仅回测锚点；必须配合 --backtest-only。
+  forecast_origin: '2026-08-31T23:55:00'
+  schedule_mode: daily
+  horizon_mode: fixed_steps
+  # 全月候选监督原点；各折先截取原始14天，再扣除特征预热和标签跨度。
+  history_steps: 6624
+  train_history_steps: 4032
+  train_window_steps: 1728
+  fold_count: 17
+  stride_steps: 288
+output:
+  scenario_subpath: aidc_electricity_computility/electricity/2026-08-31/liantong_IT
+  results_root: results
+  directories:
+    checkpoints: ./results/pretrained_models/
+    tests: ./results/results_test/
+    forecast: ./results/results_forecast/

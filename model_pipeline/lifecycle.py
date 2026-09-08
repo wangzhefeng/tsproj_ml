@@ -30,6 +30,14 @@ class CanonicalRuntimeResult:
     bundle: ForecastModelBundle
 
 
+@dataclass(frozen=True, slots=True)
+class BacktestRuntimeResult:
+    """仅回测产物；不包含可部署模型或最终预测。"""
+
+    test_dir: Path
+    fingerprint: str
+
+
 def _write_json(path: Path, payload: Mapping[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
@@ -284,21 +292,32 @@ def _output_paths(
     )
 
 
-def run_lifecycle(runner: Any, output_root: str | Path | None = None) -> CanonicalRuntimeResult:
+def run_lifecycle(
+    runner: Any, output_root: str | Path | None = None, *, backtest_only: bool = False,
+) -> CanonicalRuntimeResult | BacktestRuntimeResult:
     fingerprint = runner.config.fingerprint()
-    _, model_dir, _, _ = _output_paths(runner.config, fingerprint, output_root)
-    write_run_state(model_dir, fingerprint, "running")
+    if not backtest_only and runner.config.validation.get("train_history_steps") is not None:
+        raise ValueError("train_history_steps currently requires backtest-only")
+    _, model_dir, test_dir, _ = _output_paths(runner.config, fingerprint, output_root)
+    # 回测状态与完整模型状态隔离，不能用回测 completed 宣称 bundle 可部署。
+    state_dir = test_dir / "backtest_only" if backtest_only else model_dir
+    write_run_state(state_dir, fingerprint, "running")
     try:
-        result = execute_lifecycle(runner, output_root)
-        write_run_state(model_dir, fingerprint, "completed")
+        result = (
+            execute_lifecycle(runner, output_root, backtest_only=True)
+            if backtest_only else execute_lifecycle(runner, output_root)
+        )
+        write_run_state(state_dir, fingerprint, "completed")
         return result
     except BaseException:
-        write_run_state(model_dir, fingerprint, "failed")
+        write_run_state(state_dir, fingerprint, "failed")
         raise
 
 
-def execute_lifecycle(runner: Any, output_root: str | Path | None = None) -> CanonicalRuntimeResult:
-    """Full single-model lifecycle: rolling backtest, final fit, persist."""
+def execute_lifecycle(
+    runner: Any, output_root: str | Path | None = None, *, backtest_only: bool = False,
+) -> CanonicalRuntimeResult | BacktestRuntimeResult:
+    """复用回测阶段；仅回测模式在 final fit 之前退出。"""
     builder = runner.builder
     config = runner.config
     origin = runner.origin
@@ -311,6 +330,8 @@ def execute_lifecycle(runner: Any, output_root: str | Path | None = None) -> Can
         fingerprint,
         output_root,
     )
+    if backtest_only:
+        test_dir = test_dir / "backtest_only"
     holdout_metadata, calibration_tracker, holdout_audit = run_fixed_step_backtest(
         runner, test_dir, mode=mode,
     )
@@ -321,6 +342,16 @@ def execute_lifecycle(runner: Any, output_root: str | Path | None = None) -> Can
         )
 
     runner.stage_wall_seconds["backtest"] = perf_counter() - backtest_started
+    if backtest_only:
+        if holdout_metadata is None:
+            raise ValueError("backtest-only requires configured backtest geometry")
+        _write_json(test_dir / "backtest_metadata.json", {
+            "execution_mode": "backtest_only",
+            "config_fingerprint": fingerprint,
+            "holdout": holdout_metadata,
+            "backtest_wall_seconds": runner.stage_wall_seconds["backtest"],
+        })
+        return BacktestRuntimeResult(test_dir=test_dir, fingerprint=fingerprint)
     final_fit_started = perf_counter()
     (
         final_feature_scaler,

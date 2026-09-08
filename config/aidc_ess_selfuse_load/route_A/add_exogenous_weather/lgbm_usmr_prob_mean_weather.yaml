@@ -22,17 +22,26 @@ data:
   - name: weather
     source_type: file
     columns:
-    - name: rt_ssr
-      role: known_future
-      categorical: false
     - name: rt_tt2
       role: known_future
       categorical: false
     - name: cal_rh
       role: known_future
       categorical: false
+    - name: rt_ssr
+      role: known_future
+      categorical: false
     - name: rt_ws10
       role: known_future
+      categorical: false
+    - name: rt_ps
+      role: known_future
+      categorical: false
+    - name: rt_rain
+      role: known_future
+      categorical: false
+    - name: pred_tt2
+      role: ignored
       categorical: false
     - name: pred_rh
       role: ignored
@@ -40,22 +49,26 @@ data:
     - name: pred_ssrd
       role: ignored
       categorical: false
-    - name: pred_tt2
-      role: ignored
-      categorical: false
     - name: pred_ws10
       role: ignored
       categorical: false
-    history_path: dataset/aidc_ess_selfuse_load/exogenous_weather_raw/weather_history_5min_20250101_20260728.csv
-    future_path: dataset/aidc_ess_selfuse_load/exogenous_weather_raw/weather_future_5min_20260729_20260831.csv
+    - name: pred_ps
+      role: ignored
+      categorical: false
+    - name: pred_rain
+      role: ignored
+      categorical: false
+    history_path: dataset/aidc_ess_selfuse_load/exogenous_weather_raw/weather_history_5min_20250101_20260831.csv
     time_col: ts
     series_id_cols: []
     availability: forecast_origin
     inference_columns:
-      rt_ssr: pred_ssrd
       rt_tt2: pred_tt2
       cal_rh: pred_rh
+      rt_ssr: pred_ssrd
       rt_ws10: pred_ws10
+      rt_ps: pred_ps
+      rt_rain: pred_rain
 features:
   target_lags:
     value:

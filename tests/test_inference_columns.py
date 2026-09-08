@@ -6,6 +6,7 @@ from pathlib import Path
 import pandas as pd
 
 from data_loading import InformationSetRequest, SourceRegistry
+from data_loading.sources.assets import required_columns
 from forecasting_core.specs.config import parse_data_spec, parse_model_config
 
 
@@ -43,6 +44,11 @@ def _write_files(root):
 
 
 class InferenceColumnsSpecTest(unittest.TestCase):
+    def test_asset_header_contract_distinguishes_history_and_future(self):
+        source = parse_data_spec(_payload(), 'fixture').sources[1]
+        self.assertEqual(required_columns(source, path_role='history_path'), {'ts', 'rt_tt2', 'pred_tt2'})
+        self.assertEqual(required_columns(source, path_role='future_path'), {'ts', 'pred_tt2'})
+
     def test_parse_roundtrip_and_fingerprint_semantics(self):
         from forecasting_core.specs.config import ForecastConfigSpec  # noqa: F401
         data = parse_data_spec(_payload()['sources'] and {'sources': _payload()['sources']}, 'fixture')
@@ -76,6 +82,43 @@ class InferenceColumnsSpecTest(unittest.TestCase):
 
 
 class InferenceColumnsRegistryTest(unittest.TestCase):
+    def test_future_uses_only_forecasts_and_ignores_actual_columns(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            _write_files(root)
+            data = parse_data_spec(_payload(source_overrides={'history_path': 'absent.csv'}), 'fixture')
+            times = pd.DatetimeIndex(['2026-02-01T00:00Z'])
+            request = InformationSetRequest(times[0] - pd.Timedelta(hours=1), times, (), data_phase='future')
+            for actual in [None, 'not-a-number', float('inf')]:
+                pd.DataFrame({'ts': times, 'rt_tt2': [actual], 'pred_tt2': [277.]}).to_csv(root / 'weather_future.csv', index=False)
+                info = SourceRegistry(data, root).materialize(request)
+                self.assertEqual(info.known_future['weather']['rt_tt2'].tolist(), [277.])
+                self.assertEqual([row.path_version for row in info.lineage if row.source_name == 'weather'], ['future'])
+            pd.DataFrame({'ts': times, 'pred_tt2': [278.]}).to_csv(root / 'weather_future.csv', index=False)
+            self.assertEqual(SourceRegistry(data, root).materialize(request).known_future['weather']['rt_tt2'].tolist(), [278.])
+            pd.DataFrame({'ts': times, 'rt_tt2': [283.]}).to_csv(root / 'weather_future.csv', index=False)
+            with self.assertRaisesRegex(ValueError, 'inference'):
+                SourceRegistry(data, root).materialize(request)
+
+    def test_request_rejects_invalid_phase_and_future_training(self):
+        times = pd.date_range('2026-01-01', periods=2, freq='h')
+        with self.assertRaisesRegex(ValueError, 'data_phase'):
+            InformationSetRequest(times[0], times[1:], (), data_phase='auto')
+        with self.assertRaisesRegex(ValueError, 'future'):
+            InformationSetRequest(times[0], times[1:], (), data_phase='future', target_access='supervised_labels')
+
+    def test_historical_requests_never_open_future(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            _write_files(root)
+            data = parse_data_spec(_payload(source_overrides={'future_path': 'absent.csv'}), 'fixture')
+            registry = SourceRegistry(data, root)
+            times = pd.DatetimeIndex(['2026-01-01T01:00Z', '2026-01-01T02:00Z'])
+            for access, expected in [('supervised_labels', [280., 281.]), ('history_only', [275., 276.5])]:
+                info = registry.materialize(InformationSetRequest(times[0] - pd.Timedelta(hours=1), times, (), target_access=access))
+                self.assertEqual(info.known_future['weather']['rt_tt2'].tolist(), expected)
+                self.assertEqual([row.path_version for row in info.lineage if row.source_name == 'weather'], ['history'])
+
     def test_training_reads_actual_inference_reads_forecast(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

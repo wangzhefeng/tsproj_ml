@@ -19,6 +19,7 @@ from data_loading import (
 )
 from feature_engineering import CompiledFeatures, FeatureCompiler
 from forecasting_core.specs import (
+    AvailabilityPolicy,
     CalendarMonthBacktestSpec,
     ColumnRole,
     FixedStepBacktestSpec,
@@ -153,9 +154,14 @@ def _split_batch_designs(
 
 
 class SupervisedDesignBuilder:
-    def __init__(self, config: ForecastConfigSpec, registry: SourceRegistry) -> None:
+    def __init__(self, config: ForecastConfigSpec, registry: SourceRegistry, *, history_start: pd.Timestamp | None = None) -> None:
         self.config = config
         self.registry = registry
+        self._history_start = history_start
+        self.target_source_names = tuple(
+            source.name for source in config.data.sources
+            if any(column.role is ColumnRole.TARGET for column in source.columns)
+        )
         self.compiler = FeatureCompiler(config)
         self.offset = pd.tseries.frequencies.to_offset(config.problem.freq)
         self.plan = target_plan_for_config(config)
@@ -321,11 +327,16 @@ class SupervisedDesignBuilder:
             raise ValueError("global training has no complete series")
         return tuple(complete)
 
+    @property
+    def history_start(self) -> pd.Timestamp | None:
+        return self._history_start
+
     def request(
         self,
         origin: pd.Timestamp,
         *,
         target_access: TargetAccess = "history_only",
+        data_phase: str = "historical",
     ) -> InformationSetRequest:
         return InformationSetRequest(
             forecast_origin=origin,
@@ -336,6 +347,8 @@ class SupervisedDesignBuilder:
             )[1:],
             series_ids=self.series_ids if self.is_global else (),
             target_access=target_access,
+            history_start=self.history_start,
+            data_phase=data_phase,
         )
 
     def reset_audit(self) -> None:
@@ -346,7 +359,9 @@ class SupervisedDesignBuilder:
         return tuple(self._audit)
 
     def target_history_times(self, origin: pd.Timestamp) -> pd.DatetimeIndex:
-        information_set = self.registry.materialize(self.request(origin))
+        information_set = self.registry.materialize(
+            self.request(origin), source_names=self.target_source_names,
+        )
         indices = []
         for source in self.config.data.sources:
             if not any(column.role is ColumnRole.TARGET for column in source.columns):
@@ -363,7 +378,9 @@ class SupervisedDesignBuilder:
         return reference
 
     def target_history(self, origin: pd.Timestamp) -> PointForecastTensor:
-        information_set = self.registry.materialize(self.request(origin))
+        information_set = self.registry.materialize(
+            self.request(origin), source_names=self.target_source_names,
+        )
         target_frames: dict[tuple[Any, str], pd.Series] = {}
         reference: pd.DatetimeIndex | None = None
         for target in self.config.problem.targets:
@@ -420,9 +437,9 @@ class SupervisedDesignBuilder:
     ) -> tuple[np.ndarray, dict[Any, dict[str, tuple[float, ...]]]]:
         request = self.request(origin, target_access="supervised_labels")
         information_set = self.registry.materialize(request)
-        return self._labels_from_information_set(request, information_set)
+        return self.labels_from_information_set(request, information_set)
 
-    def _labels_from_information_set(
+    def labels_from_information_set(
         self,
         request: InformationSetRequest,
         information_set: MaterializedInformationSet,
@@ -554,7 +571,7 @@ class SupervisedDesignBuilder:
             "materialize", perf_counter() - stage_started
         )
         stage_started = perf_counter()
-        target_values, trajectories = self._labels_from_information_set(
+        target_values, trajectories = self.labels_from_information_set(
             training_request,
             information_set,
         )
@@ -614,28 +631,39 @@ class SupervisedDesignBuilder:
             self.request(origin, target_access="supervised_labels")
             for origin in normalized_origins
         )
-        union_forecast_times = pd.DatetimeIndex(
-            np.unique(
-                np.concatenate(
-                    [request.forecast_times.asi8 for request in training_requests]
+        stage_started = perf_counter()
+        origin_sensitive_sources = any(
+            source.availability in {AvailabilityPolicy.COLUMN, AvailabilityPolicy.GENERATOR_DEFINED}
+            for source in self.config.data.sources
+        )
+        if origin_sensitive_sources:
+            # 生成器证据和 vintage 选择绑定各自原点，不能借用批次末尾的可得性。
+            information_sets = tuple(
+                self.registry.materialize(request) for request in training_requests
+            )
+        else:
+            union_forecast_times = pd.DatetimeIndex(
+                np.unique(
+                    np.concatenate(
+                        [request.forecast_times.asi8 for request in training_requests]
+                    )
                 )
             )
-        )
-        materialization_request = InformationSetRequest(
-            forecast_origin=max(normalized_origins),
-            forecast_times=union_forecast_times,
-            series_ids=self.series_ids if self.is_global else (),
-            target_access="supervised_labels",
-        )
-        stage_started = perf_counter()
-        shared_information_set = self.registry.materialize(materialization_request)
+            materialization_request = InformationSetRequest(
+                forecast_origin=max(normalized_origins),
+                forecast_times=union_forecast_times,
+                series_ids=self.series_ids if self.is_global else (),
+                target_access="supervised_labels",
+                history_start=self.history_start,
+            )
+            shared_information_set = self.registry.materialize(materialization_request)
+            information_sets = (shared_information_set,) * len(training_requests)
         self._add_training_compile_wall(
             "materialize", perf_counter() - stage_started
         )
-        information_sets = (shared_information_set,) * len(training_requests)
         stage_started = perf_counter()
         target_values = tuple(
-            self._labels_from_information_set(request, information_set)[0]
+            self.labels_from_information_set(request, information_set)[0]
             for request, information_set in zip(
                 training_requests,
                 information_sets,
@@ -684,8 +712,9 @@ class SupervisedDesignBuilder:
         origin: pd.Timestamp,
         *,
         target_transform: CanonicalTargetTransform | None = None,
+        data_phase: str = "historical",
     ):
-        information_set = self.registry.materialize(self.request(origin))
+        information_set = self.registry.materialize(self.request(origin, data_phase=data_phase))
         base_design = self._compile_call(
             origin,
             0,
@@ -818,6 +847,16 @@ def _supervised_arrays(
     )
     backtest = builder.config.validation.backtest
     if isinstance(backtest, FixedStepBacktestSpec):
+        if backtest.train_history_steps is not None:
+            expected = pd.date_range(end=origin, periods=backtest.train_history_steps, freq=builder.config.problem.freq)
+            if not timestamps.equals(expected):
+                raise ValueError("train_history_steps requires a complete regular history grid")
+            expected_samples = backtest.train_history_steps - minimum_history - builder.config.problem.horizon + 1
+            if expected_samples < 2 or backtest.train_window_steps != expected_samples:
+                raise ValueError(
+                    "train_window_steps must equal train_history_steps - minimum_history_rows - horizon + 1 "
+                    f"and provide at least two samples (expected {expected_samples})"
+                )
         candidate_origins = available_origins[-backtest.history_steps:]
     elif isinstance(backtest, CalendarMonthBacktestSpec):
         candidate_origins = available_origins
@@ -907,6 +946,44 @@ class _BacktestWindow:
     origin: pd.Timestamp
     train_indices: tuple[int, ...]
     metadata: dict[str, Any]
+
+
+def raw_history_backtest_windows(
+    builder: SupervisedDesignBuilder,
+    origin: pd.Timestamp,
+) -> tuple[_BacktestWindow, ...]:
+    """只按时间覆盖调度；返回各折有界 runner 内的局部训练索引。"""
+    spec = builder.config.validation.backtest
+    if not isinstance(spec, FixedStepBacktestSpec) or spec.train_history_steps is None:
+        raise ValueError("raw history windows require train_history_steps")
+    coverage = builder.registry.target_history_coverage()
+    times = coverage[0].times
+    if any(not item.times.equals(times) for item in coverage[1:]):
+        raise ValueError("target sources must share the same history grid")
+    times = times[times <= origin]
+    if times.empty or times[-1] != origin or not times.equals(pd.date_range(times[0], origin, freq=builder.config.problem.freq)):
+        raise ValueError("raw history backtest requires a complete regular history grid")
+    minimum = minimum_history_rows(builder.config)
+    available = tuple(times[minimum - 1:len(times) - builder.config.problem.horizon])[-spec.history_steps:]
+    windows = _rolling_backtest_windows(
+        builder, available,
+        schedule_origin=origin if builder.config.validation.get("schedule_mode") == "intraday" else None,
+    )
+    if len(windows) != spec.fold_count:
+        raise ValueError("train_history_steps cannot provide requested fold_count")
+    result = []
+    for window in windows:
+        start = window.origin - (spec.train_history_steps - 1) * builder.offset
+        if start < times[0] or len(window.train_indices) != spec.train_window_steps:
+            raise ValueError("train_history_steps cannot provide the complete requested fold history")
+        result.append(_BacktestWindow(
+            window=window.window, origin_index=window.origin_index, origin=window.origin,
+            train_indices=tuple(range(spec.train_window_steps)),
+            metadata={**window.metadata, "raw_history_start": start.isoformat(),
+                      "raw_history_end": window.origin.isoformat(),
+                      "train_history_steps": spec.train_history_steps},
+        ))
+    return tuple(result)
 
 
 def _rolling_backtest_windows(

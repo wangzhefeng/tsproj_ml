@@ -95,7 +95,7 @@ _CANONICAL_NESTED_FIELDS = {
         "align_to_target",
         "horizon_feature",
     },
-    "features.transformations.direct.horizon_feature": {"name", "cyclical"},
+    "features.transformations.direct.horizon_feature": {"enabled", "name", "cyclical"},
     "features.transformations.feature_scaling": {
         "method",
         "grouped",
@@ -125,6 +125,7 @@ _CANONICAL_NESTED_FIELDS = {
         "horizon_mode",
         "history_steps",
         "train_window_steps",
+        "train_history_steps",
         "fold_count",
         "stride_steps",
         "train_window_days",

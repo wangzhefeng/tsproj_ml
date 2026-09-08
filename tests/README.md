@@ -4,6 +4,11 @@
 
 ## 执行集合
 
+天气阶段隔离定向测试：`test_inference_columns` 验证历史训练实测/测试预报、future 不参与历史请求及未来实测列忽略；`test_weather_phase_runtime` 用真实编译、Ridge 生命周期验证文件隔离和缓存不依赖 future；`test_weather_history_coverage` 与联通准备测试验证完整 history 覆盖。均默认纳入 integration，不自动运行正式业务模型。
+
+
+严格原始历史窗口的定向验证：`test_raw_history_window` 覆盖请求下界、single/batch、expanding、窗口扰动、serial/parallel、cache/checkpoint 及入口拒绝；`test_liantong_august_prepare` 核对 18 天同槽均值、日期和非缺失原值；`test_liantong_august_configs` 覆盖九份配置、17 折几何及合成 LightGBM 扰动回测。均由默认 integration 发现，不加入 skip 或 fast 白名单。
+
 保留平铺目录及原生 unittest discovery，不移动现有测试或修改 CI。分组在 `run_suite.py` 单点维护，三个集合互斥，其并集等于原生发现全集：
 
 | 集合 | 用途 | 何时执行 |
@@ -91,6 +96,10 @@ env -u PYTHONPATH .venv/bin/python tests/run_suite.py integration --match test_m
 - 删除测试前必须证明生产链已删除，或将具体断言映射到保留测试；高层冒烟不能替代低层负向合同。
 
 最新精确测试数以本次全量命令输出为准，不在多份文档重复维护。
+
+## 联通 8 月离线准备
+
+`test_liantong_august_prepare` 默认纳入 integration。覆盖原始日期与非缺失目标逐点保留、过去 18 天同槽均值与未来扰动隔离、异常输入拒绝、天气小时值按真实日期保持、子进程 CLI、源/产物 SHA 及重复执行一致性。仅使用明确临时 fixture，不训练业务模型。`test_liantong_august_configs` 已接入严格原始历史窗口及隔离的两段天气 fixture，单独验证九策略合成 LightGBM 回测与 17 折几何；数据准备测试不能替代这部分验收。
 
 ## 天气生成器（实施中）
 

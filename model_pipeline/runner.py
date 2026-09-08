@@ -48,11 +48,12 @@ from forecasting_core.runtime_resources import (
     RuntimeResourceBudget,
 )
 from model_forecasting.evidence import collect_model_evidence, dependency_versions, json_evidence
-from model_pipeline.lifecycle import CanonicalRuntimeResult, run_lifecycle
+from model_pipeline.lifecycle import BacktestRuntimeResult, CanonicalRuntimeResult, run_lifecycle
 from model_testing.contracts import BacktestWindow
 from model_pipeline.supervised_design import (
     _BacktestWindow,
     SupervisedDesignBuilder,
+    raw_history_backtest_windows,
     _actual_at_origin,
     _label_end,
     _rolling_backtest_windows,
@@ -122,7 +123,13 @@ class CanonicalBaseModelRunner:
         self.calendar_runner_factory: Any = CanonicalBaseModelRunner
         self.registry = registry
         self.origin = origin
-        self.builder = SupervisedDesignBuilder(config, registry)
+        history_steps = config.validation.get("train_history_steps")
+        history_start = (
+            origin - (history_steps - 1) * pd.tseries.frequencies.to_offset(config.problem.freq)
+            if history_steps is not None else None
+        )
+        self.builder = SupervisedDesignBuilder(config, registry, history_start=history_start)
+        self.compiled_cache_root = compiled_cache_root
         self.checkpoint_root = checkpoint_root
         self.checkpoint: FileFitCheckpoint | None = None
         if checkpoint_root is not None:
@@ -363,12 +370,28 @@ class CanonicalBaseModelRunner:
         )
 
     def backtest_windows(self) -> tuple[_BacktestWindow, ...]:
+        if self.config.validation.get("train_history_steps") is not None:
+            return raw_history_backtest_windows(self.builder, self.origin)
         if isinstance(self.config.validation.backtest, CalendarMonthBacktestSpec):
             return ()
         return _rolling_backtest_windows(
             self.builder, self.supervised_origins,
             schedule_origin=(self.origin if self.config.validation.get("schedule_mode") == "intraday" else None),
         )
+
+    def for_backtest_window(self, window: BacktestWindow) -> CanonicalBaseModelRunner:
+        """每折独立设计与审计状态；原点和 W 同时进入缓存/checkpoint 身份。"""
+        if self.config.validation.get("train_history_steps") is None:
+            return self
+        runner = CanonicalBaseModelRunner(
+            self.config, self.registry, window.origin,
+            compiled_cache_root=self.compiled_cache_root,
+            resource_budget=self.resource_budget,
+            checkpoint_root=self.checkpoint_root,
+        )
+        # 窗口外层负责并行预算，不在各折重新扩大资源份额。
+        runner.execution_plan = self.execution_plan
+        return runner
 
     def _fit_or_reuse_runtime_transforms(
         self,
@@ -512,12 +535,15 @@ class CanonicalBaseModelRunner:
         origin: pd.Timestamp,
         feature_scaler: CanonicalFeatureScaler,
         target_transform: CanonicalTargetTransform,
+        *,
+        data_phase: str = "historical",
     ) -> tuple[tuple[np.ndarray, ...], Any]:
         return _forecast_designs_with_scaler(
             self.builder,
             origin,
             feature_scaler,
             target_transform,
+            data_phase=data_phase,
         )
 
     def predict(
@@ -567,6 +593,11 @@ class CanonicalBaseModelRunner:
         origin_index: int,
         forecast_times: pd.DatetimeIndex,
     ) -> PointForecastTensor:
+        if self.config.validation.get("train_history_steps") is not None:
+            request = self.builder.request(forecast_times[0] - self.builder.offset, target_access="supervised_labels")
+            information = self.registry.materialize(request, source_names=self.builder.target_source_names)
+            values, _ = self.builder.labels_from_information_set(request, information)
+            return PointForecastTensor(values, self.series_ids, forecast_times, self.config.problem.targets)
         return _actual_at_origin(
             self.config,
             self.Y_all,
@@ -607,6 +638,8 @@ class CanonicalBaseModelRunner:
         np.ndarray,
     ]:
         """Fit final transforms under the same explicit window as backtesting."""
+        if self.config.validation.get("train_history_steps") is not None:
+            raise ValueError("train_history_steps currently requires backtest-only; final fit/bundle unsupported")
         backtest = self.config.validation.backtest
         if isinstance(backtest, FixedStepBacktestSpec):
             first_origin_index = max(
@@ -676,6 +709,8 @@ class CanonicalBaseModelRunner:
         Y_transformed: np.ndarray,
     ) -> tuple[Any, Any, Any]:
         """Train the final artifact and return (trainer, artifact, capabilities)."""
+        if self.config.validation.get("train_history_steps") is not None:
+            raise ValueError("train_history_steps currently requires backtest-only; final fit unsupported")
         mode = self._mode()
         X_transformed, feature_schema = self._apply_feature_selection(
             X_transformed, Y_transformed
@@ -723,6 +758,8 @@ class CanonicalBaseModelRunner:
         行为与迁移前逐字一致。
         """
         extras = dict(extras or {})
+        if self.config.validation.get("train_history_steps") is not None:
+            raise ValueError("train_history_steps currently requires backtest-only; bundle unsupported")
         mode = self._mode()
         if mode == "point":
             bundle_builder = trainer
@@ -807,9 +844,13 @@ class CanonicalBaseModelRunner:
     def run(
         self,
         output_root: str | Path | None = None,
-    ) -> CanonicalRuntimeResult:
+        *,
+        backtest_only: bool = False,
+    ) -> CanonicalRuntimeResult | BacktestRuntimeResult:
         """Execute with process-level BLAS/OpenMP limits set before any pool."""
         with threadpool_limits(limits=self.execution_plan.model_threads):
+            if backtest_only:
+                return run_lifecycle(self, output_root, backtest_only=True)
             return run_lifecycle(self, output_root)
 
     def run_prelimited(
@@ -873,12 +914,15 @@ def run_canonical_config(
     *,
     generators: Mapping[str, Any] | None = None,
     checkpoint_root: str | Path | None = None,
-) -> CanonicalRuntimeResult:
-    """Train, backtest, forecast, and persist one canonical config."""
+    backtest_only: bool = False,
+) -> CanonicalRuntimeResult | BacktestRuntimeResult:
+    """Execute a canonical config, optionally stopping after rolling backtest."""
     if not isinstance(config, ForecastConfigSpec):
         raise TypeError("config must be a ForecastConfigSpec")
     if config.strategy is None:
         raise ValueError("run_canonical_config requires a strategy or ensemble")
+    if config.validation.get("train_history_steps") is not None and not backtest_only:
+        raise ValueError("train_history_steps currently requires backtest-only")
     # builtin generators（chinese_holiday）默认可用；调用方同名注入时覆盖。
     merged_generators: dict[str, Any] = {**BUILTIN_GENERATORS, **(generators or {})}
     registry = SourceRegistry(config.data, Path.cwd(), generators=merged_generators)
@@ -895,10 +939,13 @@ def run_canonical_config(
         compiled_cache_root=compiled_cache_root,
         checkpoint_root=checkpoint_root,
     )
+    if backtest_only:
+        return runner.run(output_root, backtest_only=True)
     return runner.run(output_root)
 
 
 __all__ = [
+    "BacktestRuntimeResult",
     "CanonicalBaseModelRunner",
     "CanonicalRuntimeResult",
     "persist_model_bundle",

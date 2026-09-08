@@ -309,8 +309,10 @@ class DataSourceSpec:
             raise ValueError("provider is only valid for observed_past sources")
 
         if source_type == "file" and ColumnRole.KNOWN_FUTURE in roles:
-            if normalized_future_path is None:
+            if normalized_future_path is None and inference_columns is None:
                 raise ValueError("known_future file sources require future_path")
+            if inference_columns is not None and normalized_history_path is None and normalized_future_path is None:
+                raise ValueError("mapped known_future requires history_path or future_path")
             if normalized_availability not in {
                 AvailabilityPolicy.COLUMN,
                 AvailabilityPolicy.FORECAST_ORIGIN,

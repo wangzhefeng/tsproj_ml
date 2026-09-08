@@ -14,6 +14,8 @@
 
 只依赖 `forecasting_core.specs` 与基础库。缺失、重复、时间越界和可得性违规直接 RAISE；离线填补和清洗属于 `data_process/`。
 
+`InformationSetRequest.history_start` 是可选不可变历史下界（含边界）；target/observed-past 在既有 as-of 上界基础上进一步截断，supervised_labels 仍只额外开放请求标签。不改变 known-future 发布时间合同，也不隐式补齐窗口缺口。
+
 ## 职责收敛约定
 
 ### 天气生成扩展（实施中）
@@ -40,6 +42,8 @@
 `base_dir` 为只读属性，`generators` 返回防御性副本；`target_history_coverage()` 只报告完整 history 的覆盖事实，`latest_target_time()` 校验各 target 源的最后时间一致。模型输入仍必须经 `materialize()` 的 as-of 规则，覆盖发现不是放宽可见性的入口。
 
 ## 信息边界
+
+带 `inference_columns` 的文件源采用阶段隔离合同：`InformationSetRequest.data_phase=historical`（默认）只读 history，训练 `supervised_labels` 使用实测列，测试预测 `history_only` 使用同文件预报列；显式 `data_phase=future` 只读 future 的映射预报列，忽略对应实测列，禁止训练标签请求。history 必须覆盖完整历史训练/测试区间，不能靠 future 补齐。日历生成与 datetime 仍按请求时间生成。当前场景包括生命周期末次留出预测均为 historical；真正未来调用必须显式传 future，不按文件日期自动猜测。
 
 - `data.sources` 是多文件接入入口。`columns` 是信息投影视图：未声明的物理列不进入模型，声明且非 ignored 的缺失列直接报错。
 - `history_path/backtest_path/future_path` 区分历史事实、回测时已发布预报与正式未来输入；不能把回测期实测天气冒充 known-future。

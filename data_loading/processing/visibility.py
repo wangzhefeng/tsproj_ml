@@ -62,6 +62,8 @@ def history_frame(
         )
     else:
         allowed_time = frame[source.time_col] <= request.forecast_origin
+    if request.history_start is not None:
+        allowed_time &= frame[source.time_col] >= request.history_start
     selected = frame.loc[allowed_time].copy()
     selected = select_requested_series(source, selected, request, strict_extra=False)
     require_history_per_series(source, selected, request)

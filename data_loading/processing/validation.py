@@ -17,6 +17,12 @@ def validate_frame(
     path_version: str | None,
 ) -> pd.DataFrame:
     validated = frame.copy(deep=True)
+    # 真正未来文件仅消费预报列；对应实测列缺失或非法也不能参与校验/回退。
+    if path_version == "future" and source.inference_columns:
+        for model_column, physical_column in source.inference_columns:
+            if physical_column not in validated:
+                raise ValueError(f"source {source.name!r} inference column {physical_column!r} missing")
+            validated[model_column] = validated[physical_column]
     declared = {column.name for column in source.columns}
     ignored = {
         column.name

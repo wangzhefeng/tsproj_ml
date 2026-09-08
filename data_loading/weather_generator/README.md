@@ -1,6 +1,6 @@
 # weather_generator
 
-> **非活动链（2026-09-07）**：本子包保留为研究回放/下载工具链维护；全部活动配置已改走 file 两段制（history=rt_ 实测 / future=pred_ 预报）+ `inference_columns` 合同，不再经本包生成。新活动场景勿引用本包；`scripts/prepare_weather.py` 等准备入口仅在研究回放/取证时使用。
+> **非活动链**：本子包保留为研究回放/下载工具链维护。活动配置采用 file + `inference_columns`：history 同时提供训练实测列与测试预测的预报列，future 仅用于显式真正未来请求；当前活动场景无 future。新活动场景勿引用本包；`scripts/prepare_weather.py` 等准备入口仅在研究回放/取证时使用。
 
 通用本地气象处理包，按 `contracts/assets/adapters/derivation/resampling/scenarios/pipeline/generator` 分工。
 本目录正在实施；没有已验证来源就不能宣称完成场景迁移。

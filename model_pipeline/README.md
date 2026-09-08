@@ -12,6 +12,10 @@
 
 ## 编排边界
 
+天气阶段通过 `forecast_designs(..., data_phase="historical"|"future")` 传至不可变请求。默认 historical，供滑窗测试、OOF 及当前生命周期末次历史留出预测使用；训练始终 historical/实测列，测试预测为 historical/预报列。真正未来调用方必须显式传 future，递归 provider 捕获同阶段信息集。训练设计缓存仅哈希映射天气源的 history，不依赖未来文件；其他 source 原合同不变。
+
+显式 `validation.train_history_steps` 时，每个 runner 固定 `history_start = origin - (W-1) * freq`，只编译有界数据。调度依据 registry 的时间覆盖事实，不复用跨折 expanding；`for_backtest_window()` 构造独立 runner，拟合、预测和递归 provider 共用下界。主 runner 最后窗口的编译仅用于资源规划，不供各折训练。此模式暂限 backtest-only，拒绝 final fit/bundle，不能作为部署完成。
+
 `SupervisedDesignBuilder` 经 `SourceRegistry.target_history_coverage()` 获取目标源序列/时间覆盖，再在本包决定 `series_order`、unknown/incomplete policy、训练窗口和监督张量。数据读取、验证及公共 identity 选择由数据层提供；runner、batch runtime、lifecycle 通过 registry 的公开 `base_dir`/`generators` 取得上下文，不穿透私有状态。递归预测目标 provider 与 oracle 标签策略仍属于本包，不迁入通用数据层。
 
 fixed-step/calendar-month 循环分别位于 `model_testing/fixed_step.py` 与 `model_testing/calendar_month.py`；通过显式回测协议消费 runner 能力，逐折评分都委托 `model_testing/scoring.py`。目标变换识别与并行拟合所需的标签历史由 runner 的 `backtest_target_histories()` 提供，测试包不导入具体变换实现。预测/部署和 bundle 构造持久化位于 `model_forecasting/`，final bundle 构造由 `build_strategy_model_bundle()` 统一处理。

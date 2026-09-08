@@ -25,7 +25,9 @@ env -u PYTHONPATH .venv/bin/python scripts/audit_ensemble_configs.py
 
 ## 天气资产准备
 
-> 注（2026-09-07）：本节工具链（`prepare_weather.py`/`audit_runtime_assets.py` 的 generated weather 核验）现属研究回放/取证用途，非活动链；活动配置全部走 file 两段制 + `inference_columns` 合同。`build_scenario_weather.py` 是活动场景数据（`weather_history_*`/`weather_future_*`）的构建入口。
+`build_scenario_weather.py` 会传递共享源旁 `.six_features_repair.json` 的内容哈希与补值性质，重建不能丢失再分析替代证据。三个15分钟负荷场景的 `generate_load_15min_matrix.py` 天气 source 同步使用六项及实测/预报映射，避免重建配置退回露点五项或旧分段路径。六项范围与排除场景见 `config/README.md`。
+
+> 本节 generated weather 工具链现属研究回放/取证用途。活动配置走 file + `inference_columns`：`build_scenario_weather.py` 构建截至 2026-08-31 的完整 history，训练用实测列、历史测试预测用预报列。当前无真正未来任务，不再把历史留出区间生成或引用为 future；真正未来预报须另行提供。联通使用独立 `liantong_august_prepare.py`。
 
 `prepare_weather.py --help` 提供本地 `archive` 和 `register` 子命令；默认 dry-run，只有显式 `--write` 才发布。不会联网、猜测发布时间或覆盖旧版本。`archive` 只按 SHA 保全原字节；`register` 需要完整 metadata 与哈希证据，生成 normalized 和不可变 manifest。实际参数以各子命令 `--help` 为准。真实源的单位、地点或证据未齐时只能归档，不能注册为合格模型输入。
 
@@ -42,7 +44,9 @@ env -u PYTHONPATH .venv/bin/python scripts/audit_ensemble_configs.py
 跨场景日历、节假日数据文件统一放在 `dataset/shared/holidays/`；生成逻辑仍位于 `data_loading/calendar_generator/`。导出脚本的 `--output` 保持必填，不强制限制目录，测试可使用临时路径。
 
 ```bash
-env -u PYTHONPATH .venv/bin/python scripts/export_chinese_holiday_csv.py --start 2025-10-01 --end 2026-12-31 --output dataset/shared/holidays/chinese_holiday_20251001_20261231.csv
+env -u PYTHONPATH .venv/bin/python scripts/export_chinese_holiday_csv.py --start 2025-01-01 --end 2026-12-31 --output dataset/shared/holidays/chinese_holiday_20250101_20261231.csv
 ```
 
 存入该目录不会自动入模。使用 CSV 的配置需显式声明对应 source 路径、列角色和可得性；在线 generated source 不依赖此目录，无需改为 file source。
+
+推荐完整导出覆盖2025-01-01至2026-12-31（日频730行）；原2025-10-01起的短范围文件保留，不将旧文件名用于承载新的日期范围。

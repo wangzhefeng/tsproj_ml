@@ -26,7 +26,11 @@ def resolved_path(base_dir: Path, configured_path: str) -> Path:
 def source_hashes(
     data_spec: DataSpec,
     base_dir: Path,
+    *,
+    data_phase: str | None = None,
 ) -> dict[str, str]:
+    if data_phase not in {None, "historical", "future"}:
+        raise ValueError(f"unknown data_phase: {data_phase!r}")
     hashes = {}
     for source in data_spec.sources:
         if source.source_type == 'generated' and source.generator == 'weather':
@@ -39,6 +43,10 @@ def source_hashes(
         if source.source_type != "file":
             continue
         for path_role in ("history_path", "backtest_path", "future_path"):
+            if source.inference_columns and data_phase is not None:
+                selected = "history_path" if data_phase == "historical" else "future_path"
+                if path_role != selected:
+                    continue
             configured_path = getattr(source, path_role)
             if configured_path is None:
                 continue

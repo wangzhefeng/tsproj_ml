@@ -22,6 +22,7 @@ class FixedStepBacktestSpec:
     train_window_steps: int
     fold_count: int
     stride_steps: int
+    train_history_steps: int | None = None
 
     def __post_init__(self) -> None:
         for field_name in (
@@ -37,6 +38,12 @@ class FixedStepBacktestSpec:
             raise ValueError(
                 "validation.train_window_steps must be smaller than history_steps"
             )
+        if self.train_history_steps is not None and (
+            isinstance(self.train_history_steps, bool)
+            or not isinstance(self.train_history_steps, int)
+            or self.train_history_steps <= 0
+        ):
+            raise ValueError("validation.train_history_steps must be a positive integer")
 
 
 @dataclass(frozen=True, slots=True)
@@ -140,6 +147,7 @@ VALIDATION_FIELDS = frozenset(
         "performance",
         "aggregate_weighting",
         "seasonal_naive_lag",
+        "train_history_steps",
     }
 )
 
@@ -283,21 +291,24 @@ def _parse_backtest_geometry(
                 f"fixed_steps validation forbids calendar fields in {source}: {forbidden}"
             )
         present = keys & fixed_fields
-        if not present and not required:
+        if not present and not required and "train_history_steps" not in keys:
             return None
         missing = sorted(fixed_fields - keys)
         if missing:
             raise ValueError(
                 f"fixed_steps validation missing geometry fields in {source}: {missing}"
             )
+        if "train_history_steps" in payload and payload["train_history_steps"] is None:
+            raise ValueError("validation.train_history_steps must be a positive integer")
         return FixedStepBacktestSpec(
             history_steps=payload["history_steps"],
             train_window_steps=payload["train_window_steps"],
             fold_count=payload["fold_count"],
             stride_steps=payload["stride_steps"],
+            train_history_steps=payload.get("train_history_steps"),
         )
 
-    forbidden = sorted(keys & {"history_steps", "train_window_steps", "stride_steps"})
+    forbidden = sorted(keys & {"history_steps", "train_window_steps", "stride_steps", "train_history_steps"})
     if forbidden:
         raise ValueError(
             f"calendar_month validation forbids fixed-step fields in {source}: {forbidden}"

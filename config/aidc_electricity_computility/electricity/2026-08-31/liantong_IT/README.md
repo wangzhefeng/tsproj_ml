@@ -1,4 +1,37 @@
-# 联通 IT 2026 年 8 月模型数据准备
+# 联通 IT 2026 年 8 月功率数据准备
+
+本目录保留既有模型 YAML；`liantong_power_process.py` 为独立离线处理入口，不修改模型配置。
+
+## 执行
+
+从项目根目录运行：
+
+```bash
+env -u PYTHONPATH .venv/bin/python config/aidc_electricity_computility/electricity/2026-08-31/liantong_IT/liantong_power_process.py
+```
+
+默认输入 `dataset/aidc_electricity_computility/electricity/2026-08-31/liantong_IT/aidc_load_liantong_5min/`，仅读取 `data-*.xlsx` 和 `联通IT测点筛选表.xlsx`，不读取 Excel 锁文件。可用 `--source-dir` / `--output-dir` 指定测试路径；覆盖输出路径不会改变默认输入路径。
+
+## 数据合同
+
+- 参考表 `SignalID` 为白名单，ID 按字符串原样保留；未列入参考表的信号排除并审计。
+- 按 `(RoomID, DevAssestID)` 分组，设备首次出现顺序决定 `point_1_value` 等编号。每设备只能为一个总有功功率信号，或完整的 A/B/C 三相信号定义。
+- 全部功率单位为 kW；301 机房参考表单位空白按用户确认视为 kW。不计算电量、不乘时间间隔。
+- 时间为本地墙上时间，向下取整到 5 分钟网格；输出从 `2026-08-01 00:00:00` 到 `2026-08-31 23:55:00`。不四舍五入、不插值、不前后填充。
+- 三相和全设备总计均忽略空值求和；全部为空时保持空值（`min_count=1`），真实零值保留。部分相位缺失时设备列是可用相位之和，不代表完整三相总功率；部分设备缺失时 `value` 同样是部分和。
+- 同一信号同一时间格重复、白名单信号非法时间/非数值/非有限值、参考定义异常均报错，不静默覆盖。
+
+## 输出
+
+输出目录：`dataset/aidc_electricity_computility/electricity/2026-08-31/liantong_IT/`。
+
+- `df_power.csv`：`time,point_1_value,...,point_200_value,value`，8,928 行，空值写空字段。
+- `point_mapping.csv`：每个原始信号一行，共 264 行；`SignalID → point_column` 为多对一映射，含 `RoomID,DevAssestID,DeviceName,SignalName,unit`。源表字段实际名为 `SignalID`，不是 `SingleID`。
+- `processing_audit.json`：输入数量、被排除信号、逐信号缺失数量、部分相位/设备时间格数量及处理规则。
+
+已知原始缺口：8 月 19 日整天缺失；8 月 10 日 `303-RPP-D1-B-列头柜` 缺 A 相；8 月 30 日 `303-RPP-H2-A-列头柜` 缺 A 相。按白名单复核还发现 `303-RPP-H1-B-列头柜` 的 A 相额外缺 288 格，以及 8 月 25 日 `304-RPP-E1-B-列头柜` 总功率整日缺失。表外信号不能替代这些缺口。最终缺失以审计输出为准。
+
+此宽表是离线数据产物，不直接进入 canonical runtime；模型输入由下述准备脚本生成。
 
 ## 8 月模型数据准备（修订合同）
 

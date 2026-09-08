@@ -53,7 +53,7 @@ data:
       role: ignored
       categorical: false
     history_path: dataset/aidc_load_15min_short/weather_history_15min_20250101_20260731.csv
-    future_path: dataset/aidc_load_15min_short/weather_future_15min_20260801_20260814.csv
+    future_path: dataset/aidc_load_15min_short/weather_future_15min_20260801_20260831.csv
     time_col: ts
     series_id_cols: []
     availability: forecast_origin

@@ -47,7 +47,7 @@ data:
       role: ignored
       categorical: false
     history_path: dataset/aidc_ess_selfuse_load/exogenous_weather_raw/weather_history_5min_20250101_20260728.csv
-    future_path: dataset/aidc_ess_selfuse_load/exogenous_weather_raw/weather_future_5min_20260729_20260814.csv
+    future_path: dataset/aidc_ess_selfuse_load/exogenous_weather_raw/weather_future_5min_20260729_20260831.csv
     time_col: ts
     series_id_cols: []
     availability: forecast_origin

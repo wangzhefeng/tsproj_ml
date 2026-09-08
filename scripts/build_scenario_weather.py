@@ -1,9 +1,21 @@
-"""从共享供应商宽表（extracted/actual/weather_in_20250101_20260814.csv）严格生成各场景天气数据。
+"""从共享供应商宽表（extracted/actual/weather_in_20250101_20260831.csv）严格生成各场景天气数据。
 
-组织合同（2026-09-07 用户裁决，修正版）：
-- 每场景两个文件，时间范围固定：
+规则（用户 2026-09-07/09-08 裁决，不变）：
+  - 不填补（缺口策略 A 只作用于权威源小时级重建阶段）、聚合要求完整覆盖否则整行 NaN 剔除；
+  - 数据文件不含 available_at；rt_/pred_ 两族全保留（训练用 rt_，推理用 pred_ 经 inference_columns）；
+  - history/future 边界按场景（15min/power_month 07-31|08-01，ESS 07-28|07-29）。
+
+输出（2026-09-08 8 月补数后，future 统一扩至 2026-08-31）：
+  - weather_history_<freq>_*.csv：各场景历史段（不变）。
+  - weather_future_15min_20260801_20260831.csv：15min ×3（配置预测窗口 96/16 步在窗口内取用）。
+  - exogenous_weather_raw/weather_future_5min_20260729_20260831.csv：ESS。
+  - weather_future_1day_20260801_20260831.csv：power_month 日频（calendar_month 全月 31 天）。
+  - weather_future_1month_20260831_20260831.csv：power_month 月频（单行 2026-08-31）。
+
+组织合同（2026-09-07 用户裁决，修正版；2026-09-08 future 扩至 08-31）：
+- 每场景两个文件：
   - weather_history_<freq>_20250101_20260731.csv：2025-01-01 00:00 ~ 2026-07-31 末（训练与滑窗测试使用）；
-  - weather_future_<freq>_20260801_20260814.csv：2026-08-01 ~ 2026-08-14 末（真实预测使用；允许含 rt_ 真实值，使用时只用 pred_* 字段）。
+  - weather_future_<freq>_20260801_20260831.csv：2026-08-01 ~ 2026-08-31 末（真实预测使用；允许含 rt_ 真实值，使用时只用 pred_* 字段；各配置预测窗口在文件覆盖内取用）。
 - 两个文件都保留全部 rt_* 与 pred_* 原始列（不丢信息）；不含 available_at（可得性在处理/特征工程阶段按窗口考虑）。
 - 使用语义：训练用 rt_*；推理（滑窗 fold 与真实预测）用 horizon 时段内的 pred_*。
 - ESS 场景输出到 exogenous_weather_raw/；不做 aidc_electricity_computility。
@@ -17,14 +29,15 @@ import numpy as np
 import pandas as pd
 
 ROOT = Path(__file__).resolve().parents[1]
-SOURCE = ROOT / 'dataset/shared/weather/extracted/actual/weather_in_20250101_20260814.csv'
+SOURCE = ROOT / 'dataset/shared/weather/extracted/actual/weather_in_20250101_20260831.csv'
 REPORT = ROOT / '.hermes/plans/weather-scenario-build-report.json'
+SOURCE_REPAIR_REPORT = ROOT / '.hermes/plans/weather-may-gap-fill-report.json'
 
 RT = ['rt_tt2', 'rt_dt', 'rt_sh', 'rt_ssr', 'rt_ws10', 'rt_rain', 'rt_ps', 'rt_uu', 'rt_vv']
 PRED = ['pred_ssrd', 'pred_tsdsr', 'pred_s_tsr', 'pred_ws10', 'pred_wd10', 'pred_tt2',
         'pred_rh', 'pred_ps', 'pred_tcc', 'pred_rain', 'pred_ws100', 'pred_wd100', 'pred_dt']
 HISTORY_START, HISTORY_END = pd.Timestamp('2025-01-01 00:00:00'), pd.Timestamp('2026-07-31 23:59:59')
-FUTURE_START, FUTURE_END = pd.Timestamp('2026-08-01 00:00:00'), pd.Timestamp('2026-08-14 23:59:59')
+FUTURE_START, FUTURE_END = pd.Timestamp('2026-08-01 00:00:00'), pd.Timestamp('2026-08-31 23:59:59')
 
 ERA5_PATH = ROOT / 'dataset/shared/weather/extracted/api/open_meteo_era5_hourly_20250101_20250902.csv'
 # ERA5 → 供应商列的单位换算映射（ERA5 无 cloud_cover/100m 风：pred_tcc/pred_ws100/pred_wd100 保持 NaN）
@@ -122,11 +135,23 @@ def invert_dewpoint(tt2_k, rh_pct):
 def publish(df, dest, extra_meta):
     dest.parent.mkdir(parents=True, exist_ok=True)
     dest.write_text(df.to_csv(index=False))
+    source_sha256 = hashlib.sha256(SOURCE.read_bytes()).hexdigest()
+    source_repairs = []
+    if SOURCE_REPAIR_REPORT.is_file():
+        repair = json.loads(SOURCE_REPAIR_REPORT.read_text())
+        if repair.get('source_sha256_after') == source_sha256:
+            source_repairs.append({
+                'report': str(SOURCE_REPAIR_REPORT.relative_to(ROOT)),
+                'window': repair.get('window'),
+                'changed_cells': repair.get('changed_cells'),
+                'semantic_status': repair.get('semantic_status'),
+            })
     meta = {
         'file': dest.name, 'sha256_file': hashlib.sha256(dest.read_bytes()).hexdigest(),
         'rows': len(df), 'source': str(SOURCE.relative_to(ROOT)),
+        'source_sha256': source_sha256, 'source_repairs': source_repairs,
         'builder': 'scripts/build_scenario_weather.py',
-        'rules': 'no fill; complete-coverage aggregates else NaN; no available_at in data; '
+        'rules': 'audited source repairs plus builder gap policy; complete-coverage aggregates else NaN; no available_at in data; '
                  'both rt_ and pred_ families preserved; training uses rt_, inference uses pred_',
         **extra_meta,
     }
@@ -198,7 +223,7 @@ def main():
             hist, ROOT / f'dataset/{family}/weather_history_15min_20250101_20260731.csv',
             {'role': 'history', 'freq': '15min'})})
         report.append({'scenario': family, **publish(
-            fut, ROOT / f'dataset/{family}/weather_future_15min_20260801_20260814.csv',
+            fut, ROOT / f'dataset/{family}/weather_future_15min_20260801_20260831.csv',
             {'role': 'future', 'freq': '15min'})})
 
     # ---------------- ESS 5min（exogenous_weather_raw/；2026-09-07 裁决：不构造统计特征，只用原始特征） ----------------
@@ -211,11 +236,11 @@ def main():
     report.append({'scenario': 'aidc_ess_selfuse_load', **publish(
         hist5, ess_dir / 'weather_history_5min_20250101_20260728.csv', {'role': 'history', 'freq': '5min'})})
     report.append({'scenario': 'aidc_ess_selfuse_load', **publish(
-        fut5, ess_dir / 'weather_future_5min_20260729_20260814.csv', {'role': 'future', 'freq': '5min'})})
+        fut5, ess_dir / 'weather_future_5min_20260729_20260831.csv', {'role': 'future', 'freq': '5min'})})
 
     # ---------------- power_month 日/月（rt_ 统计 + pred_ 统计并列） ----------------
     for freq_dir, rule, hist_name, fut_name in (
-        ('freq_1day', '1D', 'weather_history_1day_20250101_20260731.csv', 'weather_future_1day_20260801_20260814.csv'),
+        ('freq_1day', '1D', 'weather_history_1day_20250101_20260731.csv', 'weather_future_1day_20260801_20260831.csv'),
         ('freq_1month', '1ME', 'weather_history_1month_20250131_20260731.csv', 'weather_future_1month_20260831_20260831.csv'),
     ):
         hist_agg, hist_inc = aggregate(hist_slice[list(dict.fromkeys(c for _, c, _ in AGG_PAIRS))], rule, AGG_PAIRS)
@@ -234,7 +259,7 @@ def main():
         report.append({'scenario': f'aidc_power_month/{freq_dir}', **publish(
             fut_out, ROOT / f'dataset/aidc_power_month/{freq_dir}/{fut_name}',
             {'role': 'future', 'freq': rule, 'incomplete_rows_nan_rt': fut_inc, 'incomplete_rows_nan_pred': fut_pred_inc,
-             'note': '2026-08 月/半月 pred 覆盖只到 08-14，聚合行按完整覆盖规则为 NaN'})})
+             'note': '2026-09-08 权威源扩至 08-31，2026-08 聚合行完整产出；不完整区间仍按完整覆盖规则剔除 NaN 行'})})
 
     REPORT.write_text(json.dumps({'status': 'ok', 'outputs': report, 'gap_fill_audit': gap_audit}, ensure_ascii=False, indent=2))
     print(json.dumps({'status': 'ok', 'count': len(report)}, ensure_ascii=False))

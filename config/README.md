@@ -78,4 +78,4 @@ Fixed-step validation 使用 `history_steps/train_window_steps/fold_count/stride
 ## 场景数据备注
 
 - 算力房间数据文件、预处理权威入口与特征分层见 `config/aidc_electricity_computility/electricity/2026-06-11/scripts/README.md`。算力天气 `cal_rh` 在离线数据准备阶段由 `rt_tt2`/`rt_dt` 按 Magnus–Tetens 公式派生，权威迁移入口为 `config/aidc_electricity_computility/derive_cal_rh.py`；canonical runtime 不做现场派生或插值。
-- 2026-08-10 算力场景（A2_IT / A3_IT / liantong_IT / yancheng_IT）YAML 的 `data_dir` 指向 2026-06-11 数据（复用上批数据做配置模板），对应 `dataset/` 下房间目录为空。
+- 2026-08-31 算力场景（A2_IT / A3_IT / liantong_IT / yancheng_IT）YAML 的 `data_dir` 指向 2026-06-11 数据（复用上批数据做配置模板），对应 `dataset/` 下房间目录为空。

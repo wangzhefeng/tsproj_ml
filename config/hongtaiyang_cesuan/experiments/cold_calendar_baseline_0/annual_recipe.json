@@ -1,0 +1,8 @@
+{
+  "recipe_version": 1,
+  "cold_start": {
+    "method": "calendar_baseline",
+    "normal_floor_ratio": 0.5,
+    "transition_days": 0
+  }
+}

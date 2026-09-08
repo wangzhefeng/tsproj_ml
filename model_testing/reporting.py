@@ -173,8 +173,8 @@ def _plot_window(
             _plot_timeseries(
                 axis,
                 group["time"],
-                group["actual_value"].astype(float).values,
                 group["predict_value"].astype(float).values,
+                y_true=group["actual_value"].astype(float).values,
                 quantile_frame=group,
                 series_suffix=suffix,
             )

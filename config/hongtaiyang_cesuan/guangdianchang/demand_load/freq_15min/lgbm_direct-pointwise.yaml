@@ -1,0 +1,124 @@
+# 年度入口：config/hongtaiyang_cesuan/annual_backtest.py；扩展窗口及2月例外见场景 README。
+schema_version: 2
+problem:
+  time_col: time
+  freq: 15min
+  horizon: 96
+  targets:
+  - value
+  training_scope: local
+  series_id_cols: []
+data:
+  sources:
+  - name: target_history
+    source_type: file
+    columns:
+    - name: value
+      role: target
+      categorical: false
+    history_path: dataset/hongtaiyang_cesuan/guangdianchang/demand_load.csv
+    time_col: time
+    series_id_cols: []
+    availability: source_time
+  - name: chinese_holiday
+    source_type: generated
+    generator: chinese_holiday
+    columns:
+    - name: is_holiday
+      role: known_future
+      categorical: false
+    - name: next_holiday_days
+      role: known_future
+      categorical: false
+    - name: is_spring_festival
+      role: known_future
+      categorical: false
+    - name: is_named_holiday
+      role: known_future
+      categorical: false
+    - name: days_to_spring_festival
+      role: known_future
+      categorical: false
+    - name: days_after_spring_festival
+      role: known_future
+      categorical: false
+    - name: is_adjusted_workday
+      role: known_future
+      categorical: false
+    time_col: time
+    series_id_cols: []
+    availability: generator_defined
+features:
+  target_lags:
+    value:
+    - 1
+    - 4
+    - 96
+    - 192
+    - 672
+  observed_past_lags: {}
+  datetime_features:
+  - minute
+  - hour
+  - day
+  - day_of_week
+  - month
+  - days_in_month
+  - day_of_year
+  transformations:
+    advanced:
+      rolling:
+        columns:
+        - value
+        windows:
+        - 96
+        - 288
+        - 672
+        stats:
+        - mean
+        - std
+        - min
+        - max
+      expanding:
+        columns:
+        - value
+        stats:
+        - mean
+        - std
+    direct:
+      layout: single_model_horizon
+      align_to_target: false
+      horizon_feature:
+        enabled: false
+        name: forecast_horizon_idx
+        cyclical: false
+strategy:
+  name: direct
+estimator:
+  model_type: lightgbm
+  target_adapter: independent
+  params:
+    n_estimators: 100
+    num_leaves: 31
+    min_child_samples: 20
+    n_jobs: 1
+    random_state: 2025
+    objective: regression
+probabilistic:
+  mode: point
+validation:
+  forecast_origin: '2025-12-31T23:45:00'
+  horizon_mode: fixed_steps
+  schedule_mode: daily
+  history_steps: 35040
+  train_history_steps: 2880
+  train_window_steps: 2112
+  fold_count: 334
+  stride_steps: 96
+  training:
+    sample_weight:
+      method: exponential
+      halflife_days: 30
+output:
+  scenario_subpath: hongtaiyang_cesuan/guangdianchang/demand_load/freq_15min
+  results_root: results

@@ -1,0 +1,99 @@
+schema_version: 2
+problem:
+  time_col: time
+  freq: 1D
+  horizon: 31
+  targets:
+  - value
+  training_scope: local
+  series_id_cols: []
+data:
+  sources:
+  - name: target_history
+    source_type: file
+    columns:
+    - name: value
+      role: target
+      categorical: false
+    history_path: dataset/hongtaiyang_cesuan/xinnengyuan/freq_1day/demand_load.csv
+    time_col: time
+    series_id_cols: []
+    availability: source_time
+  - name: chinese_holiday
+    source_type: generated
+    generator: chinese_holiday
+    columns:
+    - name: is_holiday
+      role: known_future
+      categorical: false
+    - name: next_holiday_days
+      role: known_future
+      categorical: false
+    time_col: time
+    series_id_cols: []
+    availability: generator_defined
+features:
+  target_lags:
+    value:
+    - 1
+    - 2
+    - 7
+  observed_past_lags: {}
+  datetime_features:
+  - day
+  - day_of_week
+  - month
+  - days_in_month
+  - day_of_year
+  transformations:
+    advanced:
+      rolling:
+        columns:
+        - value
+        windows:
+        - 3
+        - 7
+        stats:
+        - mean
+        - std
+        - min
+        - max
+      expanding:
+        columns:
+        - value
+        stats:
+        - mean
+        - std
+    direct:
+      layout: single_model_horizon
+      align_to_target: false
+      horizon_feature:
+        enabled: false
+        name: forecast_horizon_idx
+        cyclical: false
+strategy:
+  name: direct
+estimator:
+  model_type: lightgbm
+  target_adapter: independent
+  params:
+    n_estimators: 100
+    num_leaves: 7
+    min_child_samples: 2
+    n_jobs: 1
+    random_state: 2025
+probabilistic:
+  mode: point
+validation:
+  forecast_origin: '2025-12-31T00:00:00'
+  horizon_mode: calendar_month
+  train_window_days: 59
+  fold_count: 1
+  stride_months: 1
+  training:
+    sample_weight:
+      method: exponential
+      halflife_days: 30
+output:
+  scenario_subpath: hongtaiyang_cesuan/experiments/weight30/xinnengyuan/freq_1day
+  results_root: results

@@ -1,0 +1,14 @@
+{
+  "guangdianchang": {
+    "direct": {},
+    "direct-pointwise": {"objective": "regression", "calendar": true, "halflife_days": 30},
+    "direct-pointwise-horizon": {"objective": "regression", "calendar": true, "halflife_days": 30},
+    "mimo": {}
+  },
+  "xinnengyuan": {
+    "direct": {},
+    "direct-pointwise": {"objective": "regression_l1", "calendar": true, "halflife_days": 60},
+    "direct-pointwise-horizon": {},
+    "mimo": {}
+  }
+}

@@ -52,6 +52,7 @@ from __future__ import annotations
 import pandas as pd
 
 from data_loading.calendar_generator.calendar_features import chinese_holiday_frame
+from data_loading.calendar_generator.named_holidays import NAMED_HOLIDAY_FEATURES, named_holiday_frame
 from data_loading.information.information_set import InformationSetRequest
 from forecasting_core.specs.data import DataSourceSpec
 
@@ -74,5 +75,8 @@ def chinese_holiday_generator(
         [day_to_row[timestamp.date()] for timestamp in forecast_times]
     ].reset_index(drop=True)
     expanded["time"] = forecast_times.to_numpy()
+    if any(column.name in NAMED_HOLIDAY_FEATURES for column in source.columns):
+        # 只有显式声明新列的source才扩展；已有配置输出列和值均不改变。
+        expanded = pd.concat([expanded, named_holiday_frame(forecast_times)], axis=1)
     expanded[_AVAILABLE_AT] = pd.Timestamp(request.forecast_origin)
     return expanded

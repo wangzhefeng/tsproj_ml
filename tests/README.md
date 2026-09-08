@@ -6,6 +6,8 @@
 
 天气阶段隔离定向测试：`test_inference_columns` 验证历史训练实测/测试预报、future 不参与历史请求及未来实测列忽略；`test_weather_phase_runtime` 用真实编译、Ridge 生命周期验证文件隔离和缓存不依赖 future；`test_weather_history_coverage` 与联通准备测试验证完整 history 覆盖。均默认纳入 integration，不自动运行正式业务模型。
 
+- `test_hongtaiyang_cesuan`：20份非递归主配置、日历冷启动及未来/窗口外扰动、四方法真实1D LightGBM、年度合并与通用评分/13张图。`test_hongtaiyang_optimization` 覆盖命名节日、严格配方、权重归一化/传递、动态训练设置保留和不递归的冷启动。`test_hongtaiyang_visualization` 覆盖原始点绘图及CSV不变；`test_backtest_plot_labels` 钉住通用图例数值关系。均默认integration发现；业务全年用 `verify_results.py --freq 1D` 验收8份，不运行15min业务模型。
+- `test_liantong_power_process`：使用临时Excel验证白名单先过滤、5min向下对齐、点位映射、部分相位求和、全空保留和真实零值；默认integration发现，定向选择器为 `integration --match test_liantong_power_process`，不训练模型。
 
 严格原始历史窗口的定向验证：`test_raw_history_window` 覆盖请求下界、single/batch、expanding、窗口扰动、serial/parallel、cache/checkpoint 及入口拒绝；`test_liantong_august_prepare` 核对 18 天同槽均值、日期和非缺失原值；`test_liantong_august_configs` 覆盖九份配置、17 折几何及合成 LightGBM 扰动回测。均由默认 integration 发现，不加入 skip 或 fast 白名单。
 

@@ -91,6 +91,7 @@ Fixed-step validation 使用 `history_steps/train_window_steps/fold_count/stride
 
 ## 场景数据备注
 
+- 红太阳2025全年滚动回测见 `hongtaiyang_cesuan/README.md`：主矩阵五任务×四个非递归方法，共20份配置；实验另置experiments目录。1月接入真值，2月由版本化配方采用日历条件基线（假设不等于企业复工事实），3月起按采用profile训练；结果复用通用评分/总图/逐窗图。仅经日频门槛的3份负荷配置推广到15min，未运行15min模型；不把参考窗口 `run.py` 结果当作全年产物。
 
 - 算力房间数据文件、预处理权威入口与特征分层见 `config/aidc_electricity_computility/electricity/2026-06-11/scripts/README.md`。算力天气 `cal_rh` 在离线数据准备阶段由 `rt_tt2`/`rt_dt` 按 Magnus–Tetens 公式派生，权威迁移入口为 `config/aidc_electricity_computility/derive_cal_rh.py`；canonical runtime 不做现场派生或插值。
 - 2026-08-31 算力场景（A2_IT / A3_IT / liantong_IT / yancheng_IT）YAML 的 `data_dir` 指向 2026-06-11 数据（复用上批数据做配置模板），对应 `dataset/` 下房间目录为空。

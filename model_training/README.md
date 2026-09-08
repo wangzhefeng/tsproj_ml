@@ -3,6 +3,7 @@
 `model_training/` 只负责模型训练行为，不拥有结果 IO 或 bundle 类型。
 
 - `trainer.py`：`CanonicalTrainer`，训练 strategy artifact。
+- `sample_weight.py`：显式时间衰减权重（exponential、正半衰期天数、均值1归一化）；拒绝未来监督原点、未知参数和权重下溢。当前由红太阳年度入口接到trainer既有sample_weight参数；其他入口不能仅凭schema接受该字段就声称已经使用权重。
 - `quantile.py`：`CanonicalMarginalQuantileTrainer`/`CanonicalMarginalQuantileArtifact`，按 quantile grid 逐 level 训练编排。
 - `objectives.py`：quantile 模型支持性检查。
 - `strategies/`：七种标准多步 executor。

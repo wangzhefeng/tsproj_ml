@@ -53,6 +53,8 @@
 
 ## 日历口径
 
+命名节日的额外数值工具公开在 `calendar_generator/named_holidays.py`：`is_spring_festival/is_named_holiday/days_to_spring_festival/days_after_spring_festival`。两个距离是距当年春节起止的非负日历距离，截断到31天；不是企业停复工事实。generated适配器仅在source显式声明这些列时扩展输出，已有配置的默认输出列和值不变；离线CSV导出的默认列也不变。
+
 `is_holiday` 包含普通休息周末；`holiday_name` 仅命名节日非空。`next_holiday_days`/`prev_holiday_days` 为距休息日距离，不是距命名法定节日距离。`solar_term` 为当前节令、非节气日继承上一节气；一张帧只构建一次节气表。
 
 生成器对稀疏/月末网格返回指定日期的日状态，不做月内统计。`available_at=forecast_origin` 体现 calendar-known 假设，没有历史公告版本验证；它不是实际公告发布时间证明。

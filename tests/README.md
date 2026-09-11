@@ -1,5 +1,9 @@
 # tests
 
+联通四组新增测试默认进入 integration，不改发现规则、不 skip：`test_native_ets`（含 4032 点、5min/288 合成序列、失败透明及可信 pickle）；`test_seasonal_kernels`（独立黄金值、严格 as-of）；`test_liantong_optimization`（single/batch、九策略×有无天气残差、递归单位、目标隔离、缓存身份和合成 backtest 生命周期）；`test_liantong_four_groups`（37 份 YAML、参数静态校验、逐份 17 折几何）。原 `test_liantong_august_configs` 的路径已同步到 `add_weather/`。测试合成拟合不构成正式模型效果证据。
+
+编译器收口回归也位于 `test_liantong_optimization`：新增特征供 cyclical 使用的独立黄金值与 single/batch schema 一致性；MIMO/RecMO/DIRMO/DirRecMO/Direct 在 H=4/12/288 时块天气取数线性上界及 mean/min/max 黄金值；同原点实测/预报、不同原点、Global 多序列的作用域隔离、逐行 proof 一致性和块内单步仍聚合完整块。调用计数只证明重复计算被消除，不等同于正式配置耗时或模型效果验收。
+
 `tests/` 是版本控制内的 unittest 套件，覆盖 core contracts、信息集、特征、七策略、Local/Global、point/quantile、fixed/calendar/monthly runtime、Ensemble、结果 schema、场景数据链和包间结构。
 
 ## 执行集合
@@ -37,6 +41,9 @@ env -u PYTHONPATH .venv/bin/python -m unittest discover -s tests -p "test_*.py"
 `--match` 是完整测试 ID 的子串过滤；无匹配、重复 ID 或任一模块导入失败返回非零，不允许因为选择 fast 而隐藏其他模块的发现错误。`--list` 仅导入和发现，不执行测试正文；仍会发生项目已有的 import 初始化。`--report` 记录本次实际 testsRun、失败/错误/跳过 ID 和逐测试耗时，不作未经测量的速度承诺。场景模块需要独立选择，不代表其测试可以删除。
 
 ## 精简与覆盖映射
+
+- 全仓模型数量不锁定历史快照：`fixtures/config_inventory.py` 独立读取物理 YAML，按 estimator/ensemble 建立相对路径及类型清单，不调用生产 loader 的发现规则。catalog 与 checker 核对完整路径集合、类型（catalog）及无重复，runtime grammar 核对单模型集合；资产审计总数对照独立清单，保留零缺文件、零缺列、零天气资产错误的全部断言。具体场景矩阵仍保留明确文件集合与数量门禁；`test_config_inventory` 默认 integration，覆盖新文件、非法版本不漏扫及类型歧义拒绝。
+- CLI 测试同时验证 `backtest_only=False` 默认值与显式开关；MSTL 单周期仍必须被拒绝，断言同步现行错误文本。配置入口测试核对当前版本数据文件及真实存在性。ESS 天气矩阵按六项实测/预报映射、history-only 文件及 forecast_origin 可得性假设校验；逐份配置使用临时数据验证训练读实测、历史预测读预报及 history lineage，不把该假设当真实发布时间证据。未来文件隔离/缺预报拒绝继续由 `test_inference_columns`、`test_weather_phase_runtime` 覆盖。
 
 | 原重复/历史检查 | 当前保留位置与变化 |
 |---|---|

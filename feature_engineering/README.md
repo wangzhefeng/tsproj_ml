@@ -3,6 +3,7 @@
 `feature_engineering/` 是 canonical 唯一特征编译层，含特征与目标变换三件套。
 
 - `compiler.py`：lag、known-future、static、datetime、advanced transformation、visibility proof 与 lineage。
+- `seasonal.py`：同槽统计与近期状态的纯函数内核（按步长周期定位槽位、窗口统计），供 compiler 的 `advanced.same_slot`/`advanced.recent_state` 与残差基线（`transformations.seasonal_baseline`）共用；槽位越界或窗口不足由调用方 RAISE，不在内核静默截断。
 - `spectral.py`：FFT/小波/熵特征纯函数（trailing 窗），供 compiler 的 `advanced.fourier`/`advanced.wavelet` 与 rolling `entropy` 调用。
 - `selection.py`：每个训练窗独立拟合的监督特征选择。
 - `transform_specs.py`：feature/target transformation 严格配置归一化。
@@ -19,6 +20,10 @@
 - `CanonicalFeatureSelector` 只在本训练窗拟合，保留的特征索引随训练 artifact 使用；不在全量数据上先选列再做回测。
 
 ## 输入输出与对齐
+
+联通因果通路：`same_slot` 与 `recent_state` 在 single/batch 中共享纯数值内核，并以独立黄金值测试；批编译每个块天气请求单独绑定信息集作用域，不能复用其他原点的缓存帧。`block_weather` 对真实调用块全部 known_future 时刻计算固定 mean/min/max schema，proof 使用整块最晚 available_at。`seasonal.py` 与全部新规格参数自动进入既有 raw-design 编译链哈希，不新增平行缓存身份。
+
+single/batch 均先生成同槽、近期状态及块摘要，再计算 cyclical、interaction 和 polynomial，允许后者引用前者。块天气摘要只在当前信息集的编译作用域内按 `(forecast_origin, series identity, block start)` 复用；每次 single 调用及每个 batch item 都重新建立作用域，同原点实测/预报也不能混用。只编译块内部分 horizon 时仍聚合完整块。完整 H 步的块摘要取数总量为 O(H)，不按每行重复读取整块；每行保留自身的可见性证据。
 
 `FeatureCompiler.compile()` 消费物化信息集，返回 `CompiledFeatures`，包含设计值、`FeatureSchema`、lineage 和 `VisibilityProof`。`batch_eligibility()` 检查批编译能力，`compile_batch()` 提供受支持设计的批量编译。single 与 batch 保留不同执行路径，共用规则解析；不能把 provider 依赖设计强制改走 batch，也不能把同一实现自比较当成独立黄金值验证。
 

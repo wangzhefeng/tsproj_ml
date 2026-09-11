@@ -11,6 +11,8 @@
 
 本包依赖 `forecasting_core` 与 `models`，不依赖 `probabilistic` 或 `model_forecasting`。Quantile estimator factory 由上层注入。
 
+ETS 的 catalog 标记为 native_history，不进入本包监督回归 trainer/adapter；由 pipeline 对每折有界真实历史直接调用 fit_history。资源合同允许 native_history 工作负载零特征，记录原始历史行数与实际候选拟合数，不把 horizon 个输出误报为 horizon 个回归模型。
+
 ## 输入输出与策略组织
 
 `CanonicalTrainer` 接收 `ForecastConfigSpec`、显式 `estimator_factory`、`EstimatorCapabilities`、固定 `feature_schema` 和可选 `FitCheckpoint`。`train()` 消费按策略调用组织的二维设计序列 `X_by_call` 与标签 `Y`，返回 `CanonicalStrategyArtifact`，而不是最终部署 bundle。

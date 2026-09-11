@@ -1,6 +1,6 @@
 # 联通 IT 2026 年 8 月功率数据准备
 
-本目录保留既有模型 YAML；`liantong_power_process.py` 为独立离线处理入口，不修改模型配置。
+本目录按四组保存 37 份物理模型 YAML；`liantong_power_process.py` 为独立离线处理入口，不修改模型配置。
 
 ## 执行
 
@@ -53,10 +53,37 @@ env -u PYTHONPATH .venv/bin/python config/aidc_electricity_computility/electrici
 
 ## 九策略严格历史窗口
 
-九份 `lgbm_*.yaml` 分别覆盖 Direct pointwise（含 horizon 特征的独立变体）、Direct、Recursive、DirRec、DIRMO、RecMO、DirRecMO、MIMO。统一使用 lag、rolling/expanding、datetime、holiday 和 weather，不做目标分解。
+`add_weather/lgbm_*.yaml` 为原有九配置的原样语义迁移，仅输出组路径改变。九策略分别覆盖 Direct pointwise（含 horizon 特征的独立变体）、Direct、Recursive、DirRec、DIRMO、RecMO、DirRecMO、MIMO，使用 lag、rolling/expanding、datetime、holiday 和 weather，不做目标分解。
 
 - `validation.train_history_steps: 4032`：每折先截取连续 14 天 5min 数据，再构造所有训练和预测特征；expanding 从该折起点重置。
 - 预测长度 288 点，每日滚动；回测日期 8.15—8.31，共 17 折，包含正常计分的 8.19。
 - 特征预热和标签均位于窗口内。Direct/DIRMO/MIMO 的有效监督原点数为 1728，其余变体为 1729；这是 lag 锚点差异，不用扩大历史强行统一。
 - 配置只支持 `--backtest-only`，完整生命周期、final fit 和 bundle 导出显式拒绝。其他场景未启用 `train_history_steps` 时保持原行为。
 - 验收包括九策略合成 LightGBM 回测及窗口外扰动不变性、真实数据首折/8.19/末折特征设计探针；不表示九份正式配置已经完成大规模拟合，也不提供部署资格或实测缺失日误差证明。
+
+## 四组与原生 ETS
+
+| 目录 | 物理 YAML 数量 | 特征和模型合同 |
+| --- | --- | --- |
+| `baseline/` | 10 | 原九策略逐一去天气，无天气 source；另有独立 `ets.yaml` |
+| `baseline_opt/` | 9 | 无天气优化候选，同槽/近期状态与残差通路 |
+| `add_weather/` | 9 | 迁移前模型、特征、验证语义保持不变 |
+| `add_weather_opt/` | 9 | 有天气优化候选；四个块输出策略额外使用完整块天气摘要 |
+
+优化共有项：3/7 天同槽 mean/std；原点前含原点 6/12/36 点的 level/mean/std/diff/slope（level 为末值，mean 为窗口平均水平，std 为样本标准差，slope 为首末差除以步间隔数）。同槽特征锚定目标时刻，近期状态始终锚定原点。7 天同槽均值从每个训练原点的 as-of 历史独立计算，标签减基线、预测加回，不是只添加基线特征；不与目标变换混用。
+
+优化配置保留 7 天预热，使用较少日期字段和保守 LightGBM 参数。所有参数仅是未验证候选，不能据此宣称误差改善。天气优化的 MIMO/DIRMO/RecMO/DirRecMO 对实际调用块内六项天气计算 mean/min/max，固定 schema；实测/预报切换与原源合同一致。本次不核实、校正或下载天气。
+
+ETS 直接从每折完整 4032 点、5min 规则历史估计；每日周期 288，独立预测未来 288 点。默认候选 ANA/AAA/AAdA、BIC 选择、heuristic 初始化、每候选最多 300 次迭代；记录候选收敛/失败证据，全失败 RAISE，不静默换模型。仅借鉴 M5 ES_bu 自动指数平滑思想，不宣称复现零售层级方法。
+
+四组保持同样 17 折日期、严格 14+1 天和评分规则，输出路径分别追加组名；旧结果完全保留，不自动迁移或清除。原始目标和 8.19 同槽填补逻辑未修改。所有 YAML 仍限定 `--backtest-only`，本次没有运行正式配置。
+
+存量结果已另按用户明确授权完成分组：原 Direct、RecMO、MIMO 三个结果目录整体迁入 `results/results_test/aidc_electricity_computility/electricity/2026-08-31/liantong_IT/add_weather/`，fingerprint 与当前配置一致，72个原有文件逐文件 SHA-256 不变。`baseline/`、`baseline_opt/`、`add_weather_opt/` 目前只有空分组目录，没有正式结果；没有补跑模型。结果根目录的 `README.md` 保存本次整理汇总。
+
+静态审计（项目根目录）：
+
+```bash
+env -u PYTHONPATH .venv/bin/python scripts/check_model_configs.py 'config/aidc_electricity_computility/electricity/2026-08-31/liantong_IT/**/*.yaml'
+```
+
+可重复测试入口与覆盖范围见项目根 `tests/README.md`。`.hermes/plans/liantong-ets-completion.md` 与后续 review 收口记录是本地实施证据，不随仓库分发。

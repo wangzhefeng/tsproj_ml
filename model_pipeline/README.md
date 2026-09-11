@@ -1,5 +1,7 @@
 # model_pipeline
 
+联通严格原始历史通路：`runner.py` 在逐折 fit 边界接入原生 ETS（消费 `builder.target_history(origin)` 的完整时序，不使用监督标签拟合）及 seasonal residual（每个监督原点独立减基线、预测原位恢复）；`supervised_design.py` 负责基线张量、原始单位递归 provider 与预热长度。残差限 Local/raw-history/point/无目标变换，仍沿用 backtest-only 与禁止 final bundle 的合同。块天气与同槽/近期状态在公共 compiler 中实现，不在联通脚本旁路实现。
+
 `model_pipeline/` 负责单模型生命周期、监督设计与批量运行编排；根 `run.py` / `batch_run.py` 调用本包。融合仍由独立 `model_ensemble/` 负责，通过入口注入 runner 与执行服务复用单模型链。
 
 - `runner.py`：`CanonicalBaseModelRunner` 与 `run_canonical_config()`；提供训练、预测、历史准备和只读证据能力，run 入口设置线程限制后委托生命周期。

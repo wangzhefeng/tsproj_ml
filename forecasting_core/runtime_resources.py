@@ -42,6 +42,7 @@ class RuntimeWorkload:
     adapter: str
     estimator: str
     dynamic_horizons: tuple[int, ...] = ()
+    native_history: bool = False
 
     def __post_init__(self) -> None:
         if not self.strategy:
@@ -62,10 +63,11 @@ class RuntimeWorkload:
             "physical_fit_task_count",
             "parallel_output_task_count",
             "total_fit_task_count",
-            "feature_count",
+
         ):
             _positive_int(getattr(self, name), name)
         _non_negative_int(self.scalar_estimator_count, "scalar_estimator_count")
+        (_non_negative_int if self.native_history else _positive_int)(self.feature_count, "feature_count")
         _non_negative_int(self.training_rows, "training_rows")
         _non_negative_int(self.design_bytes, "design_bytes")
         if self.chunk_length is not None:

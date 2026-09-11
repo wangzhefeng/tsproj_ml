@@ -10,6 +10,11 @@ import warnings
 
 import numpy as np
 import pandas as pd
+from feature_engineering.seasonal import (
+    normalize_same_slot_spec, normalize_recent_state_spec,
+    same_slot_stats, recent_state_stats,
+    normalize_seasonal_baseline_spec,
+)
 
 from data_loading import (
     EndogenousFutureProvider,
@@ -129,6 +134,7 @@ class FeatureCompiler:
         "is_year_end": lambda value: int(value.is_year_end),
     }
     _TRANSFORMATION_KEYS = frozenset(
+        {"seasonal_baseline"} |
         {
             "direct",
             "advanced",
@@ -942,8 +948,33 @@ class FeatureCompiler:
             raise TypeError("transformations.advanced must be a mapping")
         self._validate_advanced_transformations(advanced)
         self._compile_batch_history_transformations(items, advanced)
+        for kind, normalize in (("same_slot", normalize_same_slot_spec), ("recent_state", normalize_recent_state_spec)):
+            if kind not in advanced:
+                continue
+            spec = normalize(advanced[kind])
+            for column in spec["columns"]:
+                histories = self._batch_master_histories(items, column)
+                for item in items:
+                    per_row = []
+                    for identity, anchor in zip(item["row_identities"], item["target_times"]):
+                        per_row.append(self._causal_statistics(kind, spec, column, histories[identity],
+                                                              item["request"].forecast_origin, anchor))
+                    for name in per_row[0]:
+                        item["columns"][name] = np.asarray([row[name] for row in per_row])
         for item in items:
             columns = item["columns"]
+            if "block_weather" in advanced:
+                previous_scope = self._compile_scope_frames, self._compile_scope_aux
+                self._prime_compile_scope(item["information_set"])
+                try:
+                    rows = [self._block_weather_values(identity, int(step), item["request"], item["information_set"])
+                            for identity, step in zip(item["row_identities"], columns["horizon_step"])]
+                finally:
+                    self._compile_scope_frames, self._compile_scope_aux = previous_scope
+                for name in rows[0][0]:
+                    columns[name] = np.asarray([values[name] for values, _ in rows])
+                    self._add_batch_proof_column(item, name, "block_known_future", "known_future",
+                                                 item["target_times"], [available for _, available in rows])
             self._compile_cyclical(columns, advanced.get("cyclical"), vectorized=True)
             self._compile_interaction_spec(columns, advanced.get("interaction"), vectorized=True)
             self._compile_polynomial(columns, advanced.get("polynomial"), vectorized=True)
@@ -1509,6 +1540,33 @@ class FeatureCompiler:
         return target_time
 
     def _validate_runtime_transformations(self) -> None:
+        advanced = self.features.transformations.get("advanced", {})
+        block = advanced.get("block_weather")
+        if block is not None:
+            if not isinstance(block, Mapping) or set(block) != {"columns", "stats"}:
+                raise ValueError("block_weather requires exactly columns/stats")
+            for field in ("columns", "stats"):
+                sequence = block[field]
+                if isinstance(sequence, str) or not isinstance(sequence, Sequence) or not sequence or len(sequence) != len(set(sequence)):
+                    raise ValueError(f"block_weather.{field} requires a nonempty unique sequence")
+            known = {c.name for s in self.data.sources for c in s.columns if c.role is ColumnRole.KNOWN_FUTURE and not c.categorical}
+            if set(block["columns"]) - known or set(block["stats"]) - {"mean", "min", "max"}:
+                raise ValueError("block_weather requires numeric known_future columns and mean/min/max")
+        for name, normalize in (("same_slot", normalize_same_slot_spec), ("recent_state", normalize_recent_state_spec)):
+            if name in advanced:
+                spec = normalize(advanced[name])
+                for column in spec["columns"]:
+                    matches = [c for s in self.data.sources for c in s.columns
+                               if c.name == column and c.role in {ColumnRole.TARGET, ColumnRole.OBSERVED_PAST}]
+                    if len(matches) != 1:
+                        raise ValueError(f"{name} requires a unique history column: {column}")
+                if name == "same_slot" and self.problem.horizon > spec["period"]:
+                    raise ValueError("same_slot horizon must not exceed period")
+        baseline = self.features.transformations.get("seasonal_baseline")
+        if baseline is not None:
+            spec = normalize_seasonal_baseline_spec(baseline)
+            if spec["column"] not in self.problem.targets or self.problem.horizon > spec["period"]:
+                raise ValueError("seasonal_baseline requires a target column and horizon <= period")
         normalize_feature_scaling(
             self.features.transformations.get("feature_scaling", {})
         )
@@ -1822,6 +1880,23 @@ class FeatureCompiler:
             request,
             information_set,
         )
+        for kind, normalize in (("same_slot", normalize_same_slot_spec), ("recent_state", normalize_recent_state_spec)):
+            if kind not in advanced:
+                continue
+            spec = normalize(advanced[kind])
+            for column in spec["columns"]:
+                source = next(s for s in self.data.sources if any(c.name == column for c in s.columns))
+                role = next(c.role for c in source.columns if c.name == column)
+                frame = self._filter_identity(source, self._role_frames(information_set, role)[source.name], identity)
+                history = pd.Series(frame[column].to_numpy(), index=pd.DatetimeIndex(frame[source.time_col]))
+                row.update(self._causal_statistics(kind, spec, column, history, request.forecast_origin, target_time))
+        if "block_weather" in advanced:
+            values, available_at = self._block_weather_values(identity, step_index + 1, request, information_set)
+            row.update(values)
+            for name in values:
+                proofs.append(VisibilityProof(feature_name=name, source_name="block_known_future",
+                    role="known_future", target_time=target_time, source_time=target_time,
+                    forecast_origin=request.forecast_origin, horizon_step=step_index + 1, available_at=available_at))
         self._compile_cyclical(row, advanced.get("cyclical"))
         self._compile_interaction_spec(row, advanced.get("interaction"))
         self._compile_polynomial(row, advanced.get("polynomial"))
@@ -1892,6 +1967,9 @@ class FeatureCompiler:
     @staticmethod
     def _validate_advanced_transformations(advanced: Mapping[str, Any]) -> None:
         supported = {
+            "same_slot",
+            "recent_state",
+            "block_weather",
             "rolling",
             "expanding",
             "difference",
@@ -1907,6 +1985,43 @@ class FeatureCompiler:
         unknown = sorted(set(advanced) - supported)
         if unknown:
             raise ValueError(f"unsupported advanced transformations: {unknown}")
+
+    def _block_weather_values(self, identity, horizon_step, request, information_set):
+        spec = self.features.transformations["advanced"]["block_weather"]
+        width = self.resolved_strategy.steps_per_call
+        start = ((horizon_step - 1) // width) * width
+        # 同一信息集内按原点、序列和块复用；single 入口和每个 batch item 都重置作用域。
+        cache = self._compile_scope_aux.setdefault("block_weather", {})
+        cache_key = (request.forecast_origin, identity, start)
+        if cache_key in cache:
+            return cache[cache_key]
+        values = {name: [] for name in spec["columns"]}
+        available = []
+        for index in range(start, min(start + width, request.H)):
+            row, proofs = {}, []
+            self._compile_known_future(row, proofs, identity, request.forecast_times[index], index, request, information_set)
+            for name in values:
+                values[name].append(float(row[name]))
+                available.extend(p.available_at for p in proofs if p.feature_name == name)
+        result = {}
+        for name, sequence in values.items():
+            if not np.isfinite(sequence).all():
+                raise ValueError("block_weather must be finite over the entire block")
+            for stat in spec["stats"]:
+                result[f"{name}_blk_{stat}"] = float(getattr(np, stat)(sequence))
+        # 仅缓存成功完成且可见性证据齐全的块，失败不留下半成品。
+        cache[cache_key] = result, max(available)
+        return cache[cache_key]
+
+    @staticmethod
+    def _causal_statistics(kind, spec, column, history, origin, anchor):
+        if kind == "same_slot":
+            stats = same_slot_stats(history, anchor=anchor, origin=origin, period=spec["period"], days=spec["days"])
+            return {f"{column}_slot_{stat}_{days}d": stats[days][stat]
+                    for days in spec["days"] for stat in spec["stats"]}
+        stats = recent_state_stats(history, origin=origin, windows=spec["windows"])
+        return {f"{column}_rs_{stat}_{window}": stats[window][stat]
+                for window in spec["windows"] for stat in spec["stats"]}
 
     def _compile_history_transformations(
         self,

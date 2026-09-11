@@ -83,6 +83,49 @@ def _thaw_json_value(value: Any) -> Any:
     return value
 
 
+def _validate_causal_transformations(transformations):
+    advanced = transformations.get("advanced", {})
+    contracts = {
+        "same_slot": ({"columns", "period", "days", "stats"}, {"mean", "std"}),
+        "recent_state": ({"columns", "windows", "stats"}, {"level", "mean", "std", "diff", "slope"}),
+        "block_weather": ({"columns", "stats"}, {"mean", "min", "max"}),
+    }
+    for name, (fields, stats) in contracts.items():
+        if name not in advanced:
+            continue
+        spec = advanced[name]
+        if not isinstance(spec, Mapping) or set(spec) != fields:
+            raise ValueError(f"{name} requires exactly {sorted(fields)}")
+        for key in fields:
+            value = spec[key]
+            if key == "period":
+                if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+                    raise ValueError(f"{name}.period must be a positive integer")
+                continue
+            if isinstance(value, (str, bytes)) or not isinstance(value, Sequence) or not value:
+                raise ValueError(f"{name}.{key} must be a nonempty sequence")
+            if key in {"days", "windows"}:
+                minimum = 2 if key == "windows" else 1
+                if any(isinstance(v, bool) or not isinstance(v, int) or v < minimum for v in value):
+                    raise ValueError(f"{name}.{key} must contain integers >= {minimum}")
+            else:
+                for v in value:
+                    _required_name(v, f"{name}.{key}")
+                if key == "stats" and set(value) - stats:
+                    raise ValueError(f"{name} unsupported statistics")
+            if len(set(value)) != len(value):
+                raise ValueError(f"{name}.{key} must not contain duplicates")
+    if "seasonal_baseline" in transformations:
+        spec = transformations["seasonal_baseline"]
+        if not isinstance(spec, Mapping) or set(spec) != {"column", "period", "days"}:
+            raise ValueError("seasonal_baseline requires exactly column/period/days")
+        _required_name(spec["column"], "seasonal_baseline.column")
+        for field in ("period", "days"):
+            value = spec[field]
+            if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+                raise ValueError(f"seasonal_baseline.{field} must be a positive integer")
+
+
 @dataclass(frozen=True, slots=True, init=False)
 class FeatureSpec:
     target_lags: Mapping[str, tuple[int, ...]]
@@ -101,6 +144,7 @@ class FeatureSpec:
     ) -> None:
         if not isinstance(transformations, Mapping):
             raise TypeError("transformations must be a mapping")
+        _validate_causal_transformations(transformations)
         if selection is not None and not isinstance(selection, Mapping):
             raise TypeError("selection must be a mapping when present")
 

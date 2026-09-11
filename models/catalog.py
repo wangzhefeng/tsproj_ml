@@ -16,6 +16,7 @@ class ModelDescriptor:
     output_workers: int | None = None
     dataframe_input: bool = False
     native_multi_quantile: bool = False
+    native_history: bool = False
 
 
 DESCRIPTORS = (
@@ -29,6 +30,7 @@ DESCRIPTORS = (
     ModelDescriptor(("lasso",), "LassoModel", output_workers=4),
     ModelDescriptor(("quantileregressor", "qr"), "QuantileRegressorModel", "qr", output_workers=2),
     ModelDescriptor(("seasonaltemplate", "st"), "SeasonalTemplateModel", sample_weight=False, dataframe_input=True),
+    ModelDescriptor(("ets",), "ETSModel", sample_weight=False, output_workers=1, native_history=True),
 )
 MODEL_CATALOG = MappingProxyType({alias: descriptor for descriptor in DESCRIPTORS for alias in descriptor.aliases})
 

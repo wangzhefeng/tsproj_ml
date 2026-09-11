@@ -11,6 +11,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from forecasting_core.specs import ColumnSpec, DataSourceSpec
+from fixtures.config_inventory import model_config_inventory
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -33,7 +34,10 @@ class RuntimeAssetAuditTest(unittest.TestCase):
         )
         self.assertEqual(result.returncode, 0, result.stderr)
         payload = json.loads(result.stdout)
-        self.assertEqual(payload["model_config_count"], 5150)
+        expected = model_config_inventory(ROOT / "config")
+        self.assertTrue(expected)
+        self.assertEqual(payload["model_config_count"], len(expected))
+        self.assertEqual(payload["weather_errors"], [])
         self.assertEqual(payload["missing_unique_path_count"], 0)
         self.assertEqual(payload["affected_config_count"], 0)
         self.assertEqual(payload["missing_reference_count"], 0)

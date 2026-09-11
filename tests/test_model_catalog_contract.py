@@ -15,7 +15,7 @@ class ModelCatalogContractTest(unittest.TestCase):
             for node in ast.parse(path.read_text()).body
             if isinstance(node, ast.ClassDef)
         }
-        self.assertEqual(len(MODEL_CATALOG), 18)
+        self.assertEqual(len(MODEL_CATALOG), 19)
         for descriptor in MODEL_CATALOG.values():
             self.assertIn(descriptor.wrapper, classes)
         for path in ("models/factory.py", "model_training/estimators/capabilities.py", "model_performance/resource_planner.py"):

@@ -60,12 +60,8 @@ features:
   datetime_features: [minute, hour, day, day_of_week, week_of_year, month, days_in_month, quarter, day_of_year, year]
   transformations:
     direct:
-      layout: single_model_horizon
-      align_to_target: true
-      horizon_feature:
-        enabled: true
-        name: forecast_horizon_idx
-        cyclical: false
+      layout: independent_models
+      align_to_target: false
     advanced:
       rolling:
         columns: [value]
@@ -88,13 +84,13 @@ validation:
   schedule_mode: daily
   horizon_mode: fixed_steps
   # 全月候选监督原点；各折先截取原始14天，再扣除特征预热和标签跨度。
-  history_steps: 6625
+  history_steps: 6624
   train_history_steps: 4032
-  train_window_steps: 1729
+  train_window_steps: 1728
   fold_count: 17
   stride_steps: 288
 output:
-  scenario_subpath: aidc_electricity_computility/electricity/2026-08-31/liantong_IT
+  scenario_subpath: aidc_electricity_computility/electricity/2026-08-31/liantong_IT/add_weather
   results_root: results
   directories:
     checkpoints: ./results/pretrained_models/

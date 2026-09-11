@@ -68,7 +68,7 @@ features:
         columns: [value]
         stats: [mean, std]
 strategy:
-  name: recmo
+  name: dirrecmo
   output_chunk_length: 24
 estimator:
   model_type: lightgbm
@@ -88,7 +88,7 @@ validation:
   fold_count: 17
   stride_steps: 288
 output:
-  scenario_subpath: aidc_electricity_computility/electricity/2026-08-31/liantong_IT
+  scenario_subpath: aidc_electricity_computility/electricity/2026-08-31/liantong_IT/add_weather
   results_root: results
   directories:
     checkpoints: ./results/pretrained_models/

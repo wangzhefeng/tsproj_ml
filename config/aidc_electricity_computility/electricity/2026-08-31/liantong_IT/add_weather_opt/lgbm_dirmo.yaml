@@ -1,0 +1,174 @@
+# 物理配置；优化参数仅候选，未验证优于原模型。
+schema_version: 2
+problem:
+  time_col: time
+  freq: 5min
+  horizon: 288
+  targets:
+  - value
+  training_scope: local
+  series_id_cols: []
+data:
+  sources:
+  - name: target_history
+    source_type: file
+    columns:
+    - name: value
+      role: target
+      categorical: false
+    history_path: dataset/aidc_electricity_computility/electricity/2026-08-31/liantong_IT/target_power_5min_20260801_20260831.csv
+    time_col: time
+    series_id_cols: []
+    availability: source_time
+  - name: chinese_holiday
+    source_type: generated
+    generator: chinese_holiday
+    columns:
+    - name: is_holiday
+      role: known_future
+      categorical: false
+    - name: next_holiday_days
+      role: known_future
+      categorical: false
+    time_col: time
+    series_id_cols: []
+    availability: generator_defined
+  - name: weather
+    source_type: file
+    columns:
+    - name: rt_ssr
+      role: known_future
+      categorical: false
+    - name: rt_tt2
+      role: known_future
+      categorical: false
+    - name: cal_rh
+      role: known_future
+      categorical: false
+    - name: rt_ws10
+      role: known_future
+      categorical: false
+    - name: rt_ps
+      role: known_future
+      categorical: false
+    - name: rt_rain
+      role: known_future
+      categorical: false
+    - name: pred_ssrd
+      role: ignored
+      categorical: false
+    - name: pred_tt2
+      role: ignored
+      categorical: false
+    - name: pred_rh
+      role: ignored
+      categorical: false
+    - name: pred_ws10
+      role: ignored
+      categorical: false
+    - name: pred_ps
+      role: ignored
+      categorical: false
+    - name: pred_rain
+      role: ignored
+      categorical: false
+    history_path: dataset/aidc_electricity_computility/electricity/2026-08-31/liantong_IT/weather_history_5min_20260801_20260831.csv
+    time_col: ts
+    series_id_cols: []
+    availability: forecast_origin
+    inference_columns:
+      rt_ssr: pred_ssrd
+      rt_tt2: pred_tt2
+      cal_rh: pred_rh
+      rt_ws10: pred_ws10
+      rt_ps: pred_ps
+      rt_rain: pred_rain
+features:
+  target_lags:
+    value:
+    - 288
+    - 576
+    - 864
+  observed_past_lags: {}
+  datetime_features:
+  - minute
+  - hour
+  - day_of_week
+  transformations:
+    direct:
+      layout: independent_models
+      align_to_target: false
+    advanced:
+      same_slot:
+        columns:
+        - value
+        period: 288
+        days:
+        - 3
+        - 7
+        stats:
+        - mean
+        - std
+      recent_state:
+        columns:
+        - value
+        windows:
+        - 6
+        - 12
+        - 36
+        stats:
+        - level
+        - mean
+        - std
+        - diff
+        - slope
+      block_weather:
+        columns:
+        - rt_ssr
+        - rt_tt2
+        - cal_rh
+        - rt_ws10
+        - rt_ps
+        - rt_rain
+        stats:
+        - mean
+        - min
+        - max
+    seasonal_baseline:
+      column: value
+      period: 288
+      days: 7
+strategy:
+  name: dirmo
+  output_chunk_length: 24
+estimator:
+  model_type: lightgbm
+  target_adapter: independent
+  params:
+    n_estimators: 200
+    learning_rate: 0.03
+    num_leaves: 15
+    max_depth: 5
+    min_child_samples: 40
+    reg_alpha: 0.1
+    reg_lambda: 1.0
+    verbosity: -1
+    random_state: 2026
+probabilistic:
+  mode: point
+validation:
+  forecast_origin: '2026-08-31T23:55:00'
+  schedule_mode: daily
+  horizon_mode: fixed_steps
+  history_steps: 6625
+  train_history_steps: 4032
+  train_window_steps: 1729
+  fold_count: 17
+  stride_steps: 288
+output:
+  scenario_subpath: aidc_electricity_computility/electricity/2026-08-31/liantong_IT/add_weather_opt
+  results_root: results
+  directories:
+    checkpoints: ./results/pretrained_models/
+    tests: ./results/results_test/
+    forecast: ./results/results_forecast/

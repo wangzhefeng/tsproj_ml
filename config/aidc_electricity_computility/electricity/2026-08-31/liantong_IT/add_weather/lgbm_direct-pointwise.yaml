@@ -59,6 +59,13 @@ features:
   observed_past_lags: {}
   datetime_features: [minute, hour, day, day_of_week, week_of_year, month, days_in_month, quarter, day_of_year, year]
   transformations:
+    direct:
+      layout: single_model_horizon
+      align_to_target: true
+      horizon_feature:
+        enabled: false
+        name: forecast_horizon_idx
+        cyclical: false
     advanced:
       rolling:
         columns: [value]
@@ -68,7 +75,7 @@ features:
         columns: [value]
         stats: [mean, std]
 strategy:
-  name: dirrec
+  name: direct
 estimator:
   model_type: lightgbm
   target_adapter: independent
@@ -87,7 +94,7 @@ validation:
   fold_count: 17
   stride_steps: 288
 output:
-  scenario_subpath: aidc_electricity_computility/electricity/2026-08-31/liantong_IT
+  scenario_subpath: aidc_electricity_computility/electricity/2026-08-31/liantong_IT/add_weather
   results_root: results
   directories:
     checkpoints: ./results/pretrained_models/

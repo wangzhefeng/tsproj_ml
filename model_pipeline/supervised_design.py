@@ -18,6 +18,7 @@ from data_loading import (
     TargetAccess,
 )
 from feature_engineering import CompiledFeatures, FeatureCompiler
+from feature_engineering.seasonal import normalize_seasonal_baseline_spec, seasonal_baseline_values
 from forecasting_core.specs import (
     AvailabilityPolicy,
     CalendarMonthBacktestSpec,
@@ -431,6 +432,22 @@ class SupervisedDesignBuilder:
             targets=self.config.problem.targets,
         )
 
+    def seasonal_baseline(self, origin: pd.Timestamp) -> np.ndarray:
+        """原点 as-of 基线，按 series/target 轴隔离；无配置时严格零增量。"""
+        output = np.zeros((self.n_series, self.config.problem.horizon, len(self.config.problem.targets)))
+        raw = self.config.features.transformations.get("seasonal_baseline")
+        if raw is None:
+            return output
+        spec = normalize_seasonal_baseline_spec(raw)
+        history = self.target_history(origin)
+        target_index = self.config.problem.targets.index(spec["column"])
+        for series_index in range(self.n_series):
+            output[series_index, :, target_index] = seasonal_baseline_values(
+                pd.Series(history.values[series_index, :, target_index], index=history.forecast_times),
+                origin=origin, horizon=self.config.problem.horizon, period=spec["period"], days=spec["days"],
+            )
+        return output
+
     def _labels(
         self,
         origin: pd.Timestamp,
@@ -735,6 +752,11 @@ class SupervisedDesignBuilder:
         )
 
         def provider(call_index, _coordinates, dependencies, predicted):
+            if self.config.features.transformations.get("seasonal_baseline") is not None:
+                baseline = self.seasonal_baseline(origin)
+                predicted = {coordinate: values + baseline[:, coordinate.horizon_step - 1,
+                             self.config.problem.targets.index(coordinate.target)]
+                             for coordinate, values in predicted.items()}
             return self._compile_call(
                 origin,
                 call_index,
@@ -788,6 +810,10 @@ def minimum_history_rows(config: ForecastConfigSpec) -> int:
         for lag in lags
     )
     required = max((*configured_lags, 1))
+    baseline = config.features.transformations.get("seasonal_baseline")
+    if baseline is not None:
+        spec = normalize_seasonal_baseline_spec(baseline)
+        required = max(required, spec["period"] * spec["days"])
     if config.strategy is None:
         raise ValueError("minimum_history_rows requires a single-model strategy")
     resolved_strategy = config.strategy.resolve(config.problem.horizon)
@@ -803,6 +829,12 @@ def minimum_history_rows(config: ForecastConfigSpec) -> int:
     if not isinstance(advanced, Mapping):
         return required
     rolling = advanced.get("rolling")
+    same_slot = advanced.get("same_slot")
+    if isinstance(same_slot, Mapping):
+        required = max(required, same_slot["period"] * max(same_slot["days"]))
+    recent = advanced.get("recent_state")
+    if isinstance(recent, Mapping):
+        required = max(required, max(recent["windows"]))
     if isinstance(rolling, Mapping):
         windows = rolling.get("windows", ())
         if isinstance(windows, Sequence) and not isinstance(windows, (str, bytes)):

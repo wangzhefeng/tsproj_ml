@@ -6,6 +6,7 @@ from collections import Counter
 from pathlib import Path
 
 from scripts.audit_forecast_configs import REQUIRED_KEYS, build_catalog
+from fixtures.config_inventory import model_config_inventory
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -17,12 +18,11 @@ class ForecastConfigAuditTest(unittest.TestCase):
         cls.rows = build_catalog(ROOT / "config")
 
     def test_catalog_covers_every_active_model_yaml(self):
-        self.assertEqual(len(self.rows), 5150)
-        self.assertEqual(
-            Counter(row["config_kind"] for row in self.rows),
-            {"single_model": 5072, "ensemble": 78},
-        )
-        self.assertEqual(len({row["path"] for row in self.rows}), 5150)
+        expected = model_config_inventory(ROOT / "config")
+        self.assertTrue(expected)
+        self.assertEqual({row["path"]: row["config_kind"] for row in self.rows}, expected)
+        self.assertEqual(len(self.rows), len(expected))
+        self.assertEqual(Counter(row["config_kind"] for row in self.rows), Counter(expected.values()))
 
     def test_catalog_has_typed_canonical_fields(self):
         self.assertEqual(set(REQUIRED_KEYS), set(self.rows[0]))

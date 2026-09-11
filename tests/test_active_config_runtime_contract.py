@@ -13,6 +13,7 @@ from forecasting_core.specs import (
 )
 from forecasting_core.specs.config import parse_model_config
 from scripts.check_model_configs import check_model_yaml
+from fixtures.config_inventory import model_config_inventory
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -23,6 +24,7 @@ _ALLOWED_TRANSFORMATIONS = {
     "target",
     "datetime_categorical",
     "interactions",
+    "seasonal_baseline",
 }
 _ALLOWED_ADVANCED = {
     "rolling",
@@ -33,20 +35,26 @@ _ALLOWED_ADVANCED = {
     "cyclical",
     "interaction",
     "polynomial",
+    "ewm",
+    "fourier",
+    "wavelet",
+    "same_slot",
+    "recent_state",
+    "block_weather",
 }
 
 
 class ActiveConfigRuntimeContractTest(unittest.TestCase):
     def test_all_base_configs_use_runtime_transformation_grammar(self):
         incompatible = []
-        base_count = 0
+        base_paths = []
         for path in sorted((ROOT / "config").rglob("*.yaml")):
             if not is_model_yaml(path):
                 continue
             config = load_yaml_config(path)
             if not isinstance(config, ForecastConfigSpec):
                 continue
-            base_count += 1
+            base_paths.append(path.relative_to(ROOT / "config").as_posix())
             transformations = config.features.transformations
             unknown = sorted(set(transformations) - _ALLOWED_TRANSFORMATIONS)
             advanced = transformations.get("advanced", {})
@@ -60,7 +68,11 @@ class ActiveConfigRuntimeContractTest(unittest.TestCase):
                     (str(path.relative_to(ROOT)), unknown, unknown_advanced)
                 )
 
-        self.assertEqual(base_count, 5072)
+        inventory = model_config_inventory(ROOT / "config")
+        expected = {path for path, kind in inventory.items() if kind == "single_model"}
+        self.assertTrue(expected)
+        self.assertEqual(set(base_paths), expected)
+        self.assertEqual(len(base_paths), len(expected))
         self.assertEqual(
             incompatible,
             [],

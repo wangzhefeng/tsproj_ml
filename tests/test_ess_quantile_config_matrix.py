@@ -1,17 +1,22 @@
 # -*- coding: utf-8 -*-
 """ESS 模型配置矩阵契约。"""
 import unittest
+import tempfile
+from dataclasses import replace
 from pathlib import Path
 
+import pandas as pd
+
 from config.config_loader import load_yaml_config
+from data_loading import InformationSetRequest, SourceRegistry, TargetAccess
 
 
 ROOT = Path(__file__).resolve().parents[1]
 CONFIG_ROOT = ROOT / "config/aidc_ess_selfuse_load"
-WEATHER_COLS = [
-    "rt_ssr", "rt_tt2", "cal_rh", "rt_ws10",
-    "tt2_mean_3h", "tt2_diff_1h", "ssr_mean_3h",
-]
+WEATHER_MAPPING = {
+    "rt_tt2": "pred_tt2", "cal_rh": "pred_rh", "rt_ssr": "pred_ssrd",
+    "rt_ws10": "pred_ws10", "rt_ps": "pred_ps", "rt_rain": "pred_rain",
+}
 METHODS = ["usmd", "usmdp", "usmdr", "usmr"]
 USMDP_SAFE_LAGS = [288, 576, 864, 1152, 1440, 1728, 2016]
 STRATEGY_FILES = {
@@ -141,9 +146,13 @@ class EssQuantileConfigMatrixTest(unittest.TestCase):
                     cfg = load_yaml_config(str(folder / f"lgbm_{method}_prob_mean_{suffix}.yaml"))
                     weather = self._source(cfg, "weather")
                     self.assertTrue(cfg.features.datetime_features)
-                    self.assertEqual(weather.availability.value, "column")
-                    self.assertEqual(weather.available_at_col, "available_at")
-                    self.assertEqual([column.name for column in weather.columns], WEATHER_COLS)
+                    # 当前是原点可得性假设，不是供应商逐行发布时间证据。
+                    self.assertEqual(weather.availability.value, "forecast_origin")
+                    self.assertIsNone(weather.available_at_col)
+                    self.assertEqual(dict(weather.inference_columns), WEATHER_MAPPING)
+                    self.assertEqual([column.name for column in weather.columns if column.role.value == "known_future"], list(WEATHER_MAPPING))
+                    self.assertEqual([column.name for column in weather.columns if column.role.value == "ignored"], list(WEATHER_MAPPING.values()))
+                    self.assertEqual(len(weather.columns), 2 * len(WEATHER_MAPPING))
                     if group == "add_exogenous_weather":
                         self.assertEqual(tuple(source.name for source in cfg.data.sources), ("target_history", "weather"))
                     self.assertEqual(self._decomposition_method(cfg), "none")
@@ -151,9 +160,30 @@ class EssQuantileConfigMatrixTest(unittest.TestCase):
                         cfg.output["scenario_subpath"],
                         f"aidc_ess_selfuse_load/route_{route}/{group}",
                     )
-                    self.assertTrue(Path(weather.history_path).exists())
-                    self.assertTrue(Path(weather.backtest_path).exists())
-                    self.assertTrue(Path(weather.future_path).exists())
+                    self.assertTrue((ROOT / weather.history_path).is_file())
+                    self.assertEqual(Path(weather.history_path).name, "weather_history_5min_20250101_20260831.csv")
+                    self.assertIsNone(weather.backtest_path)
+                    self.assertIsNone(weather.future_path)
+                    # 每份真实配置的 source 合同接入临时数据，验证实测/预报阶段切换。
+                    with tempfile.TemporaryDirectory() as directory:
+                        root = Path(directory)
+                        times = pd.date_range("2026-01-01", periods=2, freq="5min")
+                        pd.DataFrame({"time": times, "value": [1.0, 2.0]}).to_csv(root / "target.csv", index=False)
+                        frame = pd.DataFrame({"ts": times})
+                        for index, (actual, forecast) in enumerate(WEATHER_MAPPING.items()):
+                            frame[actual] = [index, index + 1]
+                            frame[forecast] = [index + 100, index + 101]
+                        frame.to_csv(root / "weather.csv", index=False)
+                        target = replace(self._source(cfg, "target_history"), history_path="target.csv")
+                        fixture = replace(weather, history_path="weather.csv", inference_columns=dict(weather.inference_columns))
+                        registry = SourceRegistry(replace(cfg.data, sources=(target, fixture)), root)
+                        phases: tuple[tuple[TargetAccess, int], ...] = (("supervised_labels", 1), ("history_only", 101))
+                        for access, shift in phases:
+                            information = registry.materialize(InformationSetRequest(
+                                times[0], times[1:], (), target_access=access, data_phase="historical"))
+                            for index, actual in enumerate(WEATHER_MAPPING):
+                                self.assertEqual(information.known_future["weather"][actual].tolist(), [index + shift])
+                            self.assertEqual([item.path_version for item in information.lineage if item.source_name == "weather"], ["history"])
 
     def test_plan_is_explicit_custom_future_for_all_methods(self):
         for route in ("A", "B"):

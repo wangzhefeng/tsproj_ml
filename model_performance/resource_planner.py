@@ -126,6 +126,12 @@ def build_runtime_workload(
     if resolved_fold_count is None:
         resolved_fold_count = 1
     direct = config.features.transformations.get("direct")
+    native_history = bool(MODEL_CATALOG.get(normalized_model) and MODEL_CATALOG[normalized_model].native_history)
+    if native_history:
+        scalar_estimators = 0
+        physical_fits = len(config.estimator.params.get("candidates", ("ANA", "AAA", "AAdA")))
+        parallel_output_tasks = 1
+        training_rows = config.validation["train_history_steps"]
     direct_layout = (
         str(direct.get("layout"))
         if isinstance(direct, Mapping) and direct.get("layout") is not None
@@ -153,6 +159,7 @@ def build_runtime_workload(
         adapter=adapter.value,
         estimator=normalized_model,
         dynamic_horizons=tuple(int(value) for value in dynamic_horizons),
+        native_history=native_history,
     )
 
 

@@ -13,6 +13,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 import yaml
+from fixtures.config_inventory import model_config_inventory
 from sklearn.linear_model import Ridge
 from sklearn.ensemble import RandomForestRegressor
 
@@ -117,7 +118,7 @@ output: {}
             )
             _, problems = checker.check_model_yaml(str(config_path))
 
-        self.assertTrue(any("mstl 至少需要两个周期" in problem for problem in problems))
+        self.assertTrue(any("decomposition method 'mstl' requires >= 2 periods" in problem for problem in problems), problems)
 
     def test_config_checker_allows_exactly_two_decomposition_cycles(self):
         checker = load_config_checker()
@@ -359,7 +360,8 @@ output: {}
                 for column in target_source.columns
                 if column.role.value == "observed_past"
             ]
-            self.assertEqual(Path(target_source.history_path).name, "df_selected.csv", config_path.name)
+            self.assertEqual(Path(target_source.history_path).name, "df_selected_causal_v1.csv", config_path.name)
+            self.assertTrue((ROOT / target_source.history_path).is_file(), config_path)
             self.assertEqual(cfg.problem.time_col, "count_data_time", config_path.name)
             self.assertEqual(cfg.problem.targets, ("h_total_use",), config_path.name)
             self.assertEqual(cfg.estimator.model_type, "lightgbm", config_path.name)
@@ -441,7 +443,8 @@ output: {}
         )
         self.assertEqual(cfg.estimator.model_type, "lightgbm")
         self.assertEqual(cfg.validation["forecast_origin"], "2026-07-31T23:45:00")
-        self.assertEqual(Path(weather_source.history_path).name, "weather_15min_20250101_20260731.csv")
+        self.assertEqual(Path(weather_source.history_path).name, "weather_history_15min_20250101_20260831.csv")
+        self.assertTrue((ROOT / weather_source.history_path).is_file())
         self.assertEqual(
             [column.name for column in target_source.columns if column.role.value == "observed_past"],
             [],
@@ -899,7 +902,13 @@ class Task27ExecutionMatrixTest(unittest.TestCase):
         checked = _re.search(r"checked=(\d+) passed=\1 hard_failures=0", output)
         self.assertIsNotNone(checked, output[-4000:])
         assert checked is not None
-        self.assertEqual(int(checked.group(1)), 5150)
+        expected = model_config_inventory(ROOT / "config")
+        self.assertTrue(expected)
+        checked_paths = [line.removeprefix("config/") for line in output.splitlines()
+                         if line.startswith("config/") and line.endswith(".yaml")]
+        self.assertEqual(set(checked_paths), set(expected))
+        self.assertEqual(len(checked_paths), len(expected))
+        self.assertEqual(int(checked.group(1)), len(expected))
         self.assertNotIn("硬校验失败", output)
 
 

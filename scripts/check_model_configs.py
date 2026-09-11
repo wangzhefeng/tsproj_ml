@@ -43,6 +43,7 @@ PROJ = Path(__file__).resolve().parent.parent
 
 _CANONICAL_NESTED_FIELDS = {
     "features.transformations": {
+        "seasonal_baseline",
         "advanced",
         "direct",
         "feature_scaling",
@@ -51,6 +52,9 @@ _CANONICAL_NESTED_FIELDS = {
         "interactions",
     },
     "features.transformations.advanced": {
+        "same_slot",
+        "recent_state",
+        "block_weather",
         "rolling",
         "expanding",
         "difference",
@@ -63,6 +67,10 @@ _CANONICAL_NESTED_FIELDS = {
         "polynomial",
     },
     "features.transformations.advanced.rolling": {"columns", "windows", "stats"},
+    "features.transformations.seasonal_baseline": {"column", "period", "days"},
+    "features.transformations.advanced.same_slot": {"columns", "period", "days", "stats"},
+    "features.transformations.advanced.recent_state": {"columns", "windows", "stats"},
+    "features.transformations.advanced.block_weather": {"columns", "stats"},
     "features.selection": {
         "enabled",
         "method",

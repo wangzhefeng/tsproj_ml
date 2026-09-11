@@ -1,0 +1,61 @@
+# 物理配置；优化参数仅候选，未验证优于原模型。
+schema_version: 2
+problem:
+  time_col: time
+  freq: 5min
+  horizon: 288
+  targets:
+  - value
+  training_scope: local
+  series_id_cols: []
+data:
+  sources:
+  - name: target_history
+    source_type: file
+    columns:
+    - name: value
+      role: target
+      categorical: false
+    history_path: dataset/aidc_electricity_computility/electricity/2026-08-31/liantong_IT/target_power_5min_20260801_20260831.csv
+    time_col: time
+    series_id_cols: []
+    availability: source_time
+features:
+  target_lags: {}
+  observed_past_lags: {}
+  datetime_features: []
+  transformations: {}
+strategy:
+  name: mimo
+estimator:
+  model_type: ets
+  target_adapter: independent
+  params:
+    seasonal_periods: 288
+    candidates:
+    - ANA
+    - AAA
+    - AAdA
+    selection: bic
+    maxiter: 300
+probabilistic:
+  mode: point
+validation:
+  forecast_origin: '2026-08-31T23:55:00'
+  schedule_mode: daily
+  horizon_mode: fixed_steps
+  history_steps: 8640
+  train_history_steps: 4032
+  train_window_steps: 3744
+  fold_count: 17
+  stride_steps: 288
+  performance:
+    window_parallel_workers: 1
+    total_thread_limit: 1
+output:
+  scenario_subpath: aidc_electricity_computility/electricity/2026-08-31/liantong_IT/baseline
+  results_root: results
+  directories:
+    checkpoints: ./results/pretrained_models/
+    tests: ./results/results_test/
+    forecast: ./results/results_forecast/

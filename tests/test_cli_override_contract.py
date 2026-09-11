@@ -107,8 +107,13 @@ class CliContractTest(unittest.TestCase):
                 "config_yaml": "config/model.yaml",
                 "seed": 7,
                 "output_root": "/tmp/forecast-results",
+                "backtest_only": False,
             },
         )
+
+    def test_parser_accepts_explicit_backtest_only(self):
+        with patch.object(sys, "argv", ["run.py", "--config-yaml", "config/model.yaml", "--backtest-only"]):
+            self.assertTrue(run.args_parse().backtest_only)
 
     def test_output_root_is_used_by_single_model_runtime(self):
         with tempfile.TemporaryDirectory() as tmp_dir:

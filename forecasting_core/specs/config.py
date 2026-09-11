@@ -207,6 +207,15 @@ class ForecastConfigSpec:
                 "problem.targets must exactly match data.target_columns in the same order"
             )
         strategy.resolve(problem.horizon)
+        if estimator.model_type.lower() == "ets":
+            if (problem.is_global or len(problem.targets) != 1 or strategy.name.value != "mimo"
+                    or estimator.target_adapter.value != "independent"
+                    or probabilistic_spec.get("mode", "point") != "point"
+                    or validation_spec.get("train_history_steps") is None
+                    or features.target_lags or features.observed_past_lags or features.datetime_features
+                    or features.transformations or features.selection
+                    or len(data.sources) != 1):
+                raise ValueError("ETS requires Local single-target native-history point backtest: mimo geometry, no features or external sources")
         data.validate_weather_frequency(problem.freq)
         _validate_global_source_keys(problem, data)
         _validate_feature_columns(data, features)
@@ -216,6 +225,11 @@ class ForecastConfigSpec:
                 raise ValueError(
                     "train_history_steps supports Local point without target transforms only"
                 )
+        if features.transformations.get("seasonal_baseline") is not None:
+            if (validation_spec.get("train_history_steps") is None or problem.is_global
+                    or probabilistic_spec.get("mode", "point") != "point"
+                    or features.transformations.get("target")):
+                raise ValueError("seasonal_baseline currently requires Local raw-history point backtest without target transforms")
 
         object.__setattr__(self, "schema_version", 2)
         object.__setattr__(self, "problem", problem)

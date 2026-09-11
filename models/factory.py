@@ -10,6 +10,7 @@ from models.wrappers.catboost import CatBoostModel
 from models.wrappers.sklearn_tree import RandomForestModel, HistGBModel
 from models.wrappers.linear import RidgeModel, ElasticNetModel, LassoModel, QuantileRegressorModel
 from models.wrappers.seasonal_template import SeasonalTemplateModel
+from models.wrappers.ets import ETSModel
 
 
 class ModelFactory:

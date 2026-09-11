@@ -17,6 +17,7 @@ from data_loading import (
     SourceRegistry,
 )
 from model_training.estimators import make_model_factory
+from models.wrappers.ets import ETSModel
 from feature_engineering import cache as compiled_cache
 from feature_engineering.selection import (
     CanonicalFeatureSelector,
@@ -120,6 +121,8 @@ class CanonicalBaseModelRunner:
         if config.strategy is None:
             raise ValueError("CanonicalBaseModelRunner requires a strategy")
         self.config = config
+        if config.estimator.model_type.lower() == "ets":
+            ETSModel(dict(config.estimator.params))
         self.calendar_runner_factory: Any = CanonicalBaseModelRunner
         self.registry = registry
         self.origin = origin
@@ -466,6 +469,10 @@ class CanonicalBaseModelRunner:
         )
         X_train = tuple(design[train_selector] for design in self.X_all)
         Y_train = self.Y_all[train_selector]
+        if self.config.features.transformations.get("seasonal_baseline") is not None:
+            baselines = np.concatenate([self.builder.seasonal_baseline(self.supervised_origins[index])
+                                        for index in train_indices], axis=0)
+            Y_train = Y_train - baselines
         training_origins = tuple(
             self.supervised_sample_origins[index]
             for index in train_sample_indices
@@ -492,6 +499,16 @@ class CanonicalBaseModelRunner:
             history_cutoff=training_history_cutoff,
             target_history=target_history,
         )
+        # 原生模型只消费本折完整原始历史；监督数组仅用于共用调度，不用于 ETS 拟合。
+        if self.config.estimator.model_type.lower() == "ets":
+            if train_indices != tuple(range(len(self.supervised_origins))):
+                raise ValueError("ETS requires the complete configured raw-history fold")
+            history = self.builder.target_history(self.origin)
+            artifact = ETSModel(dict(self.config.estimator.params)).fit_history(
+                pd.Series(history.values[0, :, 0], index=history.forecast_times),
+                as_of=self.origin, freq=self.config.problem.freq,
+            )
+            return feature_scaler, target_transform, X_train_transformed, Y_train_transformed, artifact
         # 监督特征选择（2026-08-30 专项）：有监督步骤挂在训练 fit 边界，
         # 每个回测窗口/最终训练各自重拟合，只消费当前训练窗 (X, Y)，无泄漏；
         # 选中集写入 artifact.feature_schema，预测端按同名子集对齐。
@@ -555,6 +572,14 @@ class CanonicalBaseModelRunner:
         target_transform: CanonicalTargetTransform,
     ) -> PointForecastTensor | MarginalForecastDistribution:
         """Predict at the given origin and restore to the original target space."""
+        if isinstance(artifact, ETSModel):
+            evidence = artifact.execution_evidence()
+            expected = pd.date_range(pd.Timestamp(evidence["history_end"]),
+                                     periods=self.config.problem.horizon + 1, freq=self.config.problem.freq)[1:]
+            if not forecast_times.equals(expected):
+                raise ValueError("ETS prediction must immediately follow the fitted as-of origin")
+            return PointForecastTensor(artifact.forecast(len(forecast_times))[None, :, None],
+                                       self.series_ids, forecast_times, self.config.problem.targets)
         base_design = designs[0]
         # 特征选择对齐（2026-08-30 专项）：artifact.feature_schema 是训练期选中集，
         # 预测端把全 schema 设计矩阵按同名子集对齐（provider 输出同为全 schema 宽）。
@@ -586,7 +611,12 @@ class CanonicalBaseModelRunner:
             forecast_times,
             self.builder.series_ids,
         )
-        return _restore_prediction(raw, target_transform)
+        restored = _restore_prediction(raw, target_transform)
+        if self.config.features.transformations.get("seasonal_baseline") is not None:
+            baseline = self.builder.seasonal_baseline(forecast_times[0] - self.builder.offset)
+            return PointForecastTensor(restored.values + baseline, restored.series_ids,
+                                       restored.forecast_times, restored.targets)
+        return restored
 
     def actual(
         self,
@@ -869,6 +899,8 @@ class CanonicalBaseModelRunner:
     def execution_evidence(self, artifact: Any, target_transform: Any) -> dict[str, Any]:
         """Snapshot one existing fitted unit without fitting or predicting."""
         models = collect_model_evidence(artifact)
+        if isinstance(artifact, ETSModel):
+            models = [{"wrapper": "ETSModel", **artifact.execution_evidence()}]
         return json_evidence({
             "status": "recorded" if models else "unavailable",
             "reason": None if models else "no_supported_model_wrapper_found",

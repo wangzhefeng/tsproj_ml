@@ -20,7 +20,7 @@ from model_training.strategies.base import target_plan_for_config
 from scripts.check_model_configs import check_model_yaml
 
 ROOT = Path(__file__).resolve().parents[1]
-DIRECTORY = ROOT / "config/aidc_electricity_computility/electricity/2026-08-31/liantong_IT"
+DIRECTORY = ROOT / "config/aidc_electricity_computility/electricity/2026-08-31/liantong_IT/add_weather"
 VARIANTS = (
     "direct-pointwise", "direct-pointwise-horizon", "direct", "recursive",
     "dirrec", "dirmo", "recmo", "dirrecmo", "mimo",

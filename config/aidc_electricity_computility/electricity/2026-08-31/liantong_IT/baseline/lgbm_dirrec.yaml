@@ -1,0 +1,102 @@
+# 物理配置；优化参数仅候选，未验证优于原模型。
+schema_version: 2
+problem:
+  time_col: time
+  freq: 5min
+  horizon: 288
+  targets:
+  - value
+  training_scope: local
+  series_id_cols: []
+data:
+  sources:
+  - name: target_history
+    source_type: file
+    columns:
+    - name: value
+      role: target
+      categorical: false
+    history_path: dataset/aidc_electricity_computility/electricity/2026-08-31/liantong_IT/target_power_5min_20260801_20260831.csv
+    time_col: time
+    series_id_cols: []
+    availability: source_time
+  - name: chinese_holiday
+    source_type: generated
+    generator: chinese_holiday
+    columns:
+    - name: is_holiday
+      role: known_future
+      categorical: false
+    - name: next_holiday_days
+      role: known_future
+      categorical: false
+    time_col: time
+    series_id_cols: []
+    availability: generator_defined
+features:
+  target_lags:
+    value:
+    - 288
+    - 576
+    - 864
+    - 1152
+    - 1440
+    - 1728
+    - 2016
+  observed_past_lags: {}
+  datetime_features:
+  - minute
+  - hour
+  - day
+  - day_of_week
+  - week_of_year
+  - month
+  - days_in_month
+  - quarter
+  - day_of_year
+  - year
+  transformations:
+    advanced:
+      rolling:
+        columns:
+        - value
+        windows:
+        - 288
+        - 576
+        - 1152
+        - 2016
+        stats:
+        - mean
+        - std
+        - min
+        - max
+      expanding:
+        columns:
+        - value
+        stats:
+        - mean
+        - std
+strategy:
+  name: dirrec
+estimator:
+  model_type: lightgbm
+  target_adapter: independent
+  params: {}
+probabilistic:
+  mode: point
+validation:
+  forecast_origin: '2026-08-31T23:55:00'
+  schedule_mode: daily
+  horizon_mode: fixed_steps
+  history_steps: 6625
+  train_history_steps: 4032
+  train_window_steps: 1729
+  fold_count: 17
+  stride_steps: 288
+output:
+  scenario_subpath: aidc_electricity_computility/electricity/2026-08-31/liantong_IT/baseline
+  results_root: results
+  directories:
+    checkpoints: ./results/pretrained_models/
+    tests: ./results/results_test/
+    forecast: ./results/results_forecast/

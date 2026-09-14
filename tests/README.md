@@ -1,6 +1,8 @@
 # tests
 
-联通四组新增测试默认进入 integration，不改发现规则、不 skip：`test_native_ets`（含 4032 点、5min/288 合成序列、失败透明及可信 pickle）；`test_seasonal_kernels`（独立黄金值、严格 as-of）；`test_liantong_optimization`（single/batch、九策略×有无天气残差、递归单位、目标隔离、缓存身份和合成 backtest 生命周期）；`test_liantong_four_groups`（37 份 YAML、参数静态校验、逐份 17 折几何）。原 `test_liantong_august_configs` 的路径已同步到 `add_weather/`。测试合成拟合不构成正式模型效果证据。
+联通场景测试默认进入 integration，不改发现规则、不 skip：`test_native_ets`（含 4032 点、5min/288 合成序列、失败透明及可信 pickle）；`test_seasonal_kernels`（独立黄金值、严格 as-of）；`test_liantong_optimization`（single/batch、九策略×有无天气残差、递归单位、目标隔离、缓存身份和合成 backtest 生命周期）；`test_liantong_four_groups`（原四组及新增双算力组共 55 份 YAML、参数静态校验、逐份 17 折几何）。原 `test_liantong_august_configs` 的路径已同步到 `add_weather/`。测试合成拟合不构成正式模型效果证据。
+
+`test_liantong_compute_configs` 默认 integration：18 份算力配置与同名 baseline 字段级正交性；真实数据训练设计、首折/补值标签日/末折的预测特征第 1/144/288 步值与时间锚点；新增列宽度、无 provider 外推、预测原点后和 14 天窗口外算力扰动不变性。只做设计编译，不拟合正式模型；定向 `integration --match test_liantong_compute_configs`。
 
 编译器收口回归也位于 `test_liantong_optimization`：新增特征供 cyclical 使用的独立黄金值与 single/batch schema 一致性；MIMO/RecMO/DIRMO/DirRecMO/Direct 在 H=4/12/288 时块天气取数线性上界及 mean/min/max 黄金值；同原点实测/预报、不同原点、Global 多序列的作用域隔离、逐行 proof 一致性和块内单步仍聚合完整块。调用计数只证明重复计算被消除，不等同于正式配置耗时或模型效果验收。
 
@@ -12,6 +14,8 @@
 
 - `test_hongtaiyang_cesuan`：20份非递归主配置、日历冷启动及未来/窗口外扰动、四方法真实1D LightGBM、年度合并与通用评分/13张图。`test_hongtaiyang_optimization` 覆盖命名节日、严格配方、权重归一化/传递、动态训练设置保留和不递归的冷启动。`test_hongtaiyang_visualization` 覆盖原始点绘图及CSV不变；`test_backtest_plot_labels` 钉住通用图例数值关系。均默认integration发现；业务全年用 `verify_results.py --freq 1D` 验收8份，不运行15min业务模型。
 - `test_liantong_power_process`：使用临时Excel验证白名单先过滤、5min向下对齐、点位映射、部分相位求和、全空保留和真实零值；默认integration发现，定向选择器为 `integration --match test_liantong_power_process`，不训练模型。
+- `test_liantong_computility_analysis`：默认 integration；验证固定 54 特征合同、常数/并列秩、正滞后方向、差分两端补值排除、不压缩缺口、同期及 288/576 步分日关系、非法时间/数值/目标拒绝、跨 cwd CLI、重复运行和覆盖保护。联通三个准备脚本的既有测试同步验证算力子目录、电力辅助子目录和根目录目标输出；定向 `integration --match test_liantong_`。
+- `test_liantong_computility_process`：默认 integration；验证同 Job 多实例保留（相同值不去重）、W→kW、空指标零语义、非法采样拒绝、超界利用率审计、真实 CLI 跨 cwd 输出、目标保真、重复运行字节一致、覆盖保护与错误输入不污染已有输出。定向命令 `integration --match test_liantong_computility_process`；不训练模型。
 
 严格原始历史窗口的定向验证：`test_raw_history_window` 覆盖请求下界、single/batch、expanding、窗口扰动、serial/parallel、cache/checkpoint 及入口拒绝；`test_liantong_august_prepare` 核对 18 天同槽均值、日期和非缺失原值；`test_liantong_august_configs` 覆盖九份配置、17 折几何及合成 LightGBM 扰动回测。均由默认 integration 发现，不加入 skip 或 fast 白名单。
 

@@ -276,12 +276,50 @@ class ForecastConfigSpec:
         ).encode("utf-8")
         return hashlib.sha256(encoded).hexdigest()
 
+    def result_method(self) -> dict[str, object]:
+        """Describe the effective method without changing semantic identity."""
+        if self.strategy is None:
+            raise ValueError("result method requires a strategy config")
+        strategy = self.strategy.name.value
+        if strategy != "direct":
+            return {"strategy": strategy, "method_label": strategy}
+        direct = self.features.transformations.get("direct")
+        if direct is None:
+            direct = {"layout": "independent_models"}
+        if not isinstance(direct, Mapping):
+            raise TypeError("transformations.direct must be a mapping")
+        layout = direct.get("layout")
+        if layout not in {"independent_models", "single_model_horizon"}:
+            raise ValueError(f"unsupported direct layout: {layout!r}")
+        enabled = False
+        cyclical = False
+        label = "direct"
+        if layout == "single_model_horizon":
+            horizon = direct.get("horizon_feature", {})
+            if not isinstance(horizon, Mapping):
+                raise TypeError("transformations.direct.horizon_feature must be a mapping")
+            enabled = horizon.get("enabled", True)
+            if not isinstance(enabled, bool):
+                raise TypeError("transformations.direct.horizon_feature.enabled must be a boolean")
+            cyclical = enabled and bool(horizon.get("cyclical", False))
+            label = "direct-pointwise"
+            if enabled:
+                label += "-horizon"
+        return {
+            "strategy": strategy,
+            "method_label": label,
+            "direct_layout": layout,
+            "horizon_feature_enabled": enabled,
+            "horizon_feature_cyclical": cyclical,
+            "align_to_target": direct.get("align_to_target") is not False,
+        }
+
     def result_identity(self, hash_length: int = 12) -> str:
         if isinstance(hash_length, bool) or not isinstance(hash_length, int):
             raise TypeError("hash_length must be an integer")
         if hash_length < 8 or hash_length > 64:
             raise ValueError("hash_length must be between 8 and 64")
-        strategy_label = self.strategy.name.value
+        strategy_label = str(self.result_method()["method_label"])
         return "-".join(
             (
                 strategy_label,

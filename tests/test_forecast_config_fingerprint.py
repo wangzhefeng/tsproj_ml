@@ -19,6 +19,35 @@ from forecasting_core.specs import (
 
 
 class CanonicalConfigFingerprintTest(unittest.TestCase):
+    def test_direct_result_labels_follow_effective_features(self):
+        baseline = self.config()
+        cases = (
+            ({}, "direct"),
+            ({"layout": "independent_models"}, "direct"),
+            ({"layout": "single_model_horizon", "horizon_feature": {"enabled": False, "cyclical": True}}, "direct-pointwise"),
+            ({"layout": "single_model_horizon"}, "direct-pointwise-horizon"),
+            ({"layout": "single_model_horizon", "horizon_feature": {"cyclical": True}}, "direct-pointwise-horizon"),
+        )
+        for direct, label in cases:
+            with self.subTest(label=label, direct=direct):
+                features = replace(baseline.features, transformations={"direct": direct} if direct else {})
+                config = replace(baseline, features=features)
+                self.assertEqual(config.result_identity(), f"{label}-ridge-local-k1-{config.fingerprint()[:12]}")
+
+    def test_cyclical_is_a_feature_variant_not_a_direct_method(self):
+        baseline = self.config()
+        variants = []
+        for cyclical in (False, True):
+            features = replace(baseline.features, transformations={
+                "direct": {"layout": "single_model_horizon", "horizon_feature": {"cyclical": cyclical}}
+            })
+            config = replace(baseline, features=features)
+            self.assertEqual(config.result_method()["method_label"], "direct-pointwise-horizon")
+            self.assertIs(config.result_method()["horizon_feature_cyclical"], cyclical)
+            variants.append(config)
+        self.assertNotEqual(variants[0].fingerprint(), variants[1].fingerprint())
+        self.assertNotEqual(variants[0].result_identity(), variants[1].result_identity())
+
     def test_decomposition_semantic_revision_is_explicit(self):
         config = self.config()
         self.assertNotIn("decomposition_semantics", config.semantic_payload())

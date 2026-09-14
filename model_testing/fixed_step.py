@@ -205,6 +205,7 @@ def run_fixed_step_backtest(
             pd.concat(score_frames, ignore_index=True),
             aggregate_weighting=aggregate_weights,
             metadata={
+                "result_method": config.result_method(),
                 "backtest": holdout_metadata,
                 "runtime_resources": runner.runtime_resources_payload(),
             },

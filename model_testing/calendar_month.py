@@ -208,6 +208,7 @@ def run_calendar_month_backtest(
         pd.concat(score_frames, ignore_index=True),
         aggregate_weighting=aggregate_weights,
         metadata={
+            "result_method": config.result_method(),
             "backtest": metadata,
             "runtime_resources": final_runner.runtime_resources_payload(),
         },

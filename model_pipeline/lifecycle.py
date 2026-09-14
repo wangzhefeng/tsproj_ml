@@ -347,6 +347,7 @@ def execute_lifecycle(
             raise ValueError("backtest-only requires configured backtest geometry")
         _write_json(test_dir / "backtest_metadata.json", {
             "execution_mode": "backtest_only",
+            "result_method": config.result_method(),
             "config_fingerprint": fingerprint,
             "holdout": holdout_metadata,
             "backtest_wall_seconds": runner.stage_wall_seconds["backtest"],
@@ -491,6 +492,7 @@ def execute_lifecycle(
             "config_fingerprint": fingerprint,
             "runtime": {
                 "lifecycle_schema_version": 1,
+                "result_method": config.result_method(),
                 "forecast_origin": origin.isoformat(),
                 "run_evidence": run_evidence,
                 "resources": runner.runtime_resources_payload(),

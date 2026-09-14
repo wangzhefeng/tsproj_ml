@@ -24,6 +24,7 @@ REQUIRED_KEYS = frozenset(
         "schema_version",
         "config_kind",
         "result_identity",
+        "result_method",
         "fingerprint",
         "freq",
         "horizon",
@@ -82,6 +83,7 @@ def _build_single_row(
     row.update(
         {
             "config_kind": "single_model",
+            "result_method": cfg.result_method(),
             "strategy": strategy.name.value,
             "output_chunk_length": strategy.output_chunk_length,
             "model_type": cfg.estimator.model_type,
@@ -111,6 +113,7 @@ def _build_ensemble_row(
     row.update(
         {
             "config_kind": "ensemble",
+            "result_method": None,
             "strategy": None,
             "output_chunk_length": None,
             "model_type": None,

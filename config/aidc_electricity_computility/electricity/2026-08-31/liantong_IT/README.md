@@ -42,7 +42,9 @@ env -u PYTHONPATH .venv/bin/python config/aidc_electricity_computility/electrici
 
 本次全量执行处理 18 个 CSV、15,231,457 个样本；五份聚合/质量/拼接 CSV 各为 8,928 行且数值有限。长表 `training_job.csv` 为 14,715,681 行，`inference_job.csv` 为 515,776 行，逐采样核对原始值文本、处理值、Job、时间及来源位置通过；没有去重或补造采样。修正 7 条利用率（memory_util 2 条、gpu_memory_util 5 条），全部在 training；数值解析的浮点舍入不算异常修正。独立按原始序列重算全部指标的 sum/mean/std、Job 数和采样数，与输出在浮点容差内一致；源文件、目标及原五份输出哈希不变，拼接目标逐值精确一致。定向测试 `integration --match test_liantong_computility_process` 5 项通过，`fast` 289 项通过。这是离线准备验收，不表示模型接入或预测效果改善。
 
-本目录按六组保存 55 份物理模型 YAML（原四组 37 份，新增两个算力组各 9 份）；`liantong_power_process.py` 为独立离线处理入口，不修改模型配置。
+本目录按七组保存 63 份物理模型 YAML（原四组 37 份、两个算力组各 9 份、`accuracy_ablation` 8 份）；`liantong_power_process.py` 为独立离线处理入口，不修改模型配置。
+
+`accuracy_ablation/` 是以 baseline Direct pointwise 为基座的独立精度候选组：原样对照、近期状态、复杂度控制、L2/Huber 损失、特征筛选、Ridge 和 XGBoost。保持原数据与严格 14 天历史/17 折回测合同；不加入算力、测点或分解，不改原有六组。配置与实验边界见 [accuracy_ablation/README.md](accuracy_ablation/README.md)。仅配置验证不代表正式回测或精度提升。
 
 ## 执行
 

@@ -30,4 +30,20 @@
 
 测试临时产物不替代正式模型验收。
 
+### 结果身份与 Direct 方法
+
+单模型 identity 为 `<method_label>-<model_type>-<training_scope>-k<target_count>-<fingerprint前12位>`。
+`ForecastConfigSpec.result_method()` 是路径及结果元数据的方法描述唯一入口；标签来自实际配置，不来自 YAML 文件名。
+
+| Direct 有效配置 | method_label |
+|---|---|
+| 未声明 direct 变换或 independent_models | direct |
+| single_model_horizon，horizon_feature.enabled=false | direct-pointwise |
+| single_model_horizon，horizon 启用（无论是否周期编码） | direct-pointwise-horizon |
+
+共享模型的 horizon_feature.enabled 默认 true，cyclical 默认 false；禁用 horizon 时周期编码不生效。
+Direct 仅分上述三类。cyclical 是第三类内部的特征变体，不进入可读前缀；有效值保留在 result_method.horizon_feature_cyclical 中，不同周期编码配置由 fingerprint 区分。
+非 Direct 策略仍使用原策略名。方法描述额外记录 layout、有效 horizon 开关及 align_to_target，不改变 canonical payload/fingerprint。
+不同场景的 pointwise 文件名可能表示不同特征，必须按配置解释。旧目录不会自动迁移、回退查找或触发重训；需先审核迁移清单，再单独授权迁移及路径引用修正。
+
 当前活动配置的生命周期末次预测仍是历史留出评估，天气从 history 的预报列取值。真正未来部署上游构造设计时须显式 `forecast_designs(..., data_phase="future")`，且配置 future_path；默认不会自动借用 future 文件。部署层只消费传入设计，不负责判断文件阶段。

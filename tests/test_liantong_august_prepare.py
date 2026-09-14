@@ -122,13 +122,16 @@ class LiantongAugustPrepareTest(unittest.TestCase):
                 self.assertEqual(result.returncode, 0, result.stderr)
                 report = json.loads(result.stdout)
                 self.assertEqual([entry["rows"] for entry in report["outputs"]], [8928, 8928])
-                snapshots.append({p.name: p.read_bytes() for p in (root / "outputs").iterdir()})
+                snapshots.append({str(p.relative_to(root / "outputs")): p.read_bytes() for p in (root / "outputs").rglob("*") if p.is_file()})
             self.assertEqual(snapshots[0], snapshots[1])
             for source, before in input_bytes.items():
                 self.assertEqual(source.read_bytes(), before)
             for output in report["outputs"]:
                 path = Path(output["file"])
-                meta = json.loads(path.with_suffix(".meta.json").read_text())
+                meta_path = path.with_suffix(".meta.json")
+                if path.name.startswith("target_power_"):
+                    meta_path = path.parent / "aidc_load_liantong_5min" / meta_path.name
+                meta = json.loads(meta_path.read_text())
                 self.assertEqual(hashlib.sha256(path.read_bytes()).hexdigest(), meta["sha256_file"])
                 self.assertEqual(hashlib.sha256(Path(meta["source"]).read_bytes()).hexdigest(), meta["source_sha256"])
                 if meta["role"] == "target":

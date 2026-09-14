@@ -93,8 +93,10 @@ def run(source_dir: Path = SOURCE, output_dir: Path = OUTPUT) -> dict:
     audit["inputs"] = inventory
     output_dir.mkdir(parents=True, exist_ok=True)
     result.to_csv(output_dir / "df_power.csv", index=False, encoding="utf-8", na_rep="", date_format="%Y-%m-%d %H:%M:%S")
-    mapping.to_csv(output_dir / "point_mapping.csv", index=False, encoding="utf-8")
-    (output_dir / "processing_audit.json").write_text(json.dumps(audit, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    auxiliary_dir = output_dir / "aidc_load_liantong_5min"
+    auxiliary_dir.mkdir(parents=True, exist_ok=True)
+    mapping.to_csv(auxiliary_dir / "point_mapping.csv", index=False, encoding="utf-8")
+    (auxiliary_dir / "processing_audit.json").write_text(json.dumps(audit, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     print(f"输出 {output_dir}: {audit['rows']} 行，{audit['points']} 点位，全空 {audit['all_empty_rows']} 行", flush=True)
     return audit
 

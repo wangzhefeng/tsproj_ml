@@ -177,7 +177,9 @@ def publish(frame: pd.DataFrame, dest: Path, role: str, source: str) -> dict:
         "role": role,
         "freq": "5min",
     }
-    (dest.parent / (dest.stem + ".meta.json")).write_text(json.dumps(meta, ensure_ascii=False, indent=2))
+    meta_dir = dest.parent / "aidc_load_liantong_5min" if role == "target" else dest.parent
+    meta_dir.mkdir(parents=True, exist_ok=True)
+    (meta_dir / (dest.stem + ".meta.json")).write_text(json.dumps(meta, ensure_ascii=False, indent=2))
     return {"file": str(dest), "rows": len(frame), "sha256": meta["sha256_file"]}
 
 

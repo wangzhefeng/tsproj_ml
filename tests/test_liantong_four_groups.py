@@ -19,9 +19,9 @@ VARIANTS = {'direct-pointwise', 'direct-pointwise-horizon', 'direct', 'recursive
 class LiantongFourGroupsTest(unittest.TestCase):
     def test_physical_matrix_parameters_and_all_fold_dates(self):
         paths = list(DIRECTORY.glob('*/*.yaml'))
-        self.assertEqual(len(paths), 37)
+        self.assertEqual(len(paths), 55)
         self.assertEqual(list(DIRECTORY.glob('*.yaml')), [])
-        for group in ('baseline', 'baseline_opt', 'add_weather', 'add_weather_opt'):
+        for group in ('baseline', 'baseline_opt', 'add_weather', 'add_weather_opt', 'add_training_compute', 'add_inference_compute'):
             files = set(p.name for p in (DIRECTORY / group).glob('*.yaml'))
             expected = {f'lgbm_{variant}.yaml' for variant in VARIANTS}
             if group == 'baseline':

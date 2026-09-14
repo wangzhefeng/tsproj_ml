@@ -43,7 +43,7 @@ class LiantongPowerProcessTest(unittest.TestCase):
             self.assertTrue(result.loc[1, "point_2_value"] != result.loc[1, "point_2_value"])
             self.assertTrue(result.iloc[2, 1:].isna().all())
             self.assertEqual(result.time.iloc[-1], "2026-08-31 23:55:00")
-            mapping = pd.read_csv(output / "point_mapping.csv", dtype=str)
+            mapping = pd.read_csv(output / "aidc_load_liantong_5min/point_mapping.csv", dtype=str)
             self.assertEqual(mapping.SignalID.tolist(), ["001", "002", "003", "004"])
             self.assertEqual(mapping.point_column.tolist(), ["point_1_value"] + ["point_2_value"] * 3)
 

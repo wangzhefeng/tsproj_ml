@@ -8,6 +8,8 @@
 - `evidence.py`：现有模型状态的只读参数快照及 JSON 安全转换，不执行拟合/预测。
 - `results.py`：预测 canonical long result 写盘、绘图与 `CanonicalResultReader`；回测产物写盘属于 `model_testing/reporting.py`。
 
+`CanonicalResultReader.read_prediction(path)` / `read_backtest(path)` 读取完整 long 表并解析时间，拒绝非 canonical 文件；不提供隐式格式转换或筛选。原未生效的 `target` / `series_id` 参数已移除，调用方需在返回的 DataFrame 上显式筛选。未使用的 `_plot_timeseries` 再导出已退出；现役 long 转换再导出保留。
+
 稳定类型全部来自 `forecasting_core/`。本包不得反向 import `model_pipeline` 或 `model_ensemble`；目标/特征变换属于 `feature_engineering/transforms/`。
 
 证据采集由上层 runner 的公开只读能力调用。单模型逐折证据位于 holdout metadata，final 证据位于 `runtime.run_evidence` 与 `result_metadata.json`。适用语义进入内部 fingerprint；缓存命中保留历史证据，缺证据显式 unavailable，不以当前环境伪造历史证据、不为补证据重跑。

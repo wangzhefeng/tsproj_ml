@@ -25,4 +25,4 @@ Quantile linear blending 按 target 最小化 simplex 约束 pooled pinball；�
 3. `fit_ensemble()` 学习融合参数，`evaluation.py::evaluate_fused_oof()` 给出融合 OOF 评分（挂在 `run_ensemble_config` 返回的 `fused_oof_scores` 与 audit）；该评分与 final 预测结果分开记录。
 4. 成员按与单模型一致的显式窗口 final fit，持久化自包含 bundle。`predict_ensemble_bundle()` 使用已保存成员与融合器，不重新读取 OOF cache 或成员 YAML。
 
-`contracts.py` 提供 `BaseModelRunner`、`BaseModelRunnerFactory`、`EnsembleRuntimeServices` 与 `FusionMethod`；入口注入执行服务，融合包不直接构造 L2 runtime 私有对象。成员顺序、目标顺序、时间轴和 quantile grid 必须一致。
+`contracts.py` 提供 `BaseModelRunner`、`BaseModelRunnerFactory` 与 `EnsembleRuntimeServices`；入口注入执行服务，融合包不直接构造 L2 runtime 私有对象。融合方法由 trainer 的模块注册表分派；未接入的 `FusionMethod` 与未实例化的 `MemberAuditScores` 已退役，评分继续使用现役字典结构。成员顺序、目标顺序、时间轴和 quantile grid 必须一致。

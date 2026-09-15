@@ -7,6 +7,7 @@
 - `specs/`：problem/data/feature/strategy/estimator/config 严格不可变规格。
 - `tensors.py`：point `(N,H,K)`、marginal quantile `(N,H,K,Q)`、sample 类型边界。
 - `probabilistic_spec.py`：point/quantile、quantile grid、interval/calibration 配置合同。
+- 部署态概率 spec 的唯一解析入口为 `probabilistic_spec_from_mapping()`；旧 args 解析/回写接口 `resolve_probabilistic_spec()`、`apply_probabilistic_spec_to_args()` 已退役，不保留 legacy 字段归一化分支。canonical 默认值、校验及 dataclass 持久化合同不变。
 - `artifacts.py`：`ForecastModelBundle`、`MarginalForecastDistribution`、`QuantileGrid`。
 
 旧一维 `ForecastDistribution` 与无消费者的 `calibration_runtime_kwargs` / `validate_probabilistic_args` 已退出；使用现役张量分布及概率 spec 解析接口。不提供旧类型 import/pickle 兼容。`PredictionIntervalForecast`、`QuantileGrid` 和明确 unsupported 的 joint-sample 边界保留。

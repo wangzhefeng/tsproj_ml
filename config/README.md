@@ -65,7 +65,7 @@ Fixed-step validation 使用 `history_steps/train_window_steps/fold_count/stride
 ## 低频（日/周/月）约定
 
 - **freq 必须写 `1D` 而非 `D`**：`default_lags_for_freq` 只认 `1D`，写 `D` 会落回 5min 基准 lags（`[288,576,...]`），与低频数据错配。
-- 月频（`1ME`/`1MS`）已支持，频率解析位于 `utils/frequency.py`；月频 seasonal-naive 使用月步 offset，不得转换为固定 Timedelta。
+- 月频（`1ME`/`1MS`）已支持，频率规范化位于 `forecasting_core/specs/problem.py`；月频 seasonal-naive 使用月步 offset，不得转换为固定 Timedelta。
 - **中国节假日 builtin generator**：`source_type: generated` + `generator: chinese_holiday` + `availability: generator_defined`，列 `is_holiday`（含调休连休）/`holiday_name`（categorical）/`next_holiday_days`（节前倒计时，日历日；超出已知年历取删失哨兵 400，属有文档截断非编造值）。库覆盖 2004 起，覆盖外日期直接 RAISE 不静默降级；每年底国务院发布次年安排后需 `uv add chinese-calendar --upgrade`。审计兜底导出：`scripts/export_chinese_holiday_csv.py`。日频/日内频率适用；月频网格不适用（known_future 逐点精确匹配 RAISE）。新场景启用属语义变更，按消融流程单独验证。
 - **气象文件与列分流**：`history_path` 覆盖完整历史训练/测试区间，并保留实测和预报列。训练读 rt_/cal_rh，滑窗测试预测读同一 history 的 pred_；日历/datetime 按对应时刻生成。`future_path` 仅用于真正未来推理，对应实测列即使存在也忽略。文件选择由显式 `data_phase=historical|future` 决定，不能通过 `target_access` 或文件日期猜测；`inference_columns` 仍声明模型面列到预报物理列的映射，pred_ 声明为 ignored。无未来任务时允许只配置 history，当前活动场景均采用此方式（history 截至 2026-08-31）；不拼接 future，不用 future 补历史覆盖，不隐式回退实测。
 - **天气证据边界**：活动文件的 `availability: forecast_origin` 是现行可得性假设，不是供应商发布时间证据。既有离线补值及 ERA5 替代来源保留审计，不能仅凭 pred_ 前缀宣称完全真实 ex-ante 回放；预报缺失/非有限仍 RAISE，不缩窗。

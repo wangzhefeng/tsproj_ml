@@ -4,7 +4,7 @@
 
 - `factory.py`：`ModelFactory` 与 catalog→wrapper 构造接线。配置别名：`lgb`/`lightgbm`、`xgb`/`xgboost`、`cat`/`catboost`、`rf`/`randomforest`、`histgb`/`histgradientboosting`、`ridge`、`enet`/`elasticnet`、`lasso`、`qr`/`quantileregressor`、`st`/`seasonaltemplate`、`ets`。
 - `wrappers/`：按 family 保留原生模型封装；`base.py` 为共享基类/签名校验，`lightgbm.py`、`xgboost.py`、`catboost.py` 为 boosting 封装，`sklearn_tree.py` 为 RF/HistGB，`linear.py` 为 Ridge/ElasticNet/Lasso/QuantileRegressor，`seasonal_template.py` 为 SeasonalTemplate，`ets.py` 为直接消费原始时序历史的 ETS。
-- `pickle_io.py`：`ModelDeployPkl` 的底层 pickle 保存/加载，导入不再修改 `sys.path`。
+- `pickle_io.py`：`ModelDeployPkl` 的底层 pickle 保存/加载，导入不修改 `sys.path`，也不再因未用 logger 导入而初始化项目日志；对象保存/加载行为不变。
 
 训练在 `model_training/`，推理/产物在 `model_forecasting/`，生命周期编排在 `model_pipeline/`，稳定 bundle 合同在 `forecasting_core/artifacts.py`。本包不得反向 import 上述高层包。
 

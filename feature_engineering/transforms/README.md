@@ -7,3 +7,5 @@
 - `windows.py`：`select_transform_history()`，按唯一监督标签时间选取 scaler 窗口；分解默认使用同窗，可依配置显式扩展上下文。
 
 变换组合规格归一化属于父包 `transform_specs.py`，其中分解别名与参数校验委托 `decomposition/configuration/spec.py` 的唯一入口。训练与预测共用已拟合状态；不得在预测输入上重新拟合或以隐式填补掩盖缺失。分解算法内核属于 `decomposition/`，本子包负责按目标/序列接线与严格恢复。
+
+无消费者的迁移方法 `attach_fitted_target_scaler()` 与 `restore_quantile_matrix()` 已退役。调用方使用 `CanonicalTargetTransform` 的训练/恢复接口；quantile 恢复仍按 `(series_id, target)` 隔离并复用 point 的逆变换，不提供旧方法 shim，不改变已保存对象的类路径或状态字段。

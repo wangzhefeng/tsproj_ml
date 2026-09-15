@@ -51,4 +51,4 @@
 - **Agent 工作文档分流**：Hermes Agent 生成的实施计划只放 `.hermes/plans/`；Codex/Superpowers 生成的设计与计划只放 `.agents/superpowers/{specs,plans}/`；`docs/` 只保留面向项目使用者的长期有效文档。
 - `tests/` 已纳入版本控制；AIDC 专项脚本目录路径含日期段、不是合法 Python 包，相关测试用 `sys.path.insert` 引导后按模块名导入。
 - `docs/feature_engineering/` 实验脚本已删除（2026-09-06）：FFT/小波能力经 trailing 窗重写后接入 `advanced.fourier`/`advanced.wavelet`，周期诊断 EDA（含 FFT top-k 与 Engle-Granger 协整检验）并入 `data_process/periodicity_analysis.py`，历史内容从 Git 溯源。
-- `utils/`（L0）只保留 frequency/log_util/runtime_env；指标在 `model_evaluation/`，评估掩码在 `model_evaluation/mask.py::build_eval_mask`。
+- `utils/`（L0）只保留 log_util/runtime_env；频率合同在 `forecasting_core/specs/problem.py`，指标在 `model_evaluation/`，评估掩码在 `model_evaluation/mask.py::build_eval_mask`。

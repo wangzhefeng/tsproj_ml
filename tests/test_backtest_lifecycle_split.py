@@ -61,8 +61,10 @@ class BacktestLifecycleSplitTest(unittest.TestCase):
                 )
                 validation = dict(aggregate_weighting=None)
                 validation = type("Validation", (dict,), {"backtest": backtest})(validation)
+                method_metadata = {"strategy": "recursive", "method_label": "recursive"}
                 config = SimpleNamespace(
                     problem=SimpleNamespace(targets=("load",)), validation=validation,
+                    result_method=Mock(return_value=method_metadata),
                 )
                 windows = tuple(SimpleNamespace(
                     window=i + 1, origin=pd.Timestamp("2026-01-01") + pd.Timedelta(days=i),
@@ -92,6 +94,8 @@ class BacktestLifecycleSplitTest(unittest.TestCase):
                     metadata, tracker, audit = run_fixed_step_backtest(runner, Path(directory), mode="point")
                 self.assertEqual([x["window"] for x in scored], [1, 2])
                 self.assertEqual(write.call_args.args[1]["window"].tolist(), [1, 2])
+                config.result_method.assert_called_once_with()
+                self.assertEqual(write.call_args.kwargs["metadata"]["result_method"], method_metadata)
                 assert metadata is not None
                 self.assertEqual(metadata["mode"], "fixed_steps")
                 self.assertIsNone(tracker)

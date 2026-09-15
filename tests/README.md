@@ -1,6 +1,6 @@
 # tests
 
-联通场景测试默认进入 integration，不改发现规则、不 skip：`test_native_ets`（含 4032 点、5min/288 合成序列、失败透明及可信 pickle）；`test_seasonal_kernels`（独立黄金值、严格 as-of）；`test_liantong_optimization`（single/batch、九策略×有无天气残差、递归单位、目标隔离、缓存身份和合成 backtest 生命周期）；`test_liantong_four_groups`（原四组及新增双算力组共 55 份 YAML、参数静态校验、逐份 17 折几何）。原 `test_liantong_august_configs` 的路径已同步到 `add_weather/`。测试合成拟合不构成正式模型效果证据。
+联通场景测试默认进入 integration，不改发现规则、不 skip：`test_native_ets`（含 4032 点、5min/288 合成序列、失败透明及可信 pickle）；`test_seasonal_kernels`（独立黄金值、严格 as-of）；`test_liantong_optimization`（single/batch、九策略×有无天气残差、递归单位、目标隔离、缓存身份和合成 backtest 生命周期）；`test_liantong_four_groups`（原四组、双算力组及 accuracy_ablation 共七组 63 份 YAML，逐项核对完整物理路径、模型/输出合同、参数静态校验和逐份 17 折几何）。原 `test_liantong_august_configs` 的路径已同步到 `add_weather/`。测试合成拟合不构成正式模型效果证据。
 
 `test_liantong_compute_configs` 默认 integration：18 份算力配置与同名 baseline 字段级正交性；真实数据训练设计、首折/补值标签日/末折的预测特征第 1/144/288 步值与时间锚点；新增列宽度、无 provider 外推、预测原点后和 14 天窗口外算力扰动不变性。只做设计编译，不拟合正式模型；定向 `integration --match test_liantong_compute_configs`。
 

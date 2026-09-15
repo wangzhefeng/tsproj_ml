@@ -2,6 +2,13 @@
 
 基于机器学习回归器的时间序列多步预测项目。项目只接受 canonical schema-2 YAML，支持 Local/Global、单/多目标、七种标准多步策略、point/边际 quantile 和引用式模型融合。
 
+## 分支约定
+
+- `stable`：实际使用版本，接收通过验证的开发快照；不在该分支直接开展日常开发。
+- `dev`：持续开发分支。发布前完成定向及全量验证，再将 `stable` 快进到对应提交；发布后继续在 `dev` 开发，两条分支长期保留。
+
+分支晋级不等于重新训练模型或授予研究配置部署资格；各模型、数据及 bundle 的适用边界仍按下述合同执行。
+
 ## 当前能力
 
 - 七种多步策略：`recursive/direct/mimo/recmo/dirrec/dirmo/dirrecmo`。

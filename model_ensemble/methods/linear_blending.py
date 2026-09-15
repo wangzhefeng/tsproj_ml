@@ -8,7 +8,7 @@ all configured marginal quantiles. Every optimization persists an audit trail.
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import Any, Mapping
+from typing import Mapping
 
 import numpy as np
 from scipy.optimize import minimize, nnls

@@ -5,7 +5,7 @@ import importlib
 import itertools
 import threading
 from collections.abc import Iterable, Mapping
-from dataclasses import dataclass, fields, replace
+from dataclasses import dataclass, replace
 from functools import partial
 from types import MappingProxyType
 from typing import Callable, Sequence

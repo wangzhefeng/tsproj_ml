@@ -7,7 +7,6 @@ resolved `EnsembleConfigSpec`; it never touches runtime private helpers.
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass
 from typing import Any, Mapping
 
 import numpy as np
@@ -67,13 +66,6 @@ def generate_oof_for_config(
     )
 
 
-@dataclass(frozen=True, slots=True)
-class MemberAuditScores:
-    """Per-member OOF quality: RMSE/MAE per target (v4 §8.1 audit outputs)."""
-
-    scores_by_member: dict[str, dict[str, dict[str, float]]]
-
-
 def _member_oof_scores(
     oof: OOFPredictionArtifact, actual: np.ndarray
 ) -> dict[str, dict[str, dict[str, float]]]:
@@ -118,11 +110,12 @@ def fit_ensemble(
     dict[str, ForecastModelBundle],
     dict[str, Any],
 ]:
-    """Generate (or reuse) OOF, fit the fuser, refit members on full history.
+    """Generate (or reuse) OOF, fit the fuser, refit within each configured window.
 
     Returns ``(EnsembleArtifact, oof, final_member_predictions_by_name,
-    audit_payload)`` where final member predictions are produced at the
-    ensemble forecast origin with full-history fits.
+    member_bundles, audit_payload)``. Final member predictions are produced
+    at the ensemble forecast origin using the same explicit training-window
+    contract as standalone members.
     """
     impls = METHOD_IMPLEMENTATIONS
     method_name = config.method.name
@@ -256,4 +249,4 @@ def fit_ensemble(
     return ens_artifact, oof, final_values, member_bundles, audit
 
 
-__all__ = ["fit_ensemble", "generate_oof_for_config", "MemberAuditScores"]
+__all__ = ["fit_ensemble", "generate_oof_for_config"]

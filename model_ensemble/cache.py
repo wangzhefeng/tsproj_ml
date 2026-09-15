@@ -239,7 +239,6 @@ def _load_oof_cache_unlocked(
     horizon = int(metadata["horizon"])
     targets = tuple(metadata["targets"])
     levels = metadata.get("quantile_levels")
-    depth = 4 if levels else 3
     width = horizon * len(targets) * (len(levels) if levels else 1)
 
     values_by_member = {}

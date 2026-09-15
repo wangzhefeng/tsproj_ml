@@ -3,7 +3,6 @@
 
 # python libraries
 from concurrent.futures import ThreadPoolExecutor
-from pathlib import Path
 from typing import Sequence
 
 import numpy as np
@@ -25,9 +24,6 @@ from model_training.strategies import (
     TargetCoordinate,
     target_plan_for_config,
 )
-
-# global variable
-LOGGING_LABEL = Path(__file__).name[:-3]
 
 
 class CanonicalTrainer:

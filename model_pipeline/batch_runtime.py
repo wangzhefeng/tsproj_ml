@@ -8,9 +8,8 @@ import os
 import threading
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from pathlib import Path
-from threading import Lock
 from time import perf_counter, sleep
 from typing import Any, BinaryIO, Iterable, Iterator, Mapping, Sequence
 
@@ -573,7 +572,7 @@ def _run_canonical_batch_locked(
                 _write_state(state_path, state)
 
         def execute(item: tuple[_BatchTask, CanonicalBaseModelRunner]):
-            task, runner = item
+            _task, runner = item
             try:
                 runner.calendar_runner_factory = dynamic_runner_factory
                 result = (

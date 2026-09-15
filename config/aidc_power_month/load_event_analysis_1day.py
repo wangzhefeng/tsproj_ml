@@ -23,7 +23,6 @@ import sys
 from pathlib import Path
 from typing import Any, cast
 
-import numpy as np
 import pandas as pd
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]

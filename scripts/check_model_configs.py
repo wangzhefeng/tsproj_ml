@@ -5,18 +5,11 @@
 用法（项目根，注意 env -u PYTHONPATH 防 Hermes 注入遮蔽项目 utils/ 包）：
     env -u PYTHONPATH .venv/bin/python scripts/check_model_configs.py 'config/<scenario>/route_*/lgbm_*.yaml'
     env -u PYTHONPATH .venv/bin/python scripts/check_model_configs.py 'config/aidc_power_15min/**/*.yaml'
-    （无参数时默认 glob config/**/*.yaml，仅检查含 base_config/overrides 的模型 schema）
+    （无参数时默认 glob config/**/*.yaml，通过 is_model_yaml 识别模型配置）
 
-复算的校验（与历史 main.py 入口一致性校验同源，现位于配置加载/校验层）：
-  - window_length < history_length
-  - window_len - horizon > max(lags)（滞后特征非全 NaN；USMDP 仅在未启用 safe-lag 时除外）
-  - USMDP 多步 safe-lag：align_direct_features_to_target=true 时必须启用 lag，且 min(lags) >= horizon
-  - 目标分解方法/周期合法；概率模型具备原生 quantile objective
-  - n_windows > 0（滑窗数）
-  - advanced_features：USMDP 不能直接依赖 y；仅操作历史/未来都存在的列才可用
-    （USMDP 仅在 align_direct_features_to_target=true 时生成 y_lag_*）；预测上下文取
-    max(lags, 已启用 rolling_windows/diff_periods/pct_change_periods)，且不得超过
-    history_length × n_per_day
+单模型通过 canonical loader、字段/数据角色检查、FeatureCompiler 构造和
+strategy.resolve 校验配置；引用式 Ensemble 另检查成员、OOF 与方法约束。
+这里只验证配置，不证明真实资产可用、模型完成训练或部署产物有效。
 
 退出码：0 = 全部通过（可能有提示性警告），1 = 存在硬校验失败。
 """
@@ -35,8 +28,6 @@ from decomposition.configuration.spec import normalize_decomposition_config  # n
 from feature_engineering.compiler import FeatureCompiler  # noqa: E402
 from forecasting_core.specs import ForecastConfigSpec  # noqa: E402
 from model_ensemble.specs import EnsembleConfigSpec  # noqa: E402
-from model_training.objectives import validate_quantile_model_support  # noqa: E402
-from forecasting_core.probabilistic_spec import resolve_probabilistic_spec  # noqa: E402
 
 PROJ = Path(__file__).resolve().parent.parent
 

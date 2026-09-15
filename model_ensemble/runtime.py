@@ -502,8 +502,4 @@ def run_ensemble_config(
     }
 
 
-def _member_origin(member_config, registry):
-    return resolve_origin(registry, member_config.validation.get("forecast_origin"))
-
-
 __all__ = ["run_ensemble_config", "run_ensemble_config_file"]

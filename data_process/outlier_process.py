@@ -53,7 +53,6 @@ local/periodic Z-score 支持 run-length 过滤（短段保留、长段提高阈
 from __future__ import annotations
 
 import argparse
-import json
 import os
 import tempfile
 from dataclasses import dataclass
@@ -62,7 +61,6 @@ from typing import Any, Dict, List, Mapping, Optional
 
 import numpy as np
 import pandas as pd
-from scipy import stats
 
 # ---------------------------------------------------------------------------
 # 默认检测参数（可在 YAML 中覆盖）
@@ -144,12 +142,6 @@ class OutlierResult:
 # ---------------------------------------------------------------------------
 # 核心检测算法（与原版一致，参数化）
 # ---------------------------------------------------------------------------
-def remove_outliers(df: pd.DataFrame, column: str, threshold: int = 3) -> pd.DataFrame:
-    """移除异常值（Z-score 方法）。"""
-    z_scores = np.abs(stats.zscore(df[column]))
-    return df[z_scores < threshold]
-
-
 def _robust_scale(values: pd.Series) -> pd.Series:
     scale = values * ROBUST_SCALE
     return scale.mask(scale <= EPSILON)
@@ -189,22 +181,6 @@ def _keep_short_runs(
                 kept[run] = True
             else:
                 kept[run] = scores[run] >= threshold * long_run_multiplier
-            start = None
-    return pd.Series(kept, index=mask.index)
-
-
-def _keep_runs_at_least(mask: pd.Series, min_run_points: int) -> pd.Series:
-    """仅保留长度不小于给定值的连续候选段。"""
-    values = mask.fillna(False).to_numpy(dtype=bool)
-    kept = np.zeros(len(values), dtype=bool)
-    start = None
-    for pos, is_true in enumerate(values):
-        if is_true and start is None:
-            start = pos
-        if start is not None and (not is_true or pos == len(values) - 1):
-            end = pos if is_true else pos - 1
-            if end - start + 1 >= min_run_points:
-                kept[start:end + 1] = True
             start = None
     return pd.Series(kept, index=mask.index)
 
@@ -408,7 +384,7 @@ def build_cleaned_series(
     cleaned = marked[[time_col, target_col]].copy()
     cleaned_time = pd.to_datetime(cleaned[time_col])
     cleaned_target = pd.to_numeric(cleaned[target_col], errors="coerce")
-    # 仅物理越界自动清洗；统计可疑点保留原值，交由逐日审核图人工判定。
+    # 按检测阶段的清洗标记执行；统计异常是否自动清洗由 auto_clean_* 配置决定。
     if AUTO_CLEAN_COL in marked.columns:
         clean_mask = marked[AUTO_CLEAN_COL] == "是"
     else:

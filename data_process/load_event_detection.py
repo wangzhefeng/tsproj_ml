@@ -354,7 +354,7 @@ def detect_intraday_events(
 def suppress_boundary_artifacts(
     intraday_events: list[LoadEvent],
     day_events: list[LoadEvent],
-    config: Optional[EventDetectionConfig] = None,
+    *,
     zone_days: float = 1.0,
     amp_frac: float = 0.8,
 ) -> list[LoadEvent]:
@@ -365,7 +365,6 @@ def suppress_boundary_artifacts(
     （起点 = 台阶方向，终点次日 = 反方向）前后 zone_days 天内、方向一致、
     且幅度 < amp_frac * 日级幅度，则视为伪影丢弃。
     """
-    cfg = config or EventDetectionConfig()
     boundaries: list[tuple[pd.Timestamp, str, float]] = []
     for ev in day_events:
         direction = "up" if ev.kind.endswith("up") else "down"

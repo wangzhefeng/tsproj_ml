@@ -10,7 +10,7 @@ from model_training.objectives import (
     supports_quantile_objective,
     validate_quantile_model_support,
 )
-from forecasting_core.probabilistic_spec import ProbabilisticSpec, resolve_probabilistic_spec
+from forecasting_core.probabilistic_spec import ProbabilisticSpec, probabilistic_spec_from_mapping
 from models.catalog import quantile_parameters
 
 
@@ -106,12 +106,12 @@ class QuantileObjectiveMappingTest(unittest.TestCase):
             )
 
         ridge = build("ridge")
-        ridge_spec = resolve_probabilistic_spec(ridge)
+        ridge_spec = probabilistic_spec_from_mapping(ridge.probabilistic)
         with self.assertRaisesRegex(ValueError, "does not support native quantile"):
             validate_quantile_model_support(ridge.estimator.model_type, ridge_spec)
 
         lightgbm = build("lightgbm")
-        lightgbm_spec = resolve_probabilistic_spec(lightgbm)
+        lightgbm_spec = probabilistic_spec_from_mapping(lightgbm.probabilistic)
         validate_quantile_model_support(lightgbm.estimator.model_type, lightgbm_spec)
 
         self.assertEqual(lightgbm_spec.mode, "quantile")

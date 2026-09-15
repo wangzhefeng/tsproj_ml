@@ -12,15 +12,9 @@
 
 # python libraries
 import os
-from pathlib import Path
 
 import pickle
 import joblib
-
-from utils.log_util import logger
-
-# global variable
-LOGGING_LABEL = Path(__file__).name[:-3]
 
 
 class ModelDeployPkl:
@@ -47,10 +41,7 @@ class ModelDeployPkl:
         if not self.save_file_path.endswith(".pkl"):
             raise Exception("参数 save_file_path 后缀必须为 'pkl', 请检查.")
 
-        # F8（架构收敛 D1）：低层不 import 高层，schema gate 改 duck-typing。
-        # ForecastModelBundle 契约以 schema_version 属性判定，等价于原 isinstance 检查：
-        # bundle 对象必有整型 schema_version（构造期强校验）；普通估计器等非
-        # schema-2 bundle 对象按原语义放行或拒绝。
+        # 低层不依赖 bundle 类型；对象显式携带整数版本时，只接受 schema-2。
         schema_version = getattr(model, "schema_version", None)
         if (
             isinstance(schema_version, int)
@@ -64,17 +55,16 @@ class ModelDeployPkl:
 
         with open(self.save_file_path, "wb") as f:
             pickle.dump(model, f, protocol = 2)
-        # logger.info(f"模型文件已保存至{self.save_file_path}")
 
     def load_model(self):
         """
-        模型加载和使用：载入pkl文件。注意此时预测时列名为['x0', 'x1', ...]
+        从可信 pkl 文件加载对象，特征列和预测接口由保存的对象决定。
 
         Raises:
             Exception: [description]
 
         Returns:
-            _type_: sklearn 机器学习包实例类型。预测时用法: model.predict_proba(df[feat_list])[:, 1]
+            object: 保存的模型或 bundle，不在此层转换对象类型。
         """
         if not os.path.exists(self.save_file_path):
             raise Exception("参数 save_file_path 指向的文件路径不存在, 请检查.")

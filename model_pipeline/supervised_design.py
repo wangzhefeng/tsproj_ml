@@ -21,7 +21,6 @@ from feature_engineering import CompiledFeatures, FeatureCompiler
 from feature_engineering.seasonal import normalize_seasonal_baseline_spec, seasonal_baseline_values
 from forecasting_core.specs import (
     AvailabilityPolicy,
-    CalendarMonthBacktestSpec,
     ColumnRole,
     FixedStepBacktestSpec,
     ForecastConfigSpec,
@@ -447,14 +446,6 @@ class SupervisedDesignBuilder:
                 origin=origin, horizon=self.config.problem.horizon, period=spec["period"], days=spec["days"],
             )
         return output
-
-    def _labels(
-        self,
-        origin: pd.Timestamp,
-    ) -> tuple[np.ndarray, dict[Any, dict[str, tuple[float, ...]]]]:
-        request = self.request(origin, target_access="supervised_labels")
-        information_set = self.registry.materialize(request)
-        return self.labels_from_information_set(request, information_set)
 
     def labels_from_information_set(
         self,
@@ -890,8 +881,6 @@ def _supervised_arrays(
                     f"and provide at least two samples (expected {expected_samples})"
                 )
         candidate_origins = available_origins[-backtest.history_steps:]
-    elif isinstance(backtest, CalendarMonthBacktestSpec):
-        candidate_origins = available_origins
     else:
         candidate_origins = available_origins
     rows = []
@@ -946,29 +935,6 @@ def _label_end(
     origin: pd.Timestamp,
 ) -> pd.Timestamp:
     return validation.label_end(origin, builder.offset, builder.config.problem.horizon)
-
-
-def _holdout_training_indices(
-    builder: SupervisedDesignBuilder,
-    supervised_origins: tuple[pd.Timestamp, ...],
-) -> tuple[tuple[int, ...], dict[str, Any]]:
-    holdout_origin = supervised_origins[-1]
-    geometry = validation.TimeGeometry(
-        offset=builder.offset,
-        horizon=builder.config.problem.horizon,
-    )
-    train_indices = tuple(
-        index
-        for index, candidate in enumerate(supervised_origins[:-1])
-        if geometry.label_end(candidate) < geometry.label_start(holdout_origin)
-    )
-    metadata = validation.validate_no_overlap(
-        supervised_origins,
-        train_indices,
-        holdout_origin,
-        geometry,
-    )
-    return train_indices, metadata
 
 
 @dataclass(frozen=True, slots=True)

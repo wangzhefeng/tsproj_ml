@@ -1,12 +1,9 @@
-"""Canonical long-format forecast results and legacy read-only conversion."""
+"""Canonical long-format forecast results; non-canonical input is rejected."""
 
 from __future__ import annotations
 
-import json
-import re
 from collections.abc import Mapping
 from pathlib import Path
-from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -16,12 +13,10 @@ matplotlib.use("Agg")
 
 from forecasting_core.tensors import PointForecastTensor
 from forecasting_core.artifacts import MarginalForecastDistribution
-from model_evaluation.point import EVALUATION_AGGREGATION
 
-# 回测写盘/绘图已迁 model_testing/reporting.py（2026-09-06 R5b）；预测侧复用其共享绘图工具。
-from model_testing.reporting import (  # noqa: F401  (预测图复用 + 兼容 re-export)
+# 预测图复用回测侧的时间轴与文件名格式工具，不再导出未使用的绘图入口。
+from model_testing.reporting import (
     _format_time_axis,
-    _plot_timeseries,
     _safe_plot_name,
 )
 
@@ -238,9 +233,6 @@ class CanonicalResultReader:
     @staticmethod
     def read_prediction(
         path: str | Path,
-        *,
-        target: str | None = None,
-        series_id: object = "__local__",
     ) -> pd.DataFrame:
         frame = pd.read_csv(path)
         if set(_CANONICAL_KEY_COLUMNS + ["predict_value"]).issubset(frame):
@@ -252,9 +244,6 @@ class CanonicalResultReader:
     @staticmethod
     def read_backtest(
         path: str | Path,
-        *,
-        target: str | None = None,
-        series_id: object = "__local__",
     ) -> pd.DataFrame:
         frame = pd.read_csv(path)
         required = {

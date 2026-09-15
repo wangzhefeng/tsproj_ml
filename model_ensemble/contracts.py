@@ -2,8 +2,7 @@
 
 `BaseModelRunner` is the structural protocol the ensemble trainer/predictor
 rely on; `CanonicalBaseModelRunner` (model_pipeline.runner) is the reference
-implementation. `FusionMethod` is the protocol every `model_ensemble.methods.*`
-class implements.
+implementation. Fusion functions are selected by the trainer module registry.
 """
 
 from __future__ import annotations
@@ -131,28 +130,3 @@ def member_execution_evidence(runner: Any, artifact: Any, transform: Any) -> dic
     if not isinstance(payload, Mapping):
         raise TypeError("runner execution evidence must be a mapping")
     return dict(payload)
-
-
-@runtime_checkable
-class FusionMethod(Protocol):
-    """Per-target fuser learned on OOF predictions (v4 §3)."""
-
-    name: str
-
-    def fit(
-        self,
-        oof_predictions: Mapping[str, Any],
-        actual: Any,
-        targets: tuple[str, ...],
-    ) -> Any:
-        """Learn per-target parameters; returns a frozen MethodArtifact."""
-        ...
-
-    def combine(
-        self,
-        method_artifact: Any,
-        member_predictions: Mapping[str, Any],
-        targets: tuple[str, ...],
-    ) -> Any:
-        """Combine restored member predictions into the ensemble tensor."""
-        ...

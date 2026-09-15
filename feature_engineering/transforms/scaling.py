@@ -1,9 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Canonical 特征缩放器（2026-09-01 自 model_forecasting/transforms.py 归位）。
-
-特征缩放是特征工程的实现环节，归位到 feature_engineering/ 阶段包；
-纯机械搬移，行为与 fingerprint 零变化。旧导入路径经 re-export 保持兼容。
-"""
+"""Canonical 特征缩放器：在训练设计上拟合，预测时复用相同状态。"""
 
 from __future__ import annotations
 
@@ -14,7 +10,6 @@ import numpy as np
 import pandas as pd
 from sklearn.preprocessing import (
     MinMaxScaler,
-    PowerTransformer,
     RobustScaler,
     StandardScaler,
 )

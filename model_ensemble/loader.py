@@ -10,7 +10,6 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Mapping
 
-import pandas as pd
 import yaml
 
 from forecasting_core.specs.config import (

@@ -16,7 +16,6 @@ from forecasting_core.specs.config import parse_model_config
 from model_evaluation.point import evaluate_point_forecasts
 from annual_reporting import annual_tensors
 from annual_backtest import run_config, write_json
-from cold_start import load_recipe
 from generate_configs import model_document, apply_options
 
 SITES = ('guangdianchang', 'xinnengyuan')

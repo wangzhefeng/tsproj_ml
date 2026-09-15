@@ -7,7 +7,7 @@ on low-load periods). All quantile levels of one target share one weight set.
 
 from __future__ import annotations
 
-from typing import Any, Mapping
+from typing import Mapping
 
 import numpy as np
 

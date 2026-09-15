@@ -15,13 +15,9 @@ from sklearn.preprocessing import (
     RobustScaler,
     StandardScaler,
 )
-from sklearn.base import clone
 
 from decomposition import DecompositionPipeline, build_pipeline_from_args
-from feature_engineering.transform_specs import (
-    normalize_feature_scaling,
-    normalize_target_transformations,
-)
+from feature_engineering.transform_specs import normalize_target_transformations
 # CanonicalFeatureScaler 住在同包 scaling.py（2026-09-06 R3 归位，re-export 桥删除）
 from forecasting_core.tensors import (
     MarginalQuantileForecastTensor,
@@ -584,18 +580,6 @@ class TargetTransformPipeline:
             self._training_steps.append("target_scaling")
         return transformed
 
-    def attach_fitted_target_scaler(
-        self,
-        target_scaler: TargetScaler,
-        target_columns: Optional[Sequence[str]] = None,
-    ) -> None:
-        """迁移期接入 Trainer 已拟合 scaler，不重新 fit。"""
-        self.target_scaler = target_scaler
-        columns = target_columns or getattr(target_scaler, "column_names", ())
-        self.target_columns = tuple(columns)
-        if bool(getattr(target_scaler, "enabled", False)) and "target_scaling" not in self._training_steps:
-            self._training_steps.append("target_scaling")
-
     @staticmethod
     def _validate_times(times: Any, n_values: int) -> pd.DatetimeIndex:
         index = pd.DatetimeIndex(pd.to_datetime(times))
@@ -696,24 +680,6 @@ class TargetTransformPipeline:
             ).reshape(-1)
         return transformed
 
-    def restore_quantile_matrix(
-        self,
-        values: Any,
-        times: Any,
-        target_columns: Optional[Sequence[str]] = None,
-    ) -> np.ndarray:
-        """对 ``(n_steps, n_quantiles)`` 每列复用与 point 完全相同的 restorer。"""
-        matrix = np.asarray(values, dtype=float)
-        if matrix.ndim != 2:
-            raise ValueError(
-                f"quantile matrix must be two-dimensional; got shape={matrix.shape}"
-            )
-        self._validate_times(times, matrix.shape[0])
-        restored_columns = [
-            self.restore(matrix[:, index], times, target_columns=target_columns)
-            for index in range(matrix.shape[1])
-        ]
-        return np.column_stack(restored_columns)
 
 
 class PerSeriesTargetTransformPipeline:

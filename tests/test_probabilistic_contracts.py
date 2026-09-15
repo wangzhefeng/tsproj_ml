@@ -8,7 +8,7 @@ from forecasting_core.probabilistic_spec import (
     CalibrationSpec,
     IntervalSpec,
     ProbabilisticSpec,
-    resolve_probabilistic_spec,
+    probabilistic_spec_from_mapping,
     validate_cqr_params,
     validate_interval_quantiles,
     validate_quantile_grid,
@@ -49,56 +49,46 @@ class QuantileGridValidationTest(unittest.TestCase):
             validate_cqr_params(alpha=0.1, min_scores=0)
 
     def test_runtime_contract_rejects_conformal_point_mode(self):
-        args = SimpleNamespace(
-            predict_type="point",
-            quantiles=[0.1, 0.5, 0.9],
-            enable_conformal_calibration=True,
-            conformal_alpha=0.1,
-            conformal_calibration_windows=5,
-            conformal_min_scores=30,
-        )
-
-        with self.assertRaisesRegex(ValueError, "requires predict_type=quantile"):
-            resolve_probabilistic_spec(args)
+        with self.assertRaisesRegex(ValueError, "point mode forbids calibration"):
+            probabilistic_spec_from_mapping({
+                "mode": "point", "calibration": {"method": "cqr"},
+            })
 
     def test_runtime_contract_rejects_invalid_asof_calibration_limits(self):
-        args = SimpleNamespace(
-            predict_type="quantile",
-            quantiles=[0.1, 0.5, 0.9],
-            enable_conformal_calibration=True,
-            conformal_alpha=0.1,
-            conformal_calibration_windows=5,
-            conformal_min_windows=0,
-            conformal_min_scores=30,
-            conformal_label_availability_delay_steps=-1,
-        )
-
-        with self.assertRaisesRegex(ValueError, "conformal_min_windows must be > 0"):
-            resolve_probabilistic_spec(args)
-        args.conformal_min_windows = 1
-        with self.assertRaisesRegex(
-            ValueError,
-            "conformal_label_availability_delay_steps must be >= 0",
-        ):
-            resolve_probabilistic_spec(args)
+        calibration = {
+            "method": "cqr", "interval": "q10_q90", "target_coverage": 0.8,
+            "calibration_windows": 5, "min_windows": 3, "min_scores": 30,
+            "label_availability_delay_steps": 0,
+        }
+        cases = [
+            ({"min_windows": 0}, "min_windows must be > 0"),
+            ({"label_availability_delay_steps": -1}, "label_availability_delay_steps must be >= 0"),
+            ({"calibration_windows": 0}, "calibration_windows must be > 0"),
+            ({"min_windows": 6}, "min_windows must be <= calibration_windows"),
+            ({"min_scores": 0}, "min_scores must be > 0"),
+        ]
+        for override, message in cases:
+            with self.subTest(override=override):
+                with self.assertRaisesRegex(ValueError, message):
+                    probabilistic_spec_from_mapping({
+                        "mode": "quantile", "quantiles": [0.1, 0.5, 0.9],
+                        "calibration": {**calibration, **override},
+                    })
 
 
 class ProbabilisticSpecResolverTest(unittest.TestCase):
-    def test_legacy_quantile_config_normalizes_to_explicit_spec(self):
-        args = SimpleNamespace(
-            predict_type="quantile",
-            quantiles=[0.1, 0.5, 0.9],
-            quantile_monotone=True,
-            enable_conformal_calibration=True,
-            conformal_alpha=0.1,
-            conformal_calibration_windows=5,
-            conformal_min_windows=3,
-            conformal_min_scores=30,
-            conformal_label_availability_delay_steps=2,
-            probabilistic={},
-        )
-
-        spec = resolve_probabilistic_spec(args)
+    def test_canonical_quantile_config_normalizes_to_explicit_spec(self):
+        # 保留原独立期望值；只将构造输入迁移到生产 mapping 入口。
+        with self.assertWarnsRegex(RuntimeWarning, "target coverage differs"):
+            spec = probabilistic_spec_from_mapping({
+                "mode": "quantile", "quantiles": [0.1, 0.5, 0.9],
+                "crossing": {"method": "rearrangement", "report_raw": True},
+                "calibration": {
+                    "method": "cqr", "interval": "q10_q90", "target_coverage": 0.9,
+                    "calibration_windows": 5, "min_windows": 3, "min_scores": 30,
+                    "label_availability_delay_steps": 2,
+                },
+            })
 
         self.assertEqual(
             spec,
@@ -126,84 +116,60 @@ class ProbabilisticSpecResolverTest(unittest.TestCase):
         )
 
     def test_new_mapping_normalizes_nested_fields(self):
-        args = SimpleNamespace(
-            predict_type="point",
-            quantiles=[0.1, 0.5, 0.9],
-            quantile_monotone=False,
-            enable_conformal_calibration=False,
-            probabilistic={
-                "mode": "quantile",
-                "quantiles": [0.1, 0.5, 0.9],
-                "point_quantile": 0.5,
-                "crossing": {
-                    "method": "median_preserving_isotonic",
-                    "report_raw": True,
-                },
-                "intervals": [
-                    {
-                        "name": "p10_p90",
-                        "lower_quantile": 0.1,
-                        "upper_quantile": 0.9,
-                    }
-                ],
-                "calibration": {
-                    "method": "cqr",
-                    "interval": "p10_p90",
-                    "target_coverage": 0.8,
-                    "calibration_windows": 5,
-                    "min_windows": 3,
-                    "min_scores": 30,
-                    "label_availability_delay_steps": 0,
-                    "allow_interval_shrink": False,
-                    "grouping": "pooled",
-                },
+        spec = probabilistic_spec_from_mapping({
+            "mode": "quantile",
+            "quantiles": [0.1, 0.5, 0.9],
+            "point_quantile": 0.5,
+            "crossing": {
+                "method": "median_preserving_isotonic",
+                "report_raw": True,
             },
-        )
-
-        spec = resolve_probabilistic_spec(args)
-
+            "intervals": [
+                {
+                    "name": "p10_p90",
+                    "lower_quantile": 0.1,
+                    "upper_quantile": 0.9,
+                }
+            ],
+            "calibration": {
+                "method": "cqr",
+                "interval": "p10_p90",
+                "target_coverage": 0.8,
+                "calibration_windows": 5,
+                "min_windows": 3,
+                "min_scores": 30,
+                "label_availability_delay_steps": 0,
+                "allow_interval_shrink": False,
+                "grouping": "pooled",
+            },
+        })
         self.assertEqual(spec.mode, "quantile")
         self.assertEqual(spec.crossing_method, "median_preserving_isotonic")
         self.assertEqual(spec.intervals[0].nominal_coverage, 0.8)
+        assert spec.calibration is not None
         self.assertEqual(spec.calibration.target_coverage, 0.8)
 
-    def test_old_and_new_conflict_fails_fast(self):
-        args = SimpleNamespace(
-            predict_type="quantile",
-            quantiles=[0.1, 0.5, 0.9],
-            quantile_monotone=True,
-            enable_conformal_calibration=False,
-            probabilistic={
-                "mode": "quantile",
-                "quantiles": [0.2, 0.5, 0.8],
-                "point_quantile": 0.5,
-            },
+    def test_legacy_flat_keys_and_args_objects_fail_fast(self):
+        for key in ("predict_type", "quantile_monotone", "enable_conformal_calibration", "conformal", "crossing_method"):
+            with self.subTest(key=key):
+                with self.assertRaisesRegex(ValueError, "Unknown probabilistic key"):
+                    probabilistic_spec_from_mapping({
+                        "mode": "quantile", "quantiles": [0.1, 0.5, 0.9], key: True,
+                    })
+        self.assertRaises(
+            TypeError, probabilistic_spec_from_mapping, SimpleNamespace(predict_type="point"),
         )
-
-        with self.assertRaisesRegex(ValueError, "legacy and probabilistic config conflict"):
-            resolve_probabilistic_spec(args)
 
     def test_unknown_nested_key_and_point_calibration_fail_fast(self):
         with self.assertRaisesRegex(ValueError, "Unknown probabilistic.crossing key"):
-            resolve_probabilistic_spec(
-                SimpleNamespace(
-                    probabilistic={
-                        "mode": "quantile",
-                        "quantiles": [0.1, 0.5, 0.9],
-                        "point_quantile": 0.5,
-                        "crossing": {"method": "none", "typo": True},
-                    }
-                )
-            )
+            probabilistic_spec_from_mapping({
+                "mode": "quantile", "quantiles": [0.1, 0.5, 0.9],
+                "point_quantile": 0.5, "crossing": {"method": "none", "typo": True},
+            })
         with self.assertRaisesRegex(ValueError, "point mode forbids"):
-            resolve_probabilistic_spec(
-                SimpleNamespace(
-                    probabilistic={
-                        "mode": "point",
-                        "calibration": {"method": "cqr"},
-                    }
-                )
-            )
+            probabilistic_spec_from_mapping({
+                "mode": "point", "calibration": {"method": "cqr"},
+            })
 
     def test_calibration_interval_resolves_from_canonical_spec(self):
         spec = ProbabilisticSpec(

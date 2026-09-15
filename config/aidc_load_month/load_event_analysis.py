@@ -124,7 +124,7 @@ def detect_route_events(s15: pd.Series, cfg: EventDetectionConfig):
     day_events = merge_day_events(seg_events, short_events)
 
     intraday = detect_intraday_events(s15, cfg)
-    intraday = suppress_boundary_artifacts(intraday, day_events, cfg)
+    intraday = suppress_boundary_artifacts(intraday, day_events)
 
     all_events = sorted(day_events + intraday, key=lambda e: (e.start, e.end))
     return day_events, intraday, all_events, day_stats

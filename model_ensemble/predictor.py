@@ -7,7 +7,7 @@ cache, backtest CSV, or base-model YAML access.
 
 from __future__ import annotations
 
-from typing import Any, Mapping
+from typing import Mapping
 
 import numpy as np
 

@@ -42,7 +42,7 @@ env -u PYTHONPATH .venv/bin/python config/aidc_electricity_computility/electrici
 
 本次全量执行处理 18 个 CSV、15,231,457 个样本；五份聚合/质量/拼接 CSV 各为 8,928 行且数值有限。长表 `training_job.csv` 为 14,715,681 行，`inference_job.csv` 为 515,776 行，逐采样核对原始值文本、处理值、Job、时间及来源位置通过；没有去重或补造采样。修正 7 条利用率（memory_util 2 条、gpu_memory_util 5 条），全部在 training；数值解析的浮点舍入不算异常修正。独立按原始序列重算全部指标的 sum/mean/std、Job 数和采样数，与输出在浮点容差内一致；源文件、目标及原五份输出哈希不变，拼接目标逐值精确一致。定向测试 `integration --match test_liantong_computility_process` 5 项通过，`fast` 289 项通过。这是离线准备验收，不表示模型接入或预测效果改善。
 
-本目录按七组保存 63 份物理模型 YAML（原四组 37 份、两个算力组各 9 份、`accuracy_ablation` 8 份）；`liantong_power_process.py` 为独立离线处理入口，不修改模型配置。
+本目录按八组保存 72 份物理模型 YAML（原四组 37 份、三个算力组各 9 份、`accuracy_ablation` 8 份）；`liantong_power_process.py` 为独立离线处理入口，不修改模型配置。
 
 `accuracy_ablation/` 是以 baseline Direct pointwise 为基座的独立精度候选组：原样对照、近期状态、复杂度控制、L2/Huber 损失、特征筛选、Ridge 和 XGBoost。保持原数据与严格 14 天历史/17 折回测合同；不加入算力、测点或分解，不改原有六组。配置与实验边界见 [accuracy_ablation/README.md](accuracy_ablation/README.md)。仅配置验证不代表正式回测或精度提升。
 
@@ -119,22 +119,25 @@ env -u PYTHONPATH .venv/bin/python config/aidc_electricity_computility/electrici
 - 配置只支持 `--backtest-only`，完整生命周期、final fit 和 bundle 导出显式拒绝。其他场景未启用 `train_history_steps` 时保持原行为。
 - 验收包括九策略合成 LightGBM 回测及窗口外扰动不变性、真实数据首折/8.19/末折特征设计探针；不表示九份正式配置已经完成大规模拟合，也不提供部署资格或实测缺失日误差证明。
 
-## 两个算力消融组
+## 算力消融组
 
-`add_training_compute/` 和 `add_inference_compute/` 各含 baseline 的九份 `lgbm_*.yaml` 对照。仅添加独立算力 source、observed-past lag 和组输出路径，baseline 的目标、节假日、datetime、rolling/expanding、模型参数、策略与验证设置全部保留。ETS 不消费这些外生指标，仅保留原 baseline 对照，不生成名不副实的 ETS 加算力配置。
+`add_training_compute/`、`add_inference_compute/` 和 `add_training_inference_compute/` 各含 baseline 的九份 `lgbm_*.yaml` 对照。前两个单因素组仅添加独立算力 source、observed-past lag 和组输出路径，baseline 的目标、节假日、datetime、rolling/expanding、模型参数、策略与验证设置全部保留。ETS 不消费这些外生指标，仅保留原 baseline 对照，不生成名不副实的 ETS 加算力配置。
 
 | 组 | 明确入模的基础列 |
 | --- | --- |
 | `add_training_compute` | `training_cpu_util_sample_mean`、`training_cpu_util_sample_std`、`training_gpu_power_usage_sum_kw` |
 | `add_inference_compute` | `inference_gpu_memory_amount_sum_raw`、`inference_gpu_memory_util_sample_mean`、`inference_memory_amount_sum_raw`、`inference_memory_total_sample_mean_raw` |
+| `add_training_inference_compute` | 上述全部 7 列，另加目标 `value` 的 `recent_state`（原点前含原点 6/12/36 点 level/mean/std/diff/slope，与 baseline_opt 同口径） |
+
+`add_training_inference_compute` 是训练+推理算力与近期状态的组合候选：除两组算力 source、7 列 lag、`recent_state` 和组输出路径外，其余字段与 baseline 逐字段一致；不加 same_slot、seasonal_baseline 或参数调整，不能将组合效果归因于单一增量。`recent_state` 只作用于目标 `value`，不展开到算力列。
 
 - 分别读取 `aidc_comp_liantong_5min/computility_training_5min_20260801_20260831.csv` 和 `computility_inference_5min_20260801_20260831.csv`，不读取带目标的分析拼接表或 Job 长表；未声明列不会入模。内存/显存保留原始单位，GPU 功率为 kW。
-- 每列 `observed_past_lags: [288, 576]`：分别增加 6/8 个算力 lag 列，不增加算力 rolling、近期状态或特征选择器。CPU 的 std 指同刻实例间离散度，不是沿时间的波动。
+- 每列 `observed_past_lags: [288, 576]`：单因素组分别增加 6/8 个、组合组增加 14 个算力 lag 列，不增加算力 rolling、算力近期状态或特征选择器。CPU 的 std 指同刻实例间离散度，不是沿时间的波动。
 - `availability: source_time` 为采集可得性假设，`provider: persistence` 满足 observed-past 显式 provider 合同；由于最小 lag 等于 horizon，当前设计只消费原点前真实历史，不使用 persistence 外推。不能据此证明实际采集零延迟。
 - 保留基线的历史锚点：普通 Direct、MIMO、DIRMO 的 `align_to_target: false` 将 lag 冻结在预测原点；Direct pointwise 两变体及递归家族以目标时刻回溯。不能把原点锚定的 288 步 lag 描述成预测时刻的昨日同槽。每个变体只与同名 baseline 配对，避免把策略锚点差异归因为算力。
-- 保留 5min、288 点 horizon、14 天原始历史、17 折和 backtest-only 边界。两组仅为待验证候选；全月关联分析不是独立泛化证据，不宣称预测改善，不自动运行正式回测或导出部署模型。
+- 保留 5min、288 点 horizon、14 天原始历史、17 折和 backtest-only 边界。三组仅为待验证候选；全月关联分析不是独立泛化证据，不宣称预测改善，不自动运行正式回测或导出部署模型。
 
-验收：全场景 `scripts/check_model_configs.py 'config/aidc_electricity_computility/electricity/2026-08-31/liantong_IT/**/*.yaml'` 为 55/55 通过；`tests/run_suite.py integration --match test_liantong_` 为 33 项通过，`fast` 为 289 项通过。新增测试覆盖全部 18 份配置的真实训练设计、首折/补值标签日/末折预测第 1/144/288 步值及其 proof，并核对窗口外/未来算力扰动不变性；不代表正式回测、final fit 或部署验收。
+验收：全场景 `scripts/check_model_configs.py 'config/aidc_electricity_computility/electricity/2026-08-31/liantong_IT/**/*.yaml'` 为 72/72 通过；`tests/run_suite.py integration --match test_liantong_` 为 33 项通过。新增测试覆盖全部 27 份算力配置的真实训练设计、首折/补值标签日/末折预测第 1/144/288 步值及其 proof，并核对窗口外/未来算力扰动不变性；不代表正式回测、final fit 或部署验收。
 
 ## 四组与原生 ETS
 

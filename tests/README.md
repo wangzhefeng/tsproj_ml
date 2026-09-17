@@ -1,8 +1,8 @@
 # tests
 
-联通场景测试默认进入 integration，不改发现规则、不 skip：`test_native_ets`（含 4032 点、5min/288 合成序列、失败透明及可信 pickle）；`test_seasonal_kernels`（独立黄金值、严格 as-of）；`test_liantong_optimization`（single/batch、九策略×有无天气残差、递归单位、目标隔离、缓存身份和合成 backtest 生命周期）；`test_liantong_four_groups`（原四组、双算力组及 accuracy_ablation 共七组 63 份 YAML，逐项核对完整物理路径、模型/输出合同、参数静态校验和逐份 17 折几何）。原 `test_liantong_august_configs` 的路径已同步到 `add_weather/`。测试合成拟合不构成正式模型效果证据。
+联通场景测试默认进入 integration，不改发现规则、不 skip：`test_native_ets`（含 4032 点、5min/288 合成序列、失败透明及可信 pickle）；`test_seasonal_kernels`（独立黄金值、严格 as-of）；`test_liantong_optimization`（single/batch、九策略×有无天气残差、递归单位、目标隔离、缓存身份和合成 backtest 生命周期）；`test_liantong_four_groups`（原四组、三个算力组及 accuracy_ablation 共八组 72 份 YAML，逐项核对完整物理路径、模型/输出合同、参数静态校验和逐份 17 折几何）。原 `test_liantong_august_configs` 的路径已同步到 `add_weather/`。测试合成拟合不构成正式模型效果证据。
 
-`test_liantong_compute_configs` 默认 integration：18 份算力配置与同名 baseline 字段级正交性；真实数据训练设计、首折/补值标签日/末折的预测特征第 1/144/288 步值与时间锚点；新增列宽度、无 provider 外推、预测原点后和 14 天窗口外算力扰动不变性。只做设计编译，不拟合正式模型；定向 `integration --match test_liantong_compute_configs`。
+`test_liantong_compute_configs` 默认 integration：27 份算力配置与同名 baseline 字段级正交性；真实数据训练设计、首折/补值标签日/末折的预测特征第 1/144/288 步值与时间锚点；新增列宽度、无 provider 外推、预测原点后和 14 天窗口外算力扰动不变性。只做设计编译，不拟合正式模型；定向 `integration --match test_liantong_compute_configs`。
 
 编译器收口回归也位于 `test_liantong_optimization`：新增特征供 cyclical 使用的独立黄金值与 single/batch schema 一致性；MIMO/RecMO/DIRMO/DirRecMO/Direct 在 H=4/12/288 时块天气取数线性上界及 mean/min/max 黄金值；同原点实测/预报、不同原点、Global 多序列的作用域隔离、逐行 proof 一致性和块内单步仍聚合完整块。调用计数只证明重复计算被消除，不等同于正式配置耗时或模型效果验收。
 

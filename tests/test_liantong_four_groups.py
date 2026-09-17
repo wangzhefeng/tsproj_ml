@@ -1,4 +1,4 @@
-"""联通七组物理 YAML 的清单、参数和时间合同；不拟合业务模型。"""
+"""联通八组物理 YAML 的清单、参数和时间合同；不拟合业务模型。"""
 from pathlib import Path
 import unittest
 
@@ -18,6 +18,7 @@ VARIANTS = {'direct-pointwise', 'direct-pointwise-horizon', 'direct', 'recursive
 STANDARD_GROUPS = (
     'baseline', 'baseline_opt', 'add_weather', 'add_weather_opt',
     'add_training_compute', 'add_inference_compute',
+    'add_training_inference_compute',
 )
 ACCURACY_ABLATIONS = {
     'lgbm_direct-pointwise_control.yaml': ('control', 'lightgbm'),

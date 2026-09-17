@@ -13,6 +13,11 @@
 - 常规修改运行 `env -u PYTHONPATH .venv/bin/python tests/run_suite.py fast` 并补相关定向测试；收口用 `all`。新测试默认纳入 integration，不得通过遗漏发现或 skip 提速；执行及覆盖映射见 `tests/README.md`。
 - 日志目录 `logs/main/`；`LOG_NAME` 由 `os.environ.get('LOG_NAME', 'main')` 提供默认值。
 
+## 分支约定
+
+- `stable`：模型测试分支，只通过从 `dev` 合并（fast-forward 优先）推进，不在其上直接开发。
+- `dev`：功能开发与重构主分支；阶段性收口后合并进 `stable`。
+
 ## 核心不变量
 
 - 只接受 `schema_version: 2` canonical YAML；无 legacy 层，非 canonical 输入（YAML/pkl/宽表）一律 RAISE。

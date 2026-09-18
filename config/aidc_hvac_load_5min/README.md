@@ -2,6 +2,12 @@
 
 数据提取、因果填补与预测窗口合同见 [scripts/README.md](scripts/README.md)。本场景目前准备数据资产与可复用 weather source 片段，**尚未创建模型 YAML，也未训练模型**。
 
+## A/B双路预测输入
+
+32个CSV保持原目录及时间窗，均同时含 `hvac_total_load_A`、`hvac_total_load_B`；路线目录区分预测目标而非输入覆盖范围。`route_A`的目标是A列，`route_B`的目标是B列，记录在选窗manifest的`target_column`。`data*.csv`另含六个楼栋×路线分量，以及 `hvac_total_load_AB`（三楼两路总暖通）；IT字段保持不分路。具体字段及严格求和合同见脚本README。
+
+重建只重新组装imputed数据，不做异常清洗，也不改变raw/imputed。另一条路、楼栋分量与AB合计仅是历史信息，不能把测试期真实值作为未来已知特征。新增列或改名会改变target SHA，因此天气值即使不变，也必须重新执行本场景天气适配刷新元数据绑定。
+
 ## 每个预测文件配套一份天气
 
 天气分两步构建（从仓库根运行；共享数据未变化时只执行第二步）：

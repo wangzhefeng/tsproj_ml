@@ -14,8 +14,9 @@
 | `analyze_it_load.py` | 只读 `raw_data/IT_load/`，结果写统一 `analysis/`，CSV 使用 `IT_load_` 前缀避免与暖通报告重名 |
 | `migrate_hvac_data.py` | 一次性迁移旧数据与 IT 分析文件，SHA256 校验；已有迁移记录时仅复核，不重复移动 |
 | `impute_hvac_data.py` | 原始点位因果短缺口遮蔽选型、填补、严格总量重算；20 份 CSV 写 `imputed_data/`，审计写 `analysis/imputation/` |
-| `select_hvac_windows.py` | 从填补数据筛选近期最长完整自然日段；32 场景写 `forecast_data/`，窗口/有效性/折几何审计写 `analysis/forecast_windows/` |
-| `analyze_forecast_data.py` | 只读32份预测数据及点位汇总实测掩码，分析84个文件内数值列；每文件输出完整时序、日内热力图、最大相对跳变局部图及候选CSV到 `analysis/forecast_data_visual/` |
+| `forecast_schema.py` | 双路字段到填补源的唯一映射，明确每个路线目录的目标列；不提供旧裸暖通列兼容层 |
+| `select_hvac_windows.py` | 从填补数据筛选近期最长完整自然日段，32场景均同时导出A/B路；窗口/逐列有效性/折几何审计写 `analysis/forecast_windows/` |
+| `analyze_forecast_data.py` | 只读32份双路预测数据及实测掩码，逐列分析；每文件输出完整时序、日内热力图、最大相对跳变局部图及候选CSV到 `analysis/forecast_data_visual/` |
 
 ## 运行方式
 
@@ -27,7 +28,7 @@ env -u PYTHONPATH .venv/bin/python config/aidc_hvac_load_5min/scripts/impute_hva
 env -u PYTHONPATH .venv/bin/python config/aidc_hvac_load_5min/scripts/select_hvac_windows.py
 ```
 
-三个新入口均支持 `--root <数据根目录>`，默认按脚本位置定位仓库，不依赖 cwd。迁移幂等复核，填补/选窗拒绝覆盖任何已有产物；临时目录计算完成、全部输入哈希复核后才发布。源提取 `build_*` 仅用于新归档，不能用来覆写已迁移 raw。旧 `analyze_*` 是原始数据诊断，图中的双向插值估计不是本次因果填补结果。
+三个入口均支持 `--root <数据根目录>`，默认按脚本位置定位仓库，不依赖 cwd。迁移幂等复核，填补始终拒绝覆盖；选窗默认拒绝覆盖，显式 `--replace` 才替换预测表与选窗审计，旧版不保留。临时目录生成并核验成功后再发布；发布异常尝试恢复旧目录，不能声称多目录切换对并发读者具有原子性。源提取 `build_*` 仅用于新归档，不能覆写raw。旧 `analyze_*` 是原始数据诊断，图中的双向插值估计不是因果填补结果。
 
 ## 提取规则
 
@@ -96,21 +97,35 @@ dataset/aidc_hvac_load_5min/
 
 - 近期下界在 `../preparation.json` 显式为2026-07-14，避免最长窗口选到冬季；CLI可显式用 `--recent-start` 改变。每栋楼取两版本×两路严格总量完整性交集，有IT再并入对应IT；按最长完整自然日连续段选择，同长度选较新的段。
 - 有IT/无IT独立选窗，不拼接断档；这不是控制变量意义的IT增益对照，后续须对齐测试原点再比较。30天历史包含训练和测试；14+1、stride=1天时30天有16折。短窗口仍生成真实CSV，不足15天标记 `insufficient_14_plus_1`，不伪造折数。
-- 分楼CSV只含 `time,hvac_total_load`，有IT增加 `it_total_load`。三楼 `data.csv` 再加 `A1_hvac_total_load,A2_hvac_total_load,A3_hvac_total_load`；`data_with_it.csv` 同时含 `it_total_load,A1_it_total_load,A2_it_total_load,A3_it_total_load`。
-- `analysis/forecast_windows/windows.csv` 枚举32个文件、窗口、长度、SHA、结构折数和资格时间安全折数；`folds_14_1.csv` 枚举原点与测试实测行数；`masks/` 独立保存有效性，不污染预测CSV字段。**测试期估计值不是实测真值**，本次未创建预测YAML、未运行模型，也未自动将mask接入运行管线。
+- `hvac_dual_route_v1` 分楼CSV含 `time,hvac_total_load_A,hvac_total_load_B`，有IT增加不分路的 `it_total_load`。三楼 `data*.csv` 含两路三楼总量、`hvac_total_load_AB`（三楼A+B总暖通）及 `A1/A2/A3_hvac_total_load_A/B` 六个分量；有IT额外含 `it_total_load,A1_it_total_load,A2_it_total_load,A3_it_total_load`。不再导出有歧义的裸 `hvac_total_load`；raw/imputed仍保留各自原有 `total_load`。
+- `hvac_total_load_A = A1_hvac_total_load_A + A2_hvac_total_load_A + A3_hvac_total_load_A`，B路同理；`hvac_total_load_AB = hvac_total_load_A + hvac_total_load_B`，任一组成缺失时总量缺失，不做部分求和。分楼文件不额外导出AB合计。
+- 同一版本/楼栋/IT选项的route_A/B文件列顺序和数值相同，保留两目录用于表达**不同预测目标**：分别为 `hvac_total_load_A`、`hvac_total_load_B`。`target_column` 在manifest与窗口/折审计中显式声明。其他路、同路分量、AB合计与IT只能作为预测原点之前的历史输入；不能把测试期同刻实测作为特征，尤其AB和目标分量会直接包含目标信息。
+- `analysis/forecast_windows/windows.csv` 枚举32文件、目标列、列源映射、窗口、SHA、结构折数和资格安全折数；`folds_14_1.csv` 按目标列统计测试实测行数；`masks/` 的每个业务字段都有 `<列名>__observed` 与 `<列名>__eligibility_known_at`，AB取两路实测交集和最晚资格时间，全表 `eligibility_known_at` 覆盖全部已导出历史输入。**测试期估计值不是实测真值**；未创建预测YAML、未运行模型，也未自动将mask接入运行管线。
 - 定向验证：`env -u PYTHONPATH .venv/bin/python tests/run_suite.py integration --match test_hvac_data_preparation`；常规回归用 `fast`。
 
 ## 预测数据异常候选可视化
 
-运行 `env -u PYTHONPATH .venv/bin/python config/aidc_hvac_load_5min/scripts/analyze_forecast_data.py`，可用 `--root` 指定数据根目录。输出 `analysis/forecast_data_visual/{version}/{route}/{CSV文件名去扩展名}/`，每个输入对应：
+运行 `env -u PYTHONPATH .venv/bin/python config/aidc_hvac_load_5min/scripts/analyze_forecast_data.py`，可用 `--root` 指定数据根目录，经明确授权可用 `--replace` 覆盖旧图及候选表。输出 `analysis/forecast_data_visual/{version}/{route}/{CSV文件名去扩展名}/`，每个输入对应：
 
 - `timeseries.png`：各列独立纵轴的全量5min序列、填补标记和统计候选；不改值、不聚合降采样。
 - `daily_heatmap.png`：每列独立色阶，横轴时刻、纵轴日期。
 - `largest_jump_zoom.png`：按各列幅度门槛标准化后的最大单步跳变附近±3h，辅助观察局部形态。
-- `series_summary.csv`、`candidate_points.csv`、`candidate_segments.csv`：逐列阈值/统计、候选点与连续候选段；根目录另存32文件完整性表、84列汇总、哈希manifest和图片索引README。
+- `series_summary.csv`、`candidate_points.csv`、`candidate_segments.csv`：逐列阈值/统计、候选点与连续候选段；根目录另存32文件完整性表、全部双路字段汇总、哈希manifest和图片索引README。
 
 复用 `data_process.outlier_process.detect_anomalies` 的只读尖峰检测，不调用清洗入口。尖峰半窗口3槽，幅度至少 `max(实测中位数×10%,1kW)`，并满足 robust z≥6或相邻两端接近；跳变门槛为 `max(6×1.4826×实测相邻差分MAD,实测中位数×10%,1kW)`；低负荷候选≤实测中位数10%；恒值候选为相邻差≤1e-9kW且持续≥12槽。阈值是明示的探索性规则，不是设备物理限值，也不自动清洗。
 
-逐列匹配 `analysis/imputation/masks`，三楼分量使用对应楼的掩码，不拿总量掩码冒充分量。跳变的 `transition_observed` 要求相邻两端均实测；当前点 `observed` 为真并不证明其跳变未涉及填补。IT与分楼分量在多文件中重复出现，候选数按文件列计，不能直接相加当独立物理事件数。居中尖峰使用未来邻域，仅供离线复核，不可直接作为预测特征。
+按 `forecast_schema.py` 匹配 `analysis/imputation/masks`，每列从其后缀指定的真实路线取数，不按所在目录猜路线；三楼分量用对应楼的掩码，AB用两路交集。跳变的 `transition_observed` 要求相邻两端均实测；当前点 `observed` 为真并不证明其跳变未涉及填补。A/B/IT/分量在多文件中重复出现，候选数按文件列计，不能相加当独立物理事件。居中尖峰使用未来邻域，仅供离线复核，不可作为预测特征。
 
-输入和掩码SHA前后必须不变；输出目录存在则拒绝覆盖；先在临时目录生成全部32份，再整体发布。缺失、非有限值、负值和汇总分量关系与统计候选分开汇报；无额定容量信息时不宣称某个高值超过物理上限。
+输入和掩码SHA前后必须不变；默认拒绝覆盖、仅显式 `--replace` 替换；先生成全部32份再发布。缺失、非有限值、负值和汇总分量关系与统计候选分开汇报；无额定容量信息时不宣称某值超过物理上限。异常候选只标记，不修改预测数据。
+
+## 已授权的双路重建
+
+在现有imputed数据上重新组装，不重复填补、不做异常清洗：
+
+```bash
+env -u PYTHONPATH .venv/bin/python config/aidc_hvac_load_5min/scripts/select_hvac_windows.py --replace
+env -u PYTHONPATH .venv/bin/python config/aidc_hvac_load_5min/scripts/analyze_forecast_data.py --replace
+env -u PYTHONPATH .venv/bin/python config/aidc_hvac_load_5min/scripts/prepare_weather.py
+```
+
+字段变化也会改变目标文件SHA；天气适配必须同步刷新绑定，即使时间窗未变、天气CSV字节不变。不要为此重建共享天气源或其他场景天气。旧候选图与文字报告随可视化目录替换，新的统计仍不构成异常清洗授权。

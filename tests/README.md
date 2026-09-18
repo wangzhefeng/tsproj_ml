@@ -12,6 +12,8 @@
 
 `test_hvac_forecast_visual` 默认 integration：尖峰/跳变/低负荷/恒值候选、近恒定序列微小波动不误报、实测与填补端点标记，以及含三楼暖通/IT分量的真实临时PNG/CSV生成和源字节不变；不执行异常清洗。定向 `integration --match test_hvac_forecast_visual`。
 
+双路合同回归仍在上述两模块：不对称A/B数值与缺失掩码、AB严格和、路线显式目标、跨路线目录相同输入、逐字段资格时间、授权覆盖/失败回滚/源目录范围拒绝。`test_weather_hvac_windows` 对32份真实资产使用新的目标列，并校验天气metadata绑定的新target SHA；字段迁移不改变天气值。
+
 ## 执行集合
 
 `test_direct_result_identity` 默认 integration：三类 Direct 方法（含 horizon 的有/无周期编码两种特征变体）的真实小样本训练/回测/预测落盘及元数据、原始语义 hash、文件别名不变性和非法配置拒绝；`test_forecast_config_fingerprint` 在 fast 中覆盖三类前缀及 cyclical 仅影响特征元数据和语义 hash、不新增方法类型。迁移清单只读，不移动存量结果。

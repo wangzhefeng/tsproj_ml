@@ -21,28 +21,38 @@ class ForecastVisualTest(unittest.TestCase):
             source.parent.mkdir(parents=True)
             idx = pd.date_range('2026-08-01', periods=288 * 2, freq='5min', name='time')
             frame = pd.DataFrame(index=idx)
-            for kind in ['hvac', 'it']:
+            for route, scale in [('A', 1), ('B', 10)]:
                 for n, b in enumerate(['A1', 'A2', 'A3'], 1):
-                    frame[f'{b}_{kind}_total_load'] = n * 100 + np.sin(np.arange(len(idx)))
-                frame[kind + '_total_load'] = frame[[f'{b}_{kind}_total_load' for b in ['A1', 'A2', 'A3']]].sum(axis=1)
+                    frame[f'{b}_hvac_total_load_{route}'] = scale * (n * 100 + np.sin(np.arange(len(idx))))
+                frame[f'hvac_total_load_{route}'] = frame[[f'{b}_hvac_total_load_{route}' for b in ['A1', 'A2', 'A3']]].sum(axis=1)
+            frame['hvac_total_load_AB'] = frame.hvac_total_load_A + frame.hvac_total_load_B
+            for n, b in enumerate(['A1', 'A2', 'A3'], 1):
+                frame[f'{b}_it_total_load'] = n * 1000.0
+            frame['it_total_load'] = frame[[f'{b}_it_total_load' for b in ['A1', 'A2', 'A3']]].sum(axis=1)
             frame.to_csv(source)
             before = source.read_bytes()
-            for family in ['hvac_all_devices/route_A', 'IT_load']:
+            for family in ['hvac_all_devices/route_A', 'hvac_all_devices/route_B', 'IT_load']:
                 folder = root / 'analysis/imputation/masks' / family
                 folder.mkdir(parents=True)
                 for name in ['A1_data.csv', 'A2_data.csv', 'A3_data.csv', 'data.csv']:
                     mask = pd.DataFrame({'total_observed': True}, index=idx)
-                    if family != 'IT_load' and name in ['A2_data.csv', 'data.csv']:
+                    if family.endswith('route_A') and name in ['A2_data.csv', 'data.csv']:
                         mask.iloc[10, 0] = False
+                    if family.endswith('route_B') and name in ['A3_data.csv', 'data.csv']:
+                        mask.iloc[20, 0] = False
                     mask.to_csv(folder / name)
             dest = root / 'visual'
             summary, quality = visual.analyze_file(root, relative, dest)
-            self.assertEqual(len(summary), 8)
+            self.assertEqual(len(summary), 13)
             self.assertEqual(quality['component_mismatch_rows'], 0)
             counts = {row['column']: row['n_imputed'] for row in summary}
-            self.assertEqual(counts['A1_hvac_total_load'], 0)
-            self.assertEqual(counts['A2_hvac_total_load'], 1)
-            self.assertEqual(counts['hvac_total_load'], 1)
+            self.assertEqual(counts['A1_hvac_total_load_A'], 0)
+            self.assertEqual(counts['A2_hvac_total_load_A'], 1)
+            self.assertEqual(counts['hvac_total_load_A'], 1)
+            self.assertEqual(counts['hvac_total_load_B'], 1)
+            self.assertEqual(counts['hvac_total_load_AB'], 2)
+            self.assertEqual(counts['A2_hvac_total_load_B'], 0)
+            self.assertEqual(counts['A3_hvac_total_load_B'], 1)
             self.assertEqual(counts['it_total_load'], 0)
             self.assertEqual(source.read_bytes(), before)
             self.assertEqual(len(list(dest.glob('*.png'))), 3)

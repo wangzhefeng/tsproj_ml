@@ -54,7 +54,7 @@ class WeatherHvacWindowsTest(unittest.TestCase):
             originals = {}
             for name, times in windows.items():
                 path = inputs / f'{name}.csv'
-                pd.DataFrame({'time': times, 'hvac_total_load': 1.}).to_csv(path, index=False)
+                pd.DataFrame({'time': times, 'hvac_total_load_A': 1., 'hvac_total_load_B': 2.}).to_csv(path, index=False)
                 originals[path] = path.read_bytes()
             hourly = pd.DataFrame(
                 {col: np.arange(4, dtype=float) + i for i, col in enumerate(list(MAPPING) + list(MAPPING.values()))},
@@ -118,11 +118,16 @@ class WeatherHvacWindowsTest(unittest.TestCase):
                 self.assertEqual(len(frame), row['rows'])
                 self.assertTrue(np.isfinite(frame[list(MAPPING) + list(MAPPING.values())].to_numpy()).all())
                 self.assertEqual(hashlib.sha256((root / row['file']).read_bytes()).hexdigest(), row['sha256'])
+                metadata = json.loads((root / row['file']).with_suffix('.meta.json').read_text())
+                self.assertEqual(metadata['target_sha256'], hashlib.sha256((root / row['target_file']).read_bytes()).hexdigest())
                 source = yaml.safe_load((root / row['source_yaml']).read_text())['data']['sources'][0]
                 self.assertEqual(source['inference_columns'], MAPPING)
+                route = Path(row['target_file']).parent.name.removeprefix('route_')
+                target_column = 'hvac_total_load_' + route
+                self.assertIn(target_column, target.columns)
                 target_source = {'name': 'target', 'source_type': 'file', 'time_col': 'time',
                                  'history_path': row['target_file'], 'availability': 'source_time',
-                                 'columns': [{'name': 'hvac_total_load', 'role': 'target', 'categorical': False}]}
+                                 'columns': [{'name': target_column, 'role': 'target', 'categorical': False}]}
                 registry = SourceRegistry(parse_data_spec({'sources': [target_source, source]}, 'hvac-weather'), root)
                 positions = [1, len(times) // 2, len(times) - 1]
                 for training in (True, False):

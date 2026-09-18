@@ -6,6 +6,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 
 import numpy as np
 import pandas as pd
@@ -72,6 +73,65 @@ class MigrationTest(unittest.TestCase):
 
 
 class DatasetPreparationTest(unittest.TestCase):
+    def test_replacement_is_scoped_and_rolls_back_failed_publication(self):
+        selector = importlib.import_module('select_hvac_windows')
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / 'dataset'
+            stage = Path(tmp) / 'stage'
+            names = ('forecast_data', 'analysis/forecast_windows')
+            for parent in [root, stage]:
+                for name in names:
+                    folder = parent / name
+                    folder.mkdir(parents=True)
+                    (folder / 'marker.txt').write_text('old' if parent == root else 'new')
+            with self.assertRaises(FileExistsError):
+                selector.publish_prepared_directories(stage, root, names)
+            with self.assertRaises(ValueError):
+                selector.publish_prepared_directories(stage, root, ('raw_data',), replace=True)
+            rename = Path.rename
+            def fail_second(source, destination):
+                if source == stage / 'analysis/forecast_windows':
+                    raise OSError('simulated publish failure')
+                return rename(source, destination)
+            with patch.object(Path, 'rename', fail_second), self.assertRaises(OSError):
+                selector.publish_prepared_directories(stage, root, names, replace=True)
+            for name in names:
+                self.assertEqual((root / name / 'marker.txt').read_text(), 'old')
+                self.assertEqual((stage / name / 'marker.txt').read_text(), 'new')
+            selector.publish_prepared_directories(stage, root, names, replace=True)
+            for name in names:
+                self.assertEqual((root / name / 'marker.txt').read_text(), 'new')
+            self.assertFalse(list(root.glob('.forecast-publish-*')))
+
+    def test_dual_route_values_masks_and_strict_combined_total(self):
+        selector = importlib.import_module('select_hvac_windows')
+        index = pd.date_range('2026-08-01', periods=3, freq='5min', name='time')
+        totals, masks = {}, {}
+        for route, scale in [('A', 1.0), ('B', 10.0)]:
+            for building, value in [('A1', 1), ('A2', 2), ('A3', 3), ('data', 6)]:
+                name = building + '_data.csv' if building != 'data' else 'data.csv'
+                key = f'hvac_all_devices/route_{route}/{name}'
+                totals[key] = pd.Series(value * scale, index=index)
+                masks[key] = pd.DataFrame({'total_observed': True, 'eligibility_known_at': index}, index=index)
+        for name in ['A2_data.csv', 'data.csv']:
+            mask = masks[f'hvac_all_devices/route_B/{name}']
+            mask.loc[index[1], 'total_observed'] = False
+            mask.loc[index[1], 'eligibility_known_at'] = index[2]
+        frame, audit = selector.assemble_forecast(totals, masks, 'hvac_all_devices', 'data', False, index)
+        self.assertEqual(list(frame.columns), ['hvac_total_load_A', 'hvac_total_load_B', 'hvac_total_load_AB',
+            'A1_hvac_total_load_A', 'A1_hvac_total_load_B', 'A2_hvac_total_load_A', 'A2_hvac_total_load_B',
+            'A3_hvac_total_load_A', 'A3_hvac_total_load_B'])
+        self.assertTrue(frame.hvac_total_load_AB.eq(66).all())
+        self.assertTrue(frame.A2_hvac_total_load_B.eq(20).all())
+        self.assertTrue(audit.loc[index[1], 'hvac_total_load_A__observed'])
+        self.assertFalse(audit.loc[index[1], 'hvac_total_load_B__observed'])
+        self.assertFalse(audit.loc[index[1], 'hvac_total_load_AB__observed'])
+        self.assertTrue(audit.loc[index[1], 'A1_hvac_total_load_B__observed'])
+        self.assertEqual(audit.loc[index[1], 'eligibility_known_at'], index[2])
+        totals['hvac_all_devices/route_B/data.csv'].iloc[2] = np.nan
+        frame, _ = selector.assemble_forecast(totals, masks, 'hvac_all_devices', 'data', False, index)
+        self.assertTrue(pd.isna(frame.hvac_total_load_AB.iloc[2]))
+
     def test_entrypoints_work_from_another_cwd(self):
         with tempfile.TemporaryDirectory() as tmp:
             for script in ['migrate_hvac_data.py', 'impute_hvac_data.py', 'select_hvac_windows.py']:
@@ -110,7 +170,8 @@ class DatasetPreparationTest(unittest.TestCase):
                 folder.mkdir(parents=True)
                 buildings = {}
                 for number, building in enumerate(migration.BUILDINGS, 1):
-                    frame = pd.DataFrame({'p': float(number)}, index=index)
+                    scale = 10.0 if family.endswith('route_B') else 1.0
+                    frame = pd.DataFrame({'p': float(number) * scale}, index=index)
                     frame.iloc[288 * 20:288 * 20 + 2, 0] = np.nan
                     frame.iloc[288 * 26:288 * 26 + 73, 0] = np.nan
                     frame.iloc[288 * 43 - 1:288 * 43 + 1, 0] = np.nan
@@ -144,15 +205,27 @@ class DatasetPreparationTest(unittest.TestCase):
                 self.assertGreater(row['folds_14_1'], 0)
                 self.assertLess(row['eligibility_safe_folds_14_1'], row['folds_14_1'])
                 self.assertEqual(frame.time.iloc[0], pd.Timestamp(row['start']))
+                self.assertEqual(row['target_column'], 'hvac_total_load_' + row['route'][-1])
+                self.assertEqual(row['schema'], 'hvac_dual_route_v1')
+                np.testing.assert_array_equal(frame.hvac_total_load_B, frame.hvac_total_load_A * 10)
             combined = pd.read_csv(root / 'forecast_data/hvac_all_devices/route_A/data_with_it.csv')
-            self.assertEqual(list(combined.columns), ['time', 'hvac_total_load', 'it_total_load',
-                'A1_hvac_total_load', 'A2_hvac_total_load', 'A3_hvac_total_load',
+            self.assertEqual(list(combined.columns), ['time', 'hvac_total_load_A', 'hvac_total_load_B',
+                'hvac_total_load_AB', 'it_total_load',
+                'A1_hvac_total_load_A', 'A1_hvac_total_load_B',
+                'A2_hvac_total_load_A', 'A2_hvac_total_load_B',
+                'A3_hvac_total_load_A', 'A3_hvac_total_load_B',
                 'A1_it_total_load', 'A2_it_total_load', 'A3_it_total_load'])
-            np.testing.assert_array_equal(combined.hvac_total_load,
-                combined[['A1_hvac_total_load', 'A2_hvac_total_load', 'A3_hvac_total_load']].sum(axis=1))
+            np.testing.assert_array_equal(combined.hvac_total_load_AB,
+                combined[[f'{b}_hvac_total_load_{r}' for b in ['A1', 'A2', 'A3'] for r in ['A', 'B']]].sum(axis=1))
+            route_b = pd.read_csv(root / 'forecast_data/hvac_all_devices/route_B/data_with_it.csv')
+            pd.testing.assert_frame_equal(combined, route_b)
             self.assertEqual(before, {p: migration.sha256_file(p) for p in before})
             with self.assertRaises(FileExistsError):
                 selector.export_windows(root, recent_start='2026-07-14')
+            first_hashes = {row['output']: row['sha256'] for row in windows}
+            replaced = selector.export_windows(root, recent_start='2026-07-14', replace=True)
+            self.assertEqual(first_hashes, {row['output']: row['sha256'] for row in replaced})
+            self.assertEqual(before, {p: migration.sha256_file(p) for p in before})
 
 
 class CausalImputationTest(unittest.TestCase):

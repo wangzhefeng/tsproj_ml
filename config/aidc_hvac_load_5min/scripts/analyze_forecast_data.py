@@ -22,6 +22,8 @@ if str(REPO) not in sys.path:
 from data_process.outlier_process import ANOMALY_TYPE_COL, OutlierParams, detect_anomalies
 from impute_hvac_data import STEP, true_runs
 from migrate_hvac_data import BUILDINGS, DEFAULT_ROOT, ROUTES, VERSIONS, sha256_file
+from forecast_schema import SCHEMA, file_contract
+from select_hvac_windows import publish_prepared_directories
 
 KINDS = ('hard_issue', 'spike', 'jump', 'low_load', 'constant')
 RULES = {
@@ -91,20 +93,23 @@ def analyze_series(y, observed):
 
 
 def observed_mask(root, relative, column, index, cache):
-    building = column.split('_')[0] if column.startswith(('A1_', 'A2_', 'A3_')) else relative.stem.split('_')[0]
-    name = building + '_data.csv' if building in BUILDINGS else 'data.csv'
-    family = Path('IT_load') if column.endswith('it_total_load') else relative.parent
-    path = root / 'analysis/imputation/masks' / family / name
-    if path not in cache:
-        mask = pd.read_csv(path, index_col='time', parse_dates=True, usecols=['time', 'total_observed'],
-                           dtype={'total_observed': bool})
-        if not mask.index.is_unique:
-            raise ValueError(f'重复的掩码时间戳: {path}')
-        cache[path] = mask.total_observed
-    result = cache[path].reindex(index)
-    if result.isna().any():
-        raise ValueError(f'掩码未覆盖预测数据: {path}')
-    return result.astype(bool)
+    mapping, _ = file_contract(relative)
+    if column not in mapping:
+        raise ValueError(f'未知双路预测字段: {column}')
+    members = []
+    for source in mapping[column]:
+        path = root / 'analysis/imputation/masks' / source
+        if path not in cache:
+            mask = pd.read_csv(path, index_col='time', parse_dates=True, usecols=['time', 'total_observed'],
+                               dtype={'total_observed': bool})
+            if not mask.index.is_unique:
+                raise ValueError(f'重复的掩码时间戳: {path}')
+            cache[path] = mask.total_observed
+        result = cache[path].reindex(index)
+        if result.isna().any():
+            raise ValueError(f'掩码未覆盖预测数据: {path}')
+        members.append(result.astype(bool))
+    return pd.concat(members, axis=1).all(axis=1)
 
 
 def draw_series(frame, details, output, title):
@@ -163,16 +168,22 @@ def analyze_file(root, relative, destination, cache=None):
     if frame.empty or not isinstance(frame.index, pd.DatetimeIndex) or not frame.index.equals(
             pd.date_range(frame.index[0], periods=len(frame), freq=STEP)):
         raise ValueError(f'非唯一升序连续5min时间轴: {path}')
+    mapping, target = file_contract(relative)
+    if set(frame.columns) != set(mapping) or len(frame.columns) != len(mapping):
+        raise ValueError(f'预测字段不符合{SCHEMA}: {relative}')
     values = frame.to_numpy(dtype=float)
     quality = {'file': str(relative), 'rows': len(frame), 'columns': len(frame.columns),
                'start': str(frame.index[0]), 'end': str(frame.index[-1]), 'sha256': before,
                'missing_cells': int(np.isnan(values).sum()), 'infinite_cells': int(np.isinf(values).sum()),
                'negative_cells': int((values < 0).sum()), 'zero_cells': int((values == 0).sum()),
-               'component_mismatch_rows': 0, 'unique_sorted_regular_5min': True}
-    for kind in ('hvac', 'it'):
-        components = [b + '_' + kind + '_total_load' for b in BUILDINGS]
-        if set(components).issubset(frame.columns):
-            mismatch = ~np.isclose(frame[kind + '_total_load'], frame[components].sum(axis=1, min_count=3),
+               'component_mismatch_rows': 0, 'unique_sorted_regular_5min': True,
+               'schema': SCHEMA, 'target_column': target}
+    sums = {'hvac_total_load_' + r: [f'{b}_hvac_total_load_{r}' for b in BUILDINGS] for r in ('A', 'B')}
+    sums['hvac_total_load_AB'] = ['hvac_total_load_A', 'hvac_total_load_B']
+    sums['it_total_load'] = [b + '_it_total_load' for b in BUILDINGS]
+    for total, components in sums.items():
+        if total in frame and set(components).issubset(frame.columns):
+            mismatch = ~np.isclose(frame[total], frame[components].sum(axis=1, min_count=len(components)),
                                    rtol=1e-10, atol=1e-8, equal_nan=True)
             quality['component_mismatch_rows'] += int(mismatch.sum())
     details, summaries, segments, candidates = {}, [], [], []
@@ -191,7 +202,7 @@ def analyze_file(root, relative, destination, cache=None):
     pd.concat(candidates, ignore_index=True).to_csv(destination / 'candidate_points.csv', index=False, encoding='utf-8-sig')
     pd.DataFrame(segments, columns=['file', 'column', 'kind', 'start', 'end', 'points', 'slot_hours',
                                     'min', 'max', 'imputed_points']).to_csv(destination / 'candidate_segments.csv', index=False, encoding='utf-8-sig')
-    title = str(relative)
+    title = str(relative) + f'\n目标字段：{target}'
     with plt.rc_context({'font.sans-serif': ['Hiragino Sans GB', 'Arial Unicode MS', 'DejaVu Sans'],
                          'axes.unicode_minus': False, 'path.simplify': False}):
         draw_series(frame, details, destination / 'timeseries.png', title)
@@ -207,10 +218,10 @@ def analyze_file(root, relative, destination, cache=None):
     return summaries, quality
 
 
-def run(root=DEFAULT_ROOT):
+def run(root=DEFAULT_ROOT, *, replace=False):
     root = Path(root).resolve()
     output = root / 'analysis/forecast_data_visual'
-    if output.exists():
+    if output.exists() and not replace:
         raise FileExistsError(f'拒绝覆盖已有可视化: {output}')
     expected = {Path(v) / r / (name + suffix + '.csv') for v in VERSIONS for r in ROUTES
                 for name in ('A1_data', 'A2_data', 'A3_data', 'data') for suffix in ('', '_with_it')}
@@ -221,7 +232,7 @@ def run(root=DEFAULT_ROOT):
     dependencies += sorted((root / 'analysis/imputation/masks').rglob('*.csv'))
     hashes = {str(p.relative_to(root)): sha256_file(p) for p in dependencies}
     with tempfile.TemporaryDirectory(prefix='.forecast-visual-stage-', dir=root / 'analysis') as tmp:
-        stage = Path(tmp) / 'forecast_data_visual'
+        stage = Path(tmp) / 'analysis/forecast_data_visual'
         cache, summaries, quality = {}, [], []
         for relative in sorted(paths):
             rows, audit = analyze_file(root, relative, stage / relative.parent / relative.stem, cache)
@@ -234,17 +245,20 @@ def run(root=DEFAULT_ROOT):
         if any(sha256_file(root / name) != digest for name, digest in hashes.items()):
             raise ValueError('输入或填补掩码在分析期间改变，拒绝发布')
         plots = sorted(str(p.relative_to(stage)) for p in stage.rglob('*.png'))
-        if len(quality) != 32 or len(stats) != 84 or len(plots) != 96:
-            raise AssertionError('32文件/84列/96图覆盖验收不符')
+        expected_series = sum(len(file_contract(relative)[0]) for relative in paths)
+        if len(quality) != len(expected) or len(stats) != expected_series or len(plots) != 3 * len(expected):
+            raise AssertionError('双路32文件/逐字段/每文件3图覆盖验收不符')
         manifest = {'input_files': len(quality), 'series_appearances': len(stats), 'png_files': len(plots),
                     'rules': RULES, 'inputs_sha256': hashes, 'plots': plots,
                     'code_sha256': sha256_file(Path(__file__)),
+                    'schema': SCHEMA, 'schema_code_sha256': sha256_file(Path(__file__).with_name('forecast_schema.py')),
                     'note': 'counts are per-file appearances; IT is shared across route/version and must not be summed as independent signals'}
         (stage / 'manifest.json').write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding='utf-8')
         lines = ['# forecast_data 异常候选与可视化', '',
-                 '只读分析：32个CSV、84个文件内数值列；每文件完整时序、日内热力图、最大相对跳变±3h局部图。',
+                 f'只读分析：{len(quality)}个CSV、{len(stats)}个文件内数值列；每文件完整时序、日内热力图、最大相对跳变±3h局部图。',
                  '图中橙色为含填补点位的汇总值。所有统计标记仅供复核，不证明传感器错误；未清洗、未训练模型。',
-                 'IT在路线/设备版本间共享，三楼分量也重复出现；不要把84列的候选数相加当作独立物理异常数。', '',
+                 'A/B输入在两个目标路线目录中重复出现，IT也共享；不要把文件列候选数相加当作独立物理异常数。',
+                 'hvac_total_load_AB为三楼两路总负荷；目录route_A/B分别以hvac_total_load_A/B为目标，其他列仅作历史输入。', '',
                  '## 筛查规则', '',
                  '- 尖峰：复用现有±3槽检测器；幅度至少max(实测中位数10%,1kW)，且robust z≥6或左右相邻值差≤幅度门槛的一半。',
                  '- 跳变：相邻5min变化绝对值超过max(6×1.4826×实测相邻差分MAD,实测中位数10%,1kW)。',
@@ -259,15 +273,16 @@ def run(root=DEFAULT_ROOT):
             folder = (relative.parent / relative.stem).as_posix()
             lines.append(f'| {relative} | [查看]({folder}/timeseries.png) | [查看]({folder}/daily_heatmap.png) | [查看]({folder}/largest_jump_zoom.png) |')
         (stage / 'README.md').write_text('\n'.join(lines) + '\n', encoding='utf-8')
-        stage.rename(output)
+        publish_prepared_directories(Path(tmp), root, ('analysis/forecast_data_visual',), replace=replace)
     return output
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--root', type=Path, default=DEFAULT_ROOT)
+    parser.add_argument('--replace', action='store_true', help='明确替换旧可视化与候选报告，不修改预测输入')
     args = parser.parse_args()
-    print('输出目录:', run(args.root))
+    print('输出目录:', run(args.root, replace=args.replace))
 
 
 if __name__ == '__main__':

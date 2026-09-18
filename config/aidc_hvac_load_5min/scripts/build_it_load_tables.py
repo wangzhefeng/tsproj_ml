@@ -19,7 +19,7 @@
   * 4 个 50_0_10x 段 id (A3 二楼 YL202-RBB) 同样无文件。
 - 这些点位在输出中保留为全 NaN 列(不改变 total_load 语义), 并在运行时打印警告清单。
 
-输出: dataset/aidc_hvac_load_5min/IT_load/
+输出: dataset/aidc_hvac_load_5min/raw_data/IT_load/ (原始归档存在时禁止覆盖)
   - A1_data.csv / A2_data.csv / A3_data.csv: time + 各 spot_id 列 + total_load(该楼点位求和)
   - data.csv: time + 三楼全部点位列(列名加 A1_/A2_/A3_ 楼前缀) + total_load(三楼总负荷)
 求和规则: 按行对非空值求和, 全部缺失时 total_load 为 NaN(min_count=1)。
@@ -29,10 +29,12 @@ from pathlib import Path
 
 import pandas as pd
 
+from migrate_hvac_data import require_new_files
+
 # ---------------------------------------------------------------- 路径
 REPO = Path(__file__).resolve().parents[3]                    # 仓库根目录
 SRC = REPO / 'dataset' / 'aidc_load_5min' / 'A1_A2_A3_points'
-OUT = REPO / 'dataset' / 'aidc_hvac_load_5min' / 'IT_load'
+OUT = REPO / 'dataset' / 'aidc_hvac_load_5min' / 'raw_data' / 'IT_load'
 XLSX = SRC / 'all_ids.xlsx'
 SHEET = '列头柜负荷'
 
@@ -45,6 +47,7 @@ TOTAL_COL = 'total_load'
 GRID = pd.date_range('2025-10-01 00:00:00', '2026-09-16 23:55:00', freq='5min')
 
 # ---------------------------------------------------------------- 读 sheet
+require_new_files([OUT / name for name in ['A1_data.csv', 'A2_data.csv', 'A3_data.csv', 'data.csv']])
 meta = pd.read_excel(XLSX, sheet_name=SHEET)
 need_cols = {'data_type', 'spot_id'}
 assert need_cols <= set(meta.columns), f'sheet 缺少必要列: {need_cols - set(meta.columns)}'

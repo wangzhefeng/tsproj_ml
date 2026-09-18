@@ -16,7 +16,7 @@
   (与基础数据无重叠时间戳, 重复时间戳直接 RAISE)
 - data.csv 采用 A1 的完整网格, 其他楼列在各自有效范围之外为 NaN
 
-输出: dataset/aidc_hvac_load_5min/{hvac_all_devices,hvac_remove_devices}/{route_A,route_B}/
+输出: dataset/aidc_hvac_load_5min/raw_data/{hvac_all_devices,hvac_remove_devices}/{route_A,route_B}/
   - A1_data.csv / A2_data.csv / A3_data.csv: time + 各 spot_id 列 + total_load(该楼该路点位求和)
   - data.csv: time + 三楼全部点位列(列名加 A1_/A2_/A3_ 楼前缀) + total_load(三楼该路总负荷)
 求和规则: 按行对非空值求和, 全部缺失时 total_load 为 NaN(min_count=1)。
@@ -26,10 +26,12 @@ from pathlib import Path
 
 import pandas as pd
 
+from migrate_hvac_data import require_new_files
+
 # ---------------------------------------------------------------- 路径
 REPO = Path(__file__).resolve().parents[3]                    # 仓库根目录
 SRC = REPO / 'dataset' / 'aidc_load_5min' / 'A1_A2_A3_points'
-OUT = REPO / 'dataset' / 'aidc_hvac_load_5min'
+OUT = REPO / 'dataset' / 'aidc_hvac_load_5min' / 'raw_data'
 XLSX = SRC / 'all_ids.xlsx'
 SHEET = '暖通负荷(大设备)'
 
@@ -54,6 +56,11 @@ VERSIONS = {
 }
 
 # ---------------------------------------------------------------- 读 sheet
+require_new_files([
+    OUT / version / f'route_{route}' / name
+    for version in VERSIONS for route in ['A', 'B']
+    for name in ['A1_data.csv', 'A2_data.csv', 'A3_data.csv', 'data.csv']
+])
 meta = pd.read_excel(XLSX, sheet_name=SHEET)
 need_cols = {'data_type', 'spot_id', '备注', 'route'}
 assert need_cols <= set(meta.columns), f'sheet 缺少必要列: {need_cols - set(meta.columns)}'

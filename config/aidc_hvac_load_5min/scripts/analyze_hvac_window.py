@@ -1,9 +1,9 @@
 # -*- coding: utf-8 -*-
 """暖通负荷(大设备)窗口数据分析脚本。
 
-分析对象: dataset/aidc_hvac_load_5min/{hvac_all_devices,hvac_remove_devices}/{route_A,route_B}/
+分析对象: dataset/aidc_hvac_load_5min/raw_data/{hvac_all_devices,hvac_remove_devices}/{route_A,route_B}/
   下的 A1_data.csv / A2_data.csv / A3_data.csv / data.csv 全部 4 类文件
-分析窗口: 2026-07-24 14:00:00 ~ 2026-09-16 23:55:00 (三栋楼均有数据的完整段;
+分析窗口: 2026-07-24 14:00:00 ~ 2026-09-16 23:55:00 (候选范围，内部仍有长缺口;
   2026-09-18 起由固定 07-31 窗口扩展至数据实际终点)
 
 分析内容:
@@ -36,8 +36,8 @@ plt.rcParams['axes.unicode_minus'] = False
 
 # ---------------------------------------------------------------- 路径与常量
 REPO = Path(__file__).resolve().parents[3]
-DATA = REPO / 'dataset' / 'aidc_hvac_load_5min'
-OUT = DATA / 'analysis'
+DATA = REPO / 'dataset' / 'aidc_hvac_load_5min' / 'raw_data'
+OUT = DATA.parent / 'analysis'
 TOTAL_COL = 'total_load'
 
 START = pd.Timestamp('2026-07-24 14:00:00')

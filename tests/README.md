@@ -8,6 +8,8 @@
 
 `tests/` 是版本控制内的 unittest 套件，覆盖 core contracts、信息集、特征、七策略、Local/Global、point/quantile、fixed/calendar/monthly runtime、Ensemble、结果 schema、场景数据链和包间结构。
 
+`test_hvac_data_preparation` 默认 integration：AIDC 暖通/IT 的原始归档迁移与重名冲突保护、72/73槽填补边界、逐缺口过去遮蔽选型与未来扰动不变性、未授权全空点位拒绝、严格总量与三楼分量、20输入到32场景、自然日选窗和短窗口折数、独立mask以及覆盖保护。定向 `integration --match test_hvac_data_preparation`；使用临时fixture，不改正式数据、不训练模型。
+
 ## 执行集合
 
 `test_direct_result_identity` 默认 integration：三类 Direct 方法（含 horizon 的有/无周期编码两种特征变体）的真实小样本训练/回测/预测落盘及元数据、原始语义 hash、文件别名不变性和非法配置拒绝；`test_forecast_config_fingerprint` 在 fast 中覆盖三类前缀及 cyclical 仅影响特征元数据和语义 hash、不新增方法类型。迁移清单只读，不移动存量结果。

@@ -16,6 +16,8 @@
 
 ## 执行集合
 
+`test_hvac_model_configs` 默认 integration：576份物理YAML精确路径集、九方法模板一致性、四组字段投影/正交性、真实资产声明列有限性及完整自然日网格、14/7天原始训练窗口与全部折日期、逐配置真实训练origin及预测首/中/末步编译、IT/peer安全lag的可见性证明和窗口外/未来扰动隔离。只验证配置与设计，不拟合正式模型；定向 `integration --match test_hvac_model_configs`。
+
 `test_direct_result_identity` 默认 integration：三类 Direct 方法（含 horizon 的有/无周期编码两种特征变体）的真实小样本训练/回测/预测落盘及元数据、原始语义 hash、文件别名不变性和非法配置拒绝；`test_forecast_config_fingerprint` 在 fast 中覆盖三类前缀及 cyclical 仅影响特征元数据和语义 hash、不新增方法类型。迁移清单只读，不移动存量结果。
 
 天气阶段隔离定向测试：`test_inference_columns` 验证历史训练实测/测试预报、future 不参与历史请求及未来实测列忽略；`test_weather_phase_runtime` 用真实编译、Ridge 生命周期验证文件隔离和缓存不依赖 future；`test_weather_history_coverage` 与联通准备测试验证完整 history 覆盖。均默认纳入 integration，不自动运行正式业务模型。

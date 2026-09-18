@@ -17,6 +17,7 @@
 | `forecast_schema.py` | 双路字段到填补源的唯一映射，明确每个路线目录的目标列；不提供旧裸暖通列兼容层 |
 | `select_hvac_windows.py` | 从填补数据筛选近期最长完整自然日段，32场景均同时导出A/B路；窗口/逐列有效性/折几何审计写 `analysis/forecast_windows/` |
 | `analyze_forecast_data.py` | 只读32份双路预测数据及实测掩码，逐列分析；每文件输出完整时序、日内热力图、最大相对跳变局部图及候选CSV到 `analysis/forecast_data_visual/` |
+| `build_model_configs.py` | 按场景README的四组×两版本×两路×四楼栋×九方法生成576份物理YAML；全量预检后只创建缺少文件，拒绝差异覆盖，`--check`只读核对；不改数据、不训练 |
 
 ## 运行方式
 
@@ -100,7 +101,7 @@ dataset/aidc_hvac_load_5min/
 - `hvac_dual_route_v1` 分楼CSV含 `time,hvac_total_load_A,hvac_total_load_B`，有IT增加不分路的 `it_total_load`。三楼 `data*.csv` 含两路三楼总量、`hvac_total_load_AB`（三楼A+B总暖通）及 `A1/A2/A3_hvac_total_load_A/B` 六个分量；有IT额外含 `it_total_load,A1_it_total_load,A2_it_total_load,A3_it_total_load`。不再导出有歧义的裸 `hvac_total_load`；raw/imputed仍保留各自原有 `total_load`。
 - `hvac_total_load_A = A1_hvac_total_load_A + A2_hvac_total_load_A + A3_hvac_total_load_A`，B路同理；`hvac_total_load_AB = hvac_total_load_A + hvac_total_load_B`，任一组成缺失时总量缺失，不做部分求和。分楼文件不额外导出AB合计。
 - 同一版本/楼栋/IT选项的route_A/B文件列顺序和数值相同，保留两目录用于表达**不同预测目标**：分别为 `hvac_total_load_A`、`hvac_total_load_B`。`target_column` 在manifest与窗口/折审计中显式声明。其他路、同路分量、AB合计与IT只能作为预测原点之前的历史输入；不能把测试期同刻实测作为特征，尤其AB和目标分量会直接包含目标信息。
-- `analysis/forecast_windows/windows.csv` 枚举32文件、目标列、列源映射、窗口、SHA、结构折数和资格安全折数；`folds_14_1.csv` 按目标列统计测试实测行数；`masks/` 的每个业务字段都有 `<列名>__observed` 与 `<列名>__eligibility_known_at`，AB取两路实测交集和最晚资格时间，全表 `eligibility_known_at` 覆盖全部已导出历史输入。**测试期估计值不是实测真值**；未创建预测YAML、未运行模型，也未自动将mask接入运行管线。
+- `analysis/forecast_windows/windows.csv` 枚举32文件、目标列、列源映射、窗口、SHA、结构折数和资格安全折数；`folds_14_1.csv` 按目标列统计测试实测行数；`masks/` 的每个业务字段都有 `<列名>__observed` 与 `<列名>__eligibility_known_at`，AB取两路实测交集和最晚资格时间，全表 `eligibility_known_at` 覆盖全部已导出历史输入。**测试期估计值不是实测真值**；后续模型YAML使用场景README中明确的14/7天训练合同，未运行正式模型，也未自动将mask接入运行管线。这里既有14+1审计不是所有新配置的折数清单。
 - 定向验证：`env -u PYTHONPATH .venv/bin/python tests/run_suite.py integration --match test_hvac_data_preparation`；常规回归用 `fast`。
 
 ## 预测数据异常候选可视化

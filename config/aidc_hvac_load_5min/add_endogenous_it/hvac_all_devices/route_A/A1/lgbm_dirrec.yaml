@@ -1,0 +1,117 @@
+# HVAC历史回测配置；严格训练窗口，仅支持 --backtest-only。
+# 离线补值和天气可得性假设不构成实盘证据；未执行模型训练。
+schema_version: 2
+problem:
+  time_col: time
+  freq: 5min
+  horizon: 288
+  targets:
+  - hvac_total_load_A
+  training_scope: local
+  series_id_cols: []
+data:
+  sources:
+  - name: target_history
+    source_type: file
+    columns:
+    - name: hvac_total_load_A
+      role: target
+      categorical: false
+    history_path: dataset/aidc_hvac_load_5min/forecast_data/hvac_all_devices/route_A/A1_data_with_it.csv
+    time_col: time
+    series_id_cols: []
+    availability: source_time
+  - name: chinese_holiday
+    source_type: generated
+    generator: chinese_holiday
+    columns:
+    - name: is_holiday
+      role: known_future
+      categorical: false
+    - name: next_holiday_days
+      role: known_future
+      categorical: false
+    time_col: time
+    series_id_cols: []
+    availability: generator_defined
+  - name: covariate_history
+    source_type: file
+    columns:
+    - name: it_total_load
+      role: observed_past
+      categorical: false
+    history_path: dataset/aidc_hvac_load_5min/forecast_data/hvac_all_devices/route_A/A1_data_with_it.csv
+    time_col: time
+    series_id_cols: []
+    availability: source_time
+    provider: persistence
+features:
+  target_lags:
+    hvac_total_load_A:
+    - 288
+    - 576
+    - 864
+    - 1152
+    - 1440
+    - 1728
+    - 2016
+  observed_past_lags:
+    it_total_load:
+    - 288
+    - 576
+  datetime_features:
+  - minute
+  - hour
+  - day
+  - day_of_week
+  - week_of_year
+  - month
+  - days_in_month
+  - quarter
+  - day_of_year
+  - year
+  transformations:
+    advanced:
+      rolling:
+        columns:
+        - hvac_total_load_A
+        windows:
+        - 288
+        - 576
+        - 1152
+        - 2016
+        stats:
+        - mean
+        - std
+        - min
+        - max
+      expanding:
+        columns:
+        - hvac_total_load_A
+        stats:
+        - mean
+        - std
+strategy:
+  name: dirrec
+estimator:
+  model_type: lightgbm
+  target_adapter: independent
+  params: {}
+probabilistic:
+  mode: point
+validation:
+  forecast_origin: '2026-08-25T23:55:00'
+  schedule_mode: daily
+  horizon_mode: fixed_steps
+  history_steps: 4033
+  train_history_steps: 4032
+  train_window_steps: 1729
+  fold_count: 8
+  stride_steps: 288
+output:
+  scenario_subpath: aidc_hvac_load_5min/add_endogenous_it/hvac_all_devices/route_A/A1
+  results_root: results
+  directories:
+    checkpoints: ./results/pretrained_models/
+    tests: ./results/results_test/
+    forecast: ./results/results_forecast/

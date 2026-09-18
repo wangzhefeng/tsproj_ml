@@ -1,12 +1,13 @@
-# 暖通负荷(大设备)数据提取脚本说明
+# AIDC 负荷数据提取脚本说明
 
-本目录（`config/aidc_hvac_load_5min/scripts/`）保存 AIDC 暖通负荷预测的数据提取与处理脚本。
+本目录（`config/aidc_hvac_load_5min/scripts/`）保存 AIDC 暖通/IT 负荷预测的数据提取与处理脚本。
 
 ## 文件职责
 
 | 文件 | 职责 |
 |---|---|
 | `build_hvac_tables.py` | 依据 `dataset/aidc_load_5min/A1_A2_A3_points/all_ids.xlsx`「暖通负荷(大设备)」sheet 提取 A1/A2/A3 楼暖通大设备点位数据，按设备版本 × route × 楼 输出宽表到 `dataset/aidc_hvac_load_5min/` |
+| `build_it_load_tables.py` | 依据同 xlsx「列头柜负荷」sheet 提取 A1/A2/A3 楼列头柜（IT 负荷）点位数据，按楼输出宽表到 `dataset/aidc_hvac_load_5min/IT_load/`（不分 route、不做版本过滤） |
 | `analyze_hvac_window.py` | 对 `dataset/aidc_hvac_load_5min/` 两个版本 × A/B 路数据在窗口 2026-07-24 14:00 ~ 2026-07-31 23:55 内做缺失/异常/total_load 缺失影响分析，输出汇总 CSV 与可视化图到 `dataset/aidc_hvac_load_5min/analysis/` |
 
 ## 运行方式
@@ -15,6 +16,7 @@
 
 ```bash
 env -u PYTHONPATH .venv/bin/python config/aidc_hvac_load_5min/scripts/build_hvac_tables.py
+env -u PYTHONPATH .venv/bin/python config/aidc_hvac_load_5min/scripts/build_it_load_tables.py
 env -u PYTHONPATH .venv/bin/python config/aidc_hvac_load_5min/scripts/analyze_hvac_window.py
 ```
 
@@ -45,6 +47,16 @@ dataset/aidc_hvac_load_5min/
 
 - 求和规则：按行对非空值求和，全部缺失时 `total_load` 为 NaN（`min_count=1`）；
 - CSV 编码 `utf-8-sig`，索引列名 `time`。
+
+## 列头柜负荷（IT_load）提取规则
+
+- sheet：「列头柜负荷」，仅用 `data_type`（分楼）与 `spot_id`（点位）；不分 route、不按 `备注` 过滤；
+- 时间网格：三楼统一 `2025-10-01 00:00:00` ~ `2026-09-16 23:55:00`，5min（101088 行，已核实三楼基础/增量目录范围一致）；
+- 数据源拼接与 RAISE 规则同暖通脚本；
+- **sheet 声明但无源文件的点位**：43 个 `spot_id` 在 A1/A3 两楼目录均无 CSV（39 个 `0_10xx` 段被同时登记在 A1 五楼与 A3 四楼、4 个 `50_0_10x` 段属 A3 二楼 YL202-RBB），输出保留为全 NaN 列并打印警告清单，不影响 `total_load` 语义；
+- 输出 `dataset/aidc_hvac_load_5min/IT_load/`：`A1_data.csv`（286 点位）/ `A2_data.csv`（168）/ `A3_data.csv`（304）/ `data.csv`（758 点位，列名加 `A1_/A2_/A3_` 前缀），均为 `time + 点位列 + total_load`；
+- 已知数据特征：源采样时刻不规则（非整 5min 对齐），reindex 后部分网格行所有点位同时缺测（采集侧整段缺口），`total_load` 对应为 NaN，不填补；
+- 2026-09-18 经一次性补丁脚本（用后已删除）合并 `20260918/20260918_列头柜831/` 补采导出后（A1/A2 的 8/17~8/31 缺口已填；A3 该段源系统无数据仍缺），total_load 空置率：A1 6.2%、A2 4.2%、A3 8.6%（更新前为 A1 约 9.5%）。
 
 ## 注意事项
 

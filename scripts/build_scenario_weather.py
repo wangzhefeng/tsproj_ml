@@ -1,13 +1,9 @@
-"""从共享供应商宽表（extracted/actual/weather_in_*.csv 增量分片）严格生成各场景天气数据。
+"""公共天气源治理：只读原料，统一补缺和派生，发布共享小时资产。
 
-extracted/actual/ 为多分片零冲突并集：按文件名排序加载全部 weather_in_*.csv，
-同 ts 同列出现两个不同非空值即 RAISE（不 keep-last、不静默取舍）；分片可各自挂
-<同名>.six_features_repair.json 离线修补证据。当前场景均为历史评估，history 覆盖
-2025-01-01 至 2026-08-31；训练读 rt_，测试预测读同一 history 的 pred_。不生成伪
-future，不删除旧资产。真正未来资产由实际预报另行提供，只使用预报列。既有离线缺口、
-湿度派生、完整覆盖聚合规则不变；不修改共享源，不把 ERA5 补值宣称为实际发布预报。
-ESS 输出到 exogenous_weather_raw/；联通由独立场景准备脚本生成。
+不枚举预测场景；场景适配脚本从 config/ 调用公开的读取、重采样和发布函数。
+保留现有供应商格式及离线修补语义，不把插值/再分析替代当作在线可得证据。
 """
+import argparse
 import hashlib
 import json
 from pathlib import Path
@@ -15,16 +11,18 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE_DIR = ROOT / 'dataset/shared/weather/extracted/actual'
 SOURCE_GLOB = 'weather_in_*.csv'
-REPORT = ROOT / '.hermes/plans/weather-scenario-build-report.json'
+DEFAULT_PROCESSED = ROOT / 'dataset/shared/weather/processed/weather_hourly.csv'
 SOURCE_REPAIR_REPORT = ROOT / '.hermes/plans/weather-may-gap-fill-report.json'
 
 RT = ['rt_tt2', 'rt_dt', 'rt_sh', 'rt_ssr', 'rt_ws10', 'rt_rain', 'rt_ps', 'rt_uu', 'rt_vv']
 PRED = ['pred_ssrd', 'pred_tsdsr', 'pred_s_tsr', 'pred_ws10', 'pred_wd10', 'pred_tt2',
         'pred_rh', 'pred_ps', 'pred_tcc', 'pred_rain', 'pred_ws100', 'pred_wd100', 'pred_dt']
-HISTORY_START, HISTORY_END = pd.Timestamp('2025-01-01 00:00:00'), pd.Timestamp('2026-08-31 23:59:59')
+SIX_MAPPING = {'rt_tt2': 'pred_tt2', 'cal_rh': 'pred_rh', 'rt_ssr': 'pred_ssrd',
+               'rt_ws10': 'pred_ws10', 'rt_ps': 'pred_ps', 'rt_rain': 'pred_rain'}
 
 ERA5_PATH = ROOT / 'dataset/shared/weather/extracted/api/open_meteo_era5_hourly_20250101_20250902.csv'
 # ERA5 → 供应商列的单位换算映射（ERA5 无 cloud_cover/100m 风：pred_tcc/pred_ws100/pred_wd100 保持 NaN）
@@ -49,10 +47,10 @@ def era5_convert(values, rule):
     return values
 
 
-def fill_gaps(hourly):
+def fill_gaps(hourly, era5_path=None):
     """缺口策略 A（用户 2026-09-07 裁决）：≤3h 连续缺测线性插值；>3h 用 ERA5 替代（单位换算）；
     ERA5 未覆盖时段保持 NaN。返回 (frame, audit)。"""
-    era5 = pd.read_csv(ERA5_PATH)
+    era5 = pd.read_csv(ERA5_PATH if era5_path is None else era5_path)
     era5['ts'] = pd.to_datetime(era5['ts'])
     era5 = era5.set_index('ts')
     filled = hourly.copy()
@@ -117,16 +115,17 @@ def invert_dewpoint(tt2_k, rh_pct):
     return td + 273.15
 
 
-def load_sources():
+def load_sources(source_dir=None):
     """加载 extracted/actual/ 全部增量分片，按 ts 零冲突合并。
 
     合同：分片命名 weather_in_<起始yyyymmdd>_<截止yyyymmdd>.csv（起止为含数据日期，
     inclusive）；分片间允许时间重叠，但同 ts 同列不得存在两个不同的非空值（RAISE，
     不 keep-last）；一方为空另一方非空则采纳非空值。返回 (分片信息列表, 合并后小时表)。
     """
-    paths = sorted(SOURCE_DIR.glob(SOURCE_GLOB))
+    source_dir = SOURCE_DIR if source_dir is None else Path(source_dir)
+    paths = sorted(source_dir.glob(SOURCE_GLOB))
     if not paths:
-        raise FileNotFoundError(f'{SOURCE_DIR} 下无 {SOURCE_GLOB} 分片')
+        raise FileNotFoundError(f'{source_dir} 下无 {SOURCE_GLOB} 分片')
     merged = None
     conflicts = []
     sources = []
@@ -178,7 +177,7 @@ def publish(df, dest, extra_meta, sources):
         repair = json.loads(SOURCE_REPAIR_REPORT.read_text())
         if repair.get('source_sha256_after') in shard_shas:
             source_repairs.append({
-                'report': str(SOURCE_REPAIR_REPORT.relative_to(ROOT)),
+                'report': relative_path(SOURCE_REPAIR_REPORT),
                 'window': repair.get('window'),
                 'changed_cells': repair.get('changed_cells'),
                 'semantic_status': repair.get('semantic_status'),
@@ -190,7 +189,7 @@ def publish(df, dest, extra_meta, sources):
             repair = json.loads(sidecar.read_text())
             if repair.get('source_sha256_after') == src['sha256']:
                 source_repairs.append({
-                    'report': str(sidecar.relative_to(ROOT)),
+                    'report': relative_path(sidecar),
                     'sha256': hashlib.sha256(sidecar.read_bytes()).hexdigest(),
                     'semantic_status': repair['semantic_status'],
                 })
@@ -203,7 +202,7 @@ def publish(df, dest, extra_meta, sources):
         **extra_meta,
     }
     (dest.parent / (dest.stem + '.meta.json')).write_text(json.dumps(meta, ensure_ascii=False, indent=2))
-    return {'file': str(dest.relative_to(ROOT)), 'rows': len(df), 'sha256': meta['sha256_file']}
+    return {'file': relative_path(dest), 'rows': len(df), 'sha256': meta['sha256_file']}
 
 
 def resample_hold(hourly, freq, start, end):
@@ -234,62 +233,104 @@ def aggregate(frame, rule, pairs):
     return agg.reset_index(names='ts'), int((~complete).sum())
 
 
-AGG_PAIRS = [('rt_tt2', 'rt_tt2', 'mean'), ('rt_tt2_max', 'rt_tt2', 'max'), ('rt_tt2_min', 'rt_tt2', 'min'),
-             ('cal_rh', 'cal_rh', 'mean'), ('rt_ssr', 'rt_ssr', 'sum'),
-             ('rt_ws10', 'rt_ws10', 'mean'), ('rt_dt', 'rt_dt', 'mean')]
-PRED_AGG_PAIRS = [('pred_tt2', 'pred_tt2', 'mean'), ('pred_tt2_max', 'pred_tt2', 'max'), ('pred_tt2_min', 'pred_tt2', 'min'),
-                  ('pred_rh', 'pred_rh', 'mean'), ('pred_ssrd', 'pred_ssrd', 'sum'),
-                  ('pred_ws10', 'pred_ws10', 'mean'), ('pred_dt', 'pred_dt', 'mean')]
+def repair_source_intervals(hourly):
+    """已授权供应商源缺口：9/16 内部缺口线性插值，不回写原始分片。"""
+    filled = hourly.copy()
+    audit = []
+    for col, end in (('rt_tt2', '23:00'), ('rt_dt', '23:00'),
+                     ('rt_ws10', '21:00'), ('rt_rain', '21:00')):
+        index = pd.date_range('2026-09-16 15:00', f'2026-09-16 {end}', freq='1h')
+        if col not in filled or not index.isin(filled.index).all():
+            continue
+        segment = filled.loc[index, col]
+        if not np.isfinite(segment.iloc[[0, -1]].to_numpy(dtype=float)).all():
+            raise ValueError(f'{col}: 源插值缺少授权窗口的双端锚点')
+        interpolated = segment.interpolate(method='time', limit_area='inside')
+        for ts in segment.index[segment.isna()]:
+            left = segment.loc[:ts].last_valid_index()
+            right = segment.loc[ts:].first_valid_index()
+            value = float(interpolated.at[ts])
+            filled.at[ts, col] = value
+            audit.append({'ts': str(ts), 'column': col, 'old_value': None, 'new_value': value,
+                          'method': 'linear_interpolation', 'left_anchor': str(left),
+                          'left_value': float(segment.at[left]), 'right_anchor': str(right),
+                          'right_value': float(segment.at[right]), 'dependency_end': str(right)})
+    if audit:
+        rh = calc_rh(filled['rt_tt2'], filled['rt_dt'])
+        repaired_times = {row['ts'] for row in audit if row['column'] in ('rt_tt2', 'rt_dt')}
+        for timestamp in sorted(repaired_times):
+            ts = pd.Timestamp(timestamp)
+            if pd.isna(filled.at[ts, 'cal_rh']):
+                filled.at[ts, 'cal_rh'] = rh.at[ts]
+                audit.append({'ts': timestamp, 'column': 'cal_rh', 'old_value': None,
+                              'new_value': float(rh.at[ts]), 'method': 'derived_relative_humidity',
+                              'inputs': ['rt_tt2', 'rt_dt'], 'dependency_end': '2026-09-16 23:00:00'})
+    return filled, audit
+
+
+def relative_path(path):
+    path = Path(path).resolve()
+    try:
+        return str(path.relative_to(ROOT.resolve()))
+    except ValueError:
+        return str(path)
+
+
+def require_finite(frame, columns):
+    if frame.empty or not np.isfinite(frame[columns].to_numpy(dtype=float)).all():
+        raise ValueError('天气必需列缺失或非有限')
+
+
+def read_processed(path):
+    """读取共享资产并校验内容身份；round_trip 避免二次CSV解析改变浮点值。"""
+    path = Path(path).resolve()
+    meta_path = path.with_suffix('.meta.json')
+    metadata = json.loads(meta_path.read_text())
+    if metadata.get('role') != 'shared_processed':
+        raise ValueError('expected shared processed weather')
+    if hashlib.sha256(path.read_bytes()).hexdigest() != metadata['sha256_file']:
+        raise ValueError('processed weather hash mismatch')
+    frame = pd.read_csv(path, float_precision='round_trip')
+    times = pd.DatetimeIndex(pd.to_datetime(frame.pop('ts')))
+    if (times.empty or times.hasnans or times.has_duplicates or not times.is_monotonic_increasing
+            or not times.equals(pd.date_range(times[0], times[-1], freq='1h'))):
+        raise ValueError('processed weather requires regular hourly timeline')
+    frame.index = times
+    require_finite(frame, list(SIX_MAPPING) + list(SIX_MAPPING.values()))
+    metadata['processed_asset'] = {'file': relative_path(path), 'sha256': metadata['sha256_file'],
+                                   'metadata': relative_path(meta_path),
+                                   'metadata_sha256': hashlib.sha256(meta_path.read_bytes()).hexdigest()}
+    return frame, metadata
+
+
+def build_shared(source_dir, era5_path, output):
+    source_dir, era5_path, output = Path(source_dir).resolve(), Path(era5_path).resolve(), Path(output).resolve()
+    if (source_dir in output.parents or output == era5_path
+            or (ROOT / 'dataset/shared/weather/extracted').resolve() in output.parents):
+        raise ValueError('processed output must not overwrite raw weather')
+    sources, raw = load_sources(source_dir)
+    full_grid = pd.date_range(raw.index.min(), raw.index.max(), freq='1h')
+    raw = raw.reindex(full_grid)
+    hourly, gap_audit = fill_gaps(raw, era5_path)
+    hourly['cal_rh'] = calc_rh(hourly['rt_tt2'], hourly['rt_dt'])
+    hourly['pred_dt'] = invert_dewpoint(hourly['pred_tt2'], hourly['pred_rh'])
+    hourly, interpolation = repair_source_intervals(hourly)
+    require_finite(hourly, list(SIX_MAPPING) + list(SIX_MAPPING.values()))
+    meta = {'role': 'shared_processed', 'freq': '1h', 'gap_fill_audit': gap_audit,
+            'offline_interpolation': interpolation,
+            'era5': {'file': relative_path(era5_path), 'sha256': hashlib.sha256(era5_path.read_bytes()).hexdigest()},
+            'start': str(hourly.index.min()), 'end': str(hourly.index.max()),
+            'availability_assumption': 'offline repairs; no supplier vintage evidence; not verified ex-ante'}
+    return publish(hourly.reset_index(names='ts'), output, meta, sources)
 
 
 def main():
-    # 多分片零冲突合并（extracted/actual/weather_in_*.csv）
-    sources, raw = load_sources()
-    # 补全完整小时网格（源文件缺 209 个缺测行），再按裁决策略 A 填补/替代
-    full_grid = pd.date_range(raw.index.min(), raw.index.max(), freq='1h')
-    raw = raw.reindex(full_grid)
-    hourly, gap_audit = fill_gaps(raw)
-    hourly['cal_rh'] = calc_rh(hourly['rt_tt2'], hourly['rt_dt'])
-    # pred_dt：pred 无露点列，由 pred_tt2+pred_rh 经 Magnus 反解（显式声明的派生）
-    hourly['pred_dt'] = invert_dewpoint(hourly['pred_tt2'], hourly['pred_rh'])
-    hist_slice = hourly.loc[HISTORY_START:HISTORY_END]
-    report = []
-
-    # ---------------- 15min ×3 ----------------
-    for family in ('aidc_load_15min_daily', 'aidc_load_15min_rolling', 'aidc_load_15min_short'):
-        hist = resample_hold(hist_slice, '15min', HISTORY_START, HISTORY_END)
-        report.append({'scenario': family, **publish(
-            hist, ROOT / f'dataset/{family}/weather_history_15min_20250101_20260831.csv',
-            {'role': 'history', 'freq': '15min'}, sources)})
-
-    # ---------------- ESS 5min（exogenous_weather_raw/；2026-09-07 裁决：不构造统计特征，只用原始特征） ----------------
-    ess_dir = ROOT / 'dataset/aidc_ess_selfuse_load/exogenous_weather_raw'
-
-    # 无窗口特征 → 无预热 NaN，保留用户指定的完整起点 2025-01-01 00:00
-    hist5 = resample_hold(hist_slice, '5min', HISTORY_START, HISTORY_END)
-    report.append({'scenario': 'aidc_ess_selfuse_load', **publish(
-        hist5, ess_dir / 'weather_history_5min_20250101_20260831.csv', {'role': 'history', 'freq': '5min'}, sources)})
-
-    # ---------------- power_month 日/月（rt_ 统计 + pred_ 统计并列） ----------------
-    for freq_dir, rule, hist_name in (
-        ('freq_1day', '1D', 'weather_history_1day_20250101_20260831.csv'),
-        ('freq_1month', '1ME', 'weather_history_1month_20250131_20260831.csv'),
-    ):
-        hist_agg, hist_inc = aggregate(hist_slice[list(dict.fromkeys(c for _, c, _ in AGG_PAIRS))], rule, AGG_PAIRS)
-        hist_pred, hist_pred_inc = aggregate(hist_slice[list(dict.fromkeys(c for _, c, _ in PRED_AGG_PAIRS))], rule, PRED_AGG_PAIRS)
-        hist_out = hist_agg.merge(hist_pred.drop(columns=[]), on='ts')
-        # rt_ 侧（模型训练列）必须完整；pred_ 侧允许 NaN（ignored 声明，推理触及由 registry 请求级 RAISE）
-        assert not hist_agg.drop(columns=['ts']).isna().any(axis=None), f'{freq_dir} history rt_ 聚合后仍含 NaN'
-
-        report.append({'scenario': f'aidc_power_month/{freq_dir}', **publish(
-            hist_out, ROOT / f'dataset/aidc_power_month/{freq_dir}/{hist_name}',
-            {'role': 'history', 'freq': rule, 'incomplete_rows_nan_pred': hist_pred_inc}, sources)})
-
-
-    REPORT.write_text(json.dumps({'status': 'ok', 'outputs': report, 'gap_fill_audit': gap_audit}, ensure_ascii=False, indent=2))
-    print(json.dumps({'status': 'ok', 'count': len(report)}, ensure_ascii=False))
-    for row in report:
-        print(json.dumps(row, ensure_ascii=False))
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--source-dir', type=Path, default=SOURCE_DIR)
+    parser.add_argument('--era5-path', type=Path, default=ERA5_PATH)
+    parser.add_argument('--output', type=Path, required=True)
+    args = parser.parse_args()
+    print(json.dumps(build_shared(args.source_dir, args.era5_path, args.output), ensure_ascii=False))
 
 
 if __name__ == '__main__':

@@ -25,7 +25,7 @@ env -u PYTHONPATH .venv/bin/python scripts/audit_ensemble_configs.py
 
 ## 天气资产准备
 
-`build_scenario_weather.py` 会传递共享源旁 `.six_features_repair.json` 的内容哈希与补值性质，重建不能丢失再分析替代证据。三个15分钟负荷场景的 `generate_load_15min_matrix.py` 天气 source 同步使用六项及实测/预报映射，避免重建配置退回露点五项或旧分段路径。六项范围与排除场景见 `config/README.md`。
+`build_scenario_weather.py` 会传递共享源旁 `.six_features_repair.json` 的内容哈希与补值性质，重建不能丢失再分析替代证据。共享源 `dataset/shared/weather/extracted/actual/` 为增量分片制：全部 `weather_in_<起始>_<截止>.csv`（起止为含数据日期，inclusive，LF 行尾）按文件名排序加载并做零冲突合并，同 ts 同列存在两个不同非空值即 RAISE；新增分片只追加、不改写既有分片，修补证据按分片自身 sha256 绑定。三个15分钟负荷场景的 `generate_load_15min_matrix.py` 天气 source 同步使用六项及实测/预报映射，避免重建配置退回露点五项或旧分段路径。六项范围与排除场景见 `config/README.md`。
 
 > 本节 generated weather 工具链现属研究回放/取证用途。活动配置走 file + `inference_columns`：`build_scenario_weather.py` 构建截至 2026-08-31 的完整 history，训练用实测列、历史测试预测用预报列。当前无真正未来任务，不再把历史留出区间生成或引用为 future；真正未来预报须另行提供。联通使用独立 `liantong_august_prepare.py`。
 

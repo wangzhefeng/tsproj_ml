@@ -27,17 +27,45 @@ class WeatherSixFeaturesTest(unittest.TestCase):
     def test_rebuild_preserves_source_repair_evidence(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            source = root / 'source.csv'
+            shard_dir = root / 'dataset/shared/weather/extracted/actual'
+            shard_dir.mkdir(parents=True)
+            source = shard_dir / 'weather_in_20260101_20260101.csv'
             source.write_text('ts,rt_ps\n2026-01-01,102880\n')
             repair = source.with_suffix('.six_features_repair.json')
             repair.write_text(json.dumps({'source_sha256_after': hashlib.sha256(source.read_bytes()).hexdigest(),
                                           'semantic_status': 'reanalysis substitution'}))
-            with patch.object(weather_builder, 'ROOT', root), patch.object(weather_builder, 'SOURCE', source), patch.object(weather_builder, 'SOURCE_REPAIR_REPORT', root / 'absent.json'):
+            sources = [{'file': str(source.relative_to(root)),
+                        'sha256': hashlib.sha256(source.read_bytes()).hexdigest()}]
+            with patch.object(weather_builder, 'ROOT', root), patch.object(weather_builder, 'SOURCE_REPAIR_REPORT', root / 'absent.json'):
                 dest = root / 'history.csv'
-                weather_builder.publish(pd.read_csv(source), dest, {'role': 'history'})
+                weather_builder.publish(pd.read_csv(source), dest, {'role': 'history'}, sources)
                 meta = json.loads(dest.with_suffix('.meta.json').read_text())
-                self.assertEqual(meta['source_repairs'][0]['report'], repair.name)
+                self.assertEqual(meta['sources'][0]['file'], sources[0]['file'])
+                self.assertEqual(meta['sources'][0]['sha256'], sources[0]['sha256'])
+                self.assertEqual(meta['source_repairs'][0]['report'], str(repair.relative_to(root)))
                 self.assertEqual(meta['source_repairs'][0]['sha256'], hashlib.sha256(repair.read_bytes()).hexdigest())
+
+    def test_load_sources_zero_conflict_merge(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            shard_dir = root / 'actual'
+            shard_dir.mkdir(parents=True)
+            (shard_dir / 'weather_in_20260101_20260102.csv').write_text(
+                'ts,rt_tt2\n2026-01-01 00:00,280.0\n2026-01-01 01:00,\n')
+            (shard_dir / 'weather_in_20260101_20260103.csv').write_text(
+                'ts,rt_tt2\n2026-01-01 01:00,281.0\n2026-01-01 02:00,282.0\n')
+            with patch.object(weather_builder, 'SOURCE_DIR', shard_dir):
+                sources, merged = weather_builder.load_sources()
+                # 重叠时刻一方为空：采纳非空值；不重叠加成新行
+                self.assertEqual(len(sources), 2)
+                self.assertEqual(merged.loc[pd.Timestamp('2026-01-01 01:00'), 'rt_tt2'], 281.0)
+                self.assertEqual(len(merged), 3)
+            # 同 ts 同列两个不同非空值：零冲突合同 RAISE
+            (shard_dir / 'weather_in_20260101_20260103.csv').write_text(
+                'ts,rt_tt2\n2026-01-01 00:00,999.0\n2026-01-01 02:00,282.0\n')
+            with patch.object(weather_builder, 'SOURCE_DIR', shard_dir):
+                with self.assertRaises(ValueError):
+                    weather_builder.load_sources()
 
     def test_matrix_weather_source_keeps_six_and_historical_mapping(self):
         for family in FAMILIES[:3]:

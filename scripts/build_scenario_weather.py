@@ -1,9 +1,11 @@
-"""从共享供应商宽表（extracted/actual/weather_in_20250101_20260831.csv）严格生成各场景天气数据。
+"""从共享供应商宽表（extracted/actual/weather_in_*.csv 增量分片）严格生成各场景天气数据。
 
-当前场景均为历史评估，history 覆盖 2025-01-01 至 2026-08-31；训练读 rt_，
-测试预测读同一 history 的 pred_。不生成伪 future，不删除旧资产。
-真正未来资产由实际预报另行提供，只使用预报列。既有离线缺口、湿度派生、
-完整覆盖聚合规则不变；不修改共享源，不把 ERA5 补值宣称为实际发布预报。
+extracted/actual/ 为多分片零冲突并集：按文件名排序加载全部 weather_in_*.csv，
+同 ts 同列出现两个不同非空值即 RAISE（不 keep-last、不静默取舍）；分片可各自挂
+<同名>.six_features_repair.json 离线修补证据。当前场景均为历史评估，history 覆盖
+2025-01-01 至 2026-08-31；训练读 rt_，测试预测读同一 history 的 pred_。不生成伪
+future，不删除旧资产。真正未来资产由实际预报另行提供，只使用预报列。既有离线缺口、
+湿度派生、完整覆盖聚合规则不变；不修改共享源，不把 ERA5 补值宣称为实际发布预报。
 ESS 输出到 exogenous_weather_raw/；联通由独立场景准备脚本生成。
 """
 import hashlib
@@ -14,7 +16,8 @@ import numpy as np
 import pandas as pd
 
 ROOT = Path(__file__).resolve().parents[1]
-SOURCE = ROOT / 'dataset/shared/weather/extracted/actual/weather_in_20250101_20260831.csv'
+SOURCE_DIR = ROOT / 'dataset/shared/weather/extracted/actual'
+SOURCE_GLOB = 'weather_in_*.csv'
 REPORT = ROOT / '.hermes/plans/weather-scenario-build-report.json'
 SOURCE_REPAIR_REPORT = ROOT / '.hermes/plans/weather-may-gap-fill-report.json'
 
@@ -114,33 +117,86 @@ def invert_dewpoint(tt2_k, rh_pct):
     return td + 273.15
 
 
-def publish(df, dest, extra_meta):
+def load_sources():
+    """加载 extracted/actual/ 全部增量分片，按 ts 零冲突合并。
+
+    合同：分片命名 weather_in_<起始yyyymmdd>_<截止yyyymmdd>.csv（起止为含数据日期，
+    inclusive）；分片间允许时间重叠，但同 ts 同列不得存在两个不同的非空值（RAISE，
+    不 keep-last）；一方为空另一方非空则采纳非空值。返回 (分片信息列表, 合并后小时表)。
+    """
+    paths = sorted(SOURCE_DIR.glob(SOURCE_GLOB))
+    if not paths:
+        raise FileNotFoundError(f'{SOURCE_DIR} 下无 {SOURCE_GLOB} 分片')
+    merged = None
+    conflicts = []
+    sources = []
+    for path in paths:
+        df = pd.read_csv(path)
+        df['ts'] = pd.to_datetime(df['ts'])
+        df = df.sort_values('ts').set_index('ts')
+        dup = df.index.duplicated()
+        if dup.any():
+            raise ValueError(f'{path.name} 内部 ts 重复: {[str(t) for t in df.index[dup]]}')
+        for col in RT + PRED:
+            if col in df.columns:
+                df[col] = pd.to_numeric(df[col], errors='coerce')
+        try:
+            rel = str(path.relative_to(ROOT))
+        except ValueError:  # 测试/外部目录：保留绝对路径
+            rel = str(path)
+        sources.append({'file': rel,
+                        'sha256': hashlib.sha256(path.read_bytes()).hexdigest(),
+                        'rows': len(df),
+                        'span': [str(df.index.min()), str(df.index.max())]})
+        if merged is None:
+            merged = df
+            continue
+        overlap = merged.index.intersection(df.index)
+        for ts in overlap:
+            for col in df.columns:
+                old, new = merged.at[ts, col], df.at[ts, col]
+                if pd.notna(old) and pd.notna(new) and not np.isclose(old, new):
+                    conflicts.append({'ts': str(ts), 'column': col,
+                                      'existing': float(old), 'incoming': float(new),
+                                      'incoming_source': path.name})
+                elif pd.isna(old) and pd.notna(new):
+                    merged.at[ts, col] = new
+        new_rows = df.loc[df.index.difference(merged.index)]
+        merged = pd.concat([merged, new_rows])
+    if conflicts:
+        raise ValueError(f'分片零冲突合并失败，共 {len(conflicts)} 个冲突单元格: '
+                         + json.dumps(conflicts[:10], ensure_ascii=False))
+    return sources, merged.sort_index()
+
+
+def publish(df, dest, extra_meta, sources):
     dest.parent.mkdir(parents=True, exist_ok=True)
     dest.write_text(df.to_csv(index=False))
-    source_sha256 = hashlib.sha256(SOURCE.read_bytes()).hexdigest()
+    shard_shas = {s['sha256'] for s in sources}
     source_repairs = []
     if SOURCE_REPAIR_REPORT.is_file():
         repair = json.loads(SOURCE_REPAIR_REPORT.read_text())
-        if repair.get('source_sha256_after') == source_sha256:
+        if repair.get('source_sha256_after') in shard_shas:
             source_repairs.append({
                 'report': str(SOURCE_REPAIR_REPORT.relative_to(ROOT)),
                 'window': repair.get('window'),
                 'changed_cells': repair.get('changed_cells'),
                 'semantic_status': repair.get('semantic_status'),
             })
-    six_features_repair = SOURCE.with_suffix('.six_features_repair.json')
-    if six_features_repair.is_file():
-        repair = json.loads(six_features_repair.read_text())
-        if repair.get('source_sha256_after') == source_sha256:
-            source_repairs.append({
-                'report': str(six_features_repair.relative_to(ROOT)),
-                'sha256': hashlib.sha256(six_features_repair.read_bytes()).hexdigest(),
-                'semantic_status': repair['semantic_status'],
-            })
+    # 逐分片绑定离线修补 sidecar（<同名>.six_features_repair.json，按分片自身 sha256 核对）
+    for src in sources:
+        sidecar = (ROOT / src['file']).with_suffix('.six_features_repair.json')
+        if sidecar.is_file():
+            repair = json.loads(sidecar.read_text())
+            if repair.get('source_sha256_after') == src['sha256']:
+                source_repairs.append({
+                    'report': str(sidecar.relative_to(ROOT)),
+                    'sha256': hashlib.sha256(sidecar.read_bytes()).hexdigest(),
+                    'semantic_status': repair['semantic_status'],
+                })
     meta = {
         'file': dest.name, 'sha256_file': hashlib.sha256(dest.read_bytes()).hexdigest(),
-        'rows': len(df), 'source': str(SOURCE.relative_to(ROOT)),
-        'source_sha256': source_sha256, 'source_repairs': source_repairs,
+        'rows': len(df), 'sources': sources, 'source_repairs': source_repairs,
         'builder': 'scripts/build_scenario_weather.py',
         'rules': 'audited source repairs plus builder gap policy; complete-coverage aggregates else NaN; no available_at in data; '
                  'both rt_ and pred_ families preserved; training uses rt_, inference uses pred_',
@@ -187,13 +243,8 @@ PRED_AGG_PAIRS = [('pred_tt2', 'pred_tt2', 'mean'), ('pred_tt2_max', 'pred_tt2',
 
 
 def main():
-    raw = pd.read_csv(SOURCE)
-    raw['ts'] = pd.to_datetime(raw['ts'])
-    raw = raw.sort_values('ts').set_index('ts')
-    assert not raw.index.duplicated().any()
-    for col in RT + PRED:
-        if col in raw.columns:
-            raw[col] = pd.to_numeric(raw[col], errors='coerce')
+    # 多分片零冲突合并（extracted/actual/weather_in_*.csv）
+    sources, raw = load_sources()
     # 补全完整小时网格（源文件缺 209 个缺测行），再按裁决策略 A 填补/替代
     full_grid = pd.date_range(raw.index.min(), raw.index.max(), freq='1h')
     raw = raw.reindex(full_grid)
@@ -209,7 +260,7 @@ def main():
         hist = resample_hold(hist_slice, '15min', HISTORY_START, HISTORY_END)
         report.append({'scenario': family, **publish(
             hist, ROOT / f'dataset/{family}/weather_history_15min_20250101_20260831.csv',
-            {'role': 'history', 'freq': '15min'})})
+            {'role': 'history', 'freq': '15min'}, sources)})
 
     # ---------------- ESS 5min（exogenous_weather_raw/；2026-09-07 裁决：不构造统计特征，只用原始特征） ----------------
     ess_dir = ROOT / 'dataset/aidc_ess_selfuse_load/exogenous_weather_raw'
@@ -217,7 +268,7 @@ def main():
     # 无窗口特征 → 无预热 NaN，保留用户指定的完整起点 2025-01-01 00:00
     hist5 = resample_hold(hist_slice, '5min', HISTORY_START, HISTORY_END)
     report.append({'scenario': 'aidc_ess_selfuse_load', **publish(
-        hist5, ess_dir / 'weather_history_5min_20250101_20260831.csv', {'role': 'history', 'freq': '5min'})})
+        hist5, ess_dir / 'weather_history_5min_20250101_20260831.csv', {'role': 'history', 'freq': '5min'}, sources)})
 
     # ---------------- power_month 日/月（rt_ 统计 + pred_ 统计并列） ----------------
     for freq_dir, rule, hist_name in (
@@ -232,7 +283,7 @@ def main():
 
         report.append({'scenario': f'aidc_power_month/{freq_dir}', **publish(
             hist_out, ROOT / f'dataset/aidc_power_month/{freq_dir}/{hist_name}',
-            {'role': 'history', 'freq': rule, 'incomplete_rows_nan_pred': hist_pred_inc})})
+            {'role': 'history', 'freq': rule, 'incomplete_rows_nan_pred': hist_pred_inc}, sources)})
 
 
     REPORT.write_text(json.dumps({'status': 'ok', 'outputs': report, 'gap_fill_audit': gap_audit}, ensure_ascii=False, indent=2))

@@ -2,6 +2,8 @@
 
 本目录（`config/aidc_hvac_load_5min/scripts/`）保存 AIDC 暖通/IT 负荷预测的数据提取与处理脚本。
 
+32份预测CSV的一对一天气资产由本目录 `prepare_weather.py` 适配共享处理后天气，输出独立 `weather_data/`，不修改目标窗口选择。公共源缺失由项目级 `scripts/build_scenario_weather.py` 统一处理，场景脚本不补值。逐文件路径、source片段及审计见 [场景README](../README.md)。
+
 ## 文件职责
 
 | 文件 | 职责 |
@@ -13,6 +15,7 @@
 | `migrate_hvac_data.py` | 一次性迁移旧数据与 IT 分析文件，SHA256 校验；已有迁移记录时仅复核，不重复移动 |
 | `impute_hvac_data.py` | 原始点位因果短缺口遮蔽选型、填补、严格总量重算；20 份 CSV 写 `imputed_data/`，审计写 `analysis/imputation/` |
 | `select_hvac_windows.py` | 从填补数据筛选近期最长完整自然日段；32 场景写 `forecast_data/`，窗口/有效性/折几何审计写 `analysis/forecast_windows/` |
+| `analyze_forecast_data.py` | 只读32份预测数据及点位汇总实测掩码，分析84个文件内数值列；每文件输出完整时序、日内热力图、最大相对跳变局部图及候选CSV到 `analysis/forecast_data_visual/` |
 
 ## 运行方式
 
@@ -96,3 +99,18 @@ dataset/aidc_hvac_load_5min/
 - 分楼CSV只含 `time,hvac_total_load`，有IT增加 `it_total_load`。三楼 `data.csv` 再加 `A1_hvac_total_load,A2_hvac_total_load,A3_hvac_total_load`；`data_with_it.csv` 同时含 `it_total_load,A1_it_total_load,A2_it_total_load,A3_it_total_load`。
 - `analysis/forecast_windows/windows.csv` 枚举32个文件、窗口、长度、SHA、结构折数和资格时间安全折数；`folds_14_1.csv` 枚举原点与测试实测行数；`masks/` 独立保存有效性，不污染预测CSV字段。**测试期估计值不是实测真值**，本次未创建预测YAML、未运行模型，也未自动将mask接入运行管线。
 - 定向验证：`env -u PYTHONPATH .venv/bin/python tests/run_suite.py integration --match test_hvac_data_preparation`；常规回归用 `fast`。
+
+## 预测数据异常候选可视化
+
+运行 `env -u PYTHONPATH .venv/bin/python config/aidc_hvac_load_5min/scripts/analyze_forecast_data.py`，可用 `--root` 指定数据根目录。输出 `analysis/forecast_data_visual/{version}/{route}/{CSV文件名去扩展名}/`，每个输入对应：
+
+- `timeseries.png`：各列独立纵轴的全量5min序列、填补标记和统计候选；不改值、不聚合降采样。
+- `daily_heatmap.png`：每列独立色阶，横轴时刻、纵轴日期。
+- `largest_jump_zoom.png`：按各列幅度门槛标准化后的最大单步跳变附近±3h，辅助观察局部形态。
+- `series_summary.csv`、`candidate_points.csv`、`candidate_segments.csv`：逐列阈值/统计、候选点与连续候选段；根目录另存32文件完整性表、84列汇总、哈希manifest和图片索引README。
+
+复用 `data_process.outlier_process.detect_anomalies` 的只读尖峰检测，不调用清洗入口。尖峰半窗口3槽，幅度至少 `max(实测中位数×10%,1kW)`，并满足 robust z≥6或相邻两端接近；跳变门槛为 `max(6×1.4826×实测相邻差分MAD,实测中位数×10%,1kW)`；低负荷候选≤实测中位数10%；恒值候选为相邻差≤1e-9kW且持续≥12槽。阈值是明示的探索性规则，不是设备物理限值，也不自动清洗。
+
+逐列匹配 `analysis/imputation/masks`，三楼分量使用对应楼的掩码，不拿总量掩码冒充分量。跳变的 `transition_observed` 要求相邻两端均实测；当前点 `observed` 为真并不证明其跳变未涉及填补。IT与分楼分量在多文件中重复出现，候选数按文件列计，不能直接相加当独立物理事件数。居中尖峰使用未来邻域，仅供离线复核，不可直接作为预测特征。
+
+输入和掩码SHA前后必须不变；输出目录存在则拒绝覆盖；先在临时目录生成全部32份，再整体发布。缺失、非有限值、负值和汇总分量关系与统计候选分开汇报；无额定容量信息时不宣称某个高值超过物理上限。

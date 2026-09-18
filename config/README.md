@@ -76,6 +76,8 @@ Fixed-step validation 使用 `history_steps/train_window_steps/fold_count/stride
 
 ### 活动天气特征选择
 
+共享源缺失统一由 `scripts/build_scenario_weather.py` 处理，原始 `dataset/shared/weather/extracted/` 保持只读，结果写 `processed/weather_hourly.csv` 及审计metadata。三个15min负荷、ESS、power_month与HVAC的适配入口为各自 `config/<场景>/scripts/prepare_weather.py`，只负责窗口、频率、列与输出组织，不重复修补共享缺口。操作命令见 `scripts/README.md`。此次拆分不改变模型YAML、既有天气CSV值或训练窗口；metadata新增共享资产血缘。
+
 三个 `aidc_load_15min_{daily,rolling,short}`、`aidc_ess_selfuse_load` 与 `aidc_electricity_computility/electricity/2026-08-31/liantong_IT` 的天气组统一使用六项：`rt_tt2`（温度）、`cal_rh`（相对湿度）、`rt_ssr`（辐射）、`rt_ws10`（风速）、`rt_ps`（气压）、`rt_rain`（降雨）。对应预报为 `pred_tt2/pred_rh/pred_ssrd/pred_ws10/pred_ps/pred_rain`；露点只作为湿度派生原料，不再独立入模。无天气基线不添加天气，其他 `aidc_electricity_computility` 场景及 `aidc_power_month` 不在此次特征调整范围。
 
 共享 `extracted/actual` 中上述特征所需原料及预报列的缺口先离线填补，原非缺失值保持不变；ERA5 气压采用 `surface_pressure`（hPa→Pa），不是海平面气压。逐格来源见源 CSV 旁的 `.six_features_repair.json`；再分析替代不等于站点实测，既有预报缺口修补也不构成真实发布时间证据。本次气压已补齐，未启用用户授权的“无法补齐则跳过气压”例外；该例外不得实现为运行时静默降级。未入模的其他原始列不承诺完整。

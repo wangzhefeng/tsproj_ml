@@ -22,7 +22,7 @@ if str(REPO) not in sys.path:
 from data_process.outlier_process import ANOMALY_TYPE_COL, OutlierParams, detect_anomalies
 from impute_hvac_data import STEP, true_runs
 from migrate_hvac_data import BUILDINGS, DEFAULT_ROOT, ROUTES, VERSIONS, sha256_file
-from forecast_schema import SCHEMA, file_contract
+from forecast_schema import SCHEMA, file_contract, resolve_preparation_root
 from select_hvac_windows import publish_prepared_directories
 
 KINDS = ('hard_issue', 'spike', 'jump', 'low_load', 'constant')
@@ -98,7 +98,7 @@ def observed_mask(root, relative, column, index, cache):
         raise ValueError(f'未知双路预测字段: {column}')
     members = []
     for source in mapping[column]:
-        path = root / 'analysis/imputation/masks' / source
+        path = resolve_preparation_root(root) / 'analysis/imputation/masks' / source
         if path not in cache:
             mask = pd.read_csv(path, index_col='time', parse_dates=True, usecols=['time', 'total_observed'],
                                dtype={'total_observed': bool})
@@ -131,7 +131,7 @@ def draw_series(frame, details, output, title):
         ax.grid(alpha=0.18)
         ax.legend(loc='upper right', ncol=3, fontsize=7)
     axes[-1, 0].xaxis.set_major_formatter(mdates.ConciseDateFormatter(axes[-1, 0].xaxis.get_major_locator()))
-    fig.suptitle(title + '\n离线统计候选，不代表已确认错误；原值未清洗', fontsize=12)
+    fig.suptitle(title + '\n离线统计候选，不代表已确认错误；本分析不改输入值', fontsize=12)
     fig.savefig(output, dpi=125)
     plt.close(fig)
 
@@ -154,7 +154,7 @@ def draw_heatmap(frame, output, title):
         ax.set_ylabel('日期')
         fig.colorbar(image, ax=ax, label='kW', fraction=0.025, pad=0.01)
     axes[-1, 0].set_xlabel('时刻（24小时制）')
-    fig.suptitle(title + '\n日内热力图：每列独立色阶，未标准化或清洗', fontsize=12)
+    fig.suptitle(title + '\n日内热力图：每列独立色阶，本分析未标准化或改值', fontsize=12)
     fig.savefig(output, dpi=125)
     plt.close(fig)
 
@@ -229,7 +229,10 @@ def run(root=DEFAULT_ROOT, *, replace=False):
     if paths != expected:
         raise ValueError(f'要求32份预测输入，缺少={expected - paths}, 多余={paths - expected}')
     dependencies = [root / 'forecast_data' / p for p in sorted(paths)]
-    dependencies += sorted((root / 'analysis/imputation/masks').rglob('*.csv'))
+    prepared = resolve_preparation_root(root)
+    dependencies += sorted((prepared / 'analysis/imputation/masks').rglob('*.csv'))
+    if (root / 'analysis/forecast_windows/manifest.json').exists():
+        dependencies.append(root / 'analysis/forecast_windows/manifest.json')
     hashes = {str(p.relative_to(root)): sha256_file(p) for p in dependencies}
     with tempfile.TemporaryDirectory(prefix='.forecast-visual-stage-', dir=root / 'analysis') as tmp:
         stage = Path(tmp) / 'analysis/forecast_data_visual'
@@ -250,13 +253,15 @@ def run(root=DEFAULT_ROOT, *, replace=False):
             raise AssertionError('双路32文件/逐字段/每文件3图覆盖验收不符')
         manifest = {'input_files': len(quality), 'series_appearances': len(stats), 'png_files': len(plots),
                     'rules': RULES, 'inputs_sha256': hashes, 'plots': plots,
+                    'preparation_root': str(prepared.relative_to(root)),
                     'code_sha256': sha256_file(Path(__file__)),
                     'schema': SCHEMA, 'schema_code_sha256': sha256_file(Path(__file__).with_name('forecast_schema.py')),
                     'note': 'counts are per-file appearances; IT is shared across route/version and must not be summed as independent signals'}
         (stage / 'manifest.json').write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding='utf-8')
         lines = ['# forecast_data 异常候选与可视化', '',
                  f'只读分析：{len(quality)}个CSV、{len(stats)}个文件内数值列；每文件完整时序、日内热力图、最大相对跳变±3h局部图。',
-                 '图中橙色为含填补点位的汇总值。所有统计标记仅供复核，不证明传感器错误；未清洗、未训练模型。',
+                 '图中橙色为含估计点位的汇总值。所有统计标记仅供复核，不证明传感器错误；本分析未改值、未训练模型。',
+                 f'输入准备版本：`{prepared.relative_to(root)}`；是否已做上游清洗以该版本审计为准。',
                  'A/B输入在两个目标路线目录中重复出现，IT也共享；不要把文件列候选数相加当作独立物理异常数。',
                  'hvac_total_load_AB为三楼两路总负荷；目录route_A/B分别以hvac_total_load_A/B为目标，其他列仅作历史输入。', '',
                  '## 筛查规则', '',

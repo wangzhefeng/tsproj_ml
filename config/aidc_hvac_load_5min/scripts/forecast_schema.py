@@ -1,10 +1,24 @@
 # -*- coding: utf-8 -*-
 """双路预测表的唯一列→填补源映射；不改变原始/填补表字段。"""
 from pathlib import Path
+import json
 
 from migrate_hvac_data import BUILDINGS, ROUTES, VERSIONS
 
 SCHEMA = 'hvac_dual_route_v1'
+
+
+def resolve_preparation_root(root, relative=None):
+    """当前预测清单绑定的准备版本；不回退到错误的原始填补掩码。"""
+    root = Path(root).resolve()
+    manifest = root / 'analysis/forecast_windows/manifest.json'
+    if relative is None:
+        relative = json.loads(manifest.read_text()).get('preparation_root', '.') if manifest.exists() else '.'
+    path = Path(relative)
+    result = (root / path).resolve()
+    if path.is_absolute() or not result.is_relative_to(root):
+        raise ValueError('准备根必须是场景数据根内部的相对路径')
+    return result
 
 
 def column_sources(version, building, with_it):

@@ -12,9 +12,13 @@
 
 `test_hvac_forecast_visual` 默认 integration：尖峰/跳变/低负荷/恒值候选、近恒定序列微小波动不误报、实测与填补端点标记，以及含三楼暖通/IT分量的真实临时PNG/CSV生成和源字节不变；不执行异常清洗。定向 `integration --match test_hvac_forecast_visual`。
 
+`test_hvac_outlier_cleaning` 默认 integration：单槽原始点位归因、持续/多点/缺失邻域保护、过去观测修正、检测可得时间、原始归档与IT保真、跨设备版本一致、准备根绑定与跨路目标/特征同值；临时fixture走清洗→选窗→可视化mask真实接线，不运行模型。定向`integration --match test_hvac_outlier_cleaning`。
+
 双路合同回归仍在上述两模块：不对称A/B数值与缺失掩码、AB严格和、路线显式目标、跨路线目录相同输入、逐字段资格时间、授权覆盖/失败回滚/源目录范围拒绝。`test_weather_hvac_windows` 对32份真实资产使用新的目标列，并校验天气metadata绑定的新target SHA；字段迁移不改变天气值。
 
 ## 执行集合
+
+`test_hvac_redbox_cleaning`默认integration：人工范围边界、过去基线、先前异常不进入参考、固定异常mask的未来数值扰动不改变补值/选型、长段/不足历史拒绝强填、事件内已有缺失槽不沿用受污染旧补值。仅离线清洗，不训练模型；定向`integration --match test_hvac_redbox_cleaning`。真实32表另核验总分、共享点位、时间窗、IT保真及逐格改值，报告保存在准备版本`analysis/outliers`。
 
 `test_hvac_model_configs` 默认 integration：576份物理YAML精确路径集、九方法模板一致性、四组字段投影/正交性、真实资产声明列有限性及完整自然日网格、14/7天原始训练窗口与全部折日期、逐配置真实训练origin及预测首/中/末步编译、IT/peer安全lag的可见性证明和窗口外/未来扰动隔离。只验证配置与设计，不拟合正式模型；定向 `integration --match test_hvac_model_configs`。
 

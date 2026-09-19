@@ -14,6 +14,8 @@
 | `analyze_it_load.py` | 只读 `raw_data/IT_load/`，结果写统一 `analysis/`，CSV 使用 `IT_load_` 前缀避免与暖通报告重名 |
 | `migrate_hvac_data.py` | 一次性迁移旧数据与 IT 分析文件，SHA256 校验；已有迁移记录时仅复核，不重复移动 |
 | `impute_hvac_data.py` | 原始点位因果短缺口遮蔽选型、填补、严格总量重算；20 份 CSV 写 `imputed_data/`，审计写 `analysis/imputation/` |
+| `clean_hvac_outliers.py` | 从原始点位核实单槽孤立异常；新版本写 `outlier_remove_data/isolated_v1/`，保留原始与既有填补版本，不运行模型 |
+| `clean_hvac_redboxes.py` | 消费`../redbox_cleaning.json`人工红框事件范围，点位级过去观测检测/遮蔽选型，重算范围内受污染旧补值；只构建独立版本，不覆盖当前预测表、不运行模型 |
 | `forecast_schema.py` | 双路字段到填补源的唯一映射，明确每个路线目录的目标列；不提供旧裸暖通列兼容层 |
 | `select_hvac_windows.py` | 从填补数据筛选近期最长完整自然日段，32场景均同时导出A/B路；窗口/逐列有效性/折几何审计写 `analysis/forecast_windows/` |
 | `analyze_forecast_data.py` | 只读32份双路预测数据及实测掩码，逐列分析；每文件输出完整时序、日内热力图、最大相对跳变局部图及候选CSV到 `analysis/forecast_data_visual/` |
@@ -119,9 +121,29 @@ dataset/aidc_hvac_load_5min/
 
 输入和掩码SHA前后必须不变；默认拒绝覆盖、仅显式 `--replace` 替换；先生成全部32份再发布。缺失、非有限值、负值和汇总分量关系与统计候选分开汇报；无额定容量信息时不宣称某值超过物理上限。异常候选只标记，不修改预测数据。
 
-## 已授权的双路重建
+## 孤立异常清洗版本
 
-在现有imputed数据上重新组装，不重复填补、不做异常清洗：
+- `raw_data/` 和根目录 `imputed_data/` 始终保留。`outlier_remove_data/isolated_v1/` 是独立准备根：`imputed_data/` 保存20表，`masked_raw/` 仅保存实际屏蔽异常的原始派生表，`analysis/imputation/` 保存该版本填补记录与mask，`analysis/outliers/` 保存候选、修正、传播差异及SHA证据。
+- 范围为各楼当前预测窗口的并集，只清洗暖通，不清洗IT。对全设备/去二次泵两口径分别检测，同一物理点位的接受结果去重并统一应用。原始共享点位先逐值核对，禁止两版本独立修出不同值。
+- 只接受单个5min槽：前后各3槽原始观测完整；汇总偏差至少为局部中位数10%、1kW、6×1.4826×MAD三者最大值；邻域极差不超过偏差25%；恰好一个点位也满足同样孤立规则，且同向解释汇总偏差的80%～120%。持续阶跃、多槽峰/谷、缺失邻域及多点同步离群不自动修正。此规则是授权的统计清洗口径，不证明设备物理故障。
+- 将接受点在派生表置NaN，重用既有过去观测遮蔽选型；重算受影响分楼的填补与三楼总量，IT及无变化的表复制保真。不足过去验证证据直接报错，不以双向插值强填；未清洗原始观测逐值不变。`changed_point_cells.csv` 单独列出原异常及重填补传播变化。
+- 检测使用后侧15min，**不是严格在线清洗**。修正值及可能受方法选型影响的填补记录追加检测可得时间；修正点`observed=false`。替换数值不使用未来值，与检测是否用未来必须分别表述。
+- 首次运行 `env -u PYTHONPATH .venv/bin/python config/aidc_hvac_load_5min/scripts/clean_hvac_outliers.py`，已有版本拒绝覆盖。选窗用 `--preparation-root outlier_remove_data/isolated_v1`；清单记录准备根，后续省略该参数时沿用当前绑定。可视化自动读取同一准备根的mask，不误用旧的根目录mask。
+- 发布前保留旧预测、选窗审计、可视化和天气目录于`analysis/archive/`，新32表的时间窗必须与旧版一致；若变化，停止并重新评审模型配置。刷新天气目标SHA绑定，不重建公共天气源，不运行具体模型测试。新测试为`test_hvac_outlier_cleaning`，默认integration。
+- `isolated_v1`阶段修正了A2/A路同一设备的2026-08-04 14:45、2026-08-08 22:15两处单点，两设备版本同步；其他原始观测和预测时间窗不变。未清洗旧版位于`analysis/archive/pre_isolated_v1/`。这些修正在当前红框版本中保留；该统计清洗不表示所有旧探索性尖峰都被判定为错误。
+
+## 人工红框的过去观测清洗
+
+- 入口`clean_hvac_redboxes.py`，配方`../redbox_cleaning.json`；仅在指定楼栋/路线/事件时段中判断。过去12槽至少8条可信原始观测，冻结事件前中位数与MAD，偏差达到max(基线10%,1kW,6×1.4826×MAD)才选择；先前选中异常不作为下个事件基线，未使用后侧观测定阈值。
+- 选中点置为缺失后，复用`impute_series`的locf/past_mean_1h/previous_day过去遮蔽选型。红框内原始缺失且父版本已有估计的槽也重新估计，避免旧补值沿用异常水平；框外既有补值不改。超过72槽或历史验证不足保留父版本值、逐条报告，不强填。这里是人工排除运行扰动，并非所有点都被证实为测量错误。
+- 原始raw与isolated_v1均只读；共享点位只计算一次再应用于全设备/去二次泵口径，逐级重算总量。既有isolated_v1两处改值保持。缺口mask标记估计，并记录原始依赖末时刻和方法验证结束时刻；二者必须早于缺口开始。
+- 构建命令：`env -u PYTHONPATH .venv/bin/python config/aidc_hvac_load_5min/scripts/clean_hvac_redboxes.py`。当前版本已存在，重复构建明确拒绝；不提供自动覆盖。只构建准备版本，不自动替换正式输入。
+- 当前正式绑定`outlier_remove_data/redbox_past_v3`，候选v2未发布并保留。发布前32表独立核验，再归档旧预测/选窗/图/天气，按`--preparation-root outlier_remove_data/redbox_past_v3`导出并刷新天气与图。旧版归档`analysis/archive/pre_redbox_past_v3`；对比图、corrections/screening/forecast_changes、verification/publication报告均在新版本`analysis/outliers`。
+- 仅补值与选型严格过去：人工圈选与缺口闭合资格属于离线决策，不能把平滑后的估计标签称为实测或严格在线回放。没有重跑或删除模型结果。
+
+## 双路重建入口
+
+按当前预测清单绑定的准备版本重新组装；选窗本身不重复填补或清洗。最初未清洗版本绑定根目录imputed数据，清洗后绑定独立准备根：
 
 ```bash
 env -u PYTHONPATH .venv/bin/python config/aidc_hvac_load_5min/scripts/select_hvac_windows.py --replace

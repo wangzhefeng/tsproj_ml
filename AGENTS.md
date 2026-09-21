@@ -1,6 +1,6 @@
 # AGENTS.md — tsproj_ml
 
-本文件是项目级约定的单一事实来源，供所有 AI 编码工具（Codex、Claude Code、Hermes Agent、ZCode、Kimi Coding 等）共同遵守，与具体工具或模型无关。`CLAUDE.md` 只含 `@AGENTS.md` 引用以导入本文件；项目约定一律只改这里，不写入任何工具专属配置文件。
+本文件是项目级约定的单一事实来源，供所有 AI 编码工具（Codex、Claude Code、Hermes Agent、ZCode、Kimi Coding 等）共同遵守，与具体工具或模型无关。项目约定一律只改这里，不写入任何工具专属配置文件。
 
 通用编码准则（先想后写、简单优先、最小改动、目标驱动）放在各工具的用户全局配置中，本文件有意不重复。
 

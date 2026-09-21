@@ -14,10 +14,10 @@ sys.path.insert(0, str(SCRIPTS))
 
 class IsolatedOutlierTest(unittest.TestCase):
     def test_dataset_build_preserves_sources_and_shared_device_versions(self):
-        cleaner = importlib.import_module('clean_hvac_outliers')
-        imputer = importlib.import_module('impute_hvac_data')
-        selector = importlib.import_module('select_hvac_windows')
-        migration = importlib.import_module('migrate_hvac_data')
+        cleaner = importlib.import_module('config.aidc_hvac_load_5min.scripts.v1.outlier_remove_data.clean_hvac_outliers')
+        imputer = importlib.import_module('config.aidc_hvac_load_5min.scripts.imputed_data.impute_hvac_data')
+        selector = importlib.import_module('config.aidc_hvac_load_5min.scripts.forecast_data.select_hvac_windows')
+        migration = importlib.import_module('config.aidc_hvac_load_5min.scripts.raw_data.migrate_hvac_data')
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             index = pd.date_range('2026-08-01', periods=5 * 288, freq='5min', name='time')
@@ -49,9 +49,9 @@ class IsolatedOutlierTest(unittest.TestCase):
                 cleaner.build_cleaned_dataset(root)
             selector.export_windows(root, recent_start=index[0], replace=True,
                                     preparation_root='outlier_remove_data/isolated_v1')
-            schema = importlib.import_module('forecast_schema')
+            schema = importlib.import_module('config.aidc_hvac_load_5min.scripts.forecast_data.forecast_schema')
             self.assertEqual(schema.resolve_preparation_root(root), destination)
-            visual = importlib.import_module('analyze_forecast_data')
+            visual = importlib.import_module('config.aidc_hvac_load_5min.scripts.analysis.analyze_forecast_data')
             observed = visual.observed_mask(root, Path('hvac_all_devices/route_A/A2_data.csv'),
                                             'hvac_total_load_A', index, {})
             self.assertFalse(observed.loc[index[1000]])
@@ -69,7 +69,7 @@ class IsolatedOutlierTest(unittest.TestCase):
                 selector.export_windows(root, recent_start=index[0], replace=True)
 
     def test_invalid_values_and_insufficient_replacement_history_raise(self):
-        cleaner = importlib.import_module('clean_hvac_outliers')
+        cleaner = importlib.import_module('config.aidc_hvac_load_5min.scripts.v1.outlier_remove_data.clean_hvac_outliers')
         index = pd.date_range('2026-08-01', periods=50, freq='5min', name='time')
         points = pd.DataFrame({'chiller': 100.0, 'pump': 20.0}, index=index)
         points.loc[index[10], 'chiller'] = 200.0
@@ -86,7 +86,7 @@ class IsolatedOutlierTest(unittest.TestCase):
             cleaner.detect_isolated(points.iloc[::2], index[0], index[-1])
 
     def test_cleaning_reimputes_point_preserves_observations_and_availability(self):
-        cleaner = importlib.import_module('clean_hvac_outliers')
+        cleaner = importlib.import_module('config.aidc_hvac_load_5min.scripts.v1.outlier_remove_data.clean_hvac_outliers')
         index = pd.date_range('2026-08-01', periods=5 * 288, freq='5min', name='time')
         source = pd.DataFrame({'chiller': 100.0, 'pump': 20.0}, index=index)
         source.loc[index[1000], 'chiller'] = 200.0
@@ -106,7 +106,7 @@ class IsolatedOutlierTest(unittest.TestCase):
         self.assertTrue(result.total_load.eq(result.chiller + result.pump).all())
 
     def test_single_point_attribution_and_operating_events_preserved(self):
-        cleaner = importlib.import_module('clean_hvac_outliers')
+        cleaner = importlib.import_module('config.aidc_hvac_load_5min.scripts.v1.outlier_remove_data.clean_hvac_outliers')
         index = pd.date_range('2026-08-01', periods=100, freq='5min', name='time')
         points = pd.DataFrame({'chiller': 100.0, 'pump': 20.0}, index=index)
         points.loc[index[10], 'chiller'] = 200.0

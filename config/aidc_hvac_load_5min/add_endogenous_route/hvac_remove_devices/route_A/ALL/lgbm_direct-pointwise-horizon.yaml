@@ -17,7 +17,7 @@ data:
     - name: hvac_total_load_A
       role: target
       categorical: false
-    history_path: dataset/aidc_hvac_load_5min/forecast_data/hvac_remove_devices/route_A/data.csv
+    history_path: dataset/aidc_hvac_load_5min/forecast_data/data_v1/hvac_remove_devices/route_A/data.csv
     time_col: time
     series_id_cols: []
     availability: source_time
@@ -43,7 +43,7 @@ data:
     - name: hvac_total_load_AB
       role: observed_past
       categorical: false
-    history_path: dataset/aidc_hvac_load_5min/forecast_data/hvac_remove_devices/route_A/data.csv
+    history_path: dataset/aidc_hvac_load_5min/forecast_data/data_v1/hvac_remove_devices/route_A/data.csv
     time_col: time
     series_id_cols: []
     availability: source_time

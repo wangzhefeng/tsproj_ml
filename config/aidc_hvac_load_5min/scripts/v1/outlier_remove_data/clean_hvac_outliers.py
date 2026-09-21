@@ -7,60 +7,24 @@ import json
 from pathlib import Path
 import shutil
 import tempfile
+import sys
+
+SCRIPTS = Path(__file__).resolve().parents[5]
+if str(SCRIPTS) not in sys.path:
+    sys.path.insert(0, str(SCRIPTS))
 
 import numpy as np
 import pandas as pd
 
-from impute_hvac_data import impute_table, read_table, write_csv
-from migrate_hvac_data import BUILDINGS, DEFAULT_ROOT, ROUTES, VERSIONS, sha256_file
-
-HALF_WINDOW = 3
-AUDIT_COLUMNS = ['time', 'point', 'old_value', 'local_baseline', 'total_value',
-                 'total_baseline', 'total_residual', 'neighbor_spread', 'amplitude_floor',
-                 'point_residual', 'explained_fraction', 'detection_known_at', 'status']
+from config.aidc_hvac_load_5min.scripts.imputed_data.impute_hvac_data import impute_table, read_table, write_csv
+from config.aidc_hvac_load_5min.scripts.raw_data.migrate_hvac_data import BUILDINGS, DEFAULT_ROOT, ROUTES, VERSIONS, sha256_file
+from config.aidc_hvac_load_5min.scripts.preparation_paths import artifact_path
+from config.aidc_hvac_load_5min.scripts.outlier_remove_data.outlier_detection import AUDIT_COLUMNS, isolated_evidence, detect_isolated
 
 
-def isolated_evidence(series):
-    """前后各3槽必须完整且稳定；只有单槽离群，不清除短平台/阶跃。"""
-    neighbors = pd.concat([series.shift(k) for k in (-3, -2, -1, 1, 2, 3)], axis=1)
-    baseline = neighbors.median(axis=1)
-    residual = series - baseline
-    spread = neighbors.max(axis=1) - neighbors.min(axis=1)
-    mad = neighbors.sub(baseline, axis=0).abs().median(axis=1)
-    floor = baseline.abs().mul(0.10).clip(lower=1.0)
-    accepted = (neighbors.notna().all(axis=1) & series.notna()
-                & residual.abs().ge(floor) & residual.abs().ge(6 * 1.4826 * mad)
-                & spread.le(residual.abs() * 0.25))
-    return accepted, baseline, residual, spread, floor
 
 
-def detect_isolated(points, start, end):
-    if points.empty or not points.index.equals(pd.date_range(points.index[0], periods=len(points), freq='5min')):
-        raise ValueError('需要非空连续5min点位表')
-    values = points.to_numpy(dtype=float)
-    if np.isinf(values).any() or (values[np.isfinite(values)] < 0).any():
-        raise ValueError('负荷不允许负数或无限值')
-    total = points.sum(axis=1, min_count=len(points.columns))
-    candidate, baseline, residual, spread, floor = isolated_evidence(total)
-    candidate &= (points.index >= pd.Timestamp(start)) & (points.index <= pd.Timestamp(end))
-    # 点位选择基于同一原始快照；不让已修正结果反过来触发第二轮清洗。
-    point_evidence = {point: isolated_evidence(points[point]) for point in points}
-    rows = []
-    for time in points.index[candidate]:
-        significant = [p for p, e in point_evidence.items() if bool(e[0].loc[time])]
-        point = significant[0] if len(significant) == 1 else ''
-        delta = float(point_evidence[point][2].loc[time]) if point else np.nan
-        fraction = delta / float(residual.loc[time])
-        status = 'accepted' if point and 0.80 <= fraction <= 1.20 else 'review_multiple_or_unexplained'
-        rows.append({'time': str(time), 'point': point,
-                     'old_value': float(points.loc[time, point]) if point else np.nan,
-                     'local_baseline': float(point_evidence[point][1].loc[time]) if point else np.nan,
-                     'total_value': float(total.loc[time]), 'total_baseline': float(baseline.loc[time]),
-                     'total_residual': float(residual.loc[time]), 'neighbor_spread': float(spread.loc[time]),
-                     'amplitude_floor': float(floor.loc[time]), 'point_residual': delta,
-                     'explained_fraction': fraction, 'detection_known_at': str(time + pd.Timedelta(minutes=15)),
-                     'status': status})
-    return pd.DataFrame(rows, columns=AUDIT_COLUMNS)
+
 
 
 def clean_table(source, events):
@@ -106,14 +70,16 @@ def read_mask(path):
                        dtype={'total_observed': bool, 'total_imputed': bool})
 
 
-def build_cleaned_dataset(root=DEFAULT_ROOT):
+def build_cleaned_dataset(root=DEFAULT_ROOT, *, data_version=None):
     """保留原始/既有填补版本；新准备根只重算受清洗影响的暖通表。"""
     root = Path(root).resolve()
-    destination = root / 'outlier_remove_data/isolated_v1'
+    destination = artifact_path(root, 'outlier_remove_data', data_version) / 'isolated_v1'
     if destination.exists():
         raise FileExistsError(f'拒绝覆盖清洗版本: {destination}')
-    imputation_path = root / 'analysis/imputation/manifest.json'
-    forecast_path = root / 'analysis/forecast_windows/manifest.json'
+    analysis = artifact_path(root, 'analysis', data_version)
+    imputed = artifact_path(root, 'imputed_data', data_version)
+    imputation_path = analysis / 'imputation/manifest.json'
+    forecast_path = analysis / 'forecast_windows/manifest.json'
     original = json.loads(imputation_path.read_text())
     forecast = json.loads(forecast_path.read_text())
     if forecast.get('preparation_root', '.') != '.':
@@ -122,8 +88,8 @@ def build_cleaned_dataset(root=DEFAULT_ROOT):
         raise ValueError('预测清单与原填补版本不一致')
     inputs = [imputation_path, forecast_path]
     inputs += list((root / 'raw_data').rglob('*.csv'))
-    inputs += list((root / 'imputed_data').rglob('*.csv'))
-    inputs += list((root / 'analysis/imputation').rglob('*.csv'))
+    inputs += list(imputed.rglob('*.csv'))
+    inputs += list((analysis / 'imputation').rglob('*.csv'))
     inputs += [root / row['output'] for row in forecast['windows']]
     hashes = {str(p.relative_to(root)): sha256_file(p) for p in inputs}
     for row in original['files'] + forecast['windows']:
@@ -150,8 +116,8 @@ def build_cleaned_dataset(root=DEFAULT_ROOT):
             events[building, route] = pd.DataFrame(accepted, columns=AUDIT_COLUMNS).drop_duplicates(['time', 'point'])
     with tempfile.TemporaryDirectory(prefix='.outlier-stage-', dir=root) as tmp:
         stage = Path(tmp)
-        shutil.copytree(root / 'imputed_data', stage / 'imputed_data')
-        shutil.copytree(root / 'analysis/imputation', stage / 'analysis/imputation')
+        shutil.copytree(imputed, stage / 'imputed_data')
+        shutil.copytree(analysis / 'imputation', stage / 'analysis/imputation')
         all_changes, propagation = [], []
         for version in VERSIONS:
             for route in ROUTES:
@@ -165,7 +131,7 @@ def build_cleaned_dataset(root=DEFAULT_ROOT):
                     if audit.empty:
                         continue
                     result, gaps, mask, changes = clean_table(source, audit)
-                    old = read_table(root / 'imputed_data' / key)
+                    old = read_table(imputed / key)
                     different = ~(result.eq(old) | (result.isna() & old.isna()))
                     for time, col in zip(*np.where(different.drop(columns='total_load').to_numpy())):
                         stamp, point = result.index[time], result.columns[col]
@@ -186,7 +152,7 @@ def build_cleaned_dataset(root=DEFAULT_ROOT):
                     print(f'{key}: corrected={len(changes)}, changed_point_cells={int(different.drop(columns="total_load").sum().sum())}', flush=True)
                 if changed:
                     parts = [read_table(stage / f'imputed_data/{family}/{b}_data.csv').drop(columns='total_load').add_prefix(b + '_') for b in BUILDINGS]
-                    grid = read_table(root / f'imputed_data/{family}/data.csv').index
+                    grid = read_table(imputed / family / 'data.csv').index
                     combined = pd.concat(parts, axis=1).reindex(grid)
                     combined['total_load'] = combined.sum(axis=1, min_count=len(combined.columns))
                     masks = [read_mask(stage / f'analysis/imputation/masks/{family}/{b}_data.csv').reindex(grid) for b in BUILDINGS]
@@ -209,12 +175,13 @@ def build_cleaned_dataset(root=DEFAULT_ROOT):
                     'scope': 'union of current forecast windows per building; HVAC only; IT copied unchanged',
                     'causality': 'offline centered detection uses 15min future neighborhood; replacement values use past-only masked raw observations; NOT strict online replay',
                     'code_sha256': sha256_file(Path(__file__)),
-                    'imputer_code_sha256': sha256_file(Path(__file__).with_name('impute_hvac_data.py'))}
+                    'imputer_code_sha256': sha256_file(Path(__file__).resolve().parents[2] / 'imputed_data/impute_hvac_data.py')}
         (audit_dir / 'manifest.json').write_text(json.dumps(manifest, ensure_ascii=False, indent=2))
         original['outlier_cleaning'] = {'manifest': 'analysis/outliers/manifest.json', 'sha256': sha256_file(audit_dir / 'manifest.json')}
         original['causality'] = manifest['causality']
-        original['source_root'] = '../..'
+        original['source_root'] = '/'.join('..' for _ in destination.relative_to(root).parts)
         for row in original['files']:
+            row['output'] = str(Path('imputed_data') / Path(row['output']).relative_to(imputed.relative_to(root)))
             row['sha256'] = sha256_file(stage / row['output'])
             row.pop('filled_cells', None)
         original['masks_sha256'] = {str(p.relative_to(stage)): sha256_file(p) for p in (stage / 'analysis/imputation/masks').rglob('*.csv')}
@@ -230,7 +197,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--root', type=Path, default=DEFAULT_ROOT)
     args = parser.parse_args()
-    print('新准备数据根:', build_cleaned_dataset(args.root))
+    print('新准备数据根:', build_cleaned_dataset(args.root, data_version='data_v1'))
 
 
 if __name__ == '__main__':

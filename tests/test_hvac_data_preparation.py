@@ -13,12 +13,12 @@ import pandas as pd
 
 SCRIPTS = Path(__file__).resolve().parents[1] / 'config/aidc_hvac_load_5min/scripts'
 sys.path.insert(0, str(SCRIPTS))
-import impute_hvac_data as imputer
+from config.aidc_hvac_load_5min.scripts.imputed_data import impute_hvac_data as imputer
 
 
 class MigrationTest(unittest.TestCase):
     def test_collision_fails_before_any_move(self):
-        migration = importlib.import_module('migrate_hvac_data')
+        migration = importlib.import_module('config.aidc_hvac_load_5min.scripts.raw_data.migrate_hvac_data')
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             for family in migration.FAMILIES:
@@ -28,15 +28,15 @@ class MigrationTest(unittest.TestCase):
                     (folder / name).write_text('raw', encoding='utf-8')
             (root / 'IT_load/analysis').mkdir()
             (root / 'IT_load/analysis/missing_summary.csv').write_text('source', encoding='utf-8')
-            (root / 'analysis').mkdir()
-            (root / 'analysis/IT_load_missing_summary.csv').write_text('destination', encoding='utf-8')
+            (root / 'analysis/raw_diagnostics/IT_load').mkdir(parents=True)
+            (root / 'analysis/raw_diagnostics/IT_load/IT_load_missing_summary.csv').write_text('destination', encoding='utf-8')
             before = {str(p.relative_to(root)): p.read_bytes() for p in root.rglob('*') if p.is_file()}
             with self.assertRaises(FileExistsError):
                 migration.migrate(root)
             self.assertEqual(before, {str(p.relative_to(root)): p.read_bytes() for p in root.rglob('*') if p.is_file()})
 
     def test_archive_guard_refuses_any_existing_target(self):
-        migration = importlib.import_module('migrate_hvac_data')
+        migration = importlib.import_module('config.aidc_hvac_load_5min.scripts.raw_data.migrate_hvac_data')
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             target = root / 'raw_data/A1_data.csv'
@@ -48,7 +48,7 @@ class MigrationTest(unittest.TestCase):
             self.assertEqual(target.read_bytes(), b'original')
 
     def test_migration_preserves_bytes_and_resolves_analysis_collisions(self):
-        migration = importlib.import_module('migrate_hvac_data')
+        migration = importlib.import_module('config.aidc_hvac_load_5min.scripts.raw_data.migrate_hvac_data')
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             families = ['hvac_all_devices/route_A', 'hvac_all_devices/route_B',
@@ -65,7 +65,8 @@ class MigrationTest(unittest.TestCase):
             result = migration.migrate(root)
             self.assertEqual(len(result['raw_files']), 20)
             self.assertEqual((root / 'analysis/missing_summary.csv').read_bytes(), b'hvac')
-            self.assertEqual((root / 'analysis/IT_load_missing_summary.csv').read_bytes(), b'it')
+            self.assertEqual((root / 'analysis/raw_diagnostics/IT_load/IT_load_missing_summary.csv').read_bytes(), b'it')
+            self.assertTrue((root / 'analysis/preparation/raw_migration.json').is_file())
             self.assertFalse((root / 'IT_load').exists())
             self.assertEqual(migration.migrate(root), result)
             for row in result['raw_files']:
@@ -74,7 +75,7 @@ class MigrationTest(unittest.TestCase):
 
 class DatasetPreparationTest(unittest.TestCase):
     def test_replacement_is_scoped_and_rolls_back_failed_publication(self):
-        selector = importlib.import_module('select_hvac_windows')
+        selector = importlib.import_module('config.aidc_hvac_load_5min.scripts.forecast_data.select_hvac_windows')
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp) / 'dataset'
             stage = Path(tmp) / 'stage'
@@ -104,7 +105,7 @@ class DatasetPreparationTest(unittest.TestCase):
             self.assertFalse(list(root.glob('.forecast-publish-*')))
 
     def test_dual_route_values_masks_and_strict_combined_total(self):
-        selector = importlib.import_module('select_hvac_windows')
+        selector = importlib.import_module('config.aidc_hvac_load_5min.scripts.forecast_data.select_hvac_windows')
         index = pd.date_range('2026-08-01', periods=3, freq='5min', name='time')
         totals, masks = {}, {}
         for route, scale in [('A', 1.0), ('B', 10.0)]:
@@ -134,7 +135,7 @@ class DatasetPreparationTest(unittest.TestCase):
 
     def test_entrypoints_work_from_another_cwd(self):
         with tempfile.TemporaryDirectory() as tmp:
-            for script in ['migrate_hvac_data.py', 'impute_hvac_data.py', 'select_hvac_windows.py']:
+            for script in ['raw_data/migrate_hvac_data.py', 'imputed_data/impute_hvac_data.py', 'forecast_data/select_hvac_windows.py']:
                 result = subprocess.run([sys.executable, str(SCRIPTS / script), '--help'],
                                         cwd=tmp, capture_output=True, text=True)
                 self.assertEqual(result.returncode, 0, result.stderr)
@@ -150,7 +151,7 @@ class DatasetPreparationTest(unittest.TestCase):
             self.assertEqual(len(points), len(set(points)))
 
     def test_window_tie_prefers_latest_and_ignores_partial_days(self):
-        selector = importlib.import_module('select_hvac_windows')
+        selector = importlib.import_module('config.aidc_hvac_load_5min.scripts.forecast_data.select_hvac_windows')
         index = pd.date_range('2026-07-14 00:05', '2026-07-20 23:50', freq='5min')
         valid = pd.Series(True, index=index)
         valid.loc['2026-07-17'] = False
@@ -160,7 +161,7 @@ class DatasetPreparationTest(unittest.TestCase):
             selector.select_window(valid & False, '2026-07-14')
 
     def test_complete_dataset_exports_20_strict_tables_without_touching_raw(self):
-        migration = importlib.import_module('migrate_hvac_data')
+        migration = importlib.import_module('config.aidc_hvac_load_5min.scripts.raw_data.migrate_hvac_data')
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             index = pd.date_range('2026-07-01', periods=288 * 50, freq='5min', name='time')
@@ -193,7 +194,7 @@ class DatasetPreparationTest(unittest.TestCase):
                 pd.testing.assert_series_equal(df.total_load, points.sum(axis=1, min_count=len(points.columns)), check_names=False)
             with self.assertRaises(FileExistsError):
                 imputer.impute_dataset(root, excluded_it_points={})
-            selector = importlib.import_module('select_hvac_windows')
+            selector = importlib.import_module('config.aidc_hvac_load_5min.scripts.forecast_data.select_hvac_windows')
             windows = selector.export_windows(root, recent_start='2026-07-14')
             self.assertEqual(len(windows), 32)
             self.assertEqual(len(list((root / 'forecast_data').rglob('*.csv'))), 32)

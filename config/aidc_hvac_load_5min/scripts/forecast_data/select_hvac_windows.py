@@ -5,15 +5,21 @@ from __future__ import annotations
 import argparse
 import json
 from pathlib import Path
+import sys
+
+_REPO = Path(__file__).resolve().parents[4]
+if str(_REPO) not in sys.path:
+    sys.path.insert(0, str(_REPO))
 import shutil
 import tempfile
 
 import numpy as np
 import pandas as pd
 
-from impute_hvac_data import RECIPE, STEP, read_table, true_runs, write_csv
-from migrate_hvac_data import BUILDINGS, DEFAULT_ROOT, FAMILIES, FILES, ROUTES, VERSIONS, sha256_file
-from forecast_schema import SCHEMA, column_sources, target_column, resolve_preparation_root
+from config.aidc_hvac_load_5min.scripts.imputed_data.impute_hvac_data import RECIPE, STEP, read_table, true_runs, write_csv
+from config.aidc_hvac_load_5min.scripts.raw_data.migrate_hvac_data import BUILDINGS, DEFAULT_ROOT, FAMILIES, FILES, ROUTES, VERSIONS, sha256_file
+from config.aidc_hvac_load_5min.scripts.forecast_data.forecast_schema import SCHEMA, column_sources, target_column, resolve_preparation_root
+from config.aidc_hvac_load_5min.scripts.preparation_paths import DATA_VERSIONS, artifact_path, artifact_relative
 
 
 def select_window(valid, recent_start):
@@ -48,6 +54,9 @@ def assemble_forecast(totals, masks, version, building, with_it, index):
 def publish_prepared_directories(stage, root, names, *, replace=False):
     """只发布明确的派生目录。成功后丢弃旧版；发布失败回滚，不触碰raw/imputed。"""
     allowed = {'forecast_data', 'analysis/forecast_windows', 'analysis/forecast_data_visual'}
+    allowed.update(f'forecast_data/{v}' for v in DATA_VERSIONS)
+    allowed.update(f'analysis/{v}/{kind}' for v in DATA_VERSIONS
+                   for kind in ('forecast_windows', 'forecast_data_visual'))
     if not names or len(set(names)) != len(names) or not set(names) <= allowed:
         raise ValueError('发布范围只允许预测数据及其选窗/可视化审计目录')
     for name in names:
@@ -85,16 +94,21 @@ def publish_prepared_directories(stage, root, names, *, replace=False):
     shutil.rmtree(backup)
 
 
-def export_windows(root=DEFAULT_ROOT, recent_start=None, *, replace=False, preparation_root=None):
+def export_windows(root=DEFAULT_ROOT, recent_start=None, *, replace=False, preparation_root=None, data_version=None):
     root = Path(root).resolve()
-    prepared = resolve_preparation_root(root, preparation_root)
+    prepared = resolve_preparation_root(root, preparation_root, data_version=data_version)
+    prepared_version = data_version if prepared == root else None
+    input_relative = artifact_relative('imputed_data', prepared_version)
+    forecast_relative = artifact_relative('forecast_data', data_version)
+    audit_relative = str(Path(artifact_relative('analysis', data_version)) / 'forecast_windows')
+    input_audit = artifact_path(prepared, 'analysis', prepared_version) / 'imputation'
     if recent_start is None:
         recent_start = json.loads(RECIPE.read_text(encoding='utf-8'))['recent_start']
-    if not replace and ((root / 'analysis/forecast_windows').exists() or any((root / 'forecast_data').rglob('*.csv'))):
+    if not replace and ((root / audit_relative).exists() or any((root / forecast_relative).rglob('*.csv'))):
         raise FileExistsError('预测数据或选窗审计已经存在，拒绝覆盖')
-    manifest_path = prepared / 'analysis/imputation/manifest.json'
+    manifest_path = input_audit / 'manifest.json'
     manifest = json.loads(manifest_path.read_text(encoding='utf-8'))
-    expected = {f'imputed_data/{family}/{name}' for family in FAMILIES for name in FILES}
+    expected = {f'{input_relative}/{family}/{name}' for family in FAMILIES for name in FILES}
     if {row['output'] for row in manifest['files']} != expected or len(manifest['files']) != len(expected):
         raise ValueError('填补清单必须恰好包含20个唯一表')
     hashes = {row['output']: row['sha256'] for row in manifest['files']}
@@ -105,13 +119,13 @@ def export_windows(root=DEFAULT_ROOT, recent_start=None, *, replace=False, prepa
     for output, digest in hashes.items():
         if sha256_file(prepared / output) != digest:
             raise ValueError(f'填补输入哈希不匹配: {output}')
-        key = output.removeprefix('imputed_data/')
+        key = output.removeprefix(input_relative + '/')
         frame = read_table(prepared / output)
         points = frame.drop(columns='total_load')
         if not np.allclose(points.sum(axis=1, min_count=len(points.columns)), frame.total_load, equal_nan=True):
             raise ValueError(f'不完整总量或求和错误: {key}')
         totals[key] = frame.total_load
-        mask = pd.read_csv(prepared / 'analysis/imputation/masks' / key, index_col='time',
+        mask = pd.read_csv(input_audit / 'masks' / key, index_col='time',
                            parse_dates=['time', 'eligibility_known_at'],
                            dtype={'total_observed': bool, 'total_imputed': bool})
         if not mask.index.equals(frame.index) or not (mask.total_observed | mask.total_imputed).equals(frame.total_load.notna()):
@@ -141,11 +155,11 @@ def export_windows(root=DEFAULT_ROOT, recent_start=None, *, replace=False, prepa
                         if frame.isna().any().any() or len(frame) != days * 288:
                             raise ValueError(f'选窗包含缺失或不完整天: {family}/{name}')
                         export_name = name.removesuffix('.csv') + ('_with_it.csv' if with_it else '.csv')
-                        output = f'forecast_data/{family}/{export_name}'
+                        output = f'{forecast_relative}/{family}/{export_name}'
                         write_csv(frame, stage / output)
                         if mask.eligibility_known_at.isna().any():
                             raise ValueError(f'完整预测表存在缺失的可得性证据: {output}')
-                        write_csv(mask, stage / 'analysis/forecast_windows/masks' / family / export_name)
+                        write_csv(mask, stage / audit_relative / 'masks' / family / export_name)
                         causal_folds = 0
                         for origin in pd.date_range(start + pd.Timedelta(days=14), stop - pd.Timedelta(days=1), freq='D'):
                             history = mask.loc[origin - pd.Timedelta(days=14):origin - STEP]
@@ -174,7 +188,7 @@ def export_windows(root=DEFAULT_ROOT, recent_start=None, *, replace=False, prepa
             raise AssertionError('必须输出32个唯一场景')
         if any(sha256_file(prepared / path) != digest for path, digest in hashes.items()):
             raise ValueError('选窗期间填补输入改变，拒绝发布')
-        audit_dir = stage / 'analysis/forecast_windows'
+        audit_dir = stage / audit_relative
         pd.DataFrame(rows).to_csv(audit_dir / 'windows.csv', index=False, encoding='utf-8-sig')
         pd.DataFrame(fold_rows, columns=['output', 'origin', 'train_start', 'eligibility_known_before_origin',
                                       'target_column', 'observed_target_test_rows']).to_csv(audit_dir / 'folds_14_1.csv', index=False, encoding='utf-8-sig')
@@ -189,18 +203,20 @@ def export_windows(root=DEFAULT_ROOT, recent_start=None, *, replace=False, prepa
                  'cross_route_semantics': 'opposite route, component and AB-sum observations are historical inputs only, never known future',
                  'warning': 'imputed targets are estimates, not observed scoring truth; inspect masks and raw dependency provenance before modelling'}
         (audit_dir / 'manifest.json').write_text(json.dumps(audit, ensure_ascii=False, indent=2), encoding='utf-8')
-        publish_prepared_directories(stage, root, ('forecast_data', 'analysis/forecast_windows'), replace=replace)
+        publish_prepared_directories(stage, root, (forecast_relative, audit_relative), replace=replace)
     return rows
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--root', type=Path, default=DEFAULT_ROOT)
+    parser.add_argument('--data-version', choices=DATA_VERSIONS, required=True)
     parser.add_argument('--recent-start', default=None)
     parser.add_argument('--preparation-root', default=None, help='场景根内的准备版本路径；默认沿用当前预测清单绑定')
     parser.add_argument('--replace', action='store_true', help='明确覆盖已有预测表和选窗审计，不保留旧版本；源层不变')
     args = parser.parse_args()
-    rows = export_windows(args.root, args.recent_start, replace=args.replace, preparation_root=args.preparation_root)
+    rows = export_windows(args.root, args.recent_start, replace=args.replace,
+                          preparation_root=args.preparation_root, data_version=args.data_version)
     print(pd.DataFrame(rows)[['building', 'with_it', 'start', 'end', 'days', 'folds_14_1']].drop_duplicates().to_string(index=False))
     print(f'导出完成: {len(rows)} 个预测场景 CSV')
 

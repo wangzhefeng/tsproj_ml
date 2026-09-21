@@ -15,15 +15,16 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
-REPO = Path(__file__).resolve().parents[3]
+REPO = Path(__file__).resolve().parents[4]
 if str(REPO) not in sys.path:
     sys.path.insert(0, str(REPO))
 
 from data_process.outlier_process import ANOMALY_TYPE_COL, OutlierParams, detect_anomalies
-from impute_hvac_data import STEP, true_runs
-from migrate_hvac_data import BUILDINGS, DEFAULT_ROOT, ROUTES, VERSIONS, sha256_file
-from forecast_schema import SCHEMA, file_contract, resolve_preparation_root
-from select_hvac_windows import publish_prepared_directories
+from config.aidc_hvac_load_5min.scripts.imputed_data.impute_hvac_data import STEP, true_runs
+from config.aidc_hvac_load_5min.scripts.raw_data.migrate_hvac_data import BUILDINGS, DEFAULT_ROOT, ROUTES, VERSIONS, sha256_file
+from config.aidc_hvac_load_5min.scripts.forecast_data.forecast_schema import SCHEMA, file_contract, resolve_preparation_root
+from config.aidc_hvac_load_5min.scripts.forecast_data.select_hvac_windows import publish_prepared_directories
+from config.aidc_hvac_load_5min.scripts.preparation_paths import DATA_VERSIONS, artifact_path, artifact_relative
 
 KINDS = ('hard_issue', 'spike', 'jump', 'low_load', 'constant')
 RULES = {
@@ -92,13 +93,15 @@ def analyze_series(y, observed):
     return detail, summary, segments
 
 
-def observed_mask(root, relative, column, index, cache):
+def observed_mask(root, relative, column, index, cache, *, data_version=None):
     mapping, _ = file_contract(relative)
     if column not in mapping:
         raise ValueError(f'未知双路预测字段: {column}')
     members = []
     for source in mapping[column]:
-        path = resolve_preparation_root(root) / 'analysis/imputation/masks' / source
+        prepared = resolve_preparation_root(root, data_version=data_version)
+        version = data_version if prepared == Path(root).resolve() else None
+        path = artifact_path(prepared, 'analysis', version) / 'imputation/masks' / source
         if path not in cache:
             mask = pd.read_csv(path, index_col='time', parse_dates=True, usecols=['time', 'total_observed'],
                                dtype={'total_observed': bool})
@@ -159,10 +162,10 @@ def draw_heatmap(frame, output, title):
     plt.close(fig)
 
 
-def analyze_file(root, relative, destination, cache=None):
+def analyze_file(root, relative, destination, cache=None, *, data_version=None):
     root, relative, destination = Path(root), Path(relative), Path(destination)
     cache = {} if cache is None else cache
-    path = root / 'forecast_data' / relative
+    path = artifact_path(root, 'forecast_data', data_version) / relative
     before = sha256_file(path)
     frame = pd.read_csv(path, index_col='time', parse_dates=True, float_precision='round_trip')
     if frame.empty or not isinstance(frame.index, pd.DatetimeIndex) or not frame.index.equals(
@@ -188,7 +191,7 @@ def analyze_file(root, relative, destination, cache=None):
             quality['component_mismatch_rows'] += int(mismatch.sum())
     details, summaries, segments, candidates = {}, [], [], []
     for column in frame:
-        observed = observed_mask(root, relative, column, frame.index, cache)
+        observed = observed_mask(root, relative, column, frame.index, cache, data_version=data_version)
         detail, summary, runs = analyze_series(frame[column], observed)
         details[column] = detail
         summaries.append({'file': str(relative), 'column': column, **summary})
@@ -218,27 +221,31 @@ def analyze_file(root, relative, destination, cache=None):
     return summaries, quality
 
 
-def run(root=DEFAULT_ROOT, *, replace=False):
+def run(root=DEFAULT_ROOT, *, replace=False, data_version=None):
     root = Path(root).resolve()
-    output = root / 'analysis/forecast_data_visual'
+    analysis = artifact_path(root, 'analysis', data_version)
+    forecast = artifact_path(root, 'forecast_data', data_version)
+    relative_output = str(Path(artifact_relative('analysis', data_version)) / 'forecast_data_visual')
+    output = root / relative_output
     if output.exists() and not replace:
         raise FileExistsError(f'拒绝覆盖已有可视化: {output}')
     expected = {Path(v) / r / (name + suffix + '.csv') for v in VERSIONS for r in ROUTES
                 for name in ('A1_data', 'A2_data', 'A3_data', 'data') for suffix in ('', '_with_it')}
-    paths = {p.relative_to(root / 'forecast_data') for p in (root / 'forecast_data').rglob('*.csv')}
+    paths = {p.relative_to(forecast) for p in forecast.rglob('*.csv')}
     if paths != expected:
         raise ValueError(f'要求32份预测输入，缺少={expected - paths}, 多余={paths - expected}')
-    dependencies = [root / 'forecast_data' / p for p in sorted(paths)]
-    prepared = resolve_preparation_root(root)
-    dependencies += sorted((prepared / 'analysis/imputation/masks').rglob('*.csv'))
-    if (root / 'analysis/forecast_windows/manifest.json').exists():
-        dependencies.append(root / 'analysis/forecast_windows/manifest.json')
+    dependencies = [forecast / p for p in sorted(paths)]
+    prepared = resolve_preparation_root(root, data_version=data_version)
+    prepared_version = data_version if prepared == root else None
+    dependencies += sorted((artifact_path(prepared, 'analysis', prepared_version) / 'imputation/masks').rglob('*.csv'))
+    if (analysis / 'forecast_windows/manifest.json').exists():
+        dependencies.append(analysis / 'forecast_windows/manifest.json')
     hashes = {str(p.relative_to(root)): sha256_file(p) for p in dependencies}
-    with tempfile.TemporaryDirectory(prefix='.forecast-visual-stage-', dir=root / 'analysis') as tmp:
-        stage = Path(tmp) / 'analysis/forecast_data_visual'
+    with tempfile.TemporaryDirectory(prefix='.forecast-visual-stage-', dir=analysis) as tmp:
+        stage = Path(tmp) / relative_output
         cache, summaries, quality = {}, [], []
         for relative in sorted(paths):
-            rows, audit = analyze_file(root, relative, stage / relative.parent / relative.stem, cache)
+            rows, audit = analyze_file(root, relative, stage / relative.parent / relative.stem, cache, data_version=data_version)
             summaries.extend(rows)
             quality.append(audit)
             print(f'{relative}: {len(rows)}列分析完成', flush=True)
@@ -255,7 +262,7 @@ def run(root=DEFAULT_ROOT, *, replace=False):
                     'rules': RULES, 'inputs_sha256': hashes, 'plots': plots,
                     'preparation_root': str(prepared.relative_to(root)),
                     'code_sha256': sha256_file(Path(__file__)),
-                    'schema': SCHEMA, 'schema_code_sha256': sha256_file(Path(__file__).with_name('forecast_schema.py')),
+                    'schema': SCHEMA, 'schema_code_sha256': sha256_file(Path(__file__).resolve().parents[1] / 'forecast_data/forecast_schema.py'),
                     'note': 'counts are per-file appearances; IT is shared across route/version and must not be summed as independent signals'}
         (stage / 'manifest.json').write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding='utf-8')
         lines = ['# forecast_data 异常候选与可视化', '',
@@ -278,16 +285,17 @@ def run(root=DEFAULT_ROOT, *, replace=False):
             folder = (relative.parent / relative.stem).as_posix()
             lines.append(f'| {relative} | [查看]({folder}/timeseries.png) | [查看]({folder}/daily_heatmap.png) | [查看]({folder}/largest_jump_zoom.png) |')
         (stage / 'README.md').write_text('\n'.join(lines) + '\n', encoding='utf-8')
-        publish_prepared_directories(Path(tmp), root, ('analysis/forecast_data_visual',), replace=replace)
+        publish_prepared_directories(Path(tmp), root, (relative_output,), replace=replace)
     return output
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--root', type=Path, default=DEFAULT_ROOT)
+    parser.add_argument('--data-version', choices=DATA_VERSIONS, required=True)
     parser.add_argument('--replace', action='store_true', help='明确替换旧可视化与候选报告，不修改预测输入')
     args = parser.parse_args()
-    print('输出目录:', run(args.root, replace=args.replace))
+    print('输出目录:', run(args.root, replace=args.replace, data_version=args.data_version))
 
 
 if __name__ == '__main__':

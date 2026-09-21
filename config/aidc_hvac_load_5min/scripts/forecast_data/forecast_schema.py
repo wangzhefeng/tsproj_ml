@@ -1,17 +1,23 @@
 # -*- coding: utf-8 -*-
 """双路预测表的唯一列→填补源映射；不改变原始/填补表字段。"""
 from pathlib import Path
+import sys
+
+_REPO = Path(__file__).resolve().parents[4]
+if str(_REPO) not in sys.path:
+    sys.path.insert(0, str(_REPO))
 import json
 
-from migrate_hvac_data import BUILDINGS, ROUTES, VERSIONS
+from config.aidc_hvac_load_5min.scripts.raw_data.migrate_hvac_data import BUILDINGS, ROUTES, VERSIONS
+from config.aidc_hvac_load_5min.scripts.preparation_paths import artifact_path
 
 SCHEMA = 'hvac_dual_route_v1'
 
 
-def resolve_preparation_root(root, relative=None):
+def resolve_preparation_root(root, relative=None, *, data_version=None):
     """当前预测清单绑定的准备版本；不回退到错误的原始填补掩码。"""
     root = Path(root).resolve()
-    manifest = root / 'analysis/forecast_windows/manifest.json'
+    manifest = artifact_path(root, 'analysis', data_version) / 'forecast_windows/manifest.json'
     if relative is None:
         relative = json.loads(manifest.read_text()).get('preparation_root', '.') if manifest.exists() else '.'
     path = Path(relative)

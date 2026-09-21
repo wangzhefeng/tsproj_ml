@@ -6,14 +6,20 @@ import argparse
 import csv
 import json
 from pathlib import Path
+import sys
+
+_REPO = Path(__file__).resolve().parents[4]
+if str(_REPO) not in sys.path:
+    sys.path.insert(0, str(_REPO))
 import tempfile
 
 import numpy as np
 import pandas as pd
 
-from migrate_hvac_data import BUILDINGS, DEFAULT_ROOT, FAMILIES, FILES, sha256_file
+from config.aidc_hvac_load_5min.scripts.raw_data.migrate_hvac_data import BUILDINGS, DEFAULT_ROOT, FAMILIES, FILES, sha256_file
+from config.aidc_hvac_load_5min.scripts.preparation_paths import DATA_VERSIONS, artifact_path, artifact_relative
 
-RECIPE = Path(__file__).resolve().parents[1] / 'preparation.json'
+RECIPE = Path(__file__).resolve().parents[2] / 'preparation.json'
 STEP = pd.Timedelta(minutes=5)
 MAX_GAP = 72
 BUCKETS = (1, 3, 12, 36, 72)
@@ -111,7 +117,7 @@ def impute_series(source):
     return pd.Series(output, index=source.index, name=source.name), audits
 
 
-def impute_table(source, excluded=()):
+def impute_table(source, excluded=(), *, detection_events=()):
     """排除经授权不存在的点位；严格总量与逐时刻审计分开存放。"""
     points = source.drop(columns='total_load')
     absent = set(points.columns[points.isna().all()])
@@ -129,6 +135,15 @@ def impute_table(source, excluded=()):
         for row in rows:
             row['point'] = point
             if row['status'] == 'filled':
+                # 孤立异常使用后侧邻域；被排除校准样本的判定可得时间也必须传播。
+                start_time = pd.Timestamp(row['gap_start'])
+                known = pd.Timestamp(row['eligibility_known_at'])
+                for event in detection_events:
+                    if event['point'] == point and event.get('detection_known_at'):
+                        event_time = pd.Timestamp(event['time'])
+                        if start_time - pd.Timedelta(days=31) <= event_time <= pd.Timestamp(row['gap_end']):
+                            known = max(known, pd.Timestamp(event['detection_known_at']))
+                row['eligibility_known_at'] = str(known)
                 start = points.index.get_loc(pd.Timestamp(row['gap_start']))
                 stop = start + row['gap_points']
                 known_at[start:stop] = np.maximum(
@@ -175,17 +190,20 @@ def publish_stage(stage, root):
         path.rename(destination)
 
 
-def impute_dataset(root=DEFAULT_ROOT, excluded_it_points=None):
+def impute_dataset(root=DEFAULT_ROOT, excluded_it_points=None, *, data_version=None, source_root=None, detection_events=None):
     root = Path(root).resolve()
     if excluded_it_points is None:
         excluded_it_points = json.loads(RECIPE.read_text(encoding='utf-8'))['excluded_it_points']
     if set(excluded_it_points) - {'A1', 'A3'}:
         raise ValueError('只允许排除明确授权的 A1/A3 IT 点位')
-    destinations = [root / 'imputed_data' / family / name for family in FAMILIES for name in FILES]
-    audit_dir = root / 'analysis/imputation'
+    output_relative = artifact_relative('imputed_data', data_version)
+    audit_relative = str(Path(artifact_relative('analysis', data_version)) / 'imputation')
+    destinations = [root / output_relative / family / name for family in FAMILIES for name in FILES]
+    audit_dir = root / audit_relative
     if any(p.exists() for p in destinations) or audit_dir.exists():
         raise FileExistsError('填补产物或审计目录已经存在，拒绝覆盖')
-    sources = {f'{family}/{name}': root / 'raw_data' / family / name for family in FAMILIES for name in FILES}
+    source_root = Path(source_root).resolve() if source_root is not None else root / 'raw_data'
+    sources = {f'{family}/{name}': source_root / family / name for family in FAMILIES for name in FILES}
     hashes = {key: sha256_file(path) for key, path in sources.items()}
     # 校验全部原始表与分量关系，再开始计算；不以部分求和证明完整性。
     for family in FAMILIES:
@@ -211,7 +229,8 @@ def impute_dataset(root=DEFAULT_ROOT, excluded_it_points=None):
                  'causality': 'values and selection use raw observations before each gap; offline length eligibility known only at gap closure',
                  'raw_dependency_note': 'calibration and seasonal context can extend beyond a model training window',
                  'total_policy': 'all included points required; missing component makes total NaN',
-                 'code_sha256': sha256_file(Path(__file__)), 'source_sha256': hashes}
+                 'code_sha256': sha256_file(Path(__file__)), 'source_sha256': hashes,
+                 'source_root': str(source_root.relative_to(root)), 'data_version': data_version}
     with tempfile.TemporaryDirectory(prefix='.imputation-stage-', dir=root) as tmp:
         stage = Path(tmp)
         for family in FAMILIES:
@@ -220,12 +239,13 @@ def impute_dataset(root=DEFAULT_ROOT, excluded_it_points=None):
                 key = f'{family}/{building}_data.csv'
                 source = read_table(sources[key])
                 excluded = excluded_it_points.get(building, []) if family == 'IT_load' else []
-                result, audit, mask = impute_table(source, excluded)
+                result, audit, mask = impute_table(source, excluded,
+                                                  detection_events=(detection_events or {}).get(key, ()))
                 parts[building], masks[building] = result.drop(columns='total_load'), mask
-                output = stage / 'imputed_data' / key
+                output = stage / output_relative / key
                 write_csv(result, output)
-                write_csv(mask, stage / 'analysis/imputation/masks' / key)
-                audit_path = stage / 'analysis/imputation/gaps' / key
+                write_csv(mask, stage / audit_relative / 'masks' / key)
+                audit_path = stage / audit_relative / 'gaps' / key
                 audit_path.parent.mkdir(parents=True, exist_ok=True)
                 columns = ['point', 'gap_start', 'gap_end', 'gap_points', 'status', 'method',
                            'validation_bucket_points', 'validation_count', 'validation_start', 'validation_end',
@@ -233,7 +253,7 @@ def impute_dataset(root=DEFAULT_ROOT, excluded_it_points=None):
                            *(method + '_median_mae' for method in METHODS)]
                 pd.DataFrame(audit, columns=columns).to_csv(audit_path, index=False, encoding='utf-8-sig')
                 filled_count = int((result.drop(columns='total_load').notna() & source[result.columns[:-1]].isna()).sum().sum())
-                inventory['files'].append({'output': f'imputed_data/{key}', 'rows': len(result),
+                inventory['files'].append({'output': f'{output_relative}/{key}', 'rows': len(result),
                                            'points': len(result.columns) - 1, 'filled_cells': filled_count,
                                            'sha256': sha256_file(output)})
                 print(f'{key}: filled_cells={filled_count}, complete_totals={result.total_load.notna().sum()}', flush=True)
@@ -246,15 +266,17 @@ def impute_dataset(root=DEFAULT_ROOT, excluded_it_points=None):
             mask = pd.DataFrame({'total_observed': observed, 'total_imputed': ~observed & combined.total_load.notna(),
                                  'eligibility_known_at': known}, index=grid)
             mask.loc[combined.total_load.isna(), 'eligibility_known_at'] = pd.NaT
-            output = stage / 'imputed_data' / key
+            output = stage / output_relative / key
             write_csv(combined, output)
-            write_csv(mask, stage / 'analysis/imputation/masks' / key)
-            inventory['files'].append({'output': f'imputed_data/{key}', 'rows': len(combined),
+            write_csv(mask, stage / audit_relative / 'masks' / key)
+            inventory['files'].append({'output': f'{output_relative}/{key}', 'rows': len(combined),
                                        'points': len(combined.columns) - 1, 'sha256': sha256_file(output),
                                        'rebuilt_from_buildings': True})
         if {key: sha256_file(path) for key, path in sources.items()} != hashes:
             raise ValueError('处理过程中原始输入改变，拒绝发布')
-        manifest = stage / 'analysis/imputation/manifest.json'
+        inventory['masks_sha256'] = {str(p.relative_to(stage)): sha256_file(p)
+                                     for p in sorted((stage / audit_relative / 'masks').rglob('*.csv'))}
+        manifest = stage / audit_relative / 'manifest.json'
         manifest.write_text(json.dumps(inventory, ensure_ascii=False, indent=2), encoding='utf-8')
         publish_stage(stage, root)
     return inventory
@@ -263,8 +285,11 @@ def impute_dataset(root=DEFAULT_ROOT, excluded_it_points=None):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--root', type=Path, default=DEFAULT_ROOT)
+    parser.add_argument('--data-version', choices=DATA_VERSIONS, required=True)
     args = parser.parse_args()
-    result = impute_dataset(args.root)
+    if args.data_version == 'data_v2':
+        parser.error('data_v2 必须从 v2/prepare_data.py 执行，不能跳过异常屏蔽')
+    result = impute_dataset(args.root, data_version=args.data_version)
     print(f"填补完成: {len(result['files'])} 个 CSV；raw_data 保持不变")
 
 

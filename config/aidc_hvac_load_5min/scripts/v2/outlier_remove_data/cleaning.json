@@ -1,0 +1,192 @@
+{
+  "version": "data_v2",
+  "scope": "Same authorized isolated windows and manual red boxes as data_v1; detection before all imputation; no IT cleaning.",
+  "baseline_points": 12,
+  "minimum_baseline_points": 8,
+  "relative_threshold": 0.1,
+  "absolute_threshold_kw": 1.0,
+  "mad_multiplier": 6.0,
+  "events": [
+    {
+      "building": "A1",
+      "routes": [
+        "A",
+        "B"
+      ],
+      "start": "2026-08-06 19:05",
+      "end": "2026-08-06 22:10"
+    },
+    {
+      "building": "A3",
+      "routes": [
+        "A",
+        "B"
+      ],
+      "start": "2026-07-16 15:05",
+      "end": "2026-07-16 17:25"
+    },
+    {
+      "building": "A3",
+      "routes": [
+        "A",
+        "B"
+      ],
+      "start": "2026-07-17 12:50",
+      "end": "2026-07-17 18:40"
+    },
+    {
+      "building": "A3",
+      "routes": [
+        "A",
+        "B"
+      ],
+      "start": "2026-08-06 15:10",
+      "end": "2026-08-06 18:20"
+    },
+    {
+      "building": "A3",
+      "routes": [
+        "A",
+        "B"
+      ],
+      "start": "2026-08-06 19:20",
+      "end": "2026-08-06 22:15"
+    },
+    {
+      "building": "A2",
+      "routes": [
+        "A",
+        "B"
+      ],
+      "start": "2026-08-03 00:45",
+      "end": "2026-08-03 01:50"
+    },
+    {
+      "building": "A2",
+      "routes": [
+        "A",
+        "B"
+      ],
+      "start": "2026-08-04 15:30",
+      "end": "2026-08-04 15:40"
+    },
+    {
+      "building": "A2",
+      "routes": [
+        "A",
+        "B"
+      ],
+      "start": "2026-08-04 16:50",
+      "end": "2026-08-04 17:55"
+    },
+    {
+      "building": "A2",
+      "routes": [
+        "A",
+        "B"
+      ],
+      "start": "2026-08-04 23:00",
+      "end": "2026-08-04 23:30"
+    },
+    {
+      "building": "A2",
+      "routes": [
+        "A",
+        "B"
+      ],
+      "start": "2026-08-06 15:10",
+      "end": "2026-08-06 17:55"
+    },
+    {
+      "building": "A2",
+      "routes": [
+        "A"
+      ],
+      "start": "2026-08-08 00:50",
+      "end": "2026-08-08 01:00"
+    },
+    {
+      "building": "A2",
+      "routes": [
+        "A",
+        "B"
+      ],
+      "start": "2026-08-09 03:50",
+      "end": "2026-08-09 04:05"
+    },
+    {
+      "building": "A2",
+      "routes": [
+        "A",
+        "B"
+      ],
+      "start": "2026-08-10 15:10",
+      "end": "2026-08-10 18:05"
+    },
+    {
+      "building": "A2",
+      "routes": [
+        "A",
+        "B"
+      ],
+      "start": "2026-08-11 15:35",
+      "end": "2026-08-11 15:55"
+    },
+    {
+      "building": "A2",
+      "routes": [
+        "A",
+        "B"
+      ],
+      "start": "2026-08-27 00:45",
+      "end": "2026-08-27 01:15"
+    },
+    {
+      "building": "A2",
+      "routes": [
+        "A"
+      ],
+      "start": "2026-08-27 15:05",
+      "end": "2026-08-27 15:25"
+    },
+    {
+      "building": "A2",
+      "routes": [
+        "A"
+      ],
+      "start": "2026-09-02 14:00",
+      "end": "2026-09-02 14:15"
+    },
+    {
+      "building": "A2",
+      "routes": [
+        "A",
+        "B"
+      ],
+      "start": "2026-09-02 15:40",
+      "end": "2026-09-02 16:10"
+    },
+    {
+      "building": "A2",
+      "routes": [
+        "A"
+      ],
+      "start": "2026-09-08 15:15",
+      "end": "2026-09-08 15:35"
+    }
+  ],
+  "isolated_windows": {
+    "A1": {
+      "start": "2026-07-21 00:00:00",
+      "end": "2026-09-16 23:55:00"
+    },
+    "A2": {
+      "start": "2026-07-25 00:00:00",
+      "end": "2026-09-16 23:55:00"
+    },
+    "A3": {
+      "start": "2026-07-14 00:00:00",
+      "end": "2026-08-17 23:55:00"
+    }
+  }
+}

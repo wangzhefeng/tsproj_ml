@@ -13,7 +13,7 @@ import yaml
 from data_loading import InformationSetRequest, SourceRegistry
 from forecasting_core.specs.config import parse_data_spec
 from scripts import build_scenario_weather as builder
-from config.aidc_hvac_load_5min.scripts import prepare_weather as scenario
+from config.aidc_hvac_load_5min.scripts.weather_data import prepare_weather as scenario
 
 
 MAPPING = {'rt_tt2': 'pred_tt2', 'cal_rh': 'pred_rh', 'rt_ssr': 'pred_ssrd',
@@ -104,8 +104,8 @@ class WeatherHvacWindowsTest(unittest.TestCase):
     def test_all_real_assets_align_and_materialize_both_phases(self):
         root = Path(__file__).resolve().parents[1]
         scenario = root / 'dataset/aidc_hvac_load_5min'
-        manifest = pd.read_csv(scenario / 'weather_data/manifest.csv')
-        targets = {str(p.relative_to(root)) for p in (scenario / 'forecast_data').glob('*/*/*.csv')}
+        manifest = pd.read_csv(scenario / 'weather_data/data_v1/manifest.csv')
+        targets = {str(p.relative_to(root)) for p in (scenario / 'forecast_data/data_v1').glob('*/*/*.csv')}
         self.assertEqual(len(targets), 32)
         self.assertEqual(set(manifest.target_file), targets)
         self.assertEqual(len(manifest), len(targets))

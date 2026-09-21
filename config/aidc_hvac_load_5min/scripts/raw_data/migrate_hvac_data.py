@@ -6,8 +6,13 @@ import argparse
 import hashlib
 import json
 from pathlib import Path
+import sys
 
-DEFAULT_ROOT = Path(__file__).resolve().parents[3] / 'dataset/aidc_hvac_load_5min'
+_REPO = Path(__file__).resolve().parents[4]
+if str(_REPO) not in sys.path:
+    sys.path.insert(0, str(_REPO))
+
+DEFAULT_ROOT = Path(__file__).resolve().parents[4] / 'dataset/aidc_hvac_load_5min'
 VERSIONS = ('hvac_all_devices', 'hvac_remove_devices')
 ROUTES = ('route_A', 'route_B')
 BUILDINGS = ('A1', 'A2', 'A3')
@@ -35,9 +40,14 @@ def verify_manifest(root, manifest):
             raise ValueError(f"迁移文件哈希改变: {row['destination']}")
 
 
-def migrate(root=DEFAULT_ROOT):
+def migrate(root=DEFAULT_ROOT, *, data_version=None):
     root = Path(root).resolve()
-    manifest_path = root / 'analysis/raw_migration.json'
+    analysis = root / 'analysis'
+    if data_version is not None:
+        if data_version != 'data_v1':
+            raise ValueError('历史迁移只适用于data_v1')
+        analysis = analysis / data_version
+    manifest_path = analysis / 'preparation/raw_migration.json'
     if manifest_path.exists():
         manifest = json.loads(manifest_path.read_text(encoding='utf-8'))
         if any((root / name).exists() for name in (*VERSIONS, 'IT_load')):
@@ -57,7 +67,7 @@ def migrate(root=DEFAULT_ROOT):
         if not source.is_file() or source.is_symlink():
             raise ValueError(f'不支持的分析资产: {source}')
         name = 'IT_load_' + source.name if source.suffix == '.csv' and not source.name.startswith('IT_load_') else source.name
-        destination = root / 'analysis' / name
+        destination = analysis / 'raw_diagnostics/IT_load' / name
         if destination.exists():
             raise FileExistsError(f'分析目标已存在: {destination}')
         analysis_moves.append((source, destination))
@@ -71,7 +81,8 @@ def migrate(root=DEFAULT_ROOT):
                        'sha256': sha256_file(src)} for src, dst in analysis_moves]
     manifest = {'raw_files': raw_files, 'analysis_files': analysis_files}
     (root / 'raw_data').mkdir(exist_ok=True)
-    (root / 'analysis').mkdir(exist_ok=True)
+    manifest_path.parent.mkdir(parents=True, exist_ok=True)
+    (analysis / 'raw_diagnostics/IT_load').mkdir(parents=True, exist_ok=True)
     moves = analysis_moves + [(root / name, root / 'raw_data' / name) for name in (*VERSIONS, 'IT_load')]
     completed = []
     try:
@@ -92,7 +103,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--root', type=Path, default=DEFAULT_ROOT)
     args = parser.parse_args()
-    manifest = migrate(args.root)
+    manifest = migrate(args.root, data_version='data_v1')
     print(f"迁移核验通过: raw={len(manifest['raw_files'])}, analysis={len(manifest['analysis_files'])}")
 
 

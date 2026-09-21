@@ -11,7 +11,7 @@ import numpy as np
 import pandas as pd
 
 from config.config_loader import load_yaml_config
-from config.aidc_hvac_load_5min.scripts.build_model_configs import publish
+from config.aidc_hvac_load_5min.scripts.forecast_data.build_model_configs import publish
 from data_loading import BUILTIN_GENERATORS, SourceRegistry
 from model_pipeline.supervised_design import (
     SupervisedDesignBuilder, minimum_history_rows, raw_history_backtest_windows,
@@ -62,7 +62,7 @@ class HvacModelConfigsTest(unittest.TestCase):
         with TemporaryDirectory() as temp:
             output = Path(temp)
             process = subprocess.run(
-                [sys.executable, str(DIRECTORY / 'scripts/build_model_configs.py'), '--check'],
+                [sys.executable, str(DIRECTORY / 'scripts/forecast_data/build_model_configs.py'), '--check'],
                 cwd=output, capture_output=True, text=True, check=False,
             )
             self.assertEqual(process.returncode, 0, process.stdout + process.stderr)
@@ -106,7 +106,7 @@ class HvacModelConfigsTest(unittest.TestCase):
                 if group == 'add_endogenous_it':
                     stem += '_with_it'
                 self.assertEqual(source.history_path,
-                                 f'dataset/aidc_hvac_load_5min/forecast_data/{version}/{route}/{stem}.csv')
+                                 f'dataset/aidc_hvac_load_5min/forecast_data/data_v1/{version}/{route}/{stem}.csv')
                 total_days, train_days, fold_count = WINDOWS[stem]
                 for s in config.data.sources:
                     if s.source_type != 'file':

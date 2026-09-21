@@ -23,13 +23,18 @@
 """
 
 from pathlib import Path
+import sys
+
+_REPO = Path(__file__).resolve().parents[4]
+if str(_REPO) not in sys.path:
+    sys.path.insert(0, str(_REPO))
 
 import pandas as pd
 
-from migrate_hvac_data import require_new_files
+from config.aidc_hvac_load_5min.scripts.raw_data.migrate_hvac_data import require_new_files
 
 # ---------------------------------------------------------------- 路径
-REPO = Path(__file__).resolve().parents[3]                    # 仓库根目录
+REPO = Path(__file__).resolve().parents[4]                    # 仓库根目录
 SRC = REPO / 'dataset' / 'aidc_load_5min' / 'A1_A2_A3_points'
 OUT = REPO / 'dataset' / 'aidc_hvac_load_5min' / 'raw_data'
 XLSX = SRC / 'all_ids.xlsx'

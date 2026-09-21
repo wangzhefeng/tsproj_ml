@@ -1,6 +1,6 @@
 {
-  "version": "redbox_past_v3",
-  "parent": "outlier_remove_data/isolated_v1",
+  "version": "redbox_past_v2",
+  "parent": "outlier_remove_data/data_v1/isolated_v1",
   "scope": "User red boxes; manual offline event envelopes, not automatic evidence of measurement failure. No IT cleaning.",
   "baseline_points": 12,
   "minimum_baseline_points": 8,

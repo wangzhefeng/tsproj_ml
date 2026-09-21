@@ -7,49 +7,24 @@ import json
 from pathlib import Path
 import shutil
 import tempfile
+import sys
+
+SCRIPTS = Path(__file__).resolve().parents[5]
+if str(SCRIPTS) not in sys.path:
+    sys.path.insert(0, str(SCRIPTS))
 
 import numpy as np
 import pandas as pd
 
-from impute_hvac_data import impute_series, read_table, write_csv
-from clean_hvac_outliers import read_mask
-from migrate_hvac_data import BUILDINGS, DEFAULT_ROOT, ROUTES, VERSIONS, sha256_file
+from config.aidc_hvac_load_5min.scripts.imputed_data.impute_hvac_data import impute_series, read_table, write_csv
+from config.aidc_hvac_load_5min.scripts.v1.outlier_remove_data.clean_hvac_outliers import read_mask
+from config.aidc_hvac_load_5min.scripts.raw_data.migrate_hvac_data import BUILDINGS, DEFAULT_ROOT, ROUTES, VERSIONS, sha256_file
+from config.aidc_hvac_load_5min.scripts.preparation_paths import artifact_path
+from config.aidc_hvac_load_5min.scripts.outlier_remove_data.outlier_detection import detect_candidates
 
-RECIPE = Path(__file__).resolve().parents[1] / 'redbox_cleaning.json'
+RECIPE = Path(__file__).with_name('redbox_cleaning.json')
 
 
-def detect_candidates(source, events, recipe):
-    """事件前固定1h基线，隔离先前已识别异常；不读取后侧观测定阈值。"""
-    selected = pd.Series(False, index=source.index)
-    audit = []
-    observed = source.copy()
-    previous_end = None
-    for event in sorted(events, key=lambda row: row['start']):
-        start, end = pd.Timestamp(event['start']), pd.Timestamp(event['end'])
-        if start > end or (previous_end is not None and start <= previous_end):
-            raise ValueError('事件区间必须有序且不重叠')
-        previous_end = end
-        index = source.index[(source.index >= start) & (source.index <= end)]
-        if index.empty:
-            continue
-        before = observed.loc[(observed.index < start) &
-                              (observed.index >= start - pd.Timedelta(minutes=5 * recipe['baseline_points']))].dropna()
-        entry = {'event_start': str(start), 'event_end': str(end), 'reference_count': len(before)}
-        if len(before) < recipe['minimum_baseline_points']:
-            audit.append({**entry, 'status': 'insufficient_reference', 'selected': 0})
-            continue
-        baseline = float(before.median())
-        mad = float((before - baseline).abs().median())
-        threshold = max(recipe['absolute_threshold_kw'], abs(baseline) * recipe['relative_threshold'],
-                        recipe['mad_multiplier'] * 1.4826 * mad)
-        bad = source.loc[index].notna() & (source.loc[index] - baseline).abs().ge(threshold)
-        times = index[bad]
-        selected.loc[times] = True
-        observed.loc[times] = np.nan
-        audit.append({**entry, 'baseline': baseline, 'threshold': threshold,
-                      'reference_start': str(before.index[0]), 'reference_end': str(before.index[-1]),
-                      'status': 'screened', 'selected': len(times)})
-    return selected, audit
 
 
 def fill_candidates(source, selected):
@@ -72,20 +47,21 @@ def fill_candidates(source, selected):
     return result, rows
 
 
-def build(root=DEFAULT_ROOT, recipe_path=RECIPE):
+def build(root=DEFAULT_ROOT, recipe_path=RECIPE, *, data_version=None):
     root, recipe_path = Path(root).resolve(), Path(recipe_path).resolve()
     recipe = json.loads(recipe_path.read_text())
     parent = (root / recipe['parent']).resolve()
-    destination = root / 'outlier_remove_data' / recipe['version']
+    destination = artifact_path(root, 'outlier_remove_data', data_version) / recipe['version']
     if not parent.is_relative_to(root) or destination.exists():
         raise ValueError('准备根非法或新版本已经存在，拒绝覆盖')
-    current = json.loads((root / 'analysis/forecast_windows/manifest.json').read_text())
+    analysis = artifact_path(root, 'analysis', data_version)
+    current = json.loads((analysis / 'forecast_windows/manifest.json').read_text())
     if current['preparation_root'] != recipe['parent']:
         raise ValueError('当前预测输入不是指定父版本')
     inputs = [p for p in parent.rglob('*') if p.is_file()]
     inputs += list((root / 'raw_data').rglob('*.csv'))
-    inputs += list((root / 'forecast_data').rglob('*.csv'))
-    inputs += [recipe_path, root / 'analysis/forecast_windows/manifest.json']
+    inputs += list(artifact_path(root, 'forecast_data', data_version).rglob('*.csv'))
+    inputs += [recipe_path, analysis / 'forecast_windows/manifest.json']
     hashes = {str(p): sha256_file(p) for p in inputs}
     inventory = json.loads((parent / 'analysis/imputation/manifest.json').read_text())
     for row in inventory['files']:
@@ -167,7 +143,7 @@ def build(root=DEFAULT_ROOT, recipe_path=RECIPE):
         pd.DataFrame(corrections).to_csv(audit_dir / 'corrections.csv', index=False)
         pd.DataFrame([r for r in corrections if not r['applied']]).to_csv(audit_dir / 'pending.csv', index=False)
         manifest = {'recipe': recipe, 'inputs_sha256': hashes, 'code_sha256': sha256_file(Path(__file__)),
-                    'imputer_code_sha256': sha256_file(Path(__file__).with_name('impute_hvac_data.py')),
+                    'imputer_code_sha256': sha256_file(Path(__file__).resolve().parents[2] / 'imputed_data/impute_hvac_data.py'),
                     'causality': 'manual red boxes are offline review, NOT online detection; replacement values and method scoring use only pre-gap raw observations; gap-length eligibility known at closure',
                     'overlay_policy': 'selected anomalous raw cells and pre-existing estimates within manual event envelopes reestimated from masked raw history; outside envelopes and prior isolated corrections preserved',
                     'models_run': False, 'candidate_versioned_cells': len(corrections),
@@ -194,4 +170,4 @@ if __name__ == '__main__':
     parser.add_argument('--root', type=Path, default=DEFAULT_ROOT)
     parser.add_argument('--recipe', type=Path, default=RECIPE)
     args = parser.parse_args()
-    print(build(args.root, args.recipe))
+    print(build(args.root, args.recipe, data_version='data_v1'))

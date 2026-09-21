@@ -8,7 +8,7 @@ import pandas as pd
 
 SCRIPTS = Path(__file__).resolve().parents[1] / 'config/aidc_hvac_load_5min/scripts'
 sys.path.insert(0, str(SCRIPTS))
-from clean_hvac_redboxes import detect_candidates, fill_candidates
+from config.aidc_hvac_load_5min.scripts.v1.outlier_remove_data.clean_hvac_redboxes import detect_candidates, fill_candidates
 
 RECIPE = {'baseline_points': 12, 'minimum_baseline_points': 8,
           'relative_threshold': 0.1, 'absolute_threshold_kw': 1., 'mad_multiplier': 6.}

@@ -12,7 +12,7 @@ import numpy as np
 import pandas as pd
 import yaml
 
-ROOT = Path(__file__).resolve().parents[3]
+ROOT = Path(__file__).resolve().parents[4]
 sys.path.insert(0, str(ROOT))
 
 from config.config_loader import load_yaml_config
@@ -71,7 +71,7 @@ def build_documents():
                     stem = 'data' if building == 'ALL' else building + '_data'
                     if group == 'add_endogenous_it':
                         stem += '_with_it'
-                    target_path = DATA / 'forecast_data' / version / route / (stem + '.csv')
+                    target_path = DATA / 'forecast_data/data_v1' / version / route / (stem + '.csv')
                     _, times = read_frame(target_path, 'time', cache)
                     fold_count = len(times) // DAY - train_days
                     if fold_count < 1:
@@ -87,7 +87,7 @@ def build_documents():
                             features['target_lags'][target] = [DAY, 2 * DAY, 3 * DAY]
                             features['transformations']['advanced']['rolling']['windows'] = [DAY, 2 * DAY]
                         if group == 'add_weather':
-                            snippet = ROOT / DATA / 'weather_data' / version / route / stem / 'weather.source.yaml'
+                            snippet = ROOT / DATA / 'weather_data/data_v1' / version / route / stem / 'weather.source.yaml'
                             weather = yaml.safe_load(snippet.read_text(encoding='utf-8'))['data']['sources']
                             if len(weather) != 1 or weather[0]['name'] != 'weather':
                                 raise ValueError(f'未知天气片段结构: {snippet}')

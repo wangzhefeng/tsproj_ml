@@ -9,7 +9,7 @@ import pandas as pd
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'config/aidc_hvac_load_5min/scripts'))
-import analyze_forecast_data as visual
+from config.aidc_hvac_load_5min.scripts.analysis import analyze_forecast_data as visual
 
 
 class ForecastVisualTest(unittest.TestCase):

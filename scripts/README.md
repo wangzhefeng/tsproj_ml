@@ -35,7 +35,7 @@ env -u PYTHONPATH .venv/bin/python scripts/audit_ensemble_configs.py
 
 > 本节 generated weather 工具链现属研究回放/取证用途。活动配置仍走 file + `inference_columns`：各场景入口为既有六份资产保持截至 2026-08-31 的 history，训练用实测列、历史测试预测用预报列。不生成伪future；真正未来预报须另行提供。联通已有独立 `liantong_august_prepare.py`，本次不迁移其业务处理。
 
-HVAC 场景入口读取 `dataset/aidc_hvac_load_5min/forecast_data/*/*/*.csv`，为32份目标按自身时间轴生成5min天气。输出位于 `weather_data/<设备版本>/<路线>/<目标名>/`，包含 history CSV、metadata 和 `weather.source.yaml`（不是模型配置）；总索引为 `weather_data/manifest.csv`。日期窗口只在场景入口定义，公共脚本无 `HISTORY_END`。
+HVAC 场景入口显式选择 `--data-version data_v1|data_v2`，读取 `dataset/aidc_hvac_load_5min/forecast_data/<数据版本>/*/*/*.csv`，为32份目标按自身时间轴生成5min天气。输出位于 `weather_data/<数据版本>/<设备版本>/<路线>/<目标名>/`，包含 history CSV、metadata 和 `weather.source.yaml`（不是模型配置）；总索引为 `weather_data/<数据版本>/manifest.csv`。日期窗口只在场景入口定义，公共脚本无 `HISTORY_END`。
 
 9月16日授权实测缺口的处理已统一上提公共源治理：温度/露点16:00–22:00、风速/降雨16:00–20:00双端插值，再派生湿度。共享metadata记录原料哈希、一般缺口策略审计和逐格插值锚点；场景metadata引用共享CSV及metadata哈希，HVAC另保留其窗口内插值记录。原始分片不回写。双向插值不等于在线实测可得；`forecast_origin` 不构成发布时间证据。六项实测/预报须完整，未使用的其他原料列允许保留NaN。
 
@@ -43,7 +43,7 @@ HVAC 场景入口读取 `dataset/aidc_hvac_load_5min/forecast_data/*/*/*.csv`，
 # 公共治理：只写共享处理后资产；--output 必填，不再默认重建全部场景
 env -u PYTHONPATH .venv/bin/python scripts/build_scenario_weather.py --output dataset/shared/weather/processed/weather_hourly.csv
 # 场景适配：按需运行其中一个，不会处理其他场景
-env -u PYTHONPATH .venv/bin/python config/aidc_hvac_load_5min/scripts/prepare_weather.py
+env -u PYTHONPATH .venv/bin/python config/aidc_hvac_load_5min/scripts/weather_data/prepare_weather.py --data-version data_v1
 env -u PYTHONPATH .venv/bin/python config/aidc_load_15min_daily/scripts/prepare_weather.py
 env -u PYTHONPATH .venv/bin/python config/aidc_load_15min_rolling/scripts/prepare_weather.py
 env -u PYTHONPATH .venv/bin/python config/aidc_load_15min_short/scripts/prepare_weather.py

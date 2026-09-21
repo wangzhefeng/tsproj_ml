@@ -2,6 +2,16 @@
 
 数据提取、因果填补与预测窗口合同见 [scripts/README.md](scripts/README.md)。本场景包含四组共 **576 份物理模型 YAML**。当前预测数据已切换至红框过去观测清洗版本；**本轮清洗没有重跑模型，既有回测结果不代表新数据版本**。
 
+## 数据与脚本版本
+
+当前576份模型配置全部引用 `forecast_data/data_v1/`，天气引用 `weather_data/data_v1/`；仅迁移路径，不自动重跑模型，旧结果保持原样。
+
+- `data_v1`：保留先填补后清洗的既有产物；异常准备根为 `outlier_remove_data/data_v1/redbox_past_v2/`，父版本 `isolated_v1/` 同样保留。
+- `data_v2`：合并孤立点与红框规则，先把异常置NaN，再统一填补所有缺口；保存到各阶段的 `data_v2/`，不覆盖v1、不自动切换现有模型配置。
+- `raw_data/` 与公共天气源共享且不变；analysis、outlier_remove_data、imputed_data、forecast_data、weather_data均按数据版本隔离。
+- 脚本按产物阶段分类：通用实现位于 `scripts/<阶段>/`，专属编排位于 `scripts/v1/<阶段>/` 与 `scripts/v2/<阶段>/`；完整目录、命令、审计及失败语义见 [scripts/README.md](scripts/README.md)。
+- 下文模型窗口和清洗历史描述针对data_v1；data_v2的实际窗口以 `analysis/data_v2/forecast_windows/manifest.json` 为准，旧分析报告不代表新数据效果。
+
 ## 模型配置矩阵
 
 ```text
@@ -50,9 +60,9 @@
 
 ```bash
 # 全部候选先通过typed parse、compiler构造与真实资产网格/声明列有限性预检，再写入
-env -u PYTHONPATH .venv/bin/python config/aidc_hvac_load_5min/scripts/build_model_configs.py
+env -u PYTHONPATH .venv/bin/python config/aidc_hvac_load_5min/scripts/forecast_data/build_model_configs.py
 # 只核验生成规则和物理文件一致，不写入、不训练
-env -u PYTHONPATH .venv/bin/python config/aidc_hvac_load_5min/scripts/build_model_configs.py --check
+env -u PYTHONPATH .venv/bin/python config/aidc_hvac_load_5min/scripts/forecast_data/build_model_configs.py --check
 # 获得运行授权后，单份历史回测示例；此次配置任务未执行此命令
 env -u PYTHONPATH .venv/bin/python run.py --config-yaml config/aidc_hvac_load_5min/baseline/hvac_all_devices/route_A/A1/lgbm_direct-pointwise.yaml --backtest-only
 ```
@@ -65,15 +75,15 @@ IT组与非IT组使用独立历史范围，不能把全期评分差异直接归�
 
 ## A/B双路预测输入
 
-当前`forecast_data/`绑定`outlier_remove_data/redbox_past_v3/`。`redbox_cleaning.json`将用户八张图的红框落为人工事件区间，`scripts/clean_hvac_redboxes.py`在区间内按点位筛选，并对受异常污染的既有缺失补值一并重估。检测基线只取事件前1小时原始观测；替换及候选方法评分只用缺口前原始观测，不用后侧数值、不递归使用新补值。人工红框本身是离线复核，缺口长度资格也在闭合后才确定，因此不宣称整套流程严格在线可得。
+当前`forecast_data/data_v1/`绑定`outlier_remove_data/data_v1/redbox_past_v2/`。`scripts/v1/outlier_remove_data/redbox_cleaning.json`将用户八张图的红框落为人工事件区间，`scripts/v1/outlier_remove_data/clean_hvac_redboxes.py`在区间内按点位筛选，并对受异常污染的既有缺失补值一并重估。检测基线只取事件前1小时原始观测；替换及候选方法评分只用缺口前原始观测，不用后侧数值、不递归使用新补值。人工红框本身是离线复核，缺口长度资格也在闭合后才确定，因此不宣称整套流程严格在线可得。
 
 物理点位×时刻实际改变3950格，两设备版本内合计7402格；投影/求和传播至32份预测CSV的10448格。非选中点位、IT、原始raw与原imputed、旧isolated_v1及原两处修正均保留。预测时间窗、行数、A/B副本及总分关系保持；六个点位-事件组合因事件前1小时原始观测不足未做原观测离群判断，记录在screening.csv，不强判异常。
 
-新准备根的`analysis/outliers/`保存逐格修正、判定/补值依据、8张前后对比图和验收报告。旧预测、选窗审计、可视化和天气完整归档至`analysis/archive/pre_redbox_past_v3/`；32份天气数值不变，仅刷新目标SHA绑定。`redbox_past_v2`是未发布的中间候选，正式生效版本以选窗manifest为准。新补值是估计值，当前模型评分不自动排除这些点；旧模型结果保留但未按新数据验证。
+新准备根的`analysis/outliers/`保存逐格修正、判定/补值依据、8张前后对比图和验收报告。旧预测、选窗审计、可视化和天气完整归档至`analysis/data_v1/archive/pre_redbox_past_v3/`；32份天气数值不变，仅刷新目标SHA绑定。旧的未发布候选v2已清除，原正式v3仅改名为`redbox_past_v2`，数据未重算；历史归档名保留，正式生效版本以选窗manifest为准。新补值是估计值，当前模型评分不自动排除这些点；旧模型结果保留但未按新数据验证。
 
 32个CSV保持原目录及时间窗，均同时含 `hvac_total_load_A`、`hvac_total_load_B`；路线目录区分预测目标而非输入覆盖范围。`route_A`的目标是A列，`route_B`的目标是B列，记录在选窗manifest的`target_column`。`data*.csv`另含六个楼栋×路线分量，以及 `hvac_total_load_AB`（三楼两路总暖通）；IT字段保持不分路。具体字段及严格求和合同见脚本README。
 
-选窗重建只组装当前清单绑定的准备版本，不在选窗时清洗。单槽孤立异常的上游准备入口为`scripts/clean_hvac_outliers.py`，输出独立`outlier_remove_data/isolated_v1/`，原始raw/imputed保留；判定、来源掩码和离线可得性合同见[脚本说明](scripts/README.md#孤立异常清洗版本)。另一条路、楼栋分量与AB合计仅是历史信息，不能把测试期真实值作为未来已知特征。清洗、新增列或改名会改变target SHA，因此天气值即使不变，也必须重新执行本场景天气适配刷新元数据绑定。
+选窗重建只组装当前清单绑定的准备版本，不在选窗时清洗。单槽孤立异常的上游准备入口为`scripts/v1/outlier_remove_data/clean_hvac_outliers.py`，输出独立`outlier_remove_data/data_v1/isolated_v1/`，原始raw/imputed保留；判定、来源掩码和离线可得性合同见[脚本说明](scripts/README.md#检测与填补算法)。另一条路、楼栋分量与AB合计仅是历史信息，不能把测试期真实值作为未来已知特征。清洗、新增列或改名会改变target SHA，因此天气值即使不变，也必须重新执行本场景天气适配刷新元数据绑定。
 
 ## 每个预测文件配套一份天气
 
@@ -81,21 +91,21 @@ IT组与非IT组使用独立历史范围，不能把全期评分差异直接归�
 
 ```bash
 env -u PYTHONPATH .venv/bin/python scripts/build_scenario_weather.py --output dataset/shared/weather/processed/weather_hourly.csv
-env -u PYTHONPATH .venv/bin/python config/aidc_hvac_load_5min/scripts/prepare_weather.py
+env -u PYTHONPATH .venv/bin/python config/aidc_hvac_load_5min/scripts/weather_data/prepare_weather.py --data-version data_v1
 ```
 
 以 `dataset/aidc_hvac_load_5min/` 为数据根目录：
 
 ```text
-forecast_data/<设备版本>/<路线>/<目标名>.csv
-weather_data/<设备版本>/<路线>/<目标名>/
+forecast_data/data_v1/<设备版本>/<路线>/<目标名>.csv
+weather_data/data_v1/<设备版本>/<路线>/<目标名>/
   weather_history_5min_<开始日期>_<结束日期>.csv
   weather_history_5min_<开始日期>_<结束日期>.meta.json
   weather.source.yaml
-weather_data/manifest.csv
+weather_data/data_v1/manifest.csv
 ```
 
-- 两个设备版本 `hvac_all_devices/hvac_remove_devices` × 两条路线 `route_A/route_B` × 八个目标文件，共 **32 对**。不把天气混入 `forecast_data/`；每个目标独立配套，即使两份天气值相同也不合并。
+- 两个设备版本 `hvac_all_devices/hvac_remove_devices` × 两条路线 `route_A/route_B` × 八个目标文件，共 **32 对**。不把天气混入 `forecast_data/data_v1/`；每个目标独立配套，即使两份天气值相同也不合并。
 - 直接读取每份目标 CSV 的 `time`，要求非空、唯一、升序、连续且对齐的 5min 网格；天气的 `ts` 与其逐行一致，不取所有目标的统一交集，不裁剪原目标文件。
 - 共享天气小时值在原生小时内 hold；9 月 16 日 23:00 的小时值覆盖到 23:55。不用 hold 越过缺失小时。
 - 此场景使用目标实际窗口；其他场景的 `HISTORY_END = 2026-08-31 23:59:59` 留在各自处理入口，不扩大其训练/回测窗口。公共脚本不再包含预测场景或固定窗口。

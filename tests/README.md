@@ -157,3 +157,7 @@ env -u PYTHONPATH .venv/bin/python tests/run_suite.py integration --match test_m
 - `test_execution_evidence_contract.py`：合成元数据的缓存读写、旧缓存缺证据、公开能力错误传播、JSON 参数快照和静态调用接线；临时测试数组不是模型结果或运行验收证据。
 
 本地复验入口为 `.hermes/plans/verify-architecture-no-models.py`，安装调用拦截器后执行上述白名单，遇到 fit/predict 类调用立即中止。各文件仍纳入原生 discovery，不从完整测试集合排除。
+
+## HVAC 数据阶段版本化
+
+`test_hvac_versioned_preparation` 默认integration：data_v1/data_v2隔离、合并原始异常mask先于填补、红框外缺失传播重算、73槽组合缺口不恢复异常、真实临时20表→32预测表及可得性mask、重复构建拒绝。既有清洗测试验证scripts/v1的旧行为；模型/天气真实资产测试绑定data_v1。共享脚本按analysis/forecast_data/imputed_data/outlier_remove_data/raw_data/weather_data分类，版本专属入口在v1/v2同名阶段目录。

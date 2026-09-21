@@ -19,7 +19,7 @@ import pandas as pd
 from config.aidc_hvac_load_5min.scripts.imputed_data.impute_hvac_data import RECIPE, STEP, read_table, true_runs, write_csv
 from config.aidc_hvac_load_5min.scripts.raw_data.migrate_hvac_data import BUILDINGS, DEFAULT_ROOT, FAMILIES, FILES, ROUTES, VERSIONS, sha256_file
 from config.aidc_hvac_load_5min.scripts.forecast_data.forecast_schema import SCHEMA, column_sources, target_column, resolve_preparation_root
-from config.aidc_hvac_load_5min.scripts.preparation_paths import DATA_VERSIONS, artifact_path, artifact_relative
+from config.aidc_hvac_load_5min.scripts.preparation_paths import ROUTE_DATA_VERSIONS as DATA_VERSIONS, artifact_path, artifact_relative
 
 
 def select_window(valid, recent_start):

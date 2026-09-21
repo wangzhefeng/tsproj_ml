@@ -1,10 +1,36 @@
 # AIDC 暖通 5min 场景
 
-数据提取、因果填补与预测窗口合同见 [scripts/README.md](scripts/README.md)。本场景包含四组共 **576 份物理模型 YAML**。当前预测数据已切换至红框过去观测清洗版本；**本轮清洗没有重跑模型，既有回测结果不代表新数据版本**。
+数据提取、因果填补与预测窗口合同见 [scripts/README.md](scripts/README.md)。本场景保留旧四组 **576 份物理模型 YAML**，另新增 A1_all/v3 四组 **72 份**。**新数据/配置准备未重跑正式模型，既有回测结果不代表新版本。**
+
+## A1_all/v3：固定窗口、两路合计
+
+新配置路径：`<baseline|add_weather|add_endogenous_it|add_endogenous_route>/A1_all/v3/<hvac_all_devices|hvac_remove_devices>/lgbm_<方法>.yaml`。
+
+- 只使用 A1，预测目录不分 A/B 路。两种设备口径各一份 `forecast_data/data_v3/<设备口径>/A1_all/data.csv`，包含目标 `hvac_total_load_AB` 及原始特征 `hvac_total_load_A`、`hvac_total_load_B`、`it_subset_load`。
+- `it_subset_load` 是用户确认的**固定204点 IT 子集负荷**，不是完整全楼 IT。原39个全空点位和43个晚出现点位全窗口固定排除、不补零；精确清单及5个原始输入SHA在 `scripts/v3/preparation.json`。
+- 固定2026-04-08 00:00:00至2026-09-16 23:55:00，共162天、46656点；两份负荷及配套天气时间轴一致。不做异常值处理，只在原始点位填缺失，再严格汇总；两设备版本共享点位使用相同估计。
+- 保留原组含义：baseline仅目标历史；add_weather仅增加六项天气；add_endogenous_it增加IT子集历史；add_endogenous_route增加A/B两路历史。输入CSV含全部列，但只投影各组声明列；没有自动把所有协变量混入baseline。
+- 九方法沿用原模板，14天训练＋1天预测、stride=288，每配置148折；测试日期为2026-04-22至2026-09-16。A/B及IT使用安全lag 288/576及显式provider，不读取预测期同刻实测。
+- 仍为严格原始训练窗口的 **`--backtest-only` 配置**；没有未来天气、final fit或部署bundle，不把配置预检称为模型效果验证。
+- IT仍有最长6729槽内部缺口。补值只用过去原观测，逐缺口用历史遮蔽评分选择；缺口长并不意味着估计可靠。首次补值的校准允许读取窗口前30天，导出/模型历史不扩窗。实测与估计的来源mask另存，现行评分不会自动排除估计点；整体不宣称严格在线或可实盘。
+
+```bash
+# 首次生成数据，已有v3拒绝覆盖；不调用异常清洗
+env -u PYTHONPATH .venv/bin/python config/aidc_hvac_load_5min/scripts/v3/imputed_data/prepare_data.py
+env -u PYTHONPATH .venv/bin/python config/aidc_hvac_load_5min/scripts/weather_data/prepare_weather.py --data-version data_v3
+env -u PYTHONPATH .venv/bin/python config/aidc_hvac_load_5min/scripts/v3/forecast_data/build_model_configs.py
+# 只检查，不拟合正式模型
+env -u PYTHONPATH .venv/bin/python config/aidc_hvac_load_5min/scripts/v3/forecast_data/build_model_configs.py --check
+env -u PYTHONPATH .venv/bin/python tests/run_suite.py integration --match test_hvac_a1_v3
+```
+
+准备及逐缺口审计在 `analysis/data_v3/`；天气独立保存于 `weather_data/data_v3/`。下文旧矩阵、短窗口及清洗历史仅描述原576份配置，不适用于v3。
+
+v3验收：checker 72/72通过、零警告；新增功能/配置8项、独立真实资产1项、相关回归25项及fast 291项通过。逐份配置首末折生产设计已编译，正式模型未运行；全仓all未运行。`analysis/data_v3/preparation_verification.json`保存资产SHA及验收结果，2413个既有非本轮文档资产字节未变。
 
 ## 数据与脚本版本
 
-当前576份模型配置全部引用 `forecast_data/data_v1/`，天气引用 `weather_data/data_v1/`；仅迁移路径，不自动重跑模型，旧结果保持原样。
+原576份模型配置全部引用 `forecast_data/data_v1/`，天气引用 `weather_data/data_v1/`；仅迁移路径，不自动重跑模型，旧结果保持原样。新增72份v3配置独立引用data_v3，不改变原配置。
 
 - `data_v1`：保留先填补后清洗的既有产物；异常准备根为 `outlier_remove_data/data_v1/redbox_past_v2/`，父版本 `isolated_v1/` 同样保留。
 - `data_v2`：合并孤立点与红框规则，先把异常置NaN，再统一填补所有缺口；保存到各阶段的 `data_v2/`，不覆盖v1、不自动切换现有模型配置。

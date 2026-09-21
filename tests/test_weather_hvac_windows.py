@@ -21,6 +21,26 @@ MAPPING = {'rt_tt2': 'pred_tt2', 'cal_rh': 'pred_rh', 'rt_ssr': 'pred_ssrd',
 
 
 class WeatherHvacWindowsTest(unittest.TestCase):
+    def test_v3_weather_without_route_partition(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            times = pd.date_range('2026-04-08', periods=288, freq='5min')
+            for devices in ('hvac_all_devices', 'hvac_remove_devices'):
+                path = root / 'dataset/aidc_hvac_load_5min/forecast_data/data_v3' / devices / 'A1_all/data.csv'
+                path.parent.mkdir(parents=True)
+                pd.DataFrame({'time': times, 'hvac_total_load_AB': 3.}).to_csv(path, index=False)
+            hourly = pd.DataFrame({c: 1. for c in list(MAPPING) + list(MAPPING.values())},
+                                  index=pd.date_range(times[0], periods=24, freq='1h'))
+            with patch.object(scenario, 'ROOT', root), patch.object(builder, 'ROOT', root):
+                outputs = scenario.build_hvac_weather(hourly, {
+                    'sources': [], 'offline_interpolation': [], 'processed_asset': {},
+                }, data_version='data_v3')
+            self.assertEqual(len(outputs), 2)
+            for row in outputs:
+                self.assertIn('/data_v3/', row['file'])
+                self.assertNotIn('/route_', row['file'])
+                self.assertEqual(len(pd.read_csv(root / row['file'])), len(times))
+
     def test_authorized_tail_interpolation_is_local_and_audited(self):
         times = pd.date_range('2026-09-16 15:00', '2026-09-16 23:00', freq='1h')
         hourly = pd.DataFrame({col: np.arange(9, dtype=float) + 280.

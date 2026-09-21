@@ -1,7 +1,8 @@
 """HVAC 数据阶段的显式版本路径；raw_data 始终共享、只读。"""
 from pathlib import Path
 
-DATA_VERSIONS = ('data_v1', 'data_v2')
+ROUTE_DATA_VERSIONS = ('data_v1', 'data_v2')
+DATA_VERSIONS = (*ROUTE_DATA_VERSIONS, 'data_v3')
 ARTIFACTS = ('outlier_remove_data', 'imputed_data', 'forecast_data', 'analysis', 'weather_data')
 
 

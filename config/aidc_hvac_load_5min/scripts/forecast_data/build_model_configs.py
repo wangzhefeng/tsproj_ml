@@ -140,10 +140,17 @@ def build_documents():
     return documents
 
 
-def publish(documents, output_dir, *, check=False):
+def publish(documents, output_dir, *, check=False, config_version='v1'):
     """先核对全部文件；不同内容拒绝覆盖，绝不清除清单外文件。"""
+    if config_version not in ('v1', 'v3'):
+        raise ValueError(f'未知配置版本: {config_version}')
     existing = {p.relative_to(output_dir) for group in GROUPS
                 for p in (output_dir / group).rglob('*.yaml')}
+    # 两个生成器各自管理明确命名空间，不互相覆盖，也不忽略本空间未知文件。
+    existing = {p for p in existing if (p.parts[1:3] == ('A1_all', 'v3')) == (config_version == 'v3')}
+    if any((p.parts[1:3] == ('A1_all', 'v3')) != (config_version == 'v3')
+           or p.is_absolute() or '..' in p.parts or p.parts[0] not in GROUPS for p in documents):
+        raise ValueError('配置路径越过当前生成器命名空间')
     unexpected = existing - documents.keys()
     if unexpected:
         raise ValueError(f'发现清单外配置，拒绝处理: {sorted(map(str, unexpected))}')

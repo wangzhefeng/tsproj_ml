@@ -18,6 +18,8 @@
 
 ## 执行集合
 
+`test_hvac_a1_v3*` 默认integration：固定IT子集漂移拒绝、只补NaN、过去日长段不越界、逐缺口未来扰动不变、稀疏原观测遮蔽评分、校准不足拒绝、两口径共享点一致、覆盖保护；独立核对5份真实点位表原值保真、全部补值重建、来源mask、固定窗口和天气SHA绑定。配置测试覆盖四组72份完整矩阵、148折时间几何、每份首末折真实训练origin及预测首/中/末步编译，并与旧576份配置做联合路径集核对；不拟合正式模型。定向：`integration --match test_hvac_a1_v3`。天气v3无路线目录适配并入`test_weather_hvac_windows`。
+
 `test_hvac_redbox_cleaning`默认integration：人工范围边界、过去基线、先前异常不进入参考、固定异常mask的未来数值扰动不改变补值/选型、长段/不足历史拒绝强填、事件内已有缺失槽不沿用受污染旧补值。仅离线清洗，不训练模型；定向`integration --match test_hvac_redbox_cleaning`。真实32表另核验总分、共享点位、时间窗、IT保真及逐格改值，报告保存在准备版本`analysis/outliers`。
 
 `test_hvac_model_configs` 默认 integration：576份物理YAML精确路径集、九方法模板一致性、四组字段投影/正交性、真实资产声明列有限性及完整自然日网格、14/7天原始训练窗口与全部折日期、逐配置真实训练origin及预测首/中/末步编译、IT/peer安全lag的可见性证明和窗口外/未来扰动隔离。只验证配置与设计，不拟合正式模型；定向 `integration --match test_hvac_model_configs`。

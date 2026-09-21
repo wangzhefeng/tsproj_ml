@@ -24,7 +24,7 @@ from config.aidc_hvac_load_5min.scripts.imputed_data.impute_hvac_data import STE
 from config.aidc_hvac_load_5min.scripts.raw_data.migrate_hvac_data import BUILDINGS, DEFAULT_ROOT, ROUTES, VERSIONS, sha256_file
 from config.aidc_hvac_load_5min.scripts.forecast_data.forecast_schema import SCHEMA, file_contract, resolve_preparation_root
 from config.aidc_hvac_load_5min.scripts.forecast_data.select_hvac_windows import publish_prepared_directories
-from config.aidc_hvac_load_5min.scripts.preparation_paths import DATA_VERSIONS, artifact_path, artifact_relative
+from config.aidc_hvac_load_5min.scripts.preparation_paths import ROUTE_DATA_VERSIONS as DATA_VERSIONS, artifact_path, artifact_relative
 
 KINDS = ('hard_issue', 'spike', 'jump', 'low_load', 'constant')
 RULES = {

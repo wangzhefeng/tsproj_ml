@@ -17,7 +17,7 @@ import numpy as np
 import pandas as pd
 
 from config.aidc_hvac_load_5min.scripts.raw_data.migrate_hvac_data import BUILDINGS, DEFAULT_ROOT, FAMILIES, FILES, sha256_file
-from config.aidc_hvac_load_5min.scripts.preparation_paths import DATA_VERSIONS, artifact_path, artifact_relative
+from config.aidc_hvac_load_5min.scripts.preparation_paths import ROUTE_DATA_VERSIONS as DATA_VERSIONS, artifact_path, artifact_relative
 
 RECIPE = Path(__file__).resolve().parents[2] / 'preparation.json'
 STEP = pd.Timedelta(minutes=5)

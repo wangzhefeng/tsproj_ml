@@ -142,14 +142,17 @@ def build_documents():
 
 def publish(documents, output_dir, *, check=False, config_version='v1'):
     """先核对全部文件；不同内容拒绝覆盖，绝不清除清单外文件。"""
-    if config_version not in ('v1', 'v3'):
+    if config_version not in ('v1', 'a1'):
         raise ValueError(f'未知配置版本: {config_version}')
-    existing = {p.relative_to(output_dir) for group in GROUPS
+    groups = (*GROUPS, 'add_datetime_holiday', 'add_context') if config_version == 'a1' else GROUPS
+    existing = {p.relative_to(output_dir) for group in groups
                 for p in (output_dir / group).rglob('*.yaml')}
     # 两个生成器各自管理明确命名空间，不互相覆盖，也不忽略本空间未知文件。
-    existing = {p for p in existing if (p.parts[1:3] == ('A1_all', 'v3')) == (config_version == 'v3')}
-    if any((p.parts[1:3] == ('A1_all', 'v3')) != (config_version == 'v3')
-           or p.is_absolute() or '..' in p.parts or p.parts[0] not in GROUPS for p in documents):
+    existing = {p for p in existing if (p.parts[1:2] == ('A1_all',)) == (config_version == 'a1')}
+    if any((p.parts[1:2] == ('A1_all',)) != (config_version == 'a1')
+           or p.is_absolute() or '..' in p.parts or p.parts[0] not in groups
+           or (config_version == 'a1' and (len(p.parts) != 4 or p.parts[2] not in VERSIONS))
+           for p in documents):
         raise ValueError('配置路径越过当前生成器命名空间')
     unexpected = existing - documents.keys()
     if unexpected:

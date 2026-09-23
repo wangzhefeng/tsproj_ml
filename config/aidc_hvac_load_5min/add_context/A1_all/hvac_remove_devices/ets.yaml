@@ -1,0 +1,63 @@
+# A1 双路合计 data_v3；IT 为固定204点子集，不是全楼IT总负荷。
+# 无异常清洗；离线补值/天气可得性假设不构成实盘证据。
+# 150天训练、1天预测；仅支持 --backtest-only，未执行正式模型。
+schema_version: 2
+problem:
+  time_col: time
+  freq: 5min
+  horizon: 288
+  targets:
+  - hvac_total_load_AB
+  training_scope: local
+  series_id_cols: []
+data:
+  sources:
+  - name: target_history
+    source_type: file
+    columns:
+    - name: hvac_total_load_AB
+      role: target
+      categorical: false
+    history_path: dataset/aidc_hvac_load_5min/forecast_data/data_v3/hvac_remove_devices/A1_all/data.csv
+    time_col: time
+    series_id_cols: []
+    availability: source_time
+features:
+  target_lags: {}
+  observed_past_lags: {}
+  datetime_features: []
+  transformations: {}
+strategy:
+  name: mimo
+estimator:
+  model_type: ets
+  target_adapter: independent
+  params:
+    seasonal_periods: 288
+    candidates:
+    - ANA
+    - AAA
+    - AAdA
+    selection: bic
+    maxiter: 300
+probabilistic:
+  mode: point
+validation:
+  forecast_origin: '2026-09-16T23:55:00'
+  schedule_mode: daily
+  horizon_mode: fixed_steps
+  history_steps: 46368
+  train_history_steps: 43200
+  train_window_steps: 42912
+  fold_count: 12
+  stride_steps: 288
+  performance:
+    window_parallel_workers: 1
+    total_thread_limit: 1
+output:
+  scenario_subpath: aidc_hvac_load_5min/add_context/A1_all/hvac_remove_devices
+  results_root: results
+  directories:
+    checkpoints: ./results/pretrained_models/
+    tests: ./results/results_test/
+    forecast: ./results/results_forecast/

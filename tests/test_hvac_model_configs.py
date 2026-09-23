@@ -52,7 +52,7 @@ def builder_for(config, start):
 class HvacModelConfigsTest(unittest.TestCase):
     def paths(self):
         paths = sorted(p for p in DIRECTORY.rglob('*.yaml')
-                       if p.relative_to(DIRECTORY).parts[1:3] != ('A1_all', 'v3'))
+                       if p.relative_to(DIRECTORY).parts[1:2] != ('A1_all',))
         self.assertEqual({p.relative_to(DIRECTORY) for p in paths}, expected_paths())
         return paths
 

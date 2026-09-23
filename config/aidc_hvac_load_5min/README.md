@@ -1,16 +1,16 @@
 # AIDC 暖通 5min 场景
 
-数据提取、因果填补与预测窗口合同见 [scripts/README.md](scripts/README.md)。本场景保留旧四组 **576 份物理模型 YAML**，另新增 A1_all/v3 四组 **72 份**。**新数据/配置准备未重跑正式模型，既有回测结果不代表新版本。**
+数据提取、因果填补与预测窗口合同见 [scripts/README.md](scripts/README.md)。本场景保留旧四组 **576 份物理模型 YAML**，A1_all 当前为六组 **160 份**，合计736份。**新配置未重跑正式模型，既有回测结果不代表新配置。**
 
-## A1_all/v3：固定窗口、两路合计
+## A1_all：固定数据、两路合计
 
-新配置路径：`<baseline|add_weather|add_endogenous_it|add_endogenous_route>/A1_all/v3/<hvac_all_devices|hvac_remove_devices>/lgbm_<方法>.yaml`。
+配置路径：`<实验组>/A1_all/<hvac_all_devices|hvac_remove_devices>/<模型>_<方法>.yaml`；ETS文件单独命名为`ets.yaml`。配置目录取消`v3`层级，数据仍消费`data_v3`；生成入口仍位于`scripts/v3/forecast_data/`，不迁移数据准备脚本。
 
 - 只使用 A1，预测目录不分 A/B 路。两种设备口径各一份 `forecast_data/data_v3/<设备口径>/A1_all/data.csv`，包含目标 `hvac_total_load_AB` 及原始特征 `hvac_total_load_A`、`hvac_total_load_B`、`it_subset_load`。
 - `it_subset_load` 是用户确认的**固定204点 IT 子集负荷**，不是完整全楼 IT。原39个全空点位和43个晚出现点位全窗口固定排除、不补零；精确清单及5个原始输入SHA在 `scripts/v3/preparation.json`。
 - 固定2026-04-08 00:00:00至2026-09-16 23:55:00，共162天、46656点；两份负荷及配套天气时间轴一致。不做异常值处理，只在原始点位填缺失，再严格汇总；两设备版本共享点位使用相同估计。
-- 保留原组含义：baseline仅目标历史；add_weather仅增加六项天气；add_endogenous_it增加IT子集历史；add_endogenous_route增加A/B两路历史。输入CSV含全部列，但只投影各组声明列；没有自动把所有协变量混入baseline。
-- 九方法沿用原模板，14天训练＋1天预测、stride=288，每配置148折；测试日期为2026-04-22至2026-09-16。A/B及IT使用安全lag 288/576及显式provider，不读取预测期同刻实测。
+- 原baseline更名为`add_datetime_holiday`；新baseline只含目标历史及构造特征。天气、IT、分路组均以新baseline为对照，不再夹带时间戳或节假日。输入CSV含全部列，但只投影声明列。
+- 除`add_context`外，统一90天训练＋1天预测（91天滑窗）、stride=288，每配置72折，测试日期为2026-07-07至2026-09-16。`add_context`使用150天训练＋1天预测（151天滑窗）、12折，测试日期为2026-09-05至2026-09-16。
 - 仍为严格原始训练窗口的 **`--backtest-only` 配置**；没有未来天气、final fit或部署bundle，不把配置预检称为模型效果验证。
 - IT仍有最长6729槽内部缺口。补值只用过去原观测，逐缺口用历史遮蔽评分选择；缺口长并不意味着估计可靠。首次补值的校准允许读取窗口前30天，导出/模型历史不扩窗。实测与估计的来源mask另存，现行评分不会自动排除估计点；整体不宣称严格在线或可实盘。
 
@@ -24,13 +24,34 @@ env -u PYTHONPATH .venv/bin/python config/aidc_hvac_load_5min/scripts/v3/forecas
 env -u PYTHONPATH .venv/bin/python tests/run_suite.py integration --match test_hvac_a1_v3
 ```
 
-准备及逐缺口审计在 `analysis/data_v3/`；天气独立保存于 `weather_data/data_v3/`。下文旧矩阵、短窗口及清洗历史仅描述原576份配置，不适用于v3。
+### 六组矩阵与特征
 
-v3验收：checker 72/72通过、零警告；新增功能/配置8项、独立真实资产1项、相关回归25项及fast 291项通过。逐份配置首末折生产设计已编译，正式模型未运行；全仓all未运行。`analysis/data_v3/preparation_verification.json`保存资产SHA及验收结果，2413个既有非本轮文档资产字节未变。
+| 实验组 | 相对纯目标基线的增量 | 每种设备口径 | 两口径合计 |
+|---|---|---:|---:|
+| baseline | 无时间戳、节假日、天气或协变量 | 22 | 44 |
+| add_datetime_holiday | 10项时间戳＋is_holiday/next_holiday_days | 9 | 18 |
+| add_weather | 六项天气，训练实测/历史预测预报 | 9 | 18 |
+| add_endogenous_it | 固定204点IT子集历史lag | 9 | 18 |
+| add_endogenous_route | A/B两路历史lag | 9 | 18 |
+| add_context | 仅将训练历史由90天延长至150天 | 22 | 44 |
+
+- 所有组含LightGBM九方法：`direct/direct-pointwise/direct-pointwise-horizon/recursive/mimo/recmo/dirrec/dirmo/dirrecmo`。其中`recmo/dirmo/dirrecmo`块长为24步；不启用融合或分解。
+- baseline和add_context另外各含Ridge、XGBoost、ST的三个Direct方法及Recursive，以及一份原生ETS。ETS直接拟合原始目标序列，日季节周期288，无监督特征，使用mimo调度几何；不把它包装成Direct/Recursive。
+- 非ETS目标lag为1～7、14、21、28天；rolling为1/2/4/7/14/28天的mean/std/min/max；expanding为mean/std。均在当折原始训练窗口内构造，不借窗外历史。
+- IT及A/B协变量lag为1/2/7/14/28天，显式`provider: persistence`；safe-lag设计不读取预测期同刻实测。不同方法的历史锚点沿用模板，不能将所有lag都解释为预测日昨日同槽。
+- 时间戳与节假日仅属于add_datetime_holiday。`direct-pointwise-horizon`仍启用非周期编码的`forecast_horizon_idx`，这是方法特征，不是日期特征。
+- ST实际仅消费目标lag；`day_type_split: false`，不消费rolling/expanding或horizon索引。Ridge/XGBoost沿用项目模型默认参数，不额外引入缩放或调参消融。
+- add_context与同名baseline除窗口调度和输出目录外完全相同，lag不继续拉长。效果比较必须配对2026-09-05至2026-09-16的共同12天，不能比较两组不同覆盖的全期总分。
+
+准备及逐缺口审计在 `analysis/data_v3/`；天气独立保存于 `weather_data/data_v3/`。下文旧矩阵、短窗口及清洗历史仅描述原576份配置，不适用于A1_all。
+
+数据v3首次准备的历史验收记录保存在`analysis/data_v3/preparation_verification.json`；其中72份/148折是旧配置证据，不代表当前160份配置重跑。当前配置验收使用下述checker与`test_hvac_a1_v3_configs`，覆盖矩阵、组间正交性、90/150天窗口与首末折设计；不拟合正式模型、不生成final fit或部署bundle。
+
+本轮重组验收：A1_all checker 160/160通过、零警告；配置定向4项通过（逐份首末折训练设计和预测首/中/末步）；fast 291项、旧矩阵/发布保护与ETS参数合同3项通过。旧生成器`--check`通过576份，旧576份YAML逐文件SHA保持不变。没有运行正式回测或全仓all，也未重算数据或改动存量结果。
 
 ## 数据与脚本版本
 
-原576份模型配置全部引用 `forecast_data/data_v1/`，天气引用 `weather_data/data_v1/`；仅迁移路径，不自动重跑模型，旧结果保持原样。新增72份v3配置独立引用data_v3，不改变原配置。
+原576份模型配置全部引用 `forecast_data/data_v1/`，天气引用 `weather_data/data_v1/`；仅迁移路径，不自动重跑模型，旧结果保持原样。A1_all的160份配置独立引用data_v3，不改变原576份配置。
 
 - `data_v1`：保留先填补后清洗的既有产物；异常准备根为 `outlier_remove_data/data_v1/redbox_past_v2/`，父版本 `isolated_v1/` 同样保留。
 - `data_v2`：合并孤立点与红框规则，先把异常置NaN，再统一填补所有缺口；保存到各阶段的 `data_v2/`，不覆盖v1、不自动切换现有模型配置。

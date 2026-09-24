@@ -12,15 +12,15 @@ SOURCES = (("xinnengyuan", "demand_load"), ("guangdianchang", "demand_load"),
            ("guangdianchang", "pv_load"))
 
 
-def validate_frame(frame: pd.DataFrame, freq: str = "15min") -> pd.DataFrame:
+def validate_frame(frame: pd.DataFrame, freq: str = "15min", *, start: str = "2025-01-01", end: str = "2026-01-01") -> pd.DataFrame:
     if list(frame.columns) != ["time", "value"]:
         raise ValueError("source columns must be exactly time,value")
     result = frame.copy()
     result["time"] = pd.to_datetime(result.time, errors="raise")
     result["value"] = pd.to_numeric(result.value, errors="raise")
-    expected = pd.date_range("2025-01-01", "2026-01-01", freq=freq, inclusive="left")
+    expected = pd.date_range(start, end, freq=freq, inclusive="left")
     if not pd.DatetimeIndex(result.time).equals(expected):
-        raise ValueError("source must contain the complete ordered 2025 time grid")
+        raise ValueError("source must contain the complete ordered requested time grid")
     if not np.isfinite(result.value).all() or (result.value < 0).any():
         raise ValueError("source values must be finite and nonnegative")
     return result

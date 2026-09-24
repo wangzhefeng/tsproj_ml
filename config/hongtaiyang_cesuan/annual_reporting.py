@@ -18,15 +18,15 @@ def annual_tensors(frame: pd.DataFrame) -> tuple[PointForecastTensor, PointForec
     return actual, prediction
 
 
-def write_diagnostics(output: Path, annual: pd.DataFrame) -> None:
+def write_diagnostics(output: Path, annual: pd.DataFrame, *, modeled_start=None) -> None:
     """额外评估表；事后高低负荷分组绝不进入模型特征。"""
     calendar = chinese_holiday_frame(annual.time.min(), annual.time.max().normalize() + pd.Timedelta(days=1), freq='1D')
     frame = annual.copy()
     frame['day'] = frame.time.dt.normalize()
     frame = frame.merge(calendar[['time', 'is_holiday', 'holiday_name']].rename(columns={'time': 'day'}),
                         on='day', validate='many_to_one')
-    modeled = frame[frame.time >= '2025-02-01']
-    groups = [('coverage', 'all_year_including_january', frame), ('coverage', 'model_period_feb_dec', modeled)]
+    modeled = frame[frame.time >= (modeled_start if modeled_start is not None else '2025-02-01')]
+    groups = [('coverage', 'all_period_including_passthrough' if modeled_start is not None else 'all_year_including_january', frame), ('coverage', 'model_period' if modeled_start is not None else 'model_period_feb_dec', modeled)]
     groups.extend(('month', str(month), part) for month, part in frame.groupby(frame.time.dt.month))
     labels = np.select([modeled.holiday_name == 'Spring Festival', modeled.holiday_name != '', modeled.is_holiday == 1],
                        ['spring_festival', 'other_named_holiday', 'ordinary_rest_day'], default='calendar_workday')
@@ -49,7 +49,14 @@ def write_diagnostics(output: Path, annual: pd.DataFrame) -> None:
 def write_annual_results(output: Path, annual: pd.DataFrame, freq: str, metadata: dict) -> dict:
     """1月为window 0接入段；其余逐月/逐日编号，年度分数按全年逐点计算。"""
     frame = annual.copy()
-    if freq == "1D":
+    period = metadata.get('period')
+    cutoff = pd.Timestamp(period['start']) + pd.offsets.MonthBegin(1) if period else None
+    if period and freq == '1D':
+        first = pd.Timestamp(period['start'])
+        frame['window'] = (frame.time.dt.year - first.year) * 12 + frame.time.dt.month - first.month
+    elif period and freq == '15min':
+        frame['window'] = ((frame.time.dt.floor('1D') - cutoff).dt.days + 1).clip(lower=0)
+    elif freq == "1D":
         frame["window"] = frame.time.dt.month - 1
     elif freq == "15min":
         frame["window"] = ((frame.time.dt.floor("1D") - pd.Timestamp("2025-02-01")).dt.days + 1).clip(lower=0)
@@ -62,16 +69,16 @@ def write_annual_results(output: Path, annual: pd.DataFrame, freq: str, metadata
         score_frames.append(evaluate_point_forecasts(actual, prediction, window=int(window)))
     write_backtest_results(output, pd.concat(long_frames, ignore_index=True),
                            pd.concat(score_frames, ignore_index=True), aggregate_weighting={"value": 1.0},
-                           metadata={**metadata, "january_window": 0,
-                                     "january_semantics": "actual passthrough, included in annual scoring"})
+                           metadata={**metadata, **({'passthrough_window': 0} if period else {"january_window": 0,
+                                     "january_semantics": "actual passthrough, included in annual scoring"})})
     actual, prediction = annual_tensors(frame)
     scores = evaluate_point_forecasts(actual, prediction)
     summary = scores[scores.scope.isin(["target", "aggregate"])]
     summary.to_csv(output / "annual_scores_df.csv", index=False)
-    write_diagnostics(output, annual)
+    write_diagnostics(output, annual, modeled_start=cutoff)
     aggregate = summary.loc[summary.scope == "aggregate"].iloc[0]
     result = {"rows": len(frame), "MAE": float(aggregate.MAE), "RMSE": float(aggregate.RMSE),
-              "includes_january_actuals": True}
+              **({'includes_initial_month_actuals': True} if period else {"includes_january_actuals": True})}
     # 标准long CSV回读，确保绘图所用值与全年交付表逐点一致。
     saved = pd.read_csv(output / "cv_plot_df.csv", parse_dates=["time"])
     if not pd.DatetimeIndex(saved.time).equals(pd.DatetimeIndex(annual.time)):

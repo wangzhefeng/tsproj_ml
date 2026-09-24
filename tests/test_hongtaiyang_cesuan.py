@@ -27,7 +27,7 @@ class HongtaiyangTest(unittest.TestCase):
 
     def test_real_matrix_and_daily_aggregation(self):
         paths = sorted((ROOT / "config/hongtaiyang_cesuan").glob("*/*/freq_*/lgbm_*.yaml"))
-        self.assertEqual(len(paths), 20)
+        self.assertEqual(len(paths), 22)
         for site in ("xinnengyuan", "guangdianchang"):
             raw = pd.read_csv(ROOT / "dataset/hongtaiyang_cesuan" / site / "demand_load.csv")
             daily = aggregate_daily(raw)

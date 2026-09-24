@@ -31,10 +31,15 @@ from annual_reporting import write_annual_results
 from cold_start import DEFAULT_RECIPE, load_recipe, validate_recipe, calendar_baseline
 
 
-def schedule(freq: str) -> list[tuple[pd.Timestamp, pd.Timestamp, pd.DatetimeIndex]]:
+def schedule(freq: str, *, period: dict | None = None) -> list[tuple[pd.Timestamp, pd.Timestamp, pd.DatetimeIndex]]:
     if freq not in ("15min", "1D"):
         raise ValueError("only 15min and 1D are supported")
     step = pd.tseries.frequencies.to_offset(freq)
+    if period is not None:
+        first, end = pd.Timestamp(period['start']), pd.Timestamp(period['end'])
+        starts = pd.date_range(first + pd.offsets.MonthBegin(1), end, freq='MS' if freq == '1D' else '1D', inclusive='left')
+        return [(max(first, start - pd.DateOffset(months=3)), start - step,
+                 pd.date_range(start, start + (pd.offsets.MonthBegin(1) if freq == '1D' else pd.Timedelta(days=1)), freq=freq, inclusive='left')) for start in starts]
     starts = pd.date_range("2025-02-01", "2025-12-31", freq="MS" if freq == "1D" else "1D")
     result = []
     for start in starts:
@@ -60,7 +65,7 @@ def window_config(config: ForecastConfigSpec, horizon: int, strategy: str) -> Fo
                    validation=validation)
 
 
-def forecast_window(config: ForecastConfigSpec, actual: pd.DataFrame, window, *, recipe: dict | None = None) -> tuple[pd.DataFrame, dict]:
+def forecast_window(config: ForecastConfigSpec, actual: pd.DataFrame, window, *, recipe: dict | None = None, short_pointwise: bool = False) -> tuple[pd.DataFrame, dict]:
     started = perf_counter()
     history_start, origin, times = window
     if config.strategy is None:
@@ -72,8 +77,8 @@ def forecast_window(config: ForecastConfigSpec, actual: pd.DataFrame, window, *,
     expected = pd.date_range(history_start, origin, freq=config.problem.freq)
     if not pd.DatetimeIndex(history.time).equals(expected) or not np.isfinite(history.value).all():
         raise ValueError("incomplete bounded training history")
-    short = config.problem.freq == "1D" and times[0] == pd.Timestamp("2025-02-01")
-    if short and recipe['cold_start']['method'] == 'calendar_baseline':
+    short = short_pointwise or (config.problem.freq == "1D" and times[0] == pd.Timestamp("2025-02-01"))
+    if short and not short_pointwise and recipe['cold_start']['method'] == 'calendar_baseline':
         values, evidence = calendar_baseline(history, times, recipe['cold_start'])
         audit = {'history_start': history_start.isoformat(), 'origin': origin.isoformat(),
                  'forecast_start': times[0].isoformat(), 'forecast_end': times[-1].isoformat(),
@@ -153,9 +158,10 @@ def forecast_window(config: ForecastConfigSpec, actual: pd.DataFrame, window, *,
     return pd.DataFrame({"time": times, "y_pred": values}), audit
 
 
-def assemble_year(actual: pd.DataFrame, windows: list[pd.DataFrame], freq: str) -> pd.DataFrame:
-    actual = validate_frame(actual, freq)
-    january = actual.loc[actual.time < "2025-02-01", ["time", "value"]].rename(columns={"value": "y_pred"})
+def assemble_year(actual: pd.DataFrame, windows: list[pd.DataFrame], freq: str, *, period: dict | None = None) -> pd.DataFrame:
+    actual = validate_frame(actual, freq, **(period or {}))
+    cutoff = pd.Timestamp(period['start']) + pd.offsets.MonthBegin(1) if period else pd.Timestamp('2025-02-01')
+    january = actual.loc[actual.time < cutoff, ["time", "value"]].rename(columns={"value": "y_pred"})
     predictions = pd.concat([january, *windows], ignore_index=True).sort_values("time").reset_index(drop=True)
     if not pd.DatetimeIndex(predictions.time).equals(pd.DatetimeIndex(actual.time)):
         raise ValueError("annual predictions must match every actual timestamp exactly once")
@@ -171,14 +177,21 @@ def write_json(path: Path, payload: dict) -> None:
 
 
 def run_config(path: Path, max_windows: int | None = None, *, rerun: bool = False,
-               recipe_path: Path = DEFAULT_RECIPE, months: tuple[int, ...] | None = None) -> dict:
+               recipe_path: Path = DEFAULT_RECIPE, months: tuple[int, ...] | None = None,
+               period: dict | None = None) -> dict:
     config = load_yaml_config(path)
     if not isinstance(config, ForecastConfigSpec):
         raise ValueError("single canonical model required")
+    if 'xinnengyuan_2026' in Path(config.data.sources[0].history_path or '').parts:
+        if period is not None and period != {'start': '2025-09-01', 'end': '2026-09-01'}:
+            raise ValueError('unexpected xinnengyuan_2026 period')
+        period = {'start': '2025-09-01', 'end': '2026-09-01'}
+        if config.result_method()['method_label'] != 'direct-pointwise':
+            raise ValueError('xinnengyuan_2026 requires direct-pointwise')
     if max_windows is not None and max_windows <= 0:
         raise ValueError("max_windows must be positive")
     source = ROOT / config.data.sources[0].history_path
-    actual = validate_frame(pd.read_csv(source), config.problem.freq)
+    actual = validate_frame(pd.read_csv(source), config.problem.freq, **(period or {}))
     annual_recipe = load_recipe(recipe_path)
     if months is not None and (not months or len(set(months)) != len(months) or any(m not in range(2, 13) for m in months)):
         raise ValueError('months must be unique months in [2,12]')
@@ -190,10 +203,16 @@ def run_config(path: Path, max_windows: int | None = None, *, rerun: bool = Fals
               'annual_recipe': annual_recipe, 'evaluation_months': months, 'evaluation_limit': max_windows,
               "january": "actual values included in annual scoring", "year": 2025}
     identity = hashlib.sha256(json.dumps(recipe, sort_keys=True).encode()).hexdigest()[:12]
+    if period is not None:
+        recipe.pop('january')
+        recipe.pop('year')
+        recipe.update(period=period, history_calendar_months=3,
+                      initial_month='actual passthrough', first_daily_window='single-step-trained nonrecursive pointwise')
+        identity = hashlib.sha256(json.dumps(recipe, sort_keys=True).encode()).hexdigest()[:12]
     output = ROOT / "results/results_test" / config.output["scenario_subpath"] / config.result_identity() / f"annual_{identity}"
     windows_dir = output / "windows"
     windows_dir.mkdir(parents=True, exist_ok=True)
-    expected = schedule(config.problem.freq)
+    expected = schedule(config.problem.freq, period=period)
     frames, audits = [], []
     write_json(output / "status.json", {"status": "running", "expected_windows": len(expected)})
     try:
@@ -210,7 +229,8 @@ def run_config(path: Path, max_windows: int | None = None, *, rerun: bool = Fals
                         or audit["csv_sha256"] != hashlib.sha256(file.read_bytes()).hexdigest()):
                     raise ValueError(f"corrupt checkpoint: {file}")
             else:
-                frame, audit = forecast_window(config, actual, window, recipe=annual_recipe)
+                frame, audit = forecast_window(config, actual, window, recipe=annual_recipe,
+                    short_pointwise=period is not None and config.problem.freq == '1D' and window[2][0] == expected[0][2][0])
                 temporary = file.with_suffix(".tmp")
                 frame.to_csv(temporary, index=False)
                 temporary.replace(file)
@@ -223,7 +243,7 @@ def run_config(path: Path, max_windows: int | None = None, *, rerun: bool = Fals
         completed = len(frames) == len(expected)
         write_json(output / "audit.json", {**recipe, "windows": audits, "complete": completed})
         if completed:
-            annual = assemble_year(actual, frames, config.problem.freq)
+            annual = assemble_year(actual, frames, config.problem.freq, period=period)
             temporary = output / "prediction.tmp"
             annual.to_csv(temporary, index=False)
             temporary.replace(output / "prediction.csv")
@@ -253,6 +273,7 @@ def main() -> None:
     args = parser.parse_args()
     paths = [args.config_yaml.resolve()] if args.config_yaml else sorted(Path(__file__).parent.glob("*/*/freq_*/lgbm_*.yaml"))
     if not args.config_yaml:
+        paths = [path for path in paths if 'xinnengyuan_2026' not in path.parts]
         if len(paths) != 20:
             raise ValueError("expected exactly 20 non-recursive physical model YAML files")
         paths = [path for path in paths if load_yaml_config(path).problem.freq == args.freq]

@@ -19,6 +19,7 @@ from cold_start import load_recipe
 
 def verify(freq: str | None = None) -> dict:
     paths = sorted(Path(__file__).parent.glob("*/*/freq_*/lgbm_*.yaml"))
+    paths = [path for path in paths if 'xinnengyuan_2026' not in path.parts]
     if len(paths) != 20:
         raise ValueError("expected all 20 non-recursive physical configurations")
     if freq is not None:

@@ -1,5 +1,7 @@
 # hongtaiyang_cesuan — 2025 年滚动回测
 
+新增跨年场景见 [`xinnengyuan_2026/README.md`](xinnengyuan_2026/README.md)：2025-09—2026-08，仅15min和1day两份direct-pointwise配置，首月真值接入、后续最多三个月滚动历史。使用`prepare_xinnengyuan_2026.py`准备及显式`--config-yaml`运行；下文20份矩阵、`--freq`批量运行和验收均仍指原2025年场景。
+
 ## 目录约定与验收口径
 
 - `prepare.py`：严格检查三个原始 CSV，按完整自然日 mean 生成两个日均负荷 CSV，不填补。

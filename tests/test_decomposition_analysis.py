@@ -8,7 +8,7 @@ from decomposition.diagnostics.residuals import diagnose_window_residual, summar
 
 class AnalysisBoundaryTest(unittest.TestCase):
     def test_period_analysis_import_does_not_load_decomposition(self):
-        result = subprocess.run([sys.executable, "-c", "import sys; from timeseries_analysis.periods import fft_dominant_period; assert 'decomposition' not in sys.modules"], capture_output=True, text=True)
+        result = subprocess.run([sys.executable, "-c", "import sys; from ts_kernels.periods import fft_dominant_period; assert 'decomposition' not in sys.modules"], capture_output=True, text=True)
         self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_residual_summary_has_explicit_columns(self):

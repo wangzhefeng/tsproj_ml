@@ -1,4 +1,4 @@
-# timeseries_analysis
+# ts_kernels
 
 低层时间序列统计分析算法库，无项目包依赖；不读写文件、不整理 DataFrame、不决定 as-of 窗口。
 

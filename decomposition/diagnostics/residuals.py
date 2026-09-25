@@ -15,7 +15,7 @@ from dataclasses import dataclass, field
 import numpy as np
 import pandas as pd
 
-from timeseries_analysis.periods import acf_periods, fft_dominant_period
+from ts_kernels.periods import acf_periods, fft_dominant_period
 
 
 @dataclass

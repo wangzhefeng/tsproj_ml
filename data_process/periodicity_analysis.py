@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """时间序列周期自动检测工具（配置驱动）。
 
-检测算法核心位于 timeseries_analysis/periods.py（FFT/ACF/STL 纯数值实现）。
+检测算法核心位于 ts_kernels/periods.py（FFT/ACF/STL 纯数值实现）。
 本模块承载 DataFrame 整理、时间换算、规格、可视化、报告落盘、
 协整诊断与配置驱动 CLI。
 
@@ -52,7 +52,7 @@ from statsmodels.tsa.stattools import acf
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from timeseries_analysis.periods import (  # noqa: E402
+from ts_kernels.periods import (  # noqa: E402
     DEFAULT_MAX_LAGS,
     DEFAULT_MIN_ACF,
     DEFAULT_TOP_N_PERIODS,

@@ -36,7 +36,7 @@
 ## 包间边界
 
 - 直接运行时消费者：feature_engineering/transforms；配置消费者：feature_engineering/transform_specs 与 scripts/check_model_configs。
-- FFT/ACF/STL 强度算法位于 `timeseries_analysis/`；离线 DataFrame 排序、时间换算与周期报告位于 data_process/periodicity_analysis.py。
+- FFT/ACF/STL 强度算法位于 `ts_kernels/`；离线 DataFrame 排序、时间换算与周期报告位于 data_process/periodicity_analysis.py。
 - 报告写入位于 model_testing/decomposition_reports.py，只接受已计算 DataFrame，独占创建、不覆盖。诊断入口不在包根导出；本次不自动给所有训练/回测接入新增报告。
 - 主模型训练、多序列张量、监督窗口、缩放、日历归一化、bundle 持久化不属于本包。
 

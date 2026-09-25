@@ -32,7 +32,7 @@ PROJECT_PACKAGES = {
     "probabilistic",
     "models",
     "decomposition",
-    "timeseries_analysis",
+    "ts_kernels",
     "data_process",
     "utils",
     "data_loading",
@@ -46,9 +46,9 @@ PROJECT_PACKAGES = {
 ALLOWED_PACKAGES = {
     "utils": set(),
     "forecasting_core": set(),
-    "data_process": {"timeseries_analysis"},
-    "decomposition": {"timeseries_analysis"},
-    "timeseries_analysis": set(),
+    "data_process": {"ts_kernels"},
+    "decomposition": {"ts_kernels"},
+    "ts_kernels": set(),
     "models": {"utils"},
     "data_loading": {"forecasting_core"},
     "feature_engineering": {

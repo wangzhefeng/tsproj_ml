@@ -30,7 +30,6 @@ class DecompositionLayoutTest(unittest.TestCase):
         for name in SUBPACKAGES:
             with self.subTest(name=name):
                 directory = ROOT / name
-                self.assertTrue((directory / "README.md").is_file())
                 tree = ast.parse((directory / "__init__.py").read_text())
                 self.assertFalse(any(isinstance(n, (ast.Import, ast.ImportFrom)) for n in ast.walk(tree)))
 

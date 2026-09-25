@@ -1,16 +1,17 @@
 # -*- coding: utf-8 -*-
-"""Quantile objective capability mapping tests。"""
+"""Quantile 原生参数注入与概率 spec 身份测试。
+
+quantile 能力拒绝的生产唯一入口是 `models/catalog.py::quantile_parameters`
+（参数注入边界 RAISE）；原 `model_training/objectives.py` 包装层无生产消费者，
+已于 2026-09-25 退役。
+"""
 
 import unittest
 from pathlib import Path
 
 from config.config_loader import load_yaml_config
 from forecasting_core.specs import EstimatorSpec, ForecastConfigSpec
-from model_training.objectives import (
-    supports_quantile_objective,
-    validate_quantile_model_support,
-)
-from forecasting_core.probabilistic_spec import ProbabilisticSpec, probabilistic_spec_from_mapping
+from forecasting_core.probabilistic_spec import probabilistic_spec_from_mapping
 from models.catalog import quantile_parameters
 
 
@@ -35,7 +36,6 @@ class QuantileObjectiveMappingTest(unittest.TestCase):
                 actual = quantile_parameters(model_type, original, 0.2)
                 self.assertEqual(actual, {"keep": 1, **expected})
                 self.assertEqual(original, {"keep": 1})
-                self.assertTrue(supports_quantile_objective(model_type))
 
     def test_unsupported_model_and_invalid_level_fail_fast(self):
         with self.assertRaisesRegex(ValueError, "does not declare scalar quantile support"):
@@ -44,36 +44,6 @@ class QuantileObjectiveMappingTest(unittest.TestCase):
             quantile_parameters("lightgbm", {}, 1.0)
         with self.assertRaisesRegex(ValueError, "unknown model_type"):
             quantile_parameters("unknown", {}, 0.5)
-        self.assertFalse(supports_quantile_objective("unknown"))
-
-    def test_point_spec_does_not_require_quantile_capability(self):
-        point_spec = ProbabilisticSpec(
-            mode="point",
-            quantiles=(),
-            point_quantile=0.5,
-            recursive_propagation="median_path",
-            crossing_method="none",
-            crossing_report_raw=True,
-            intervals=(),
-            calibration=None,
-        )
-
-        validate_quantile_model_support("randomforest", point_spec)
-
-    def test_quantile_spec_rejects_unsupported_model_at_construction_boundary(self):
-        quantile_spec = ProbabilisticSpec(
-            mode="quantile",
-            quantiles=(0.1, 0.5, 0.9),
-            point_quantile=0.5,
-            recursive_propagation="median_path",
-            crossing_method="none",
-            crossing_report_raw=True,
-            intervals=(),
-            calibration=None,
-        )
-
-        with self.assertRaisesRegex(ValueError, "does not support native quantile"):
-            validate_quantile_model_support("ridge", quantile_spec)
 
     def test_canonical_config_uses_new_spec_for_capability_and_identity(self):
         root = Path(__file__).resolve().parent.parent
@@ -105,14 +75,16 @@ class QuantileObjectiveMappingTest(unittest.TestCase):
                 output=base.output,
             )
 
+        # quantile 能力拒绝走 catalog 参数注入边界（生产唯一入口）
         ridge = build("ridge")
-        ridge_spec = probabilistic_spec_from_mapping(ridge.probabilistic)
-        with self.assertRaisesRegex(ValueError, "does not support native quantile"):
-            validate_quantile_model_support(ridge.estimator.model_type, ridge_spec)
+        probabilistic_spec_from_mapping(ridge.probabilistic)
+        with self.assertRaisesRegex(ValueError, "does not declare scalar quantile support"):
+            quantile_parameters(ridge.estimator.model_type, {}, 0.5)
 
         lightgbm = build("lightgbm")
         lightgbm_spec = probabilistic_spec_from_mapping(lightgbm.probabilistic)
-        validate_quantile_model_support(lightgbm.estimator.model_type, lightgbm_spec)
+        injected = quantile_parameters(lightgbm.estimator.model_type, {}, 0.5)
+        self.assertEqual(injected["objective"], "quantile")
 
         self.assertEqual(lightgbm_spec.mode, "quantile")
         self.assertEqual(lightgbm.probabilistic["mode"], "quantile")

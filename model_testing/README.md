@@ -2,7 +2,7 @@
 
 `model_testing/` 是模型测试包：滑窗回测的几何、原语、逐折评分与回测产物落盘。
 
-- `geometry.py`：fixed-step rolling-origin、完整 calendar-month folds、标签非重叠校验、`TimeGeometry/OriginTimeline` 公共时间几何。
+- `geometry.py`：fixed-step rolling-origin、完整 calendar-month folds、标签非重叠排除（`_holdout_training_indices`）、`TimeGeometry/OriginTimeline` 公共时间几何。
 - `primitives.py`：actual tensor、seasonal-naive、forecast origin 与正整数校验。
 - `contracts.py`：`FoldScoringRunner`、`BacktestRunner`、runner factory、设计视图与窗口协议；模型和变换对象作为不透明载荷，不依赖上层实现类型。
 - `scoring.py`：两种回测共用的逐折评分体 `score_holdout_fold()`——predict 后处理 → point/probabilistic 评分 → CQR apply-before-collect → 执行证据；通过 `FoldScoringRunner` 消费公开能力，本包不 import model_forecasting。

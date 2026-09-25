@@ -76,18 +76,6 @@ class RollingOriginFoldContractTest(unittest.TestCase):
                 stride_steps=1,
             )
 
-    def test_validate_no_overlap_rejects_overlap(self):
-        origins = _origins(6)
-        geometry = _geometry(horizon=2)
-        # last origin overlaps the holdout labels
-        with self.assertRaises(ValueError):
-            validation.validate_no_overlap(
-                origins,
-                (0, 4),
-                origins[5],
-                geometry,
-            )
-
 
 class CanonicalBaseModelRunnerTest(unittest.TestCase):
     def setUp(self):

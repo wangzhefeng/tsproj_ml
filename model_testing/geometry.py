@@ -281,39 +281,3 @@ def rolling_origin_folds(
             )
         )
     return tuple(folds)
-
-
-def validate_no_overlap(
-    origins: tuple[pd.Timestamp, ...],
-    train_indices: Iterable[int],
-    holdout_origin: pd.Timestamp,
-    geometry: TimeGeometry,
-) -> dict[str, Any]:
-    """Strict `training_label_end_max < validation_label_start` audit.
-
-    Mirrors the pre-extraction `_holdout_training_indices` behaviour and
-    metadata contract.
-    """
-    holdout_label_start = geometry.label_start(holdout_origin)
-    train_indices = tuple(train_indices)
-    if not train_indices:
-        raise ValueError(
-            "canonical holdout requires at least one training sample with "
-            "label_end < holdout_label_start"
-        )
-    training_label_end_max = max(
-        geometry.label_end(origins[index]) for index in train_indices
-    )
-    if not all(
-        is_label_safe(origins[index], geometry.offset, geometry.horizon, holdout_label_start)
-        for index in train_indices
-    ):
-        raise ValueError("training labels must not overlap holdout labels")
-    return {
-        "origin": holdout_origin.isoformat(),
-        "label_start": holdout_label_start.isoformat(),
-        "label_end": geometry.label_end(holdout_origin).isoformat(),
-        "training_sample_count": len(train_indices),
-        "training_label_end_max": training_label_end_max.isoformat(),
-        "excluded_overlapping_samples": len(origins) - 1 - len(train_indices),
-    }

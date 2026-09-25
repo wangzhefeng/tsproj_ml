@@ -16,11 +16,11 @@
 
 - 各包职责与边界：[`packages/`](packages/)（每包一个 md，自原包目录 README 迁入，原位置不再保留文档）；
 - 运行/验证/分支/核心不变量：根目录 [`AGENTS.md`](../AGENTS.md)；
-- 场景文档：[`scenarios/aidc_load_15min_short/`](scenarios/aidc_load_15min_short/)（模型测试说明 + TODO_AIDC）；联通场景结果溯源 [`scenarios/liantong_IT.md`](scenarios/liantong_IT.md)；
+- 场景文档：[`scenarios/`](scenarios/)（aidc_load_15min_short 模型测试说明、TODO_AIDC、历史设计记录；联通场景结果溯源）；
+- 工程问题台账：[`TODO_OPTIM.md`](TODO_OPTIM.md)（开发过程中记录问题与进展；OPT-001~022 历史条目从 Git 溯源）；
 - 脚本与数据目录：[`scripts.md`](scripts.md)、[`dataset/`](dataset/)（均自原目录 README 迁入并纳入版本控制；dataset/ 目录内其余分析报告类 README 属数据产物，保留原位）。
 
 ## 历史档案（不作为当前实现事实源）
 
 - [`redesign/`](redesign/)：历史设计文档（architecture/multistep/decomposition/probabilistic 等），仅用于 Git/决策溯源；
-- [`TODO_OPTIM.md`](TODO_OPTIM.md)：工程问题台账（OPT-001~022，已收口，OPT-022 天气 as-of 资格待处理）；
 - `arch/`、`books/`：架构图与参考资料 PDF。

@@ -6,7 +6,7 @@ fixed-step 的 `validation.train_history_steps: W` 表示每折仅读取原点�
 
 当前支持 Local、point、无 target transform 的单模型 `--backtest-only`；calendar-month、Global、quantile、target transform、Ensemble（含引用该字段的成员）、完整生命周期和 bundle 导出明确拒绝。W 与原点共同确定逐折缓存/checkpoint 边界。离线已填充值按普通值使用，来源审计不自动触发评分排除。
 
-`config/` 承载全部活动模型 YAML（`schema_version: 2` canonical）与数据工具 YAML。三个 AIDC 15min 负荷场景的 baseline 成员（ST/LightGBM/Ridge × Direct/Recursive/MIMO）由 `add_ensemble/` 的 Latin-square 组合直接引用，不维护重复 member。列族错配的历史配置已经批准移出活动集，内容由 Git 保留，不计入活动集。
+`config/` 承载全部活动模型 YAML（`schema_version: 2` canonical）与数据工具 YAML。经 2026-09-25 场景收敛裁决，活动预测场景只保留 `aidc_load_15min_short`（模型测试场景），且仅保留 LightGBM 配置；其余预测场景（`aidc_load_15min_daily/rolling`、`aidc_load_month`、`aidc_power_month`、`aidc_ess_selfuse_load`、`aidc_electricity_computility`、`hongtaiyang_cesuan`）及 short 内非 LightGBM 配置、`add_ensemble/` 组整体退役，内容由 Git 保留，不计入活动集。纯数据准备目录 `aidc_load_5min`、`aidc_hvac_load_5min` 亦已删除（Git 溯源），`dataset/` 下对应数据资产保留。
 
 ## 唯一 schema
 
@@ -76,7 +76,7 @@ Fixed-step validation 使用 `history_steps/train_window_steps/fold_count/stride
 
 ### 活动天气特征选择
 
-三个 `aidc_load_15min_{daily,rolling,short}`、`aidc_ess_selfuse_load` 与 `aidc_electricity_computility/electricity/2026-08-31/liantong_IT` 的天气组统一使用六项：`rt_tt2`（温度）、`cal_rh`（相对湿度）、`rt_ssr`（辐射）、`rt_ws10`（风速）、`rt_ps`（气压）、`rt_rain`（降雨）。对应预报为 `pred_tt2/pred_rh/pred_ssrd/pred_ws10/pred_ps/pred_rain`；露点只作为湿度派生原料，不再独立入模。无天气基线不添加天气，其他 `aidc_electricity_computility` 场景及 `aidc_power_month` 不在此次特征调整范围。
+活动场景 `aidc_load_15min_short` 的天气组统一使用六项：`rt_tt2`（温度）、`cal_rh`（相对湿度）、`rt_ssr`（辐射）、`rt_ws10`（风速）、`rt_ps`（气压）、`rt_rain`（降雨）。对应预报为 `pred_tt2/pred_rh/pred_ssrd/pred_ws10/pred_ps/pred_rain`；露点只作为湿度派生原料，不再独立入模。无天气基线不添加天气。
 
 共享 `extracted/actual` 中上述特征所需原料及预报列的缺口先离线填补，原非缺失值保持不变；ERA5 气压采用 `surface_pressure`（hPa→Pa），不是海平面气压。逐格来源见源 CSV 旁的 `.six_features_repair.json`；再分析替代不等于站点实测，既有预报缺口修补也不构成真实发布时间证据。本次气压已补齐，未启用用户授权的“无法补齐则跳过气压”例外；该例外不得实现为运行时静默降级。未入模的其他原始列不承诺完整。
 
@@ -102,7 +102,4 @@ Fixed-step validation 使用 `history_steps/train_window_steps/fold_count/stride
 
 ## 场景数据备注
 
-- 红太阳2025全年滚动回测见 `hongtaiyang_cesuan/README.md`：主矩阵五任务×四个非递归方法，共20份配置；实验另置experiments目录。1月接入真值，2月由版本化配方采用日历条件基线（假设不等于企业复工事实），3月起按采用profile训练；结果复用通用评分/总图/逐窗图。仅经日频门槛的3份负荷配置推广到15min，未运行15min模型；不把参考窗口 `run.py` 结果当作全年产物。
-
-- 算力房间数据文件、预处理权威入口与特征分层见 `config/aidc_electricity_computility/electricity/2026-06-11/scripts/README.md`。算力天气 `cal_rh` 在离线数据准备阶段由 `rt_tt2`/`rt_dt` 按 Magnus–Tetens 公式派生，权威迁移入口为 `config/aidc_electricity_computility/derive_cal_rh.py`；canonical runtime 不做现场派生或插值。
-- 2026-08-31 算力场景（A2_IT / A3_IT / liantong_IT / yancheng_IT）YAML 的 `data_dir` 指向 2026-06-11 数据（复用上批数据做配置模板），对应 `dataset/` 下房间目录为空。
+- 模型测试场景 `aidc_load_15min_short` 的场景定位、特征分组与数据通路见 `config/aidc_load_15min_short/模型测试说明.md`。

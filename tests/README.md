@@ -1,10 +1,6 @@
 # tests
 
-联通场景测试默认进入 integration，不改发现规则、不 skip：`test_native_ets`（含 4032 点、5min/288 合成序列、失败透明及可信 pickle）；`test_seasonal_kernels`（独立黄金值、严格 as-of）；`test_liantong_optimization`（single/batch、九策略×有无天气残差、递归单位、目标隔离、缓存身份和合成 backtest 生命周期）；`test_liantong_four_groups`（原四组、三个算力组及 accuracy_ablation 共八组 72 份 YAML，逐项核对完整物理路径、模型/输出合同、参数静态校验和逐份 17 折几何）。原 `test_liantong_august_configs` 的路径已同步到 `add_weather/`。测试合成拟合不构成正式模型效果证据。
-
-`test_liantong_compute_configs` 默认 integration：27 份算力配置与同名 baseline 字段级正交性；真实数据训练设计、首折/补值标签日/末折的预测特征第 1/144/288 步值与时间锚点；新增列宽度、无 provider 外推、预测原点后和 14 天窗口外算力扰动不变性。只做设计编译，不拟合正式模型；定向 `integration --match test_liantong_compute_configs`。
-
-编译器收口回归也位于 `test_liantong_optimization`：新增特征供 cyclical 使用的独立黄金值与 single/batch schema 一致性；MIMO/RecMO/DIRMO/DirRecMO/Direct 在 H=4/12/288 时块天气取数线性上界及 mean/min/max 黄金值；同原点实测/预报、不同原点、Global 多序列的作用域隔离、逐行 proof 一致性和块内单步仍聚合完整块。调用计数只证明重复计算被消除，不等同于正式配置耗时或模型效果验收。
+2026-09-25 场景收敛：活动预测场景只保留 `aidc_load_15min_short`（仅 LightGBM 配置），其余预测场景（daily/rolling/load_month/power_month/ess_selfuse_load/computility/hongtaiyang）连同其专属测试（`test_liantong_*`、`test_computility_*`、`test_ess_*`、`test_hongtaiyang_*`、`test_aidc_*` 场景守卫、`test_generate_load_15min_matrix`、`test_audit_ensemble_configs` 等）一并退役，历史从 Git 溯源。`test_native_ets`（含 4032 点、5min/288 合成序列、失败透明及可信 pickle）与 `test_seasonal_kernels`（独立黄金值、严格 as-of）为合成数据能力测试，保留在 integration。测试合成拟合不构成正式模型效果证据。
 
 `tests/` 是版本控制内的 unittest 套件，覆盖 core contracts、信息集、特征、七策略、Local/Global、point/quantile、fixed/calendar/monthly runtime、Ensemble、结果 schema、场景数据链和包间结构。
 
@@ -12,14 +8,9 @@
 
 `test_direct_result_identity` 默认 integration：三类 Direct 方法（含 horizon 的有/无周期编码两种特征变体）的真实小样本训练/回测/预测落盘及元数据、原始语义 hash、文件别名不变性和非法配置拒绝；`test_forecast_config_fingerprint` 在 fast 中覆盖三类前缀及 cyclical 仅影响特征元数据和语义 hash、不新增方法类型。迁移清单只读，不移动存量结果。
 
-天气阶段隔离定向测试：`test_inference_columns` 验证历史训练实测/测试预报、future 不参与历史请求及未来实测列忽略；`test_weather_phase_runtime` 用真实编译、Ridge 生命周期验证文件隔离和缓存不依赖 future；`test_weather_history_coverage` 与联通准备测试验证完整 history 覆盖。均默认纳入 integration，不自动运行正式业务模型。
+天气阶段隔离定向测试：`test_inference_columns` 验证历史训练实测/测试预报、future 不参与历史请求及未来实测列忽略；`test_weather_phase_runtime` 用真实编译、Ridge 生命周期验证文件隔离和缓存不依赖 future；`test_weather_history_coverage` 验证完整 history 覆盖。均默认纳入 integration，不自动运行正式业务模型。
 
-- `test_hongtaiyang_cesuan`：20份非递归主配置、日历冷启动及未来/窗口外扰动、四方法真实1D LightGBM、年度合并与通用评分/13张图。`test_hongtaiyang_optimization` 覆盖命名节日、严格配方、权重归一化/传递、动态训练设置保留和不递归的冷启动。`test_hongtaiyang_visualization` 覆盖原始点绘图及CSV不变；`test_backtest_plot_labels` 钉住通用图例数值关系。均默认integration发现；业务全年用 `verify_results.py --freq 1D` 验收8份，不运行15min业务模型。
-- `test_liantong_power_process`：使用临时Excel验证白名单先过滤、5min向下对齐、点位映射、部分相位求和、全空保留和真实零值；默认integration发现，定向选择器为 `integration --match test_liantong_power_process`，不训练模型。
-- `test_liantong_computility_analysis`：默认 integration；验证固定 54 特征合同、常数/并列秩、正滞后方向、差分两端补值排除、不压缩缺口、同期及 288/576 步分日关系、非法时间/数值/目标拒绝、跨 cwd CLI、重复运行和覆盖保护。联通三个准备脚本的既有测试同步验证算力子目录、电力辅助子目录和根目录目标输出；定向 `integration --match test_liantong_`。
-- `test_liantong_computility_process`：默认 integration；验证同 Job 多实例保留（相同值不去重）、W→kW、空指标零语义、非法采样拒绝、超界利用率审计、真实 CLI 跨 cwd 输出、目标保真、重复运行字节一致、覆盖保护与错误输入不污染已有输出。定向命令 `integration --match test_liantong_computility_process`；不训练模型。
-
-严格原始历史窗口的定向验证：`test_raw_history_window` 覆盖请求下界、single/batch、expanding、窗口扰动、serial/parallel、cache/checkpoint 及入口拒绝；`test_liantong_august_prepare` 核对 18 天同槽均值、日期和非缺失原值；`test_liantong_august_configs` 覆盖九份配置、17 折几何及合成 LightGBM 扰动回测。均由默认 integration 发现，不加入 skip 或 fast 白名单。
+严格原始历史窗口的定向验证：`test_raw_history_window` 覆盖请求下界、single/batch、expanding、窗口扰动、serial/parallel、cache/checkpoint 及入口拒绝；默认 integration 发现，不加入 skip 或 fast 白名单。
 
 保留平铺目录及原生 unittest discovery，不移动现有测试或修改 CI。分组在 `run_suite.py` 单点维护，三个集合互斥，其并集等于原生发现全集：
 
@@ -52,7 +43,7 @@ env -u PYTHONPATH .venv/bin/python -m unittest discover -s tests -p "test_*.py"
 - `test_probabilistic_contracts` / `test_probabilistic_objectives` 改走生产 `probabilistic_spec_from_mapping()`；保留 quantile/interval/CQR 数值与错误断言，旧 args 新旧冲突检查改为 legacy 字段及 args 对象拒绝，不再维持生产兼容适配器。目标变换往返、融合四方法与 bundle 恢复继续由既有集成测试覆盖；未删测试文件或冻结 fixture。
 
 - 全仓模型数量不锁定历史快照：`fixtures/config_inventory.py` 独立读取物理 YAML，按 estimator/ensemble 建立相对路径及类型清单，不调用生产 loader 的发现规则。catalog 与 checker 核对完整路径集合、类型（catalog）及无重复，runtime grammar 核对单模型集合；资产审计总数对照独立清单，保留零缺文件、零缺列、零天气资产错误的全部断言。具体场景矩阵仍保留明确文件集合与数量门禁；`test_config_inventory` 默认 integration，覆盖新文件、非法版本不漏扫及类型歧义拒绝。
-- CLI 测试同时验证 `backtest_only=False` 默认值与显式开关；MSTL 单周期仍必须被拒绝，断言同步现行错误文本。配置入口测试核对当前版本数据文件及真实存在性。ESS 天气矩阵按六项实测/预报映射、history-only 文件及 forecast_origin 可得性假设校验；逐份配置使用临时数据验证训练读实测、历史预测读预报及 history lineage，不把该假设当真实发布时间证据。未来文件隔离/缺预报拒绝继续由 `test_inference_columns`、`test_weather_phase_runtime` 覆盖。
+- CLI 测试同时验证 `backtest_only=False` 默认值与显式开关；MSTL 单周期仍必须被拒绝，断言同步现行错误文本。配置入口测试核对当前版本数据文件及真实存在性。活动天气矩阵按六项实测/预报映射、history-only 文件及 forecast_origin 可得性假设校验；逐份配置使用临时数据验证训练读实测、历史预测读预报及 history lineage，不把该假设当真实发布时间证据。未来文件隔离/缺预报拒绝继续由 `test_inference_columns`、`test_weather_phase_runtime` 覆盖。
 
 | 原重复/历史检查 | 当前保留位置与变化 |
 |---|---|
@@ -106,7 +97,6 @@ env -u PYTHONPATH .venv/bin/python tests/run_suite.py integration --match test_m
 执行纪律：
 
 - 新行为先 RED 再实现；
-- AIDC 专项脚本目录路径含日期段、不是合法 Python 包，相关测试用 `sys.path.insert` 引导后按模块名导入；
 - runtime 产物使用临时目录；
 - `tests/test_package_layering.py` AST 扫描所有 import，包括函数内 import；
 - `tests/test_active_config_runtime_contract.py` 保证活动 YAML 与生产 grammar/时间几何一致；
@@ -114,10 +104,6 @@ env -u PYTHONPATH .venv/bin/python tests/run_suite.py integration --match test_m
 - 删除测试前必须证明生产链已删除，或将具体断言映射到保留测试；高层冒烟不能替代低层负向合同。
 
 最新精确测试数以本次全量命令输出为准，不在多份文档重复维护。
-
-## 联通 8 月离线准备
-
-`test_liantong_august_prepare` 默认纳入 integration。覆盖原始日期与非缺失目标逐点保留、过去 18 天同槽均值与未来扰动隔离、异常输入拒绝、天气小时值按真实日期保持、子进程 CLI、源/产物 SHA 及重复执行一致性。仅使用明确临时 fixture，不训练业务模型。`test_liantong_august_configs` 已接入严格原始历史窗口及隔离的两段天气 fixture，单独验证九策略合成 LightGBM 回测与 17 折几何；数据准备测试不能替代这部分验收。
 
 ## 天气生成器（实施中）
 

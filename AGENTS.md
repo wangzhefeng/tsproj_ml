@@ -48,12 +48,12 @@
 | 动模型工厂/参数校验/别名 | `models/README.md` |
 | 动 ensemble/OOF/融合方法 | `model_ensemble/README.md` |
 | 动离线数据准备/事件标签工具链 | `data_process/README.md` |
-| 动算力场景数据/预处理脚本 | `config/aidc_electricity_computility/electricity/2026-06-11/scripts/README.md` |
 | 改测试结构/执行分层 | `tests/README.md` |
 
 ## 仓库维护注意
 
 - **Agent 工作文档分流**：Hermes Agent 生成的实施计划只放 `.hermes/plans/`；Codex/Superpowers 生成的设计与计划只放 `.agents/superpowers/{specs,plans}/`；`docs/` 只保留面向项目使用者的长期有效文档。
-- `tests/` 已纳入版本控制；AIDC 专项脚本目录路径含日期段、不是合法 Python 包，相关测试用 `sys.path.insert` 引导后按模块名导入。
+- `tests/` 已纳入版本控制。
+- 2026-09-25 场景收敛：活动预测配置只保留 `config/aidc_load_15min_short`（仅 LightGBM，171 份单模型 YAML）；`aidc_load_15min_daily/rolling`、`aidc_load_month`、`aidc_power_month`、`aidc_ess_selfuse_load`、`aidc_electricity_computility`、`hongtaiyang_cesuan` 及纯数据准备目录 `aidc_load_5min`、`aidc_hvac_load_5min` 连同专属测试/脚本一并退役，历史从 Git 溯源；`dataset/`、`results/` 不在收敛范围，存量数据与结果保留。
 - `docs/feature_engineering/` 实验脚本已删除（2026-09-06）：FFT/小波能力经 trailing 窗重写后接入 `advanced.fourier`/`advanced.wavelet`，周期诊断 EDA（含 FFT top-k 与 Engle-Granger 协整检验）并入 `data_process/periodicity_analysis.py`，历史内容从 Git 溯源。
 - `utils/`（L0）只保留 log_util/runtime_env；频率合同在 `forecasting_core/specs/problem.py`，指标在 `model_evaluation/`，评估掩码在 `model_evaluation/mask.py::build_eval_mask`。

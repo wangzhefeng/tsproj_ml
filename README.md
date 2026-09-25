@@ -2,177 +2,32 @@
 
 基于机器学习回归器的时间序列多步预测项目。项目只接受 canonical schema-2 YAML，支持 Local/Global、单/多目标、七种标准多步策略、point/边际 quantile 和引用式模型融合。
 
+**核心认识**：配置语义以 YAML 为唯一来源；预测输入严格 as-of，缺失/异常直接 RAISE；包依赖为单向 DAG（AST 门禁固化）；结果身份由语义 fingerprint 决定，不自动重跑、不删存量。
+
 ## 分支约定
 
 - `stable`：模型测试分支，只通过从 `dev` 合并（fast-forward 优先）推进，不在其上直接开发。
 - `dev`：功能开发与重构主分支；阶段性收口完成定向及全量验证后合并进 `stable`，两条分支长期保留。
 
-分支晋级不等于重新训练模型或授予研究配置部署资格；各模型、数据及 bundle 的适用边界仍按下述合同执行。
+分支晋级不等于重新训练模型或授予研究配置部署资格；各模型、数据及 bundle 的适用边界仍按文档合同执行。
 
-## 当前能力
+## 运行与验证
 
-- 七种多步策略：`recursive/direct/mimo/recmo/dirrec/dirmo/dirrecmo`。
-- 统一预测张量：point `(N,H,K)`，边际 quantile `(N,H,K,Q)`。
-- 显式数据角色：`target/observed_past/known_future/static/key/ignored`。
-- 严格 information set：动态 source 执行 `available_at <= forecast_origin`，缺失、重复和越界直接 RAISE；监督训练仅通过内部 `target_access=supervised_labels` 读取预测期 target 标签。
-- 模型：LightGBM、XGBoost、CatBoost、RandomForest、HistGradientBoosting、Ridge、ElasticNet、Lasso、QuantileRegressor、SeasonalTemplate。
-- 多目标 adapter：independent、regressor-chain、native capability probe；不支持时 RAISE。
-- 目标变换：calendar normalization → decomposition → scaling，按 `(series_id,target)` 隔离并严格逆序恢复。
-- 引用式 Ensemble：averaging、weighted、linear blending、stacking；成员 OOF、内容寻址缓存、自包含 bundle。
-- 点评估：MAE/RMSE/MAPE/Accuracy、seasonal-naive、eval mask。
-- 概率评估：pinball、coverage、width、Winkler、coverage gap。
+统一入口 `run.py --config-yaml <path>`（必须显式指定配置，无默认值）；测试 `tests/run_suite.py fast|all`。
+环境约定、验证命令与纪律的唯一事实源：[`AGENTS.md`](AGENTS.md) §运行与验证。
 
-不支持：联合轨迹样本生成、ensemble-of-ensemble。CQR runtime 已支持严格 as-of 校准，并可在回测与部署结果中输出 `predict_pi*`；未声明 `probabilistic.calibration` 的配置不启用。
+## 文档目录
 
-## 当前架构
-
-代码接线完成不代表真实模型/部署验收完成。
-
-```text
-入口/分派
-  run.py / batch_run.py / config/config_loader.py
-        │
-        ├── model_pipeline/          单模型生命周期、监督设计、批调度
-        └── model_ensemble/          OOF、融合器、自包含 bundle；执行服务由入口注入
-                 │
-                 ▼
-  data_loading/ → feature_engineering/ → model_training/
-                         │ transforms/     │ quantile/七策略
-                         ├── model_testing/       回测几何、评分与产物
-                         ├── model_forecasting/   预测、部署与 bundle/结果
-                         ├── model_performance/   资源、性能档与运行缓存
-                         └── probabilistic/       仅 CQR 校准
-                 │
-                 ▼
-  forecasting_core/                  specs/tensors/artifacts/probabilistic contracts
-  models/ model_evaluation/ decomposition/ data_process/
-                 │
-                 ▼
-  utils/
-```
-
-包间依赖为 DAG；`forecasting_core/` 不依赖任何流水线或运行时包。分层由 `tests/test_package_layering.py` AST 门禁固化。
-
-## 目录职责
-
-| 路径 | 职责 |
+| 主题 | 入口 |
 |---|---|
-| `forecasting_core/` | Forecast/Data/Feature/Strategy/Estimator specs，预测张量，bundle/distribution/probabilistic spec |
-| `data_loading/` | SourceRegistry、information set、显式 provider |
-| `feature_engineering/` | FeatureCompiler、监督特征选择、transform 配置归一化及 `transforms/` 训练态 |
-| `model_training/` | CanonicalTrainer、quantile 训练、七策略 executor、能力探测与多目标 adapter |
-| `model_testing/` | fixed-step/calendar-month 几何、actual/seasonal-naive、逐折评分与回测产物 |
-| `model_evaluation/` | 点预测与边际 quantile 指标、eval mask |
-| `model_pipeline/` | 单模型生命周期、监督设计、fold/final fit 编排、批调度与验收 |
-| `model_forecasting/` | point/quantile 预测、crossing、部署、bundle 与预测 long result |
-| `model_performance/` | 资源规划、性能档、checkpoint、变换缓存与有界内存缓存 |
-| `probabilistic/` | CQR 校准内核与 apply-before-collect 追踪器 |
-| `model_ensemble/` | 引用解析、OOF、四种融合方法、缓存、持久化 |
-| `models/` | catalog、factory、按 family 分组的 wrappers 与底层 pickle IO |
-| `decomposition/` | 趋势/季节/残差分解与恢复 |
-| `data_process/` | 进模型前的离线聚合、填补、异常、事件、周期与峰谷分析 |
-| `config/` | 活动模型 YAML 唯一场景为 `aidc_load_15min_short`（171 份 LightGBM 单模型）+ 3 份独立数据工具 YAML；2026-09-25 场景收敛前的历史场景配置从 Git 溯源 |
-| `scripts/` | 配置、Ensemble 与运行资产审计 |
-| `tests/` | unittest、runtime smoke、结构门禁和场景数据链测试 |
+| 项目约定（不变量/分支/验证/文档索引） | [`AGENTS.md`](AGENTS.md) |
+| 文档中心（全部主题文档索引） | [`docs/README.md`](docs/README.md) |
+| 当前能力清单 | [`docs/capabilities.md`](docs/capabilities.md) |
+| 架构与目录职责 | [`docs/architecture.md`](docs/architecture.md) |
+| 结果合同 | [`docs/results.md`](docs/results.md) |
+| 配置文档（schema/几何/数据角色/天气） | [`docs/config/`](docs/config/README.md) |
+| 测试文档（执行集合/纪律/覆盖映射） | [`docs/testing/`](docs/testing/README.md) |
+| 模型测试场景说明 | [`docs/scenarios/aidc_load_15min_short/模型测试说明.md`](docs/scenarios/aidc_load_15min_short/模型测试说明.md) |
+| 各包职责与边界 | [`docs/packages/`](docs/packages/) |
 
-## 配置与时间几何
-
-模型 YAML 顶层分为：
-
-```text
-schema_version / problem / data / features / strategy|ensemble /
-estimator / probabilistic / validation / output
-```
-
-- 单模型使用 `strategy`；Ensemble 使用成员 `config_ref`，两者互斥。
-- 公共 YAML 不接受内部固定值或死参数：`problem.information_mode`、`output.setting_suffix`、`probabilistic.recursive_propagation`、`probabilistic.schema_version` 均按未知字段 RAISE。
-- `problem.horizon` 以 `freq` 为步长单位。
-- fixed-step 配置使用 `validation.history_steps/train_window_steps/fold_count/stride_steps`，四者均按监督 origin steps 保存。
-- `horizon_mode=calendar_month` 使用 `train_window_days/fold_count/stride_months`；训练窗按原始日数计，每个历史月和最终目标月动态解析 28/29/30/31 步。
-- final fit 与回测使用相同训练窗口合同，不再隐式切换为全部历史。
-
-全部 transformation 使用唯一嵌套 schema：
-
-```yaml
-features:
-  transformations:
-    direct:
-      layout: independent_models
-    advanced:
-      rolling:
-        columns: [load]
-        windows: [96, 192]
-        stats: [mean, std]
-    target:
-      calendar_normalization: {method: none}
-      decomposition: {method: none}
-      scaling: {method: none, inverse: false}
-```
-
-未知顶层或嵌套字段在 `load_yaml_config()` 阶段 RAISE。
-
-## 运行
-
-安装/同步环境（仅环境缺失或需要同步时；日常使用已有 `.venv/`，依赖变更统一 `uv add`）：
-
-```bash
-uv sync --locked --no-cache
-```
-
-单配置本地入口（单模型与引用式融合统一走 `run.py`，按配置类型自动分派）：
-
-```bash
-env -u PYTHONPATH .venv/bin/python run.py --config-yaml config/<scenario>/<model>.yaml
-```
-
-必须显式指定配置；`run.py` 不提供硬编码默认值。模型语义以 YAML 为唯一来源；CLI 不支持模型、数据和训练参数的静默覆盖。
-
-## 结果合同
-
-```text
-results/
-├── pretrained_models/<scenario>/<result_identity>/
-│   ├── model.pkl
-│   └── resolved_model.json
-├── results_test/<scenario>/<result_identity>/
-│   ├── cv_plot_df.csv
-│   ├── test_scores_df.csv
-│   ├── test_scores_probabilistic_df.csv   # quantile 模式
-│   └── result_metadata.json
-└── results_forecast/<scenario>/<result_identity>/
-    ├── prediction.csv
-    └── resolved_config.json
-```
-
-- `prediction.csv` 唯一键：`(series_id,time,target)`。
-- `cv_plot_df.csv` 唯一键：`(series_id,time,target,window)`。
-- 单模型和 Ensemble 都保存 schema-2 `ForecastModelBundle`。
-- wrappers 模块迁移后，旧 `models.ModelFactory` 路径 bundle 不再兼容，不提供 shim；需重新训练，现有结果不自动删除。见 `models/README.md`。
-- Ensemble bundle 自包含成员 bundle 和融合器，部署预测不读取成员 YAML 或 OOF cache。
-
-## 验证
-
-```bash
-# 日常快测；同时补跑本次修改涉及的定向测试
-env -u PYTHONPATH .venv/bin/python tests/run_suite.py fast
-
-# 全量收口（与原生 unittest discover 同一全集）
-env -u PYTHONPATH .venv/bin/python tests/run_suite.py all
-
-# 配置与数据资产审计
-env -u PYTHONPATH .venv/bin/python scripts/check_model_configs.py
-env -u PYTHONPATH .venv/bin/python scripts/audit_runtime_assets.py
-# audit_ensemble_configs.py / audit_aidc_load_15min_designs.py 硬编码已退役场景，
-# 当前返回非零，待 scripts/ 重构恢复（见 scripts/README.md 顶部状态说明）
-
-# 语法与格式
-env -u PYTHONPATH .venv/bin/python -m compileall -q \
-  forecasting_core data_loading feature_engineering model_training model_testing \
-  model_evaluation model_forecasting model_pipeline model_performance probabilistic model_ensemble models \
-  decomposition data_process utils config scripts tests run.py
-git diff --check
-```
-
-测试分组、按 ID 过滤和精简覆盖映射见 [`tests/README.md`](tests/README.md)。
-
-历史方案文档仅用于 Git/决策溯源，不作为当前实现事实源。
+历史方案文档（`docs/redesign/` 等）仅用于 Git/决策溯源，不作为当前实现事实源。

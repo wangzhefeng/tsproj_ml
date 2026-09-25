@@ -22,7 +22,7 @@ from data_loading.registry import SourceRegistry  # noqa: E402
 from feature_engineering.compiler import FeatureCompiler  # noqa: E402
 
 CONFIG_PATH = (
-    "config/aidc_load_15min_daily/route_A/add_exogenous/"
+    "config/aidc_load_15min_short/route_A/add_exogenous/"
     "lgbm_direct_holiday-weather.yaml"
 )
 
@@ -31,7 +31,7 @@ def _build_request(origin: pd.Timestamp) -> InformationSetRequest:
     return InformationSetRequest(
         forecast_origin=origin,
         forecast_times=pd.date_range(
-            origin + pd.Timedelta(minutes=15), periods=96, freq="15min"
+            origin + pd.Timedelta(minutes=15), periods=16, freq="15min"
         ),
         series_ids=(),
     )
@@ -47,7 +47,7 @@ class CompilerBatchEquivalenceTest(unittest.TestCase):
             cls.config.data, ROOT, generators=BUILTIN_GENERATORS
         )
         cls.compiler = FeatureCompiler(cls.config)
-        base_origin = pd.Timestamp("2026-07-31 23:45:00")
+        base_origin = pd.Timestamp("2026-07-31 14:00:00")
         cls.origins = tuple(
             base_origin - pd.Timedelta(days=k) for k in range(6)
         )

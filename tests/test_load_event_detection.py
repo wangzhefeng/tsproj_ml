@@ -227,49 +227,5 @@ class TestVolatileDayIsCausal(unittest.TestCase):
                          f"volatile_day 在截断重算下不一致 {mismatch} 天——阈值窗口引入了未来信息")
 
 
-class TestCrossFreqDayShift(unittest.TestCase):
-    """15min 场景的 xf_day_* 统计特征必须是昨日口径（shift(1)）。
-
-    D 日 00:00 的 15min 点拿到的 xf_day_value 必须 = D-1 日的日均值，
-    消除「当天全天统计提前到当天 00:00 可见」的日内未来信息。
-    """
-
-    def test_xf_day_value_is_prev_day(self):
-        import sys
-        from pathlib import Path
-        project_root = Path(__file__).resolve().parents[1]
-        if str(project_root) not in sys.path:
-            sys.path.insert(0, str(project_root))
-        from config.aidc_load_15min_daily.load_event_analysis import (  # noqa: E402
-            build_cross_freq_day_features,
-            load_series_as_daily,
-        )
-
-        # 合成 90 天日频数据（含第 50 天 +900 抬升，用于验证「当天不可见」）
-        idx = pd.date_range("2025-01-01", periods=90, freq="1D")
-        rng = np.random.default_rng(9)
-        vals = 10000 + rng.normal(0, 50, 90)
-        vals[50] += 900.0
-        tmp_csv = Path(__file__).parent / "_tmp_xf_test_daily.csv"
-        pd.DataFrame({"time": idx, "value": vals}).to_csv(tmp_csv, index=False)
-
-        try:
-            day_stats, ev_flags = build_cross_freq_day_features(tmp_csv, [])
-            # D 日行的 xf_day_value 应等于 D-1 日的值（昨日口径）
-            d = idx[51]  # 抬升日的次日：只应看到抬升日当天
-            self.assertAlmostEqual(day_stats.loc[d, "xf_day_value"], vals[50], delta=1e-6)
-            # 抬升日当天 00:00 的点不应看到当天抬升（应等于 D-1 = 基线值）
-            d_spike = idx[50]
-            self.assertAlmostEqual(day_stats.loc[d_spike, "xf_day_value"], vals[49], delta=1e-6)
-            # 首日无昨日数据，应为 NaN
-            self.assertTrue(np.isnan(day_stats.loc[idx[0], "xf_day_value"]))
-            # 事件标记列存在且默认值正确
-            self.assertIn("lbl_prev_day_event_day", ev_flags.columns)
-            self.assertEqual(ev_flags["lbl_prev_day_event_day"].sum(), 0)
-            self.assertEqual((ev_flags["lbl_prev_day_event_type"] == "none").all(), True)
-        finally:
-            tmp_csv.unlink(missing_ok=True)
-
-
 if __name__ == "__main__":
     unittest.main()

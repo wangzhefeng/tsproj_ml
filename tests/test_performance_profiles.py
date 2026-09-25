@@ -11,7 +11,7 @@ from config.config_loader import load_yaml_config
 from forecasting_core.specs.config import parse_model_config
 
 ROOT = Path(__file__).resolve().parents[1]
-CONFIG = ROOT / "config/aidc_load_15min_short/route_A/baseline/cab_direct-pointwise.yaml"
+CONFIG = ROOT / "config/aidc_load_15min_short/route_A/baseline/lgbm_direct-pointwise.yaml"
 PROFILE_REF = "opt017-catboost-short-a-pointwise-v1"
 
 

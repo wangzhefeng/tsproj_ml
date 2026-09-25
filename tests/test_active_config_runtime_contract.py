@@ -7,7 +7,6 @@ from typing import Any, cast
 
 from config.config_loader import is_model_yaml, load_yaml_config
 from forecasting_core.specs import (
-    CalendarMonthBacktestSpec,
     FixedStepBacktestSpec,
     ForecastConfigSpec,
 )
@@ -83,22 +82,13 @@ class ActiveConfigRuntimeContractTest(unittest.TestCase):
     def test_fixed_step_configs_store_explicit_origin_step_geometry(self):
         cases = (
             (
-                "config/aidc_load_15min_short/route_A/baseline/st_recursive.yaml",
+                "config/aidc_load_15min_short/route_A/baseline/lgbm_recursive.yaml",
                 (5072, 1424, 31, 96),
             ),
             (
-                "config/aidc_load_15min_daily/route_A/baseline/enet_direct.yaml",
-                (6336, 2784, 31, 96),
-            ),
-            (
-                "config/aidc_electricity_computility/electricity_computility/"
-                "add_training_inference_pod/lgbm_usmr_a.yaml",
-                (8928, 4032, 17, 288),
-            ),
-            (
-                "config/aidc_power_month/route_A/freq_1month/window_length_8/"
-                "lgbm_usmd_prob_mean.yaml",
-                (10, 7, 3, 1),
+                "config/aidc_load_15min_short/route_A/add_decomposition/"
+                "lgbm_direct_decomp-stl96.yaml",
+                (5072, 1424, 31, 96),
             ),
         )
         for relative, expected in cases:
@@ -115,28 +105,10 @@ class ActiveConfigRuntimeContractTest(unittest.TestCase):
                 )
                 self.assertEqual(actual, expected)
 
-    def test_calendar_month_config_uses_typed_day_month_geometry(self):
-        path = (
-            ROOT
-            / "config/aidc_power_month/route_A/freq_1day/baseline/"
-            / "lgbm_usmd_prob_mean_conformal.yaml"
-        )
-        config = load_yaml_config(path)
-        geometry = config.validation.backtest
-        self.assertIsInstance(geometry, CalendarMonthBacktestSpec)
-        self.assertEqual(
-            (
-                geometry.train_window_days,
-                geometry.fold_count,
-                geometry.stride_months,
-            ),
-            (120, 6, 1),
-        )
-
     def test_legacy_geometry_fields_fail_during_parse(self):
         path = (
             ROOT
-            / "config/aidc_load_15min_short/route_A/baseline/st_recursive.yaml"
+            / "config/aidc_load_15min_short/route_A/baseline/lgbm_recursive.yaml"
         )
         config = load_yaml_config(path)
         payload = config.canonical_payload()
@@ -157,7 +129,7 @@ class ActiveConfigRuntimeContractTest(unittest.TestCase):
     def test_unknown_runtime_sections_fail_during_parse(self):
         path = (
             ROOT
-            / "config/aidc_load_15min_short/route_A/baseline/st_recursive.yaml"
+            / "config/aidc_load_15min_short/route_A/baseline/lgbm_recursive.yaml"
         )
         config = load_yaml_config(path)
         self.assertIsInstance(config, ForecastConfigSpec)
@@ -185,7 +157,7 @@ class ActiveConfigRuntimeContractTest(unittest.TestCase):
     def test_checker_accepts_visible_target_history_transformations(self):
         path = (
             ROOT
-            / "config/aidc_load_15min_short/route_A/baseline/enet_direct.yaml"
+            / "config/aidc_load_15min_short/route_A/baseline/lgbm_direct.yaml"
         )
         _, problems = check_model_yaml(str(path))
         self.assertEqual(problems, [])

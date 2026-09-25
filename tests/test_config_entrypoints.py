@@ -332,43 +332,6 @@ output: {}
 
         self.assertFalse(any(problem.startswith("advanced 窗口/周期") for problem in problems))
 
-    def test_aidc_multivariate_yaml_configs_use_selected_dataset_contract(self):
-        root = ROOT / "config/aidc_electricity_computility/electricity/2026-06-11"
-        expected_paths = [
-            root / "A1_01a" / "lgbm_msmd.yaml",
-            root / "A1_01a" / "lgbm_msmr.yaml",
-            root / "A1_01a" / "lgbm_msmdr.yaml",
-            root / "A1_201" / "lgbm_msmd.yaml",
-            root / "A1_201" / "lgbm_msmr.yaml",
-            root / "A1_201" / "lgbm_msmdr.yaml",
-            root / "A1_IT" / "lgbm_msmd.yaml",
-            root / "A1_IT" / "lgbm_msmr.yaml",
-            root / "A1_IT" / "lgbm_msmdr.yaml",
-            root / "A3_01e" / "lgbm_msmd.yaml",
-            root / "A3_01e" / "lgbm_msmr.yaml",
-            root / "A3_01e" / "lgbm_msmdr.yaml",
-        ]
-        for config_path in expected_paths:
-            self.assertTrue(config_path.exists(), config_path)
-            loaded = yaml.safe_load(config_path.read_text(encoding="utf-8"))
-            self.assertEqual(loaded["schema_version"], 2, config_path.name)
-
-            cfg = load_yaml_config(config_path)
-            target_source = self._source(cfg, "target_history")
-            observed_columns = [
-                column.name
-                for column in target_source.columns
-                if column.role.value == "observed_past"
-            ]
-            self.assertEqual(Path(target_source.history_path).name, "df_selected_causal_v1.csv", config_path.name)
-            self.assertTrue((ROOT / target_source.history_path).is_file(), config_path)
-            self.assertEqual(cfg.problem.time_col, "count_data_time", config_path.name)
-            self.assertEqual(cfg.problem.targets, ("h_total_use",), config_path.name)
-            self.assertEqual(cfg.estimator.model_type, "lightgbm", config_path.name)
-            self.assertTrue(observed_columns, config_path.name)
-            self.assertNotIn("count_data_time", observed_columns, config_path.name)
-            self.assertNotIn("h_total_use", observed_columns, config_path.name)
-
     def _run_python(self, code):
         return subprocess.run(
             [sys.executable, "-c", code],
@@ -381,7 +344,7 @@ output: {}
     def test_importing_run_does_not_parse_cli_arguments(self):
         code = (
             "import sys; "
-            "sys.argv=['run.py','--config-yaml','config/aidc_load_month/route_B/lgbm_usmd_prob_mean.yaml',"
+            "sys.argv=['run.py','--config-yaml','config/aidc_load_15min_short/route_A/baseline/lgbm_direct.yaml',"
             "'--config-class','ModelConfig','--model-type','lightgbm']; "
             "import run; "
             "print('imported')"
@@ -408,7 +371,7 @@ output: {}
     def test_load_yaml_config_loads_canonical_groups(self):
         config_path = (
             ROOT
-            / "config/aidc_load_15min_daily/route_A/add_exogenous/lgbm_direct_holiday-weather.yaml"
+            / "config/aidc_load_15min_short/route_A/add_exogenous/lgbm_direct_holiday-weather.yaml"
         )
         loaded = yaml.safe_load(config_path.read_text(encoding="utf-8"))
 
@@ -442,7 +405,7 @@ output: {}
             "A_Loads_15min_mean_20251001_20260731.csv",
         )
         self.assertEqual(cfg.estimator.model_type, "lightgbm")
-        self.assertEqual(cfg.validation["forecast_origin"], "2026-07-31T23:45:00")
+        self.assertEqual(cfg.validation["forecast_origin"], "2026-07-31T14:00:00")
         self.assertEqual(Path(weather_source.history_path).name, "weather_history_15min_20250101_20260831.csv")
         self.assertTrue((ROOT / weather_source.history_path).is_file())
         self.assertEqual(

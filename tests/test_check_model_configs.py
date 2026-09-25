@@ -21,7 +21,7 @@ class ModelYamlDetectionTest(unittest.TestCase):
         source = (
             ROOT
             / "config/aidc_load_15min_short/route_A/add_decomposition/"
-            / "ridge_direct_decomp-linear.yaml"
+            / "lgbm_direct_decomp-linear.yaml"
         )
         payload = yaml.safe_load(source.read_text(encoding="utf-8"))
         payload["features"]["transformations"]["target"]["decomposition"] = {
@@ -52,12 +52,13 @@ class ModelYamlDetectionTest(unittest.TestCase):
         self.assertIn("trend_forecast", result.stdout + result.stderr)
 
     def test_cli_counts_ensemble_semantic_problem_as_hard_failure(self):
-        source = (
-            ROOT
-            / "config/aidc_power_month/route_A/freq_1day/baseline/"
-            / "lgbm_usbr_prob_mean_conformal.yaml"
-        )
+        source = ROOT / "tests/fixtures/ensemble_cli/ensemble_averaging.yaml"
         payload = yaml.safe_load(source.read_text(encoding="utf-8"))
+        payload["probabilistic"] = {
+            "mode": "quantile",
+            "quantiles": [0.1, 0.5, 0.9],
+            "point_quantile": 0.5,
+        }
         payload["ensemble"]["method"] = {
             "name": "stacking",
             "params": {"alpha": 1.0, "fit_intercept": True},
@@ -86,11 +87,16 @@ class ModelYamlDetectionTest(unittest.TestCase):
     def test_calendar_month_intraday_schedule_is_a_hard_failure(self):
         config_path = (
             ROOT
-            / "config/aidc_power_month/route_A/freq_1day/add_decomposition/"
-            / "lgbm_usmd_mean_prob_horizon_decomp_linear.yaml"
+            / "config/aidc_load_15min_short/route_A/baseline/lgbm_direct.yaml"
         )
         payload = yaml.safe_load(config_path.read_text(encoding="utf-8"))
-        payload["validation"]["schedule_mode"] = "intraday"
+        payload["problem"]["freq"] = "1D"
+        validation = payload["validation"]
+        validation["horizon_mode"] = "calendar_month"
+        for key in ("history_steps", "train_window_steps", "stride_steps"):
+            validation.pop(key, None)
+        validation["train_window_days"] = 120
+        validation["stride_months"] = 1
 
         with self.assertRaisesRegex(
             ValueError,

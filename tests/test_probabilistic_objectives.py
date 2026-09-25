@@ -79,8 +79,8 @@ class QuantileObjectiveMappingTest(unittest.TestCase):
         root = Path(__file__).resolve().parent.parent
         config_path = (
             root
-            / "config/aidc_power_month/route_A/freq_1month/window_length_9/"
-            / "ridge_usmd_mean.yaml"
+            / "config/aidc_load_15min_short/route_A/baseline/"
+            / "lgbm_direct.yaml"
         )
         base = load_yaml_config(config_path)
         probabilistic = {

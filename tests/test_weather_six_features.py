@@ -17,8 +17,7 @@ from scripts import generate_load_15min_matrix as matrix
 from scripts import build_scenario_weather as weather_builder
 
 ROOT = Path(__file__).resolve().parents[1]
-FAMILIES = ('aidc_load_15min_daily', 'aidc_load_15min_rolling',
-            'aidc_load_15min_short', 'aidc_ess_selfuse_load')
+FAMILIES = ('aidc_load_15min_short',)
 MAPPING = {'rt_tt2': 'pred_tt2', 'cal_rh': 'pred_rh', 'rt_ssr': 'pred_ssrd',
            'rt_ws10': 'pred_ws10', 'rt_ps': 'pred_ps', 'rt_rain': 'pred_rain'}
 

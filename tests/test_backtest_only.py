@@ -21,8 +21,8 @@ import run as entrypoint
 class BacktestOnlyTest(unittest.TestCase):
     def test_cli_rejects_ensemble_before_execution(self):
         root = Path(__file__).resolve().parents[1]
-        # 读取现役融合配置，仅验证 CLI 分派，不拟合成员。
-        path = next((root / "config/aidc_load_15min_daily/route_A/add_ensemble").glob("*.yaml"))
+        # 读取融合 fixture（活动集已无 ensemble 配置），仅验证 CLI 分派，不拟合成员。
+        path = root / "tests/fixtures/ensemble_cli/ensemble_averaging.yaml"
         args = SimpleNamespace(config_yaml=str(path), output_root=None, backtest_only=True)
         with patch.object(entrypoint, "run_ensemble_config_file") as execute:
             with self.assertRaisesRegex(ValueError, "not Ensemble"):

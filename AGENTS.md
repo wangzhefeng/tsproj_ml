@@ -58,5 +58,6 @@
 - **定期文档体检**：阶段性收口时对照实现复查文档（重点：根 `README.md`、`docs/` 及 `docs/packages/` 对应包文档），漂移同批修复；首次全量文档审计与漂移修复完成于 2026-09-25。
 - `tests/` 已纳入版本控制。
 - 2026-09-25 场景收敛：活动预测配置只保留 `config/aidc_load_15min_short`（仅 LightGBM，171 份单模型 YAML）；`aidc_load_15min_daily/rolling`、`aidc_load_month`、`aidc_power_month`、`aidc_ess_selfuse_load`、`aidc_electricity_computility`、`hongtaiyang_cesuan` 及纯数据准备目录 `aidc_load_5min`、`aidc_hvac_load_5min` 连同专属测试/脚本一并退役，历史从 Git 溯源；`dataset/`、`results/` 不在收敛范围，存量数据与结果保留。
+- 2026-09-26 scripts/ 收敛遗留清除：删除 `audit_ensemble_configs.py`、`audit_aidc_load_15min_designs.py`、`generate_load_15min_matrix.py`（审计/生成对象已随场景收敛消失），`build_scenario_weather.py` 收窄为仅重建 `aidc_load_15min_short` history 资产，历史从 Git 溯源；`data_process/`、`scripts/` 整体重构另行进行。
 - `docs/feature_engineering/` 实验脚本已删除（2026-09-06）：FFT/小波能力经 trailing 窗重写后接入 `advanced.fourier`/`advanced.wavelet`，周期诊断 EDA（含 FFT top-k 与 Engle-Granger 协整检验）并入 `data_process/periodicity_analysis.py`，历史内容从 Git 溯源。
 - `utils/`（L0）只保留 log_util/runtime_env；频率合同在 `forecasting_core/specs/problem.py`，指标在 `model_evaluation/`，评估掩码在 `model_evaluation/mask.py::build_eval_mask`。

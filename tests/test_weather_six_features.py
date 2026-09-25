@@ -13,7 +13,6 @@ import yaml
 from config.config_loader import load_yaml_config
 from data_loading import InformationSetRequest, SourceRegistry
 from forecasting_core.specs.config import parse_data_spec
-from scripts import generate_load_15min_matrix as matrix
 from scripts import build_scenario_weather as weather_builder
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -37,16 +36,6 @@ class WeatherSixFeaturesTest(unittest.TestCase):
                 meta = json.loads(dest.with_suffix('.meta.json').read_text())
                 self.assertEqual(meta['source_repairs'][0]['report'], repair.name)
                 self.assertEqual(meta['source_repairs'][0]['sha256'], hashlib.sha256(repair.read_bytes()).hexdigest())
-
-    def test_matrix_weather_source_keeps_six_and_historical_mapping(self):
-        for family in FAMILIES[:3]:
-            source = matrix._weather_source(family)
-            self.assertEqual({c['name'] for c in source['columns'] if c['role'] == 'known_future'}, set(MAPPING))
-            self.assertEqual(source['inference_columns'], MAPPING)
-            self.assertEqual(source['availability'], 'forecast_origin')
-            self.assertNotIn('future_path', source)
-            self.assertNotIn('backtest_path', source)
-            self.assertEqual(source['history_path'], f'dataset/{family}/weather_history_15min_20250101_20260831.csv')
 
     def test_all_weather_configs_and_real_asset_mapping(self):
         sources = {}

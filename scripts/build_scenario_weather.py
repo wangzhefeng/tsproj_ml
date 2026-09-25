@@ -4,7 +4,6 @@
 测试预测读同一 history 的 pred_。不生成伪 future，不删除旧资产。
 真正未来资产由实际预报另行提供，只使用预报列。既有离线缺口、湿度派生、
 完整覆盖聚合规则不变；不修改共享源，不把 ERA5 补值宣称为实际发布预报。
-ESS 输出到 exogenous_weather_raw/；联通由独立场景准备脚本生成。
 """
 import hashlib
 import json
@@ -160,32 +159,6 @@ def resample_hold(hourly, freq, start, end):
     return out.reset_index()
 
 
-def aggregate(frame, rule, pairs):
-    """完整覆盖聚合；pairs: (输出列, 源列, 聚合方式)。缺 1 小时即整行 NaN。"""
-    counts = frame.notna().resample(rule).sum()
-    if rule == '1D':
-        expected = pd.Series(24, index=counts.index)
-    else:  # 1ME
-        expected = pd.Series([pd.Timestamp(p).days_in_month * 24 for p in counts.index], index=counts.index)
-    complete = counts.eq(expected, axis=0).all(axis=1)
-    agg = pd.DataFrame(index=counts.index)
-    for out_col, src_col, how in pairs:
-        if how == 'sum':
-            agg[out_col] = frame[src_col].resample(rule).sum(min_count=1)
-        else:
-            agg[out_col] = getattr(frame[src_col].resample(rule), how)()
-    agg.loc[~complete, list(agg.columns)] = np.nan
-    return agg.reset_index(names='ts'), int((~complete).sum())
-
-
-AGG_PAIRS = [('rt_tt2', 'rt_tt2', 'mean'), ('rt_tt2_max', 'rt_tt2', 'max'), ('rt_tt2_min', 'rt_tt2', 'min'),
-             ('cal_rh', 'cal_rh', 'mean'), ('rt_ssr', 'rt_ssr', 'sum'),
-             ('rt_ws10', 'rt_ws10', 'mean'), ('rt_dt', 'rt_dt', 'mean')]
-PRED_AGG_PAIRS = [('pred_tt2', 'pred_tt2', 'mean'), ('pred_tt2_max', 'pred_tt2', 'max'), ('pred_tt2_min', 'pred_tt2', 'min'),
-                  ('pred_rh', 'pred_rh', 'mean'), ('pred_ssrd', 'pred_ssrd', 'sum'),
-                  ('pred_ws10', 'pred_ws10', 'mean'), ('pred_dt', 'pred_dt', 'mean')]
-
-
 def main():
     raw = pd.read_csv(SOURCE)
     raw['ts'] = pd.to_datetime(raw['ts'])
@@ -204,36 +177,11 @@ def main():
     hist_slice = hourly.loc[HISTORY_START:HISTORY_END]
     report = []
 
-    # ---------------- 15min ×3 ----------------
-    for family in ('aidc_load_15min_daily', 'aidc_load_15min_rolling', 'aidc_load_15min_short'):
-        hist = resample_hold(hist_slice, '15min', HISTORY_START, HISTORY_END)
-        report.append({'scenario': family, **publish(
-            hist, ROOT / f'dataset/{family}/weather_history_15min_20250101_20260831.csv',
-            {'role': 'history', 'freq': '15min'})})
-
-    # ---------------- ESS 5min（exogenous_weather_raw/；2026-09-07 裁决：不构造统计特征，只用原始特征） ----------------
-    ess_dir = ROOT / 'dataset/aidc_ess_selfuse_load/exogenous_weather_raw'
-
-    # 无窗口特征 → 无预热 NaN，保留用户指定的完整起点 2025-01-01 00:00
-    hist5 = resample_hold(hist_slice, '5min', HISTORY_START, HISTORY_END)
-    report.append({'scenario': 'aidc_ess_selfuse_load', **publish(
-        hist5, ess_dir / 'weather_history_5min_20250101_20260831.csv', {'role': 'history', 'freq': '5min'})})
-
-    # ---------------- power_month 日/月（rt_ 统计 + pred_ 统计并列） ----------------
-    for freq_dir, rule, hist_name in (
-        ('freq_1day', '1D', 'weather_history_1day_20250101_20260831.csv'),
-        ('freq_1month', '1ME', 'weather_history_1month_20250131_20260831.csv'),
-    ):
-        hist_agg, hist_inc = aggregate(hist_slice[list(dict.fromkeys(c for _, c, _ in AGG_PAIRS))], rule, AGG_PAIRS)
-        hist_pred, hist_pred_inc = aggregate(hist_slice[list(dict.fromkeys(c for _, c, _ in PRED_AGG_PAIRS))], rule, PRED_AGG_PAIRS)
-        hist_out = hist_agg.merge(hist_pred.drop(columns=[]), on='ts')
-        # rt_ 侧（模型训练列）必须完整；pred_ 侧允许 NaN（ignored 声明，推理触及由 registry 请求级 RAISE）
-        assert not hist_agg.drop(columns=['ts']).isna().any(axis=None), f'{freq_dir} history rt_ 聚合后仍含 NaN'
-
-        report.append({'scenario': f'aidc_power_month/{freq_dir}', **publish(
-            hist_out, ROOT / f'dataset/aidc_power_month/{freq_dir}/{hist_name}',
-            {'role': 'history', 'freq': rule, 'incomplete_rows_nan_pred': hist_pred_inc})})
-
+    # ---------------- aidc_load_15min_short ----------------
+    hist = resample_hold(hist_slice, '15min', HISTORY_START, HISTORY_END)
+    report.append({'scenario': 'aidc_load_15min_short', **publish(
+        hist, ROOT / 'dataset/aidc_load_15min_short/weather_history_15min_20250101_20260831.csv',
+        {'role': 'history', 'freq': '15min'})})
 
     REPORT.write_text(json.dumps({'status': 'ok', 'outputs': report, 'gap_fill_audit': gap_audit}, ensure_ascii=False, indent=2))
     print(json.dumps({'status': 'ok', 'count': len(report)}, ensure_ascii=False))

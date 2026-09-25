@@ -1,17 +1,14 @@
 # scripts
 
-> **2026-09-25 场景收敛后的状态**：本目录脚本尚未重构。其中 `check_model_configs.py`、`audit_forecast_configs.py`、`audit_runtime_assets.py` 对当前活动配置（`aidc_load_15min_short`，171 份 LightGBM 单模型）正常通过；`audit_ensemble_configs.py`、`audit_aidc_load_15min_designs.py`、`generate_load_15min_matrix.py`、`build_scenario_weather.py` 硬编码了已退役场景的数量与路径，与当前仓库状态不一致（前两者返回非零），下文 5,150 / 4,617 / 4,689 / 228 等数字均为收敛前口径，引用的 `liantong_august_prepare.py` 已随联通场景删除。本目录整体待重构，届时统一收窄，本说明届时删除。
+> **2026-09-26 收敛遗留清除**：`audit_ensemble_configs.py`、`audit_aidc_load_15min_designs.py`、`generate_load_15min_matrix.py` 硬编码已退役场景（三场景 15min 矩阵、5,150 份配置、78 份 Ensemble），随场景收敛失去审计对象，已删除（历史从 Git 溯源）；`build_scenario_weather.py` 的 daily/rolling/ESS/power_month 死分支已同步移除，仅保留活动场景 `aidc_load_15min_short` 的 history 资产重建链路。`data_process/` 与 `scripts/` 的整体重构仍按既定计划另行进行。
 
 项目级只读审计入口：
 
 | 脚本 | 作用 |
 |---|---|
-| `check_model_configs.py` | 用生产 parser、FeatureCompiler 和策略合同校验 5,150 个活动模型 YAML |
-| `audit_forecast_configs.py` | 用生产 parser 输出 5,150 行 typed catalog（5,072 ForecastConfigSpec + 78 Ensemble），含 identity、fingerprint、概率与带单位几何 |
-| `audit_ensemble_configs.py` | 校验 78 个 Ensemble、228 个成员引用、四方法分布、15min 场景无重复 member 与 OOF 孤儿缓存 |
+| `check_model_configs.py` | 用生产 parser、FeatureCompiler 和策略合同校验活动模型 YAML（默认 glob `config/**/*.yaml`，当前 171 份 LightGBM 单模型） |
+| `audit_forecast_configs.py` | 用生产 parser 输出活动配置 typed catalog，含 identity、fingerprint、概率与带单位几何 |
 | `audit_runtime_assets.py` | 校验所有活动 source 文件及非 ignored 声明列存在；缺失时退出 1 |
-| `audit_aidc_load_15min_designs.py` | 对三个 AIDC 15min 场景全部 4,617 份活动单模型编译一个真实训练设计；成本很高，静态-only 任务禁止运行 |
-| `generate_load_15min_matrix.py` | 默认只读校验三个 AIDC 15min 场景的 4,689 份矩阵；`--write` 确定性重建 4,617 份单模型与 72 份 add_ensemble |
 | `audit_batch_eligibility.py` | 审计全部活动配置的 supervised compiler 批量资格（batch eligible / fallback 及原因） |
 | `export_chinese_holiday_csv.py` | 用 `data_loading/calendar_generator/chinese_holiday.py` 同一实现导出中国节假日特征 CSV（generated source 的审计兜底 / 版本固定 file source） |
 
@@ -19,17 +16,15 @@
 env -u PYTHONPATH .venv/bin/python scripts/check_model_configs.py
 env -u PYTHONPATH .venv/bin/python scripts/audit_forecast_configs.py --output /tmp/forecast_catalog.json
 env -u PYTHONPATH .venv/bin/python scripts/audit_runtime_assets.py
-env -u PYTHONPATH .venv/bin/python scripts/audit_aidc_load_15min_designs.py
-env -u PYTHONPATH .venv/bin/python scripts/audit_ensemble_configs.py
 ```
 
 迁移期一次性脚本不驻留本目录，历史通过 Git 追溯。
 
 ## 天气资产准备
 
-`build_scenario_weather.py` 会传递共享源旁 `.six_features_repair.json` 的内容哈希与补值性质，重建不能丢失再分析替代证据。三个15分钟负荷场景的 `generate_load_15min_matrix.py` 天气 source 同步使用六项及实测/预报映射，避免重建配置退回露点五项或旧分段路径。六项范围与排除场景见 `docs/config/weather.md`。
+`build_scenario_weather.py` 会传递共享源旁 `.six_features_repair.json` 的内容哈希与补值性质，重建不能丢失再分析替代证据；当前只重建活动场景 `aidc_load_15min_short` 的 `weather_history_15min_20250101_20260831.csv`（15min hold，训练用 rt_、历史测试预测用 pred_）。六项范围与排除场景见 `docs/config/weather.md`。
 
-> 本节 generated weather 工具链现属研究回放/取证用途。活动配置走 file + `inference_columns`：`build_scenario_weather.py` 构建截至 2026-08-31 的完整 history，训练用实测列、历史测试预测用预报列。当前无真正未来任务，不再把历史留出区间生成或引用为 future；真正未来预报须另行提供。联通使用独立 `liantong_august_prepare.py`。
+> 本节 generated weather 工具链现属研究回放/取证用途。活动配置走 file + `inference_columns`：`build_scenario_weather.py` 构建截至 2026-08-31 的完整 history，训练用实测列、历史测试预测用预报列。当前无真正未来任务，不再把历史留出区间生成或引用为 future；真正未来预报须另行提供。
 
 `prepare_weather.py --help` 提供本地 `archive` 和 `register` 子命令；默认 dry-run，只有显式 `--write` 才发布。不会联网、猜测发布时间或覆盖旧版本。`archive` 只按 SHA 保全原字节；`register` 需要完整 metadata 与哈希证据，生成 normalized 和不可变 manifest。实际参数以各子命令 `--help` 为准。真实源的单位、地点或证据未齐时只能归档，不能注册为合格模型输入。
 

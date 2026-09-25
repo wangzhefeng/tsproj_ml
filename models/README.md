@@ -23,7 +23,7 @@ ETS 属于原生序列模型，不是监督回归 wrapper：拟合只接受带�
 
 默认候选 `ANA/AAA/AAdA`（可显式选择 `ANN`），默认 BIC，也支持 AICc；最多四个互异候选，默认每候选 300 次迭代、上限 1000。采用历史内 heuristic 初始化，避免把 288 个初始季节状态全部作为优化参数；每次拟合重新初始化，不复用其他折状态。参考 M5 ES_bu 的自动指数平滑思想，不是零售层级方法复现。
 
-`catalog.native_history` 与资源计划显式区分无监督特征的序列模型；runner 保留共用调度几何，但不使用监督 Y 拟合 ETS。原生对象可以在可信 pickle 中往返恢复并从拟合原点续预测；不把对象往返视为 schema-2 部署 bundle 验收。联通严格原始历史窗口仍只支持 backtest-only，final fit/bundle 拒绝合同保持不变。测试覆盖及执行入口见 `tests/README.md`；`.hermes/plans/` 下的实施证据仅保留在本地，不随仓库分发。
+`catalog.native_history` 与资源计划显式区分无监督特征的序列模型；runner 保留共用调度几何，但不使用监督 Y 拟合 ETS。原生对象可以在可信 pickle 中往返恢复并从拟合原点续预测；不把对象往返视为 schema-2 部署 bundle 验收。严格原始历史窗口（历史来源：联通场景，已随 2026-09-25 收敛退役）仍只支持 backtest-only，final fit/bundle 拒绝合同保持不变。测试覆盖及执行入口见 `tests/README.md`；`.hermes/plans/` 下的实施证据仅保留在本地，不随仓库分发。
 
 ## Pickle 路径兼容边界
 

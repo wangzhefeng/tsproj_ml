@@ -1,6 +1,6 @@
 # 项目待优化问题
 
-本文档记录尚未解决的工程问题、技术债和配置体系优化事项。业务实验与场景研究事项继续记录在 [`docs/TODO_AIDC.md`](TODO_AIDC.md)。
+本文档记录尚未解决的工程问题、技术债和配置体系优化事项。业务实验与场景研究事项继续记录在 [`config/aidc_load_15min_short/TODO_AIDC.md`](../config/aidc_load_15min_short/TODO_AIDC.md)（2026-09-25 场景收敛后从 `docs/` 迁入场景目录）。
 
 ## 维护约定
 

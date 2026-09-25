@@ -107,7 +107,7 @@ env -u PYTHONPATH .venv/bin/python tests/run_suite.py integration --match test_m
 
 ## 天气生成器（实施中）
 
-`test_weather_*` 默认纳入 integration，无额外 skip/发现排除。覆盖强类型配方、真实临时文件导入/哈希、原生小时派生、完整区间聚合、proxy 因果性、Registry、缓存、静态资产审计与 YAML→Compiler 单/批证据。全部天气资产是明确合成 fixture，不代替 P5 真实响应、P6 训练/回测/final fit/预测/bundle 证据；旧场景测试尚未删除或改成污染输出的新黄金值。
+`test_weather_*` 默认纳入 integration，无额外 skip/发现排除。覆盖强类型配方、真实临时文件导入/哈希、原生小时派生、完整区间聚合、proxy 因果性、Registry、缓存、静态资产审计与 YAML→Compiler 单/批证据。全部天气资产是明确合成 fixture，不代替 P5 真实响应、P6 训练/回测/final fit/预测/bundle 证据；退役场景的旧场景测试已随 2026-09-25 收敛删除（Git 溯源），未改成污染输出的新黄金值。
 
 ## 分解职责收敛覆盖
 

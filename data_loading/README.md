@@ -18,9 +18,9 @@
 
 ## 职责收敛约定
 
-### 天气生成扩展（实施中）
+### 天气生成扩展
 
-拟建 `weather_generator/` 按合同、适配、资产、气象派生、重采样、情景、请求编排分文件。
+`weather_generator/` 已建成（按合同、适配、资产、气象派生、重采样、情景、请求编排分文件），当前保留为研究回放/取证链、非活动链，合同细节见其 README；活动配置采用 file + `inference_columns`，不引用本子包。
 输入资产集中 `dataset/shared/weather/`，源/地点/版本事实在 manifest，模型处理规则在 YAML。
 运行时纯本地、严格 as-of；供应商前缀不是单位或发布证明，init_time 不是 available_at。
 首版生成 known_future；历史天气 lag 仍需显式规范 file source 与 observed-past provider，不扩大 generated 角色。

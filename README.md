@@ -4,8 +4,8 @@
 
 ## 分支约定
 
-- `stable`：实际使用版本，接收通过验证的开发快照；不在该分支直接开展日常开发。
-- `dev`：持续开发分支。发布前完成定向及全量验证，再将 `stable` 快进到对应提交；发布后继续在 `dev` 开发，两条分支长期保留。
+- `stable`：模型测试分支，只通过从 `dev` 合并（fast-forward 优先）推进，不在其上直接开发。
+- `dev`：功能开发与重构主分支；阶段性收口完成定向及全量验证后合并进 `stable`，两条分支长期保留。
 
 分支晋级不等于重新训练模型或授予研究配置部署资格；各模型、数据及 bundle 的适用边界仍按下述合同执行。
 
@@ -71,7 +71,7 @@
 | `models/` | catalog、factory、按 family 分组的 wrappers 与底层 pickle IO |
 | `decomposition/` | 趋势/季节/残差分解与恢复 |
 | `data_process/` | 进模型前的离线聚合、填补、异常、事件、周期与峰谷分析 |
-| `config/` | 5,150 个活动模型 YAML（5,072 ForecastConfigSpec + 78 Ensemble）+ 41 个独立数据工具 YAML；3 个无有效资产配置归档于 `docs/archived_configs/` |
+| `config/` | 活动模型 YAML 唯一场景为 `aidc_load_15min_short`（171 份 LightGBM 单模型）+ 3 份独立数据工具 YAML；2026-09-25 场景收敛前的历史场景配置从 Git 溯源 |
 | `scripts/` | 配置、Ensemble 与运行资产审计 |
 | `tests/` | unittest、runtime smoke、结构门禁和场景数据链测试 |
 
@@ -159,10 +159,11 @@ env -u PYTHONPATH .venv/bin/python tests/run_suite.py fast
 # 全量收口（与原生 unittest discover 同一全集）
 env -u PYTHONPATH .venv/bin/python tests/run_suite.py all
 
-# 配置、数据资产与 Ensemble 审计
+# 配置与数据资产审计
 env -u PYTHONPATH .venv/bin/python scripts/check_model_configs.py
 env -u PYTHONPATH .venv/bin/python scripts/audit_runtime_assets.py
-env -u PYTHONPATH .venv/bin/python scripts/audit_ensemble_configs.py
+# audit_ensemble_configs.py / audit_aidc_load_15min_designs.py 硬编码已退役场景，
+# 当前返回非零，待 scripts/ 重构恢复（见 scripts/README.md 顶部状态说明）
 
 # 语法与格式
 env -u PYTHONPATH .venv/bin/python -m compileall -q \

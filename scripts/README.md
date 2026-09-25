@@ -1,5 +1,7 @@
 # scripts
 
+> **2026-09-25 场景收敛后的状态**：本目录脚本尚未重构。其中 `check_model_configs.py`、`audit_forecast_configs.py`、`audit_runtime_assets.py` 对当前活动配置（`aidc_load_15min_short`，171 份 LightGBM 单模型）正常通过；`audit_ensemble_configs.py`、`audit_aidc_load_15min_designs.py`、`generate_load_15min_matrix.py`、`build_scenario_weather.py` 硬编码了已退役场景的数量与路径，与当前仓库状态不一致（前两者返回非零），下文 5,150 / 4,617 / 4,689 / 228 等数字均为收敛前口径，引用的 `liantong_august_prepare.py` 已随联通场景删除。本目录整体待重构，届时统一收窄，本说明届时删除。
+
 项目级只读审计入口：
 
 | 脚本 | 作用 |

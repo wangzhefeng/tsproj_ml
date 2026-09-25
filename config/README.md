@@ -24,7 +24,7 @@ schema_version/problem/data/probabilistic/ensemble/validation/output
 
 未知顶层和嵌套字段在 loader 阶段 RAISE。Transformation 只使用 `direct/advanced/feature_scaling/target/datetime_categorical/interactions/seasonal_baseline` 新结构。
 
-## 因果特征与残差基线（联通四组引入）
+## 因果特征与残差基线（历史来源：联通四组，场景已退役）
 
 `features.transformations.advanced` 新增三个严格 as-of 变换：前两个只消费原点前（含原点）的目标/observed-past 历史，未来真值扰动不得影响特征值；第三个消费原点时已知的块内未来天气。历史不足或未来天气缺失时 RAISE，不静默缩窗：
 

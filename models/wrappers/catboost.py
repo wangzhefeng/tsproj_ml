@@ -6,7 +6,9 @@ import numpy as np
 import pandas as pd
 import catboost as cab
 from utils.log_util import logger
-from models.wrappers.base import BaseModel, DEFAULT_EARLY_STOPPING_ROUNDS, _filter_valid_params, _filter_fit_params
+from models.preflight import filter_fit_params as _filter_fit_params, filter_valid_params as _filter_valid_params
+from models.preflight.catboost import process_synonym_params
+from models.wrappers.base import BaseModel, DEFAULT_EARLY_STOPPING_ROUNDS
 
 
 class CatBoostModel(BaseModel):
@@ -34,19 +36,20 @@ class CatBoostModel(BaseModel):
 
     def __init__(self, params: Dict[str, Any], log_prefix: str="CatBoostModel", log_params: bool = True):
         super().__init__(params, log_prefix=log_prefix, log_params=log_params)
-        supplied = _filter_valid_params(copy.deepcopy(params or {}), cab.CatBoostRegressor)
+
+    def _resolve_params(self, supplied: Dict[str, Any]) -> Dict[str, Any]:
+        # 原生同义参数规则先作用于用户输入与默认值，避免默认值压过显式别名
+        supplied = _filter_valid_params(copy.deepcopy(supplied), cab.CatBoostRegressor)
         defaults = copy.deepcopy(self.DEFAULT_PARAMS)
-        # 原生同义参数规则先作用于用户输入，避免默认值压过显式别名。
-        cab.core._process_synonyms(supplied)
-        cab.core._process_synonyms(defaults)
+        process_synonym_params(supplied)
+        process_synonym_params(defaults)
         if "logging_level" in supplied:
             defaults.pop("verbose", None)
         merged_params = {**defaults, **supplied}
-        self.params = _filter_valid_params(merged_params, cab.CatBoostRegressor)
-        if self.log_params:
-            logger.info(f"{log_prefix} model parameters: \n{self.params}")
-        # 模型构建
-        self.model = cab.CatBoostRegressor(**self.params)
+        return _filter_valid_params(merged_params, cab.CatBoostRegressor)
+
+    def _build_estimator(self):
+        return cab.CatBoostRegressor(**self.params)
 
     def fit(self,
             X: pd.DataFrame,
@@ -87,6 +90,7 @@ class CatBoostModel(BaseModel):
             fit_params["sample_weight"] = sample_weight
         fit_params = _filter_fit_params(self.model, fit_params)
         # 模型训练
+        assert self.model is not None  # _build_estimator 已构造
         fit_input = native_train_data if native_train_data is not None else X
         fit_target = None if native_train_data is not None else y
         self.model.fit(fit_input, fit_target, **fit_params)
@@ -98,7 +102,7 @@ class CatBoostModel(BaseModel):
         """
         预测
         """
-        if not self.is_fitted:
-            raise ValueError(f"{self.log_prefix} 模型尚未训练(Model not fitted yet).")
+        self._require_fitted()
+        assert self.model is not None
 
         return self.model.predict(X)

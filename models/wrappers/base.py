@@ -1,6 +1,6 @@
 """base: estimator wrappers extracted from the model factory."""
 
-import inspect
+import copy
 from abc import ABC, abstractmethod
 from typing import Any, Dict, Optional
 import numpy as np
@@ -15,8 +15,19 @@ class BaseModel(ABC):
     """
     模型基类 (Base Model Class)
 
-    所有具体模型必须继承此类并实现抽象方法
+    所有具体模型必须继承此类并实现抽象方法。
+
+    构造走统一模板（2026-09-26 模板收敛）：
+    1. ``_resolve_params(supplied)``：DEFAULT_PARAMS 深拷贝合并用户参数，
+       子类覆写以插入家族特定校验（别名全集 / 签名白名单 / synonym 归一化）；
+    2. 参数日志；
+    3. ``_build_estimator()``：构造底层估计器（或无估计器成员的拟合状态）。
+
+    实例属性 ``params`` / ``model`` / ``is_fitted`` 与历史行为逐项一致，
+    pickle 路径与属性名不变，存量 bundle 不受影响。
     """
+
+    DEFAULT_PARAMS: Dict[str, Any] = {}
 
     def __init__(self, params: Dict[str, Any], log_prefix: str="BaseModel", log_params: bool = True):
         """
@@ -30,6 +41,19 @@ class BaseModel(ABC):
         self.model = None
         self.is_fitted = False
         self.log_params = log_params
+        # 模板：合并默认参数（用户参数优先）→ 家族校验钩子 → 构造钩子
+        self.params = self._resolve_params(dict(params or {}))
+        if self.log_params:
+            logger.info(f"{log_prefix} model parameters: \n{self.params}")
+        self.model = self._build_estimator()
+
+    def _resolve_params(self, supplied: Dict[str, Any]) -> Dict[str, Any]:
+        """默认参数合并（用户参数优先）；子类覆写以插入家族特定校验。"""
+        return {**copy.deepcopy(self.DEFAULT_PARAMS), **copy.deepcopy(supplied)}
+
+    def _build_estimator(self) -> Any:
+        """构造底层估计器；默认无估计器（由子类覆写）。"""
+        return None
 
     @abstractmethod
     def fit(self, X: pd.DataFrame, y: pd.Series, **kwargs) -> "BaseModel":
@@ -59,6 +83,11 @@ class BaseModel(ABC):
             预测结果
         """
         pass
+
+    def _require_fitted(self) -> None:
+        """predict 前置检查：未训练直接报错（各封装共用，消息逐字一致）"""
+        if not self.is_fitted:
+            raise ValueError(f"{self.log_prefix} 模型尚未训练(Model not fitted yet).")
 
     def get_params(self) -> Dict[str, Any]:
         """获取模型参数"""
@@ -91,29 +120,27 @@ class BaseModel(ABC):
 
         return importance
 
-def _filter_valid_params(params: Dict[str, Any], estimator_cls) -> Dict[str, Any]:
-    """
-    按估计器 ``__init__`` 签名校验模型参数，未知参数直接报错。
 
-    对于通过 ``**kwargs`` 透传原生参数的封装（签名含 VAR_KEYWORD），
-    无法用显式签名做白名单，直接原样返回，避免误删合法配置。
+def nan_defense_fit_state(
+    X: pd.DataFrame,
+    y,
+    columns: Optional[list] = None,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """
-    signature = inspect.signature(estimator_cls.__init__)
-    # 部分 sklearn 风格封装通过 **kwargs 接收额外原生参数，
-    # 这类模型不能用显式签名做白名单过滤，否则会错误丢弃合法配置。
-    if any(param.kind == inspect.Parameter.VAR_KEYWORD for param in signature.parameters.values()):
-        return dict(params)
-    valid = set(signature.parameters.keys())
-    valid.discard("self")
-    unknown = sorted(set(params) - valid)
-    if unknown:
-        raise ValueError(f"Unknown {estimator_cls.__name__} parameters: {unknown}")
-    return dict(params)
+    fit 端 NaN 防御共享实现（线性族 / 季节模板共用）。
 
-def _filter_fit_params(model, fit_params: Dict[str, Any]) -> Dict[str, Any]:
+    在 ``columns`` 指定列集（缺省全列）上构建有效行掩码
+    （列集全 notna 且 y 有限）并记录列集中位数，供 predict 端
+    防御性填补。正常预测路径无 NaN，填补仅防御性兜底。
+
+    Returns:
+        (mask, yv, medians)：有效行布尔掩码、展平的 float 目标、
+        列集中位数数组（顺序与 ``columns`` / X 列序一致）
     """
-    按底层估计器 ``fit`` 签名过滤训练参数，兼容不同版本 sklearn API 的参数差异
-    （例如 lightgbm >= 4.x 的 fit 不再接受 verbose）。
-    """
-    supported = set(inspect.signature(model.fit).parameters.keys())
-    return {k: v for k, v in fit_params.items() if k in supported}
+    frame = X if columns is None else X[columns]
+    if not hasattr(frame, "notna"):
+        raise TypeError("nan_defense_fit_state requires a pandas DataFrame input")
+    yv = np.asarray(y, dtype=float).ravel()
+    mask = frame.notna().all(axis=1).to_numpy() & np.isfinite(yv)
+    medians = frame.median().to_numpy(dtype=float)
+    return mask, yv, medians

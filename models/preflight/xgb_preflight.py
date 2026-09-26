@@ -2,16 +2,26 @@
 
 父进程只传实际 native 参数、特征名与输入维度，不传训练数据。
 缓存限于当前进程，且只保存成功预检；锁保证并行 scalar fit 不重复启动子进程。
+
+本文件双角色：可导入模块（父进程调用 ``validate_xgb_parameters``）+
+子进程 worker（``python xgb_preflight.py --worker``，经 ``Path(__file__)``
+直跑，不依赖 PYTHONPATH/cwd）。
+
+文件名约束：worker 直跑时脚本目录位于 ``sys.path[0]``，本文件名不得与
+任何第三方包同名（不能叫 xgboost.py，否则 ``import xgboost`` 导入自身）；
+父进程侧的特征名提取等重依赖辅助见 ``xgboost_estimator.py``。
 """
 
-from __future__ import annotations
-
+import contextlib
+import io
 import json
 import os
 import pickle
+import re
 import subprocess
 import sys
 import threading
+import warnings
 from functools import lru_cache
 from pathlib import Path
 from typing import Any, Mapping
@@ -19,16 +29,23 @@ from typing import Any, Mapping
 import xgboost as xgb
 
 
+# 子进程超时（秒）：空 Booster 参数预检为毫秒级，30s 只防挂死
+_PREFLIGHT_TIMEOUT_SECONDS = 30
+# 成功预检缓存容量：同一参数组合只检一次
+_PREFLIGHT_CACHE_SIZE = 128
+# worker 侧线程钉扎为 1，避免预检进程与父进程训练线程争抢 CPU
+_THREAD_PIN_ENV = {"OMP_NUM_THREADS": "1", "OPENBLAS_NUM_THREADS": "1", "MKL_NUM_THREADS": "1"}
+
 _PREFLIGHT_LOCK = threading.Lock()
 
 
-@lru_cache(maxsize=128)
+@lru_cache(maxsize=_PREFLIGHT_CACHE_SIZE)
 def _cached_preflight(request: bytes) -> str:
     environment = dict(os.environ)
-    environment.update(OMP_NUM_THREADS="1", OPENBLAS_NUM_THREADS="1", MKL_NUM_THREADS="1")
+    environment.update(_THREAD_PIN_ENV)
     result = subprocess.run(
         [sys.executable, str(Path(__file__).resolve()), "--worker"],
-        input=request, capture_output=True, timeout=30, env=environment,
+        input=request, capture_output=True, timeout=_PREFLIGHT_TIMEOUT_SECONDS, env=environment,
         check=False,
     )
     if result.returncode:
@@ -49,7 +66,22 @@ def validate_xgb_parameters(
     num_targets: int = 1,
     feature_names: tuple[str, ...] | None = None,
 ) -> dict[str, Any]:
-    """Validate native configuration without touching parent warning handlers."""
+    """在隔离子进程中校验 XGBoost 原生配置，不触碰父进程的 warning 处理器。
+
+    Args:
+        params: 估计器实际生效的 native 参数
+        num_features: 训练输入特征维度
+        num_targets: 目标维度（缺省 1）
+        feature_names: 特征名元组（可选，用于维度一致性预检）
+
+    Returns:
+        含 status / xgboost_version / native_preflight_config / warnings 的
+        独立字典（每次解析新对象）
+
+    Raises:
+        ValueError: 维度非法，或子进程判定参数无效/与输入维度冲突
+        RuntimeError: 子进程自身失败（超时/解释器错误）
+    """
     if num_features < 1 or num_targets < 1:
         raise ValueError("XGBoost preflight requires positive input dimensions")
     request = pickle.dumps({
@@ -65,11 +97,6 @@ def validate_xgb_parameters(
 
 
 def _worker() -> None:
-    import contextlib
-    import io
-    import re
-    import warnings
-
     # 仅接收父进程自行 pickle 的本地参数，不接收外部缓存或远程文件。
     request = pickle.loads(sys.stdin.buffer.read())
     params = request["params"]
@@ -106,6 +133,7 @@ def _worker() -> None:
 
 
 if __name__ == "__main__":
+    # 内部协议：精确全匹配 "--worker"，拒绝任何多余参数，防误用。
     if sys.argv[1:] != ["--worker"]:
         raise SystemExit("Internal worker: expected --worker")
     _worker()

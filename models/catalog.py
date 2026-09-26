@@ -20,17 +20,53 @@ class ModelDescriptor:
 
 
 DESCRIPTORS = (
-    ModelDescriptor(("lightgbm", "lgb"), "LightGBMModel", "lightgbm", True, True, True, "n_jobs", 4, True),
-    ModelDescriptor(("xgboost", "xgb"), "XGBoostModel", "xgboost", False, True, True, "n_jobs", 4, False, True),
-    ModelDescriptor(("catboost", "cat"), "CatBoostModel", "catboost", True, True, True, "thread_count", 2),
-    ModelDescriptor(("randomforest", "rf"), "RandomForestModel", thread_param="n_jobs", output_workers=2),
-    ModelDescriptor(("histgb", "histgradientboosting"), "HistGBModel", "histgb", True, True),
+    ModelDescriptor(
+        ("lightgbm", "lgb"), "LightGBMModel",
+        quantile_style="lightgbm", categorical=True, nan_support=True,
+        thread_param="n_jobs", output_workers=4, dataframe_input=True,
+    ),
+    ModelDescriptor(
+        ("xgboost", "xgb"), "XGBoostModel",
+        quantile_style="xgboost", categorical=False, nan_support=True,
+        thread_param="n_jobs", output_workers=4, dataframe_input=False,
+        native_multi_quantile=True,
+    ),
+    ModelDescriptor(
+        ("catboost", "cat"), "CatBoostModel",
+        quantile_style="catboost", categorical=True, nan_support=True,
+        thread_param="thread_count", output_workers=2,
+    ),
+    ModelDescriptor(
+        ("randomforest", "rf"), "RandomForestModel",
+        thread_param="n_jobs", output_workers=2,
+    ),
+    ModelDescriptor(
+        ("histgb", "histgradientboosting"), "HistGBModel",
+        quantile_style="histgb", categorical=True, nan_support=True,
+    ),
     ModelDescriptor(("ridge",), "RidgeModel", output_workers=4),
     ModelDescriptor(("elasticnet", "enet"), "ElasticNetModel", output_workers=4),
     ModelDescriptor(("lasso",), "LassoModel", output_workers=4),
-    ModelDescriptor(("quantileregressor", "qr"), "QuantileRegressorModel", "qr", output_workers=2),
-    ModelDescriptor(("seasonaltemplate", "st"), "SeasonalTemplateModel", sample_weight=False, dataframe_input=True),
-    ModelDescriptor(("ets",), "ETSModel", sample_weight=False, output_workers=1, native_history=True),
+    ModelDescriptor(
+        ("quantileregressor", "qr"), "QuantileRegressorModel",
+        quantile_style="qr", output_workers=2,
+    ),
+    ModelDescriptor(
+        ("seasonaltemplate", "st"), "SeasonalTemplateModel",
+        sample_weight=False, dataframe_input=True,
+    ),
+    ModelDescriptor(
+        ("ets",), "ETSModel",
+        sample_weight=False, output_workers=1, native_history=True,
+    ),
+    ModelDescriptor(
+        ("naive",), "NaiveModel",
+        sample_weight=False, output_workers=1, native_history=True,
+    ),
+    ModelDescriptor(
+        ("theta",), "ThetaModel",
+        sample_weight=False, output_workers=1, native_history=True,
+    ),
 )
 MODEL_CATALOG = MappingProxyType({alias: descriptor for descriptor in DESCRIPTORS for alias in descriptor.aliases})
 

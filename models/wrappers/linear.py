@@ -6,7 +6,8 @@ import numpy as np
 import pandas as pd
 from sklearn.linear_model import Ridge, ElasticNet, Lasso, QuantileRegressor
 from utils.log_util import logger
-from models.wrappers.base import BaseModel, _filter_valid_params
+from models.preflight import filter_valid_params as _filter_valid_params
+from models.wrappers.base import BaseModel, nan_defense_fit_state
 
 
 class _LinearModelBase(BaseModel):
@@ -24,18 +25,14 @@ class _LinearModelBase(BaseModel):
     ESTIMATOR_CLS = None
     DEFAULT_PARAMS: Dict[str, Any] = {}
 
-    def __init__(self, params: Dict[str, Any], log_prefix: str="LinearModel", log_params: bool = True):
-        super().__init__(params, log_prefix=log_prefix, log_params=log_params)
-        # 参数合并（用户参数优先，避免被默认值覆盖）
-        merged_params = {**copy.deepcopy(self.DEFAULT_PARAMS), **(params or {})}
-        # 模型参数
-        self.params = _filter_valid_params(merged_params, self.ESTIMATOR_CLS)
-        if self.log_params:
-            logger.info(f"{log_prefix} model parameters: \n{self.params}")
-        # 模型构建
+    def _resolve_params(self, supplied: Dict[str, Any]) -> Dict[str, Any]:
         if self.ESTIMATOR_CLS is None:
             raise NotImplementedError(f"{self.log_prefix} 子类必须声明 ESTIMATOR_CLS")
-        self.model = self.ESTIMATOR_CLS(**self.params)
+        return _filter_valid_params(super()._resolve_params(supplied), self.ESTIMATOR_CLS)
+
+    def _build_estimator(self):
+        assert self.ESTIMATOR_CLS is not None
+        return self.ESTIMATOR_CLS(**self.params)
 
     def fit(self,
             X: pd.DataFrame,
@@ -57,15 +54,14 @@ class _LinearModelBase(BaseModel):
         predict 端填补。
         """
         if hasattr(X, "notna"):
-            yv = np.asarray(y, dtype=float).ravel()
-            mask = X.notna().all(axis=1).to_numpy() & np.isfinite(yv)
-            self._col_medians = X.median().to_numpy(dtype=float)
+            mask, yv, self._col_medians = nan_defense_fit_state(X, y)
             self._columns = list(X.columns)
             X_fit = X[mask]
             y_fit = yv[mask]
             sw_fit = np.asarray(sample_weight, dtype=float)[mask] if sample_weight is not None else None
         else:
             X_fit, y_fit, sw_fit = X, y, sample_weight
+        assert self.model is not None  # _build_estimator 已构造
         self.model.fit(X_fit, y_fit, sample_weight=sw_fit)
         self.is_fitted = True
 
@@ -75,8 +71,8 @@ class _LinearModelBase(BaseModel):
         """
         预测（NaN 用训练期列中位数填补；正常预测路径无 NaN，属防御性处理）
         """
-        if not self.is_fitted:
-            raise ValueError(f"{self.log_prefix} 模型尚未训练(Model not fitted yet).")
+        self._require_fitted()
+        assert self.model is not None
 
         if hasattr(X, "isna") and getattr(self, "_col_medians", None) is not None and X.isna().any().any():
             X = X.fillna(pd.Series(self._col_medians, index=self._columns))

@@ -1,15 +1,14 @@
 """xgboost: estimator wrappers extracted from the model factory."""
 
-import copy
 import json
 from typing import Any, Dict, Optional
 import numpy as np
 import pandas as pd
 import xgboost as xgb
-from xgboost.data import pandas_feature_info
 from utils.log_util import logger
-from models.xgb_validation import validate_xgb_parameters
-from models.wrappers.base import BaseModel, DEFAULT_EARLY_STOPPING_ROUNDS, _filter_valid_params, _filter_fit_params
+from models.preflight import filter_fit_params as _filter_fit_params, filter_valid_params as _filter_valid_params
+from models.preflight.xgboost_estimator import validate_estimator as validate_xgb_estimator
+from models.wrappers.base import BaseModel, DEFAULT_EARLY_STOPPING_ROUNDS
 
 
 class XGBoostModel(BaseModel):
@@ -37,13 +36,13 @@ class XGBoostModel(BaseModel):
 
     def __init__(self, params: Dict[str, Any], log_prefix: str="XGBoostModel", log_params: bool = True):
         super().__init__(params, log_prefix=log_prefix, log_params=log_params)
-        merged_params = {**copy.deepcopy(self.DEFAULT_PARAMS), **(params or {})}
-        # 模型参数
-        self.params = _filter_valid_params(merged_params, xgb.XGBRegressor)
-        if self.log_params:
-            logger.info(f"{log_prefix} model parameters: \n{self.params}")
-        # 模型构建
-        self.model = xgb.XGBRegressor(**self.params)
+
+    def _resolve_params(self, supplied: Dict[str, Any]) -> Dict[str, Any]:
+        # 合并默认参数后按 XGBRegressor 显式签名白名单校验
+        return _filter_valid_params(super()._resolve_params(supplied), xgb.XGBRegressor)
+
+    def _build_estimator(self):
+        return xgb.XGBRegressor(**self.params)
 
     def fit(self,
             X: pd.DataFrame,
@@ -70,6 +69,7 @@ class XGBoostModel(BaseModel):
             **kwargs: 为跨模型统一接口而保留，静默忽略
         """
         # 设置训练参数
+        assert self.model is not None  # _build_estimator 已构造
         fit_params: Dict[str, Any] = {"verbose": verbose}
         if eval_set is not None:
             fit_params["eval_set"] = eval_set
@@ -84,22 +84,8 @@ class XGBoostModel(BaseModel):
             fit_params["sample_weight"] = sample_weight
         # 兼容不同 xgboost 版本的 sklearn API 参数差异
         fit_params = _filter_fit_params(self.model, fit_params)
-        feature_names = None
-        if isinstance(X, pd.DataFrame):
-            names, _ = pandas_feature_info(
-                X, meta=None, feature_names=None, feature_types=self.model.feature_types,
-                enable_categorical=self.model.enable_categorical,
-            )
-            feature_names = tuple(names) if names is not None else None
-        targets = np.asarray(y)
-        # get_xgb_params 会从 RNG 对象抽取 seed；预检不得额外推进真实模型的 RNG。
-        validation_model = copy.copy(self.model)
-        validation_model.random_state = copy.deepcopy(self.model.random_state)
-        self.parameter_validation = validate_xgb_parameters(
-            validation_model.get_xgb_params(), num_features=X.shape[1],
-            num_targets=targets.shape[1] if targets.ndim > 1 else 1,
-            feature_names=feature_names,
-        )
+        # 子进程预检：参数表面 + 维度 + 特征名（私有 API 与 RNG 防护收口在 preflight 层）
+        self.parameter_validation = validate_xgb_estimator(self.model, X, y)
         # 模型训练
         self.model.fit(X, y, **fit_params)
         self.parameter_validation["fitted_config"] = json.loads(self.model.get_booster().save_config())
@@ -111,7 +97,7 @@ class XGBoostModel(BaseModel):
         """
         预测
         """
-        if not self.is_fitted:
-            raise ValueError(f"{self.log_prefix} 模型尚未训练(Model not fitted yet).")
+        self._require_fitted()
+        assert self.model is not None
 
         return self.model.predict(X)

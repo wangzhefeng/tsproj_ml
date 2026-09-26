@@ -1,12 +1,12 @@
 """sklearn_tree: estimator wrappers extracted from the model factory."""
 
-import copy
 from typing import Any, Dict, Optional
 import numpy as np
 import pandas as pd
 from sklearn.ensemble import RandomForestRegressor, HistGradientBoostingRegressor
 from utils.log_util import logger
-from models.wrappers.base import BaseModel, _filter_valid_params
+from models.preflight import filter_valid_params as _filter_valid_params
+from models.wrappers.base import BaseModel
 
 
 class RandomForestModel(BaseModel):
@@ -31,14 +31,12 @@ class RandomForestModel(BaseModel):
 
     def __init__(self, params: Dict[str, Any], log_prefix: str="RandomForestModel", log_params: bool = True):
         super().__init__(params, log_prefix=log_prefix, log_params=log_params)
-        # 参数合并（用户参数优先，避免被默认值覆盖）
-        merged_params = {**copy.deepcopy(self.DEFAULT_PARAMS), **(params or {})}
-        # 模型参数
-        self.params = _filter_valid_params(merged_params, RandomForestRegressor)
-        if self.log_params:
-            logger.info(f"{log_prefix} model parameters: \n{self.params}")
-        # 模型构建
-        self.model = RandomForestRegressor(**self.params)
+
+    def _resolve_params(self, supplied: Dict[str, Any]) -> Dict[str, Any]:
+        return _filter_valid_params(super()._resolve_params(supplied), RandomForestRegressor)
+
+    def _build_estimator(self):
+        return RandomForestRegressor(**self.params)
 
     def fit(self,
             X: pd.DataFrame,
@@ -55,6 +53,7 @@ class RandomForestModel(BaseModel):
             **kwargs: 为跨模型统一接口而保留（eval_set / early_stopping_rounds 等），
                 Random Forest 不支持验证集与早停，静默忽略
         """
+        assert self.model is not None  # _build_estimator 已构造
         self.model.fit(X, y, sample_weight=sample_weight)
         self.is_fitted = True
 
@@ -64,8 +63,8 @@ class RandomForestModel(BaseModel):
         """
         预测
         """
-        if not self.is_fitted:
-            raise ValueError(f"{self.log_prefix} 模型尚未训练(Model not fitted yet).")
+        self._require_fitted()
+        assert self.model is not None
 
         return self.model.predict(X)
 
@@ -101,13 +100,12 @@ class HistGBModel(BaseModel):
 
     def __init__(self, params: Dict[str, Any], log_prefix: str="HistGBModel", log_params: bool = True):
         super().__init__(params, log_prefix=log_prefix, log_params=log_params)
-        merged_params = {**copy.deepcopy(self.DEFAULT_PARAMS), **(params or {})}
-        # 模型参数
-        self.params = _filter_valid_params(merged_params, HistGradientBoostingRegressor)
-        if self.log_params:
-            logger.info(f"{log_prefix} model parameters: \n{self.params}")
-        # 模型构建
-        self.model = HistGradientBoostingRegressor(**self.params)
+
+    def _resolve_params(self, supplied: Dict[str, Any]) -> Dict[str, Any]:
+        return _filter_valid_params(super()._resolve_params(supplied), HistGradientBoostingRegressor)
+
+    def _build_estimator(self):
+        return HistGradientBoostingRegressor(**self.params)
 
     def fit(self,
             X: pd.DataFrame,
@@ -128,6 +126,7 @@ class HistGBModel(BaseModel):
                 early_stopping_rounds），HistGB 早停为内部自动切分，静默忽略
         """
         # 类别特征 名称→索引 映射，注入构造参数
+        assert self.model is not None  # _build_estimator 已构造
         if categorical_feature:
             if hasattr(X, "columns"):
                 indices = [X.columns.get_loc(col) for col in categorical_feature]
@@ -148,7 +147,7 @@ class HistGBModel(BaseModel):
         """
         预测
         """
-        if not self.is_fitted:
-            raise ValueError(f"{self.log_prefix} 模型尚未训练(Model not fitted yet).")
+        self._require_fitted()
+        assert self.model is not None
 
         return self.model.predict(X)

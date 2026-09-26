@@ -1,13 +1,12 @@
 """seasonal_template: estimator wrappers extracted from the model factory."""
 
-import copy
 import re
 from typing import Any, Dict, Optional
 import numpy as np
 import pandas as pd
 from scipy.optimize import nnls
 from utils.log_util import logger
-from models.wrappers.base import BaseModel
+from models.wrappers.base import BaseModel, nan_defense_fit_state
 
 
 class SeasonalTemplateModel(BaseModel):
@@ -39,26 +38,21 @@ class SeasonalTemplateModel(BaseModel):
 
     DEFAULT_PARAMS = {
         "day_type_split": True,   # 工作日/周末分组建模板
+        "holiday_split": False,   # 按 is_holiday 列分组建模板（要求特征含该列）
         "equal_weight": False,    # True=等权 climatology；False=NNLS 学权重
         "min_group_samples": 10,  # 分组样本不足该数时回退全局权重
     }
 
     LAG_COL_PATTERN = r"^.+_lag_\d+$"
     DOW_COL = "dt_day_of_week"
+    HOLIDAY_COL = "is_holiday"
 
     def __init__(self, params: Dict[str, Any], log_prefix: str="SeasonalTemplateModel", log_params: bool = True):
         super().__init__(params, log_prefix=log_prefix, log_params=log_params)
-        # 参数合并（用户参数优先，避免被默认值覆盖）
-        merged_params = {**copy.deepcopy(self.DEFAULT_PARAMS), **(params or {})}
-        self.params = merged_params
-        if self.log_params:
-            logger.info(f"{log_prefix} model parameters: \n{self.params}")
+
+    def _build_estimator(self):
         # 无底层估计器：非负模板权重即模型
-        self.model = None
-        self.lag_columns_ = None
-        self.weights_ = None
-        self.group_weights_ = None
-        self.lag_medians_ = None
+        return None
 
     def _detect_lag_columns(self, X: pd.DataFrame) -> list:
         """自动识别滞后列并按滞后阶数排序，保证 fit/predict 列序一致"""
@@ -98,16 +92,12 @@ class SeasonalTemplateModel(BaseModel):
                 f"无法构建季节模板。"
             )
         self.lag_columns_ = lag_cols
-        Z_df = X[lag_cols]
-        yv = np.asarray(y, dtype=float).ravel()
         # fit 端丢弃含 NaN 的行（训练窗起始行的长滞后特征为 NaN）
-        mask = Z_df.notna().all(axis=1).to_numpy() & np.isfinite(yv)
-        Z_c = Z_df.to_numpy(dtype=float)[mask]
+        mask, yv, self.lag_medians_ = nan_defense_fit_state(X, y, columns=lag_cols)
+        Z_c = X[lag_cols].to_numpy(dtype=float)[mask]
         y_c = yv[mask]
         if len(y_c) == 0:
             raise ValueError(f"{self.log_prefix} 滞后列全部含 NaN，无有效训练行。")
-        # predict 端 NaN 填补用的训练期中位数
-        self.lag_medians_ = Z_df.median().to_numpy(dtype=float)
         # 全局权重
         self.weights_ = self._fit_weights(Z_c, y_c)
         if self.log_params:
@@ -115,22 +105,37 @@ class SeasonalTemplateModel(BaseModel):
                 f"{self.log_prefix} template weights (global): "
                 f"{np.round(self.weights_, 4)}"
             )
-        # 工作日/周末分组权重（两组样本都足够才启用，否则回退全局）
-        self.group_weights_ = None
-        if self.params.get("day_type_split") and self.DOW_COL in X.columns:
+        # 分组键：holiday_split 优先于 day_type_split（节假日形态与普通
+        # 工作日/周末均不同，显式开启且列存在时按节假日二分）
+        group_column = None
+        group_names = None
+        if self.params.get("holiday_split") and self.HOLIDAY_COL in X.columns:
+            group_column = np.asarray(X[self.HOLIDAY_COL].to_numpy())[mask]
+            group_names = (("holiday", group_column >= 0.5), ("workday", group_column < 0.5))
+        elif self.params.get("day_type_split") and self.DOW_COL in X.columns:
             dow = X[self.DOW_COL].to_numpy()[mask]
+            group_names = (("weekday", dow <= 4), ("weekend", dow >= 5))
+        # 分组权重（每组样本都足够才启用，否则回退全局）
+        self.group_weights_ = None
+        self.group_split_mode_ = None
+        if group_names is not None:
             min_n = int(self.params.get("min_group_samples", 10))
             group_weights = {}
-            for group_name, group_mask in [("weekday", dow <= 4), ("weekend", dow >= 5)]:
+            for group_name, group_mask in group_names:
                 if int(group_mask.sum()) >= min_n:
                     group_weights[group_name] = self._fit_weights(Z_c[group_mask], y_c[group_mask])
-            if len(group_weights) == 2:
+            if len(group_weights) == len(group_names):
                 self.group_weights_ = group_weights
+                self.group_split_mode_ = (
+                    "holiday" if self.params.get("holiday_split") and self.HOLIDAY_COL in X.columns else "day_type"
+                )
                 if self.log_params:
                     logger.info(
-                        f"{self.log_prefix} day-type split enabled: "
-                        f"weekday={np.round(group_weights['weekday'], 4)}, "
-                        f"weekend={np.round(group_weights['weekend'], 4)}"
+                        f"{self.log_prefix} {self.group_split_mode_} split enabled: "
+                        + ", ".join(
+                            f"{name}={np.round(weights, 4)}"
+                            for name, weights in sorted(group_weights.items())
+                        )
                     )
         self.is_fitted = True
 
@@ -140,8 +145,7 @@ class SeasonalTemplateModel(BaseModel):
         """
         预测
         """
-        if not self.is_fitted:
-            raise ValueError(f"{self.log_prefix} 模型尚未训练(Model not fitted yet).")
+        self._require_fitted()
         assert self.lag_columns_ is not None and self.weights_ is not None
         assert self.lag_medians_ is not None
         Z = X[self.lag_columns_].to_numpy(dtype=float)
@@ -149,13 +153,20 @@ class SeasonalTemplateModel(BaseModel):
         if np.isnan(Z).any():
             nan_rows, nan_cols = np.where(np.isnan(Z))
             Z[nan_rows, nan_cols] = self.lag_medians_[nan_cols]
-        if self.group_weights_ is not None and self.DOW_COL in X.columns:
-            dow = X[self.DOW_COL].to_numpy()
-            is_weekday = dow <= 4
-            out = np.empty(len(Z), dtype=float)
-            out[is_weekday] = Z[is_weekday] @ self.group_weights_["weekday"]
-            out[~is_weekday] = Z[~is_weekday] @ self.group_weights_["weekend"]
-            return out
+        if self.group_weights_ is not None:
+            if self.group_split_mode_ == "holiday" and self.HOLIDAY_COL in X.columns:
+                is_holiday = np.asarray(X[self.HOLIDAY_COL].to_numpy()) >= 0.5
+                out = np.empty(len(Z), dtype=float)
+                out[is_holiday] = Z[is_holiday] @ self.group_weights_["holiday"]
+                out[~is_holiday] = Z[~is_holiday] @ self.group_weights_["workday"]
+                return out
+            if self.group_split_mode_ == "day_type" and self.DOW_COL in X.columns:
+                dow = X[self.DOW_COL].to_numpy()
+                is_weekday = dow <= 4
+                out = np.empty(len(Z), dtype=float)
+                out[is_weekday] = Z[is_weekday] @ self.group_weights_["weekday"]
+                out[~is_weekday] = Z[~is_weekday] @ self.group_weights_["weekend"]
+                return out
 
         return Z @ self.weights_
 

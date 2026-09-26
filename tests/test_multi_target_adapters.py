@@ -694,7 +694,9 @@ class MultiTargetAdapterTests(unittest.TestCase):
 
 class ImportBoundaryTests(unittest.TestCase):
     def test_training_core_only_imports_approved_model_infrastructure(self):
-        approved = {"models.catalog", "models.factory"}
+        # models.adapters.canonical：2026-09-26 适配层下沉后的正式依赖
+        #（canonical ndarray 合同适配器与工厂，替代原 capabilities 内实现）
+        approved = {"models.catalog", "models.factory", "models.adapters.canonical"}
         for path in (
             Path("forecasting_core/specs/estimator.py"),
             Path("model_training/estimators/capabilities.py"),

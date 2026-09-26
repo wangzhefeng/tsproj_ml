@@ -1,32 +1,14 @@
 """lightgbm: estimator wrappers extracted from the model factory."""
 
-import copy
-import inspect
 from typing import Any, Dict, Optional
 import numpy as np
 import pandas as pd
 import lightgbm as lgb
 from utils.log_util import logger
-from models.wrappers.base import BaseModel, DEFAULT_EARLY_STOPPING_ROUNDS, _filter_fit_params
+from models.preflight.lightgbm import validate_lgbm_params
+from models.preflight import filter_fit_params as _filter_fit_params
+from models.wrappers.base import BaseModel, DEFAULT_EARLY_STOPPING_ROUNDS
 
-
-def _validate_lgbm_params(params: Dict[str, Any]) -> None:
-    """
-    按已安装 LightGBM 原生参数及别名表做严格参数名校验。
-
-    LGBMRegressor 通过 ``**kwargs`` 透传原生 booster 参数，签名白名单对其无效，
-    拼写错误的参数会被静默忽略。合法名全集 = sklearn 封装显式参数 +
-    原生参数及其别名（``_ConfigAliases``）。内省失败必须显式报错。
-    """
-    try:
-        explicit = {p for p in inspect.signature(lgb.LGBMRegressor.__init__).parameters if p != "self"}
-        alias_map = lgb.basic._ConfigAliases._get_all_param_aliases()
-        valid = explicit | set(alias_map) | {a for aliases in alias_map.values() for a in aliases}
-    except Exception as exc:
-        raise RuntimeError("LightGBM parameter validation is unavailable") from exc
-    unknown = sorted(k for k in params if k not in valid)
-    if unknown:
-        raise ValueError(f"Unknown LightGBM parameters: {unknown}")
 
 class LightGBMModel(BaseModel):
     """
@@ -59,14 +41,15 @@ class LightGBMModel(BaseModel):
 
     def __init__(self, params: Dict[str, Any], log_prefix: str="LightGBMModel", log_params: bool = True):
         super().__init__(params, log_prefix=log_prefix, log_params=log_params)
-        merged_params = {**copy.deepcopy(self.DEFAULT_PARAMS), **(params or {})}
-        # 模型参数
-        self.params = merged_params
-        _validate_lgbm_params(self.params)
-        if self.log_params:
-            logger.info(f"{log_prefix} model parameters: \n{self.params}")
-        # 模型构建
-        self.model = lgb.LGBMRegressor(**self.params)
+
+    def _resolve_params(self, supplied: Dict[str, Any]) -> Dict[str, Any]:
+        # 合并默认参数后按 LightGBM 原生参数及别名全集严格校验
+        merged_params = super()._resolve_params(supplied)
+        validate_lgbm_params(merged_params)
+        return merged_params
+
+    def _build_estimator(self):
+        return lgb.LGBMRegressor(**self.params)
 
     def fit(self,
             X: pd.DataFrame,
@@ -105,6 +88,7 @@ class LightGBMModel(BaseModel):
         # 兼容不同 lightgbm 版本的 sklearn API 参数差异（例如 fit 不再接受 verbose）
         fit_params = _filter_fit_params(self.model, fit_params)
         # 模型训练
+        assert self.model is not None  # _build_estimator 已构造
         self.model.fit(X, y, **fit_params)
         self.is_fitted = True
 
@@ -114,7 +98,7 @@ class LightGBMModel(BaseModel):
         """
         预测
         """
-        if not self.is_fitted:
-            raise ValueError(f"{self.log_prefix} 模型尚未训练(Model not fitted yet).")
+        self._require_fitted()
+        assert self.model is not None
 
         return self.model.predict(X)

@@ -17,7 +17,7 @@ from data_loading import (
     SourceRegistry,
 )
 from model_training.estimators import make_model_factory
-from models.wrappers.ets import ETSModel
+from models.adapters.native_registry import native_history_cls as _native_history_cls
 from feature_engineering import cache as compiled_cache
 from feature_engineering.selection import (
     CanonicalFeatureSelector,
@@ -76,6 +76,9 @@ from model_performance.resource_planner import (
     runtime_budget_for_config,
 )
 
+# 原生序列模型注册表已下沉 models/adapters/native_registry.py（2026-09-26：
+# 纯 wrapper 接线属模型层，非编排层职责）；runner 经 _native_history_cls 分发。
+
 # P3/D3：回测原语已公开化至 model_testing/backtest.py（2026-09-06 R1 清扫：
 # 删除写而不用的 _positive_validation_int/_actual_tensor 别名，仍用的两处改公开名）。
 
@@ -121,8 +124,10 @@ class CanonicalBaseModelRunner:
         if config.strategy is None:
             raise ValueError("CanonicalBaseModelRunner requires a strategy")
         self.config = config
-        if config.estimator.model_type.lower() == "ets":
-            ETSModel(dict(config.estimator.params))
+        native_cls = _native_history_cls(config.estimator.model_type)
+        if native_cls is not None:
+            # 构造期即校验参数（未知参数 RAISE），与 ETS 原行为一致
+            native_cls(dict(config.estimator.params))
         self.calendar_runner_factory: Any = CanonicalBaseModelRunner
         self.registry = registry
         self.origin = origin
@@ -499,12 +504,16 @@ class CanonicalBaseModelRunner:
             history_cutoff=training_history_cutoff,
             target_history=target_history,
         )
-        # 原生模型只消费本折完整原始历史；监督数组仅用于共用调度，不用于 ETS 拟合。
-        if self.config.estimator.model_type.lower() == "ets":
+        # 原生模型只消费本折完整原始历史；监督数组仅用于共用调度，不用于原生序列拟合。
+        native_cls = _native_history_cls(self.config.estimator.model_type)
+        if native_cls is not None:
             if train_indices != tuple(range(len(self.supervised_origins))):
-                raise ValueError("ETS requires the complete configured raw-history fold")
+                raise ValueError(
+                    f"{self.config.estimator.model_type} requires the complete configured "
+                    "raw-history fold"
+                )
             history = self.builder.target_history(self.origin)
-            artifact = ETSModel(dict(self.config.estimator.params)).fit_history(
+            artifact = native_cls(dict(self.config.estimator.params)).fit_history(
                 pd.Series(history.values[0, :, 0], index=history.forecast_times),
                 as_of=self.origin, freq=self.config.problem.freq,
             )
@@ -572,12 +581,16 @@ class CanonicalBaseModelRunner:
         target_transform: CanonicalTargetTransform,
     ) -> PointForecastTensor | MarginalForecastDistribution:
         """Predict at the given origin and restore to the original target space."""
-        if isinstance(artifact, ETSModel):
+        native_cls = _native_history_cls(self.config.estimator.model_type)
+        if native_cls is not None:
             evidence = artifact.execution_evidence()
             expected = pd.date_range(pd.Timestamp(evidence["history_end"]),
                                      periods=self.config.problem.horizon + 1, freq=self.config.problem.freq)[1:]
             if not forecast_times.equals(expected):
-                raise ValueError("ETS prediction must immediately follow the fitted as-of origin")
+                raise ValueError(
+                    f"{self.config.estimator.model_type} prediction must immediately follow "
+                    "the fitted as-of origin"
+                )
             return PointForecastTensor(artifact.forecast(len(forecast_times))[None, :, None],
                                        self.series_ids, forecast_times, self.config.problem.targets)
         base_design = designs[0]
@@ -899,8 +912,12 @@ class CanonicalBaseModelRunner:
     def execution_evidence(self, artifact: Any, target_transform: Any) -> dict[str, Any]:
         """Snapshot one existing fitted unit without fitting or predicting."""
         models = collect_model_evidence(artifact)
-        if isinstance(artifact, ETSModel):
-            models = [{"wrapper": "ETSModel", **artifact.execution_evidence()}]
+        native_cls = _native_history_cls(self.config.estimator.model_type)
+        if native_cls is not None:
+            models = [{
+                "wrapper": native_cls.__name__,
+                **artifact.execution_evidence(),
+            }]
         return json_evidence({
             "status": "recorded" if models else "unavailable",
             "reason": None if models else "no_supported_model_wrapper_found",

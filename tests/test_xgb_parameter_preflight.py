@@ -11,7 +11,7 @@ import pandas as pd
 import xgboost as xgb
 
 from models.wrappers.xgboost import XGBoostModel
-from models import xgb_validation
+from models.preflight import xgb_preflight as xgb_validation
 
 
 class XGBParameterPreflightTest(unittest.TestCase):

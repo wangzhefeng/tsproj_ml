@@ -11,6 +11,8 @@ from models.wrappers.sklearn_tree import RandomForestModel, HistGBModel
 from models.wrappers.linear import RidgeModel, ElasticNetModel, LassoModel, QuantileRegressorModel
 from models.wrappers.seasonal_template import SeasonalTemplateModel
 from models.wrappers.ets import ETSModel
+from models.wrappers.naive import NaiveModel
+from models.wrappers.theta import ThetaModel
 
 
 class ModelFactory:

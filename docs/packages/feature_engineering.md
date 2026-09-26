@@ -12,7 +12,7 @@
   - `scaling.py`：`CanonicalFeatureScaler`，在训练设计上拟合并将同一状态用于预测设计；
   - `windows.py`：按唯一监督标签时间选取 scaler 窗口；分解默认同窗，允许显式较长上下文。
 
-特征只能使用预测原点可见信息。频域/小波特征由 `spectral.py` 提供纯函数实现，经 `features.transformations.advanced.fourier`（trailing 窗 FFT：top-k 振幅/频率/相位 + 谱质心 + 按周期区间的频带能量占比）与 `advanced.wavelet`（trailing 窗 DWT 各分量能量占比）声明启用；两者只在 trailing 可见窗上计算，as-of 由编译器合同保证，可见历史不足窗口长度时 RAISE。rolling.stats 额外支持 `entropy`（香农熵，p=|y|/Σ|y|）。现役中国节假日 source 由 `data_loading/calendar_generator/chinese_holiday.py` 提供，两者不要混淆。
+特征只能使用预测原点可见信息。频域/小波特征由 `spectral.py` 提供纯函数实现，经 `features.transformations.advanced.fourier`（trailing 窗 FFT：top-k 振幅/频率/相位 + 谱质心 + 按周期区间的频带能量占比）与 `advanced.wavelet`（trailing 窗 DWT 各分量能量占比）声明启用；两者只在 trailing 可见窗上计算，as-of 由编译器合同保证，可见历史不足窗口长度时 RAISE。rolling/expanding 的 stats 白名单为 `{mean, std, min, max, median, skew, kurt, entropy, max_diff, min_diff}`（entropy = 香农熵，p=|y|/Σ|y|），ewm 仅 `{mean, std}`；拼错统计名在编译期 RAISE 并列明合法集（2026-09-26 规范化，此前错误延迟到编译中段）。现役中国节假日 source 由 `data_loading/calendar_generator/chinese_holiday.py` 提供，两者不要混淆。
 
 ## 缓存与训练态
 

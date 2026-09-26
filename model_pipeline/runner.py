@@ -17,7 +17,12 @@ from data_loading import (
     SourceRegistry,
 )
 from model_training.estimators import make_model_factory
+from model_training.weights import (
+    resolve_training_sample_weight,
+    training_sample_weight_spec,
+)
 from models.adapters.native_registry import native_history_cls as _native_history_cls
+from models.catalog import MODEL_CATALOG
 from feature_engineering import cache as compiled_cache
 from feature_engineering.selection import (
     CanonicalFeatureSelector,
@@ -490,6 +495,14 @@ class CanonicalBaseModelRunner:
             _label_end(self.builder, self.supervised_origins[index])
             for index in train_indices
         )
+        train_sample_weight = resolve_training_sample_weight(
+            self.config,
+            training_origins,
+            history_cutoff=training_history_cutoff,
+            sample_weight_capable=MODEL_CATALOG[
+                self.config.estimator.model_type
+            ].sample_weight,
+        )
         (
             feature_scaler,
             target_transform,
@@ -535,6 +548,7 @@ class CanonicalBaseModelRunner:
                 max_workers=1 if force_serial else None,
                 checkpoint=(self.checkpoint.child(fold=list(train_indices))
                             if self.checkpoint is not None else None),
+                sample_weight=train_sample_weight,
             )
         else:
             _, artifact, _ = _fit_quantile(
@@ -547,6 +561,7 @@ class CanonicalBaseModelRunner:
                 worker_plan=(1, 1) if force_serial else None,
                 checkpoint=(self.checkpoint.child(fold=list(train_indices))
                             if self.checkpoint is not None else None),
+                sample_weight=train_sample_weight,
             )
         return (
             feature_scaler,
@@ -680,7 +695,12 @@ class CanonicalBaseModelRunner:
         tuple[np.ndarray, ...],
         np.ndarray,
     ]:
-        """Fit final transforms under the same explicit window as backtesting."""
+        """Fit final transforms under the same explicit window as backtesting.
+
+        声明了 ``validation.training.sample_weight`` 时，最终拟合权重在
+        ``fit_final`` 内按同一窗口的 origins/cutoff 重算（与折路径同一
+        接线函数），保证 final fit 与回测共享加权语义。
+        """
         if self.config.validation.get("train_history_steps") is not None:
             raise ValueError("train_history_steps currently requires backtest-only; final fit/bundle unsupported")
         backtest = self.config.validation.backtest
@@ -743,6 +763,14 @@ class CanonicalBaseModelRunner:
             training_series_ids=sample_series_ids,
             history_cutoff=history_cutoff,
         )
+        self._final_sample_weight = resolve_training_sample_weight(
+            self.config,
+            sample_origins,
+            history_cutoff=history_cutoff,
+            sample_weight_capable=MODEL_CATALOG[
+                self.config.estimator.model_type
+            ].sample_weight,
+        )
         return feature_scaler, target_transform, X_all_transformed, Y_all_transformed
 
     @runtime_checkpoint_errors
@@ -751,10 +779,23 @@ class CanonicalBaseModelRunner:
         X_transformed: tuple[np.ndarray, ...],
         Y_transformed: np.ndarray,
     ) -> tuple[Any, Any, Any]:
-        """Train the final artifact and return (trainer, artifact, capabilities)."""
+        """Train the final artifact and return (trainer, artifact, capabilities).
+
+        声明了训练加权时，权重来自 ``final_bundle_inputs`` 在同一显式
+        窗口上的计算（先于本方法调用）；未经 ``final_bundle_inputs``
+        直接调用且配置声明了加权时报错，防止静默丢失加权语义。
+        """
         if self.config.validation.get("train_history_steps") is not None:
             raise ValueError("train_history_steps currently requires backtest-only; final fit unsupported")
         mode = self._mode()
+        final_sample_weight = getattr(self, "_final_sample_weight", None)
+        if (final_sample_weight is None
+                and training_sample_weight_spec(self.config) is not None):
+            raise ValueError(
+                "validation.training.sample_weight requires "
+                "final_bundle_inputs() before fit_final() so weights are "
+                "computed on the same explicit window"
+            )
         X_transformed, feature_schema = self._apply_feature_selection(
             X_transformed, Y_transformed
         )
@@ -768,6 +809,7 @@ class CanonicalBaseModelRunner:
                 execution_plan=self.execution_plan,
                 checkpoint=(self.checkpoint.child(fold="final")
                             if self.checkpoint is not None else None),
+                sample_weight=final_sample_weight,
             )
             capabilities = trainer.capabilities
         else:
@@ -780,6 +822,7 @@ class CanonicalBaseModelRunner:
                 execution_plan=self.execution_plan,
                 checkpoint=(self.checkpoint.child(fold="final")
                             if self.checkpoint is not None else None),
+                sample_weight=final_sample_weight,
             )
         return trainer, artifact, capabilities
 

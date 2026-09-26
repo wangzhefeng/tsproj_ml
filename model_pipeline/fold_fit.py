@@ -32,6 +32,7 @@ from model_performance.resource_planner import (
     runtime_estimator_params as _planned_estimator_params,
 )
 from model_training.quantile import CanonicalMarginalQuantileTrainer
+from model_training.weights import resolve_training_sample_weight
 
 
 def _fit_runtime_transforms(
@@ -144,6 +145,7 @@ def _fit_point(
     execution_plan: RuntimeExecutionPlan | None = None,
     max_workers: int | None = None,
     checkpoint: FitCheckpoint | None = None,
+    sample_weight: np.ndarray | None = None,
 ):
     resolved_plan = execution_plan or _runtime_execution_plan(config)
     runtime_params = _planned_estimator_params(config, resolved_plan)
@@ -172,6 +174,7 @@ def _fit_point(
     return trainer, trainer.train(
         X_by_call,
         Y,
+        sample_weight=sample_weight,
         n_series=n_series,
         max_workers=(
             resolved_plan.output_workers
@@ -191,6 +194,7 @@ def _fit_quantile(
     execution_plan: RuntimeExecutionPlan | None = None,
     worker_plan: tuple[int, int] | None = None,
     checkpoint: FitCheckpoint | None = None,
+    sample_weight: np.ndarray | None = None,
 ):
     resolved_plan = execution_plan or _runtime_execution_plan(config)
     runtime_params = _planned_estimator_params(config, resolved_plan)
@@ -235,7 +239,8 @@ def _fit_quantile(
         )
         return (
             trainer,
-            trainer.train(X_by_call, Y, n_series=n_series, max_workers=1),
+            trainer.train(X_by_call, Y, sample_weight=sample_weight,
+                          n_series=n_series, max_workers=1),
             capabilities,
         )
     trainer = CanonicalMarginalQuantileTrainer(
@@ -260,6 +265,7 @@ def _fit_quantile(
         trainer.train(
             X_by_call,
             Y,
+            sample_weight=sample_weight,
             n_series=n_series,
             max_workers=level_workers,
             output_workers=output_workers,

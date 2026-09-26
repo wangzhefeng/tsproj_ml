@@ -4,6 +4,7 @@
 import tempfile
 import unittest
 from pathlib import Path
+import re
 
 import numpy as np
 import pandas as pd
@@ -386,6 +387,26 @@ class FeatureVisibilityCompilerTest(unittest.TestCase):
         # rolling_3 窗 = [1,2,3]，相邻差分 [1,1]。
         self.assertEqual(compiled.frame["load_rolling_max_diff_3"].tolist(), [1.0, 1.0])
         self.assertEqual(compiled.frame["load_rolling_min_diff_3"].tolist(), [1.0, 1.0])
+
+    def test_unknown_stats_rejected_at_compile_time(self):
+        """rolling/expanding/ewm 的 stats 白名单：拼错统计名 RAISE（含报错列名与合法集）。"""
+        self.write_fixture()
+        request = self.request()
+        cases = (
+            ({"rolling": {"columns": ["load"], "windows": [3], "stats": ["avg"]}},
+             "unsupported rolling.stats entries ['avg']"),
+            ({"expanding": {"columns": ["load"], "stats": ["avg"]}},
+             "unsupported expanding.stats entries ['avg']"),
+            ({"ewm": {"columns": ["load"], "halflives": [2], "stats": ["median"]}},
+             "unsupported ewm.stats entries ['median']"),
+        )
+        for advanced, message in cases:
+            with self.subTest(message=message):
+                config = self.build_config(transformations={"advanced": advanced})
+                with self.assertRaisesRegex(ValueError, re.escape(message)):
+                    FeatureCompiler(config).compile(
+                        self.materialize(config, request), request,
+                    )
 
     def test_direct_can_freeze_history_lags_at_forecast_origin(self):
         """显式 align_to_target=false 时，Direct 各 horizon 共用原点历史。"""

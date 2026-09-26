@@ -1013,8 +1013,8 @@ class FeatureCompiler:
             windows = self._positive_int_sequence(
                 rolling_spec.get("windows", ()), "rolling.windows"
             )
-            stats = self._string_sequence(
-                rolling_spec.get("stats", ()), "rolling.stats"
+            stats = self._validated_stats(
+                rolling_spec.get("stats", ()), "rolling.stats", self.ROLLING_STATS
             )
             for column in columns:
                 histories = self._batch_master_histories(items, column)
@@ -1074,8 +1074,8 @@ class FeatureCompiler:
             columns = self._string_sequence(
                 expanding_spec.get("columns", ()), "advanced.expanding.columns"
             )
-            stats = self._string_sequence(
-                expanding_spec.get("stats", ()), "expanding.stats"
+            stats = self._validated_stats(
+                expanding_spec.get("stats", ()), "expanding.stats", self.ROLLING_STATS
             )
             for column in columns:
                 histories = self._batch_master_histories(items, column)
@@ -2057,7 +2057,7 @@ class FeatureCompiler:
                 )
                 if kind == "rolling":
                     windows = self._positive_int_sequence(spec.get("windows", ()), "rolling.windows")
-                    stats = self._string_sequence(spec.get("stats", ()), "rolling.stats")
+                    stats = self._validated_stats(spec.get("stats", ()), "rolling.stats", self.ROLLING_STATS)
                     for window in windows:
                         values = history.iloc[-window:]
                         for stat in stats:
@@ -2068,7 +2068,7 @@ class FeatureCompiler:
                     halflives = self._positive_number_sequence(
                         spec.get("halflives", ()), "ewm.halflives"
                     )
-                    ewm_stats = self._string_sequence(spec.get("stats", ()), "ewm.stats")
+                    ewm_stats = self._validated_stats(spec.get("stats", ()), "ewm.stats", self.EWM_STATS)
                     for halflife in halflives:
                         series = history.ewm(halflife=halflife, adjust=True)
                         for stat in ewm_stats:
@@ -2087,7 +2087,7 @@ class FeatureCompiler:
                                 )
                             row[f"{column}_ewm_{stat}_{halflife}"] = float(value)
                 elif kind == "expanding":
-                    stats = self._string_sequence(spec.get("stats", ()), "expanding.stats")
+                    stats = self._validated_stats(spec.get("stats", ()), "expanding.stats", self.ROLLING_STATS)
                     for stat in stats:
                         row[f"{column}_expanding_{stat}"] = self._statistic(history, stat)
                 elif kind == "difference":
@@ -2289,6 +2289,28 @@ class FeatureCompiler:
         if not np.isfinite(numeric.to_numpy()).all():
             raise ValueError(f"history column {column_name!r} must be finite")
         return numeric.reset_index(drop=True)
+
+    # 解析期 stats 白名单：rolling/expanding 共用 _statistic 的全集，
+    # ewm 只支持 mean/std。拼错统计名必须在 spec 解析期 RAISE，而不是
+    # 编译中段（与 preflight「未知参数 RAISE」同精神）。
+    ROLLING_STATS = frozenset(
+        {"mean", "std", "min", "max", "median", "skew", "kurt", "entropy",
+         "max_diff", "min_diff"}
+    )
+    EWM_STATS = frozenset({"mean", "std"})
+
+    @classmethod
+    def _validated_stats(
+        cls, value: Any, field_name: str, allowed: frozenset[str],
+    ) -> tuple[str, ...]:
+        stats = cls._string_sequence(value, field_name)
+        unknown = sorted(set(stats) - allowed)
+        if unknown:
+            raise ValueError(
+                f"unsupported {field_name} entries {unknown}; "
+                f"expected subset of {sorted(allowed)}"
+            )
+        return stats
 
     @staticmethod
     def _string_sequence(value: Any, field_name: str) -> tuple[str, ...]:

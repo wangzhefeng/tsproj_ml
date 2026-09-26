@@ -10,7 +10,7 @@
 
 本包依赖 `forecasting_core` 与 `models`，不依赖 `probabilistic` 或 `model_forecasting`。Quantile estimator factory 由上层注入。
 
-ETS 的 catalog 标记为 native_history，不进入本包监督回归 trainer/adapter；由 pipeline 对每折有界真实历史直接调用 fit_history。资源合同允许 native_history 工作负载零特征，记录原始历史行数与实际候选拟合数，不把 horizon 个输出误报为 horizon 个回归模型。
+ETS/naive/theta 的 catalog 标记为 native_history，不进入本包监督回归 trainer/adapter；由 pipeline 对每折有界真实历史直接调用 fit_history（runner 按 `models/adapters/native_registry.py::NATIVE_HISTORY_MODELS` 注册表分发）。资源合同允许 native_history 工作负载零特征，记录原始历史行数与实际候选拟合数，不把 horizon 个输出误报为 horizon 个回归模型。
 
 ## 输入输出与策略组织
 
@@ -18,7 +18,7 @@ ETS 的 catalog 标记为 native_history，不进入本包监督回归 trainer/a
 
 `strategies/base.py` 维护 target plan、坐标和模型组 artifact，七个策略模块复用这组合同。Direct 的 horizon-feature 属于 layout，不是新策略；Local/Global 属于 training scope。MO 分块合法性由 core spec 校验。
 
-`estimators/capabilities.py` 从模型 catalog 与原生能力探测建立支持矩阵；`estimators/multi_target.py` 提供 independent、regressor-chain、native adapter。能力不足直接报错，不以自动降级掩盖不支持的目标维度或线程策略。
+`estimators/capabilities.py` 从模型 catalog 与原生能力探测建立支持矩阵（ndarray 合同适配器与工厂已下沉 `models/adapters/canonical.py`，本模块保留能力注册表、`resolve_model_capabilities` 与依赖 checkpoint 的 `SharedMultiQuantilePool`）；`estimators/multi_target.py` 提供 independent、regressor-chain、native adapter。能力不足直接报错，不以自动降级掩盖不支持的目标维度或线程策略。
 
 ## 恢复与边界
 

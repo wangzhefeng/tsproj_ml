@@ -386,7 +386,6 @@ def _annotate_batch_metadata(
     payload = json.loads(resolved_path.read_text(encoding="utf-8"))
     runtime = payload.setdefault("runtime", {})
     runtime["batch"] = {
-        "schema_version": 1,
         "batch_id": batch_id,
         "task_id": task_state["task_id"],
         "raw_design_group": group_key,
@@ -448,7 +447,6 @@ def _run_canonical_batch_locked(
                 )
     else:
         state = {
-            "schema_version": 1,
             "batch_id": batch_id,
             "config_paths": expected_paths,
             "tasks": {

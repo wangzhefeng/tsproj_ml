@@ -85,7 +85,6 @@ class HoldoutProofSummaryTest(unittest.TestCase):
 
         summary = _holdout_proof_summary((compiled,))
 
-        self.assertEqual(summary["schema_version"], 1)
         self.assertEqual(summary["total_lookups"], 3)
         self.assertEqual(summary["group_count"], 2)
         self.assertEqual(

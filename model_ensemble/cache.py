@@ -168,8 +168,8 @@ def _save_oof_cache_unlocked(
     buffer = stacked.to_csv(index=False).encode("utf-8")
     _atomic_write_bytes(directory / OOF_PREDICTIONS_FILE, buffer)
 
+    # 版本常量已作为盐参与 oof fingerprint 派生，metadata 不再重复存储显式版本字段
     metadata = {
-        "oof_schema_version": OOF_SCHEMA_VERSION,
         "oof_fingerprint": artifact.oof_fingerprint,
         "member_order": list(artifact.member_order),
         "targets": list(artifact.targets),
@@ -226,10 +226,6 @@ def _load_oof_cache_unlocked(
             f"OOF cache incomplete at {directory}: missing {sorted(missing)}"
         )
     metadata = json.loads((directory / OOF_METADATA_FILE).read_text("utf-8"))
-    if int(metadata.get("oof_schema_version", -1)) != OOF_SCHEMA_VERSION:
-        raise ValueError(
-            f"OOF cache schema version mismatch at {directory}"
-        )
     if str(metadata.get("oof_fingerprint")) != oof_fingerprint:
         raise ValueError(f"OOF cache fingerprint mismatch at {directory}")
 

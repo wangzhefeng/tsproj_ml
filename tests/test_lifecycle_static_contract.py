@@ -9,10 +9,18 @@ ROOT = Path(__file__).resolve().parents[1]
 
 class LifecycleStaticContractTest(unittest.TestCase):
     def test_completion_requires_matching_fingerprint_and_completed_state(self):
-        require_completed_state({"schema_version": 1, "config_fingerprint": "fixture", "status": "completed"}, "fixture")
+        require_completed_state({"config_fingerprint": "fixture", "status": "completed"}, "fixture")
         for status, fingerprint in (("running", "fixture"), ("failed", "fixture"), ("completed", "other")):
             with self.assertRaisesRegex(ValueError, "not completed"):
-                require_completed_state({"schema_version": 1, "config_fingerprint": fingerprint, "status": status}, "fixture")
+                require_completed_state({"config_fingerprint": fingerprint, "status": status}, "fixture")
+        # 旧格式（含显式版本字段）或任何形状偏差一律 RAISE
+        for payload in (
+            {"schema_version": 1, "config_fingerprint": "fixture", "status": "completed"},
+            {"config_fingerprint": "fixture"},
+            {},
+        ):
+            with self.assertRaisesRegex(ValueError, "not completed"):
+                require_completed_state(payload, "fixture")
 
     def test_calendar_backtest_precedes_final_fit_and_bundle_persistence(self):
         tree = ast.parse((ROOT / "model_pipeline/lifecycle.py").read_text())

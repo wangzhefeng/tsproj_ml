@@ -743,7 +743,6 @@ class CanonicalRuntimeSmokeTest(unittest.TestCase):
                 pd.Timestamp(weather_proof["forecast_origin"]),
             )
             holdout_summary = resolved["runtime"]["holdout_visibility_proof"]
-            self.assertEqual(holdout_summary["schema_version"], 1)
             self.assertGreater(
                 holdout_summary["total_lookups"],
                 holdout_summary["group_count"],

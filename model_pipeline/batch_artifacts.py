@@ -96,10 +96,10 @@ def validate_artifacts(task: Mapping[str, Any], *, require_digests: bool = True)
     if not isinstance(metadata, dict):
         raise ValueError("batch result metadata must be a mapping")
     runtime = resolved["runtime"]
-    if runtime.get("lifecycle_schema_version") == 1:
-        if "lifecycle" not in paths:
-            raise ValueError("batch artifacts missing run completion state")
-        require_completed_state(json.loads(paths["lifecycle"].read_text()), fingerprint)
+    # 完成态证据无条件必需：当前生命周期总是写 run_state.json
+    if "lifecycle" not in paths:
+        raise ValueError("batch artifacts missing run completion state")
+    require_completed_state(json.loads(paths["lifecycle"].read_text()), fingerprint)
     holdout = runtime["holdout"]
     windows = holdout["windows"]
     expected_folds = int(resolved["validation"]["fold_count"])

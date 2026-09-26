@@ -155,7 +155,6 @@ def _holdout_proof_summary(
             item[field] = value.isoformat() if value is not None else None
         serialized.append(item)
     return {
-        "schema_version": 1,
         "group_by": list(group_by),
         "total_lookups": total_lookups,
         "group_count": len(serialized),
@@ -491,7 +490,6 @@ def execute_lifecycle(
             **config.canonical_payload(),
             "config_fingerprint": fingerprint,
             "runtime": {
-                "lifecycle_schema_version": 1,
                 "result_method": config.result_method(),
                 "forecast_origin": origin.isoformat(),
                 "run_evidence": run_evidence,

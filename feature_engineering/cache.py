@@ -211,8 +211,8 @@ def save_compiled_cache(
 ) -> Path:
     directory = cache_dir(results_root, fingerprint)
     blob = pickle.dumps(dict(payload), protocol=pickle.HIGHEST_PROTOCOL)
+    # 版本常量已作为盐参与 fingerprint 派生，metadata 不再重复存储显式版本字段
     metadata = {
-        "schema_version": COMPILED_CACHE_SCHEMA_VERSION,
         "fingerprint": fingerprint,
         "payload_sha256": hashlib.sha256(blob).hexdigest(),
     }
@@ -240,8 +240,6 @@ def load_compiled_cache(
         )
     except (json.JSONDecodeError, OSError) as exc:
         raise ValueError(f"invalid compiled feature cache metadata at {directory}") from exc
-    if int(metadata.get("schema_version", -1)) != COMPILED_CACHE_SCHEMA_VERSION:
-        raise ValueError(f"compiled feature cache schema mismatch at {directory}")
     if str(metadata.get("fingerprint")) != fingerprint:
         raise ValueError(f"compiled feature cache fingerprint mismatch at {directory}")
     blob = (directory / COMPILED_PAYLOAD_FILE).read_bytes()
@@ -258,7 +256,6 @@ def load_compiled_cache(
 
 __all__ = [
     "COMPILED_CACHE_DIR_NAME",
-    "COMPILED_CACHE_SCHEMA_VERSION",
     "cache_dir",
     "compute_raw_design_fingerprint",
     "file_sha256",

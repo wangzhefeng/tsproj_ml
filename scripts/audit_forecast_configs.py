@@ -21,7 +21,6 @@ from model_ensemble.specs import EnsembleConfigSpec  # noqa: E402
 REQUIRED_KEYS = frozenset(
     {
         "path",
-        "schema_version",
         "config_kind",
         "result_identity",
         "result_method",
@@ -56,7 +55,6 @@ def _common_row(path: Path, root: Path, cfg: Any) -> dict[str, Any]:
     )
     return {
         "path": path.relative_to(root).as_posix(),
-        "schema_version": cfg.schema_version,
         "result_identity": cfg.result_identity(),
         "fingerprint": cfg.fingerprint(),
         "freq": cfg.problem.freq,

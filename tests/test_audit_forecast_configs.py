@@ -29,7 +29,6 @@ class ForecastConfigAuditTest(unittest.TestCase):
         for row in self.rows:
             self.assertEqual(set(row), set(REQUIRED_KEYS))
             self.assertEqual(len(row["fingerprint"]), 64)
-            self.assertEqual(row["schema_version"], 2)
             self.assertIn(row["probabilistic_mode"], {"point", "quantile"})
             self.assertGreater(row["horizon"], 0)
             self.assertTrue(row["targets"])

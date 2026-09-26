@@ -122,7 +122,6 @@ class ForbiddenTopLevelTest(unittest.TestCase):
     def test_clean_doc_passes(self):
         enforce_forbidden_top_level(
             {
-                "schema_version": 2,
                 "problem": {},
                 "data": {},
                 "probabilistic": {},

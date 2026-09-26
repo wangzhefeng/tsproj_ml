@@ -29,7 +29,6 @@ class CliContractTest(unittest.TestCase):
         config_path.write_text(
             yaml.safe_dump(
                 {
-                    "schema_version": 2,
                     "problem": {
                         "time_col": "time",
                         "freq": "1h",

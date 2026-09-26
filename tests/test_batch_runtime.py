@@ -142,7 +142,6 @@ class CanonicalBatchRuntimeTest(unittest.TestCase):
         path.write_text(
             yaml.safe_dump(
                 {
-                    "schema_version": 2,
                     **config.canonical_payload(),
                 },
                 sort_keys=False,
@@ -153,7 +152,6 @@ class CanonicalBatchRuntimeTest(unittest.TestCase):
         ridge_path.write_text(
             yaml.safe_dump(
                 {
-                    "schema_version": 2,
                     **ridge_config.canonical_payload(),
                 },
                 sort_keys=False,
@@ -281,7 +279,6 @@ class CanonicalBatchRuntimeTest(unittest.TestCase):
     ) -> Path:
         path = self.root / f"{model_type}.yaml"
         payload = {
-            "schema_version": 2,
             **self._config(model_type, scenario_subpath, params).canonical_payload(),
         }
         path.write_text(yaml.safe_dump(payload, sort_keys=False), encoding="utf-8")

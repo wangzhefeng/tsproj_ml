@@ -133,7 +133,6 @@ def _config_doc(data_path: Path, *, mode: str, selection: dict | None) -> dict:
     if selection is not None:
         features["selection"] = selection
     return {
-        "schema_version": 2,
         "problem": {
             "time_col": "time",
             "freq": "1h",

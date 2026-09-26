@@ -13,7 +13,7 @@ import yaml
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from config.config_loader import load_yaml_config  # noqa: E402
+from config.config_loader import ENSEMBLE_GROUP_FIELDS, MODEL_GROUP_FIELDS, load_yaml_config  # noqa: E402
 from feature_engineering.compiler import FeatureCompiler  # noqa: E402
 from forecasting_core.specs import ForecastConfigSpec  # noqa: E402
 from model_ensemble.specs import EnsembleConfigSpec  # noqa: E402
@@ -90,7 +90,10 @@ def _canonical_model_paths(root: Path) -> tuple[Path, ...]:
     paths = []
     for path in sorted((root / "config").rglob("*.yaml")):
         payload = yaml.safe_load(path.read_text(encoding="utf-8"))
-        if isinstance(payload, dict) and payload.get("schema_version") == 2:
+        if isinstance(payload, dict) and (
+            MODEL_GROUP_FIELDS.issubset(payload)
+            or ENSEMBLE_GROUP_FIELDS.issubset(payload)
+        ):
             paths.append(path)
     return tuple(paths)
 

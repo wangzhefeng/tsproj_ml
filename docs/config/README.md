@@ -1,8 +1,8 @@
 # docs/config — 配置文档中心
 
-> 一句话版本：只接受 `schema_version: 2` canonical YAML，未知字段一律 RAISE；活动场景仅 `aidc_load_15min_short`（仅 LightGBM，171 份单模型 YAML）。
+> 一句话版本：只接受 canonical YAML（严格字段合同，无版本字段），未知字段一律 RAISE；活动场景仅 `aidc_load_15min_short`（仅 LightGBM，171 份单模型 YAML）。
 
-`config/` 承载全部活动模型 YAML（`schema_version: 2` canonical）与数据工具 YAML。经 2026-09-25 场景收敛裁决，活动预测场景只保留 `aidc_load_15min_short`（模型测试场景），且仅保留 LightGBM 配置；其余预测场景（`aidc_load_15min_daily/rolling`、`aidc_load_month`、`aidc_power_month`、`aidc_ess_selfuse_load`、`aidc_electricity_computility`、`hongtaiyang_cesuan`）及 short 内非 LightGBM 配置、`add_ensemble/` 组整体退役，内容由 Git 保留，不计入活动集。纯数据准备目录 `aidc_load_5min`、`aidc_hvac_load_5min` 亦已删除（Git 溯源），`dataset/` 下对应数据资产保留。
+`config/` 承载全部活动模型 YAML（canonical 严格字段合同）与数据工具 YAML。经 2026-09-25 场景收敛裁决，活动预测场景只保留 `aidc_load_15min_short`（模型测试场景），且仅保留 LightGBM 配置；其余预测场景（`aidc_load_15min_daily/rolling`、`aidc_load_month`、`aidc_power_month`、`aidc_ess_selfuse_load`、`aidc_electricity_computility`、`hongtaiyang_cesuan`）及 short 内非 LightGBM 配置、`add_ensemble/` 组整体退役，内容由 Git 保留，不计入活动集。纯数据准备目录 `aidc_load_5min`、`aidc_hvac_load_5min` 亦已删除（Git 溯源），`dataset/` 下对应数据资产保留。
 
 ## 章节
 

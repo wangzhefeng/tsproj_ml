@@ -72,8 +72,7 @@ class ConfigEntrypointTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp_dir:
             config_path = Path(tmp_dir) / "invalid_mstl.yaml"
             config_path.write_text(
-                """schema_version: 2
-problem:
+                """problem:
   time_col: time
   freq: 15min
   horizon: 96
@@ -125,8 +124,7 @@ output: {}
         with tempfile.TemporaryDirectory() as tmp_dir:
             config_path = Path(tmp_dir) / "stl_two_cycles.yaml"
             config_path.write_text(
-                """schema_version: 2
-problem:
+                """problem:
   time_col: time
   freq: 1D
   horizon: 2
@@ -178,8 +176,7 @@ output: {}
         with tempfile.TemporaryDirectory() as tmp_dir:
             rolllag_path = Path(tmp_dir) / "usmdp_safe_rolllag.yaml"
             rolllag_path.write_text(
-                """schema_version: 2
-problem:
+                """problem:
   time_col: time
   freq: 5min
   horizon: 288
@@ -225,8 +222,7 @@ output: {}
         with tempfile.TemporaryDirectory() as tmp_dir:
             config_path = Path(tmp_dir) / "usmdp_target_advanced.yaml"
             config_path.write_text(
-                """schema_version: 2
-problem:
+                """problem:
   time_col: time
   freq: 5min
   horizon: 288
@@ -280,8 +276,7 @@ output: {}
         with tempfile.TemporaryDirectory() as tmp_dir:
             config_path = Path(tmp_dir) / "usmd_long_context.yaml"
             config_path.write_text(
-                """schema_version: 2
-problem:
+                """problem:
   time_col: time
   freq: 5min
   horizon: 288
@@ -375,11 +370,9 @@ output: {}
         )
         loaded = yaml.safe_load(config_path.read_text(encoding="utf-8"))
 
-        self.assertEqual(loaded["schema_version"], 2)
         self.assertEqual(
             set(loaded),
             {
-                "schema_version",
                 "problem",
                 "data",
                 "features",
@@ -577,7 +570,6 @@ class Task27ExecutionMatrixTest(unittest.TestCase):
         )
         payload = config.canonical_payload()
         doc = {
-            "schema_version": 2,
             "problem": payload["problem"],
             "data": payload["data"],
             "probabilistic": payload["probabilistic"],

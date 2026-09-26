@@ -231,7 +231,6 @@ class CanonicalConfigFingerprintTest(unittest.TestCase):
         from model_ensemble.loader import parse_ensemble_document
 
         payload = {
-            "schema_version": 2,
             "problem": {
                 "time_col": "time",
                 "freq": "1h",
@@ -278,7 +277,6 @@ class CanonicalConfigFingerprintTest(unittest.TestCase):
     def test_parser_rejects_ensemble_shape_in_single_model_parser(self):
         """v4 §5.1: parse_model_config rejects ensemble-shaped documents."""
         payload = {
-            "schema_version": 2,
             "problem": {
                 "time_col": "time",
                 "freq": "1h",

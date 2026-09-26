@@ -21,7 +21,7 @@
 
 ## 核心不变量
 
-- 只接受 `schema_version: 2` canonical YAML；无 legacy 层，非 canonical 输入（YAML/pkl/宽表）一律 RAISE。
+- 只接受 canonical YAML（严格字段合同，无显式版本字段，代码即版本）；无 legacy 层，非 canonical 输入（YAML/pkl/宽表）一律 RAISE。
 - 预测输入严格 as-of；observed-past 列必须显式 provider，禁止隐式 persistence；进入模型的信息集「缺失/异常 = RAISE」，填补清洗只发生在离线数据准备或 config 驱动的 compiler 前置步骤。
 - 经显式授权的天气研究回放与严格 as-of 分开：发布时间假设写入独立研究配方，保留真实接收/发布事实，不把hindcast标成业务forecast；研究证据及bundle必须标记不可实盘，默认部署入口拒绝研究bundle。
 - 包依赖只允许从上往下（L4 入口 → L3 能力扩展 → L2 编排 → `forecasting_core` 合同层 → 阶段顶层包 → L1 → L0），同层禁止互依，禁止函数内延迟 import 绕行与下划线私有跨包导入；门禁 `tests/test_package_layering.py`。

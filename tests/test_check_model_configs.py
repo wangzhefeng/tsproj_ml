@@ -124,48 +124,62 @@ class ModelYamlDetectionTest(unittest.TestCase):
             self.assertFalse(is_model_yaml(override_model))
             self.assertFalse(is_model_yaml(tool_config))
 
-    def test_any_model_schema_mapping_is_routed_to_model_parser(self):
+    def test_model_shaped_mapping_is_routed_to_model_parser(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
-            missing_groups = root / "missing-groups.yaml"
-            unknown_groups = root / "unknown-groups.yaml"
-            missing_groups.write_text("schema_version: 2\n", encoding="utf-8")
-            unknown_groups.write_text(
-                "schema_version: 2\nsource_path: dataset/x.csv\n",
+            single = root / "single.yaml"
+            ensemble = root / "ensemble.yaml"
+            stale_version = root / "stale-version.yaml"
+            single.write_text(
+                "problem: {}\ndata: {}\nfeatures: {}\nstrategy: {}\nestimator: {}\n",
+                encoding="utf-8",
+            )
+            ensemble.write_text(
+                "problem: {}\ndata: {}\nensemble: {}\noutput: {}\n",
+                encoding="utf-8",
+            )
+            # 仍声明历史 schema_version 的模型形状文件必须被路由到 parser 报错，不静默跳过
+            stale_version.write_text(
+                "schema_version: 2\nproblem: {}\ndata: {}\nfeatures: {}\nstrategy: {}\nestimator: {}\n",
                 encoding="utf-8",
             )
 
-            self.assertTrue(is_model_yaml(missing_groups))
-            self.assertTrue(is_model_yaml(unknown_groups))
+            self.assertTrue(is_model_yaml(single))
+            self.assertTrue(is_model_yaml(ensemble))
+            self.assertTrue(is_model_yaml(stale_version))
 
-    def test_model_schema_mapping_without_schema_version_is_not_silently_skipped(self):
+    def test_stale_schema_version_field_is_rejected_by_parser(self):
         with tempfile.TemporaryDirectory() as temp_dir:
-            path = Path(temp_dir) / "missing-version.yaml"
+            path = Path(temp_dir) / "stale-version.yaml"
             path.write_text(
-                "problem: {}\ndata: {}\nfeatures: {}\nstrategy: {}\nestimator: {}\n",
+                "schema_version: 2\nproblem: {}\ndata: {}\nfeatures: {}\nstrategy: {}\nestimator: {}\n",
                 encoding="utf-8",
             )
 
             self.assertTrue(is_model_yaml(path))
-            with self.assertRaisesRegex(ValueError, "Missing YAML schema_version"):
+            with self.assertRaisesRegex(ValueError, "Unknown fields in config"):
                 load_yaml_config(path)
 
-    def test_unknown_schema_with_model_groups_is_not_silently_skipped(self):
+    def test_unknown_schema_with_model_groups_is_routed_then_rejected(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
+            groups = "problem: {}\ndata: {}\nfeatures: {}\nstrategy: {}\nestimator: {}\n"
             integer_version = root / "future-model.yaml"
             string_version = root / "string-version-model.yaml"
             integer_version.write_text(
-                "schema_version: 3\nproblem: {}\n",
+                "schema_version: 3\n" + groups,
                 encoding="utf-8",
             )
             string_version.write_text(
-                "schema_version: future\nproblem: {}\n",
+                "schema_version: future\n" + groups,
                 encoding="utf-8",
             )
 
             self.assertTrue(is_model_yaml(integer_version))
             self.assertTrue(is_model_yaml(string_version))
+            for path in (integer_version, string_version):
+                with self.assertRaisesRegex(ValueError, "Unknown fields in config"):
+                    load_yaml_config(path)
 
 
 if __name__ == "__main__":

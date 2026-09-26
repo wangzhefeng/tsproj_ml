@@ -1,6 +1,6 @@
 """Typed specs for reference-based ensemble configurations (v4 §5.2).
 
-Ensemble YAML allowed top-level fields: `schema_version`, `problem`, `data`,
+Ensemble YAML allowed top-level fields: `problem`, `data`,
 `probabilistic`, `ensemble` (members/oof/method), `validation`, `output`.
 `features`, `strategy` and `estimator` are FORBIDDEN (raising on any of them,
 including `strategy: null`) — those dimensions belong to each referenced base
@@ -22,7 +22,6 @@ from forecasting_core.specs.validation import RuntimeValidationSpec
 
 ENSEMBLE_ALLOWED_TOP_LEVEL = frozenset(
     {
-        "schema_version",
         "problem",
         "data",
         "probabilistic",
@@ -141,7 +140,6 @@ class MethodSpec:
 class EnsembleConfigSpec:
     """Parsed reference-based ensemble configuration."""
 
-    schema_version: int
     members: tuple[MemberRef, ...]
     oof: OOFSpec
     method: MethodSpec
@@ -152,10 +150,6 @@ class EnsembleConfigSpec:
     output: OutputSpec
 
     def __post_init__(self) -> None:
-        if self.schema_version != 2:
-            raise EnsembleSpecError(
-                "ensemble config schema_version must be 2"
-            )
         expected_types = (
             ("problem", self.problem, ForecastProblemSpec),
             ("data", self.data, DataSpec),
@@ -184,7 +178,6 @@ class EnsembleConfigSpec:
 
     def payload(self) -> dict[str, Any]:
         return {
-            "schema_version": self.schema_version,
             "members": [member.payload() for member in self.members],
             "oof": self.oof.payload(),
             "method": self.method.payload(),
@@ -192,7 +185,6 @@ class EnsembleConfigSpec:
 
     def canonical_payload(self) -> dict[str, Any]:
         return {
-            "schema_version": self.schema_version,
             "problem": self.problem.canonical_payload(),
             "data": self.data.canonical_payload(),
             "probabilistic": self.probabilistic.canonical_payload(),

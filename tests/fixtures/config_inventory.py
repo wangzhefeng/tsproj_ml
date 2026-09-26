@@ -17,7 +17,7 @@ def model_config_inventory(config_root: Path) -> dict[str, str]:
             kind = 'ensemble'
         elif 'estimator' in payload:
             kind = 'single_model'
-        elif payload.get('schema_version') == 2:
+        elif {'problem', 'data'}.issubset(payload):
             raise AssertionError(f'canonical model lacks estimator/ensemble: {path}')
         else:
             continue

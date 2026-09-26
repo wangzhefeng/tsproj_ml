@@ -46,7 +46,6 @@ def parse_ensemble_document(
 ) -> EnsembleConfigSpec:
     """Parse a raw ensemble YAML mapping into an EnsembleConfigSpec."""
     unknown = set(raw) - {
-        "schema_version",
         "problem",
         "data",
         "probabilistic",
@@ -59,13 +58,11 @@ def parse_ensemble_document(
             f"ensemble YAML has unknown top-level fields: {sorted(unknown)}"
         )
     enforce_forbidden_top_level(raw)
-    missing = {"schema_version", "problem", "data", "ensemble", "output"} - set(raw)
+    missing = {"problem", "data", "ensemble", "output"} - set(raw)
     if missing:
         raise EnsembleSpecError(
             f"ensemble YAML missing top-level fields: {sorted(missing)}"
         )
-    if raw["schema_version"] != 2:
-        raise EnsembleSpecError("ensemble YAML schema_version must be 2")
 
     source = source_path or "<ensemble>"
     problem = parse_problem_spec(raw.get("problem"), source)
@@ -82,7 +79,6 @@ def parse_ensemble_document(
         raw["ensemble"], calendar_month=calendar_month
     )
     return EnsembleConfigSpec(
-        schema_version=2,
         members=members,
         oof=oof,
         method=method,

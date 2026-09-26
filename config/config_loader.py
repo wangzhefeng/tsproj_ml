@@ -23,7 +23,6 @@ except ImportError:  # pragma: no cover - exercised only in incomplete envs
 
 MODEL_CONFIG_FIELDS = frozenset(
     {
-        "schema_version",
         "problem",
         "data",
         "features",
@@ -35,6 +34,7 @@ MODEL_CONFIG_FIELDS = frozenset(
     }
 )
 MODEL_GROUP_FIELDS = frozenset({"problem", "data", "features", "strategy", "estimator"})
+ENSEMBLE_GROUP_FIELDS = frozenset({"problem", "data", "ensemble", "output"})
 
 def _strict_yaml_load(text: str, source: str | Path) -> Any:
     if yaml is None:
@@ -72,15 +72,13 @@ def is_model_yaml(path: str | Path) -> bool:
     )
     if not isinstance(payload, dict):
         return False
-    schema_version = payload.get("schema_version")
-    if isinstance(schema_version, int) and not isinstance(schema_version, bool) and schema_version == 2:
-        return True
-    if "schema_version" in payload and set(payload) & MODEL_GROUP_FIELDS:
-        return True
-    # A model-schema-shaped file with a missing schema_version is still a model config;
-    # route it to load_yaml_config so the missing version is reported instead
-    # of silently skipping the file during audits.
-    return bool(MODEL_GROUP_FIELDS.issubset(set(payload)))
+    # 代码即版本：按顶层字段形状识别模型配置（单模型或引用式 Ensemble）。
+    # 仍声明 schema_version 等未知字段的模型形状文件会被路由到 load_yaml_config，
+    # 由严格 parser 按未知字段 RAISE，而不是在审计中被静默跳过。
+    return bool(
+        MODEL_GROUP_FIELDS.issubset(payload)
+        or ENSEMBLE_GROUP_FIELDS.issubset(payload)
+    )
 
 def _load_yaml_file(config_yaml: str | Path) -> Mapping[str, Any]:
     if yaml is None:
@@ -100,24 +98,9 @@ def _load_yaml_file(config_yaml: str | Path) -> Mapping[str, Any]:
 
 def load_yaml_config(config_yaml: str | Path):
     loaded = _load_yaml_file(config_yaml)
-    if "schema_version" not in loaded and MODEL_GROUP_FIELDS.issubset(set(loaded)):
-        raise ValueError(f"Missing YAML schema_version for canonical model config: {config_yaml}")
-    if "schema_version" not in loaded:
-        raise ValueError(
-            f"Non-canonical YAML (missing schema_version): {config_yaml}"
-        )
-    schema_version = loaded["schema_version"]
-    if (
-        isinstance(schema_version, bool)
-        or not isinstance(schema_version, int)
-        or schema_version != 2
-    ):
-        raise ValueError(
-            f"Unknown YAML schema_version {schema_version!r}: {config_yaml}"
-        )
     # v4 §5.2: route by mutually exclusive field sets. An `ensemble` mapping
     # marks a reference-based ensemble config; anything else must be a
-    # single-model base config.
+    # single-model base config. 严格 parser 对未知字段（含历史 schema_version）一律 RAISE。
     if isinstance(loaded.get("ensemble"), Mapping):
         return parse_ensemble_document(loaded, source_path=config_yaml)
     return parse_model_config(loaded, source=config_yaml)

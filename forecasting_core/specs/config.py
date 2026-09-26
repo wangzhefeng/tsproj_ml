@@ -22,7 +22,6 @@ from forecasting_core.specs.validation import (
 
 _TOP_LEVEL_FIELDS = frozenset(
     {
-        "schema_version",
         "problem",
         "data",
         "features",
@@ -154,7 +153,6 @@ def _validate_time_geometry(
 
 @dataclass(frozen=True, slots=True, init=False)
 class ForecastConfigSpec:
-    schema_version: int
     problem: ForecastProblemSpec
     data: DataSpec
     features: FeatureSpec
@@ -174,19 +172,12 @@ class ForecastConfigSpec:
         probabilistic: Mapping[str, Any] | ProbabilisticConfigSpec,
         validation: Mapping[str, Any] | RuntimeValidationSpec,
         output: Mapping[str, Any] | OutputSpec,
-        schema_version: int = 2,
     ) -> None:
         if strategy is None:
             raise ValueError(
                 "ForecastConfigSpec is base-only (v4): strategy is required; "
                 "ensemble configs use model_ensemble.specs.EnsembleConfigSpec"
             )
-        if (
-            isinstance(schema_version, bool)
-            or not isinstance(schema_version, int)
-            or schema_version != 2
-        ):
-            raise ValueError("schema_version must be 2")
         expected_types = (
             ("problem", problem, ForecastProblemSpec),
             ("data", data, DataSpec),
@@ -231,7 +222,6 @@ class ForecastConfigSpec:
                     or features.transformations.get("target")):
                 raise ValueError("seasonal_baseline currently requires Local raw-history point backtest without target transforms")
 
-        object.__setattr__(self, "schema_version", 2)
         object.__setattr__(self, "problem", problem)
         object.__setattr__(self, "data", data)
         object.__setattr__(self, "features", features)
@@ -243,7 +233,6 @@ class ForecastConfigSpec:
 
     def canonical_payload(self) -> dict[str, object]:
         return {
-            "schema_version": self.schema_version,
             "problem": self.problem.canonical_payload(),
             "data": self.data.canonical_payload(),
             "features": self.features.canonical_payload(),
@@ -528,16 +517,8 @@ def parse_model_config(mapping: Mapping[str, Any], source: str | Path) -> Foreca
         allowed=_TOP_LEVEL_FIELDS - {"ensemble"},
         required=_TOP_LEVEL_FIELDS - {"ensemble"},
     )
-    schema_version = payload["schema_version"]
-    if (
-        isinstance(schema_version, bool)
-        or not isinstance(schema_version, int)
-        or schema_version != 2
-    ):
-        raise ValueError(f"schema_version must be 2 in {_source_label(source)}")
 
     return ForecastConfigSpec(
-        schema_version=2,
         problem=parse_problem_spec(payload["problem"], source),
         data=parse_data_spec(payload["data"], source),
         features=_parse_features(payload["features"], source),

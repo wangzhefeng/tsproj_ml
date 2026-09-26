@@ -55,7 +55,7 @@ GOLDEN_WINDOW1_ACTUAL = [55.0, 55.5]
 GOLDEN_WINDOW1_PREDICT = [54.99999999999561, 55.49999999999552]
 GOLDEN_WINDOW1_MAE = 4.437339384821826e-12
 GOLDEN_WINDOW1_RMSE = float("4.437579734041818e-12")
-GOLDEN_FINGERPRINT = "31ff73529e2f"
+GOLDEN_FINGERPRINT = "e63cb89c9cbd"
 GOLDEN_IDENTITY = "recursive-ridge-local-k1"
 
 # ---------------------------------------------------------------------------
@@ -174,7 +174,6 @@ def _weighted_ensemble_config(
         }
     )
     member = {
-        "schema_version": 2,
         "problem": _base_problem().canonical_payload(),
         "data": _base_data(data_path).canonical_payload(),
         "features": _base_features().canonical_payload(),
@@ -199,7 +198,6 @@ def _weighted_ensemble_config(
             yaml.safe_dump(doc), encoding="utf-8"
         )
     ens_doc = {
-        "schema_version": 2,
         "problem": _base_problem().canonical_payload(),
         "data": _base_data(data_path).canonical_payload(),
         "probabilistic": probabilistic,

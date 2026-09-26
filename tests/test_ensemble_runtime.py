@@ -52,7 +52,6 @@ def _member_doc(
     data_name: str = "targets",
 ) -> dict:
     return {
-        "schema_version": 2,
         "problem": {
             "time_col": "time",
             "freq": "1h",
@@ -110,7 +109,6 @@ def _ensemble_doc(method: str, mode: str = "point") -> dict:
     )
     estimator_b = "qr" if mode == "quantile" else "ridge"
     return {
-        "schema_version": 2,
         "problem": _member_doc("direct", "ridge", "x")["problem"],
         "data": _member_doc("direct", "ridge", "x")["data"],
         "probabilistic": probabilistic,

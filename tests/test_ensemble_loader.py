@@ -27,7 +27,6 @@ from model_ensemble.specs import EnsembleSpecError
 
 
 SINGLE_MODEL = {
-    "schema_version": 2,
     "problem": {
         "time_col": "time",
         "freq": "1h",
@@ -63,7 +62,6 @@ SINGLE_MODEL = {
 }
 
 ENSEMBLE_DOC = {
-    "schema_version": 2,
     "problem": SINGLE_MODEL["problem"],
     "data": SINGLE_MODEL["data"],
     "probabilistic": {"mode": "point"},

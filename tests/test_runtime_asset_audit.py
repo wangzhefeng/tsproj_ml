@@ -60,7 +60,7 @@ class RuntimeAssetAuditTest(unittest.TestCase):
             actual = {"time", "value", "optional_physical_column"}
             with tempfile.TemporaryDirectory() as tmp:
                 root = Path(tmp)
-                (root / "model.yaml").write_text("schema_version: 2\n")
+                (root / "model.yaml").write_text("problem: {}\n")
                 (root / "source.csv").write_text(",".join(sorted(actual)) + "\n")
 
                 with patch.object(MODULE, "is_model_yaml", return_value=True), \

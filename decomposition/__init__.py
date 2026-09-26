@@ -10,7 +10,6 @@ from decomposition.orchestration.pipeline import DecompositionPipeline
 from decomposition.construction.registry import build_pipeline, build_pipeline_from_args
 from decomposition.configuration.spec import (
     RESERVED_METHODS,
-    TREND_FORECAST_MODES,
     ComponentSpec,
     DecompositionSpec,
     PresetParams,
@@ -20,7 +19,6 @@ from decomposition.contracts.types import ComponentForecast, ComponentFrame
 
 __all__ = [
     "RESERVED_METHODS",
-    "TREND_FORECAST_MODES",
     "ComponentSpec",
     "ComponentForecast",
     "ComponentFrame",

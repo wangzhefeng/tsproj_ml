@@ -9,8 +9,7 @@ import numpy as np
 import pandas as pd
 from dateutil import tz
 
-import model_forecasting
-from model_forecasting import (
+from forecasting_core.tensors import (
     MarginalQuantileForecastTensor,
     PointForecastTensor,
     SampleForecastTensor,
@@ -958,15 +957,44 @@ class ForecastTensorTestCase(unittest.TestCase):
                     tensor.select_series("missing")
 
     def test_public_exports_use_explicit_marginal_quantile_name(self):
+        import forecasting_core
         self.assertEqual(
-            model_forecasting.__all__,
+            forecasting_core.__all__,
             [
+                "ForecastModelBundle",
+                "MarginalForecastDistribution",
+                "ProbabilisticSpec",
+                "QuantileGrid",
+                # specs（原 ``from ... import *``，显式清单）
+                "AvailabilityPolicy",
+                "CalendarMonthBacktestSpec",
+                "ColumnRole",
+                "ColumnSpec",
+                "DataSourceSpec",
+                "DataSpec",
+                "EstimatorSpec",
+                "FeatureSpec",
+                "FixedStepBacktestSpec",
+                "ForecastConfigSpec",
+                "ForecastProblemSpec",
+                "ForecastStrategySpec",
+                "OutputSpec",
+                "ProbabilisticConfigSpec",
+                "RuntimePerformanceSpec",
+                "RuntimeValidationSpec",
+                "StrategyName",
+                "TargetAdapter",
+                "parse_model_config",
+                # tensors
                 "MarginalQuantileForecastTensor",
                 "PointForecastTensor",
                 "SampleForecastTensor",
+                "flatten_time_major",
+                "require_matching_point_axes",
+                "unflatten_time_major",
             ],
         )
-        self.assertFalse(hasattr(model_forecasting, "QuantileForecastTensor"))
+        self.assertFalse(hasattr(forecasting_core, "QuantileForecastTensor"))
 
 
 if __name__ == "__main__":

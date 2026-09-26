@@ -5,7 +5,6 @@ Public typed surface (v4 §4); algorithm implementations live in
 """
 
 from model_ensemble.specs import (
-    ENSEMBLE_ALLOWED_TOP_LEVEL,
     ENSEMBLE_FORBIDDEN_TOP_LEVEL,
     EnsembleConfigSpec,
     EnsembleSpecError,
@@ -23,7 +22,6 @@ from model_ensemble.loader import (
 )
 
 __all__ = [
-    "ENSEMBLE_ALLOWED_TOP_LEVEL",
     "ENSEMBLE_FORBIDDEN_TOP_LEVEL",
     "EnsembleConfigSpec",
     "EnsembleSpecError",

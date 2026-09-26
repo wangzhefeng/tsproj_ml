@@ -5,6 +5,7 @@ import time
 import unittest
 from dataclasses import FrozenInstanceError
 from pathlib import Path
+from unittest import mock
 
 import numpy as np
 from sklearn.ensemble import RandomForestRegressor
@@ -434,6 +435,58 @@ class NativeMultioutputProbeTests(unittest.TestCase):
         result = probe_native_multioutput(lambda: estimator)
         self.assertTrue(result.supported, result.reason)
         self.assertFalse(estimator.was_fit)
+
+    def test_resolve_model_capabilities_reuses_positive_probe_across_calls(self):
+        # 行为探测正向缓存：同 (model_type, params) 重复解析不再重复
+        # clone+fit+predict。以「工厂构造计数只增一次」钉住。
+        constructions = []
+        original_factory = make_model_factory
+
+        def counting_factory(model_type, params=None, **kwargs):
+            constructions.append(model_type)
+            return original_factory(model_type, params, **kwargs)
+
+        import model_training.estimators.capabilities as capabilities_module
+        with mock.patch.object(
+            capabilities_module, "make_model_factory", counting_factory
+        ):
+            capabilities_module._PROBE_CACHE.clear()
+            capabilities_module.resolve_model_capabilities(
+                "randomforest",
+                {"n_estimators": 5, "random_state": 0, "n_jobs": 1},
+                probe_native=True,
+            )
+            first_count = len(constructions)
+            capabilities_module.resolve_model_capabilities(
+                "randomforest",
+                {"n_estimators": 5, "random_state": 0, "n_jobs": 1},
+                probe_native=True,
+            )
+        self.assertEqual(first_count, 1)
+        self.assertEqual(len(constructions), 1)
+
+    def test_resolve_model_capabilities_cache_key_separates_params(self):
+        # 参数不同不得命中同一缓存条目（假阴性/假阳性都不允许）
+        import model_training.estimators.capabilities as capabilities_module
+        coarse = capabilities_module.resolve_model_capabilities(
+            "randomforest",
+            {"n_estimators": 5, "random_state": 0, "n_jobs": 1},
+            probe_native=True,
+        )
+        fine = capabilities_module.resolve_model_capabilities(
+            "randomforest",
+            {"n_estimators": 7, "random_state": 0, "n_jobs": 1},
+            probe_native=True,
+        )
+        self.assertTrue(coarse.native_multi_target_point)
+        self.assertTrue(fine.native_multi_target_point)
+        # 键序无关：同参数字典不同插入序应命中同一条目
+        unordered = capabilities_module.resolve_model_capabilities(
+            "randomforest",
+            {"n_jobs": 1, "random_state": 0, "n_estimators": 5},
+            probe_native=True,
+        )
+        self.assertTrue(unordered.native_multi_target_point)
 
 
 class MultiTargetAdapterTests(unittest.TestCase):

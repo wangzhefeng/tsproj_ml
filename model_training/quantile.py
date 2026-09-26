@@ -15,6 +15,11 @@ from forecasting_core.checkpoints import FitCheckpoint
 from forecasting_core.specs import ForecastConfigSpec
 from forecasting_core.probabilistic_spec import validate_quantile_grid
 
+# level 间线程并行的默认 worker 上限。约束规则（level 并行时嵌套
+# output workers 压为 1）保留在训练层，但上限数值集中在此常量，
+# 便于资源档标定时单点调整（三轮真实对照证据见 OPT-016 记录）。
+DEFAULT_LEVEL_WORKERS_CAP = 4
+
 
 @dataclass(frozen=True, slots=True)
 class CanonicalMarginalQuantileArtifact:
@@ -99,7 +104,7 @@ class CanonicalMarginalQuantileTrainer:
         """
         levels = self.levels
         workers = (
-            min(len(levels), 4) if max_workers is None else int(max_workers)
+            min(len(levels), DEFAULT_LEVEL_WORKERS_CAP) if max_workers is None else int(max_workers)
         )
         if workers < 1:
             raise ValueError("max_workers must be >= 1")

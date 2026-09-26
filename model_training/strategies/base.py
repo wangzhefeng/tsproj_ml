@@ -277,6 +277,10 @@ class StandardStrategyExecutor:
                         "the same row count as X"
                     )
             elif dependencies:
+                # 无 provider 回退路径（仅测试/轻量直连使用）：把已预测
+                # 坐标逐调用列拼接进设计矩阵，O(H²) 拷贝。生产递归路径
+                # 必须走 compiler 的 feature_provider（见 runner.py 接线），
+                # 不得依赖此分支承载大规模 horizon。
                 design = np.column_stack(
                     (design_base, *(predicted[coordinate] for coordinate in dependencies))
                 )

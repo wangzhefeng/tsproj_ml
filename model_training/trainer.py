@@ -2,8 +2,9 @@
 """Canonical trainer（2026-08-29 架构收敛自 models/ModelTraining.py 迁入，类实现逐字保真）。"""
 
 # python libraries
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
-from typing import Sequence
+from typing import NamedTuple, Sequence
 
 import numpy as np
 
@@ -39,7 +40,7 @@ class CanonicalTrainer:
         self,
         config: ForecastConfigSpec,
         *,
-        estimator_factory,
+        estimator_factory: Callable[[], object],
         capabilities: EstimatorCapabilities,
         feature_schema: Sequence[str],
         checkpoint: FitCheckpoint | None = None,
@@ -138,7 +139,16 @@ class CanonicalTrainer:
             if validated_weight.shape != (n_rows,):
                 raise ValueError("sample_weight must match the training row axis")
 
-        def prepare_model_group(model_index: int):
+        class PreparedModelGroup(NamedTuple):
+            """单个共享子模型位置的拟合载荷与局部坐标（消费按字段名取值）。"""
+
+            coordinate_groups: tuple[tuple[TargetCoordinate, ...], ...]
+            group_design: np.ndarray
+            group_targets: np.ndarray
+            group_weight: np.ndarray | None
+            local_coordinates: tuple[TargetCoordinate, ...]
+
+        def prepare_model_group(model_index: int) -> PreparedModelGroup:
             call_indices = tuple(
                 index
                 for index, candidate in enumerate(self.target_plan.model_indices)
@@ -177,12 +187,12 @@ class CanonicalTrainer:
                 for step in range(1, steps_per_call + 1)
                 for target in self.config.problem.targets
             )
-            return (
-                coordinate_groups,
-                group_design,
-                group_targets,
-                group_weight,
-                local_coordinates,
+            return PreparedModelGroup(
+                coordinate_groups=coordinate_groups,
+                group_design=group_design,
+                group_targets=group_targets,
+                group_weight=group_weight,
+                local_coordinates=local_coordinates,
             )
 
         model_indices = tuple(range(self.target_plan.model_count))
@@ -200,65 +210,61 @@ class CanonicalTrainer:
 
         adapter_type = self._ADAPTERS[self.config.estimator.target_adapter]
         if adapter_type is IndependentMultiTargetAdapter:
-            adapters = tuple(
-                IndependentMultiTargetAdapter(
+
+            def fit_independent(model_index: int) -> StrategyModelGroupArtifact:
+                prepared = prepared_groups[model_index]
+                adapter = IndependentMultiTargetAdapter(
                     self.estimator_factory,
                     self.capabilities,
-                    prepared[4],
+                    prepared.local_coordinates,
                     probabilistic_mode=self.probabilistic_mode,
                     checkpoint=group_checkpoint(model_index),
                 )
-                for model_index, prepared in enumerate(prepared_groups)
-            )
-            fitted_adapters = fit_independent_adapters(
-                tuple(
-                    (adapter, prepared[1], prepared[2], prepared[3])
-                    for adapter, prepared in zip(adapters, prepared_groups)
-                ),
-                max_workers=max_workers,
-            )
-            model_groups = tuple(
-                StrategyModelGroupArtifact(
+                fitted_adapter = fit_independent_adapters(
+                    ((adapter, prepared.group_design, prepared.group_targets,
+                      prepared.group_weight),),
+                    max_workers=max_workers,
+                )[0]
+                return StrategyModelGroupArtifact(
                     model_index=model_index,
-                    coordinate_groups=prepared[0],
-                    predictor=AdapterPredictor(adapter),
+                    coordinate_groups=prepared.coordinate_groups,
+                    predictor=AdapterPredictor(fitted_adapter),
                 )
-                for model_index, prepared, adapter in zip(
-                    model_indices,
-                    prepared_groups,
-                    fitted_adapters,
-                )
-            )
+
+            fit_model_group = fit_independent
         else:
-            def fit_model_group(model_index: int) -> StrategyModelGroupArtifact:
+
+            def fit_generic(model_index: int) -> StrategyModelGroupArtifact:
                 prepared = prepared_groups[model_index]
                 adapter = adapter_type(
                     self.estimator_factory,
                     self.capabilities,
-                    prepared[4],
+                    prepared.local_coordinates,
                     probabilistic_mode=self.probabilistic_mode,
                     checkpoint=group_checkpoint(model_index),
                 ).fit(
-                    prepared[1],
-                    prepared[2],
-                    sample_weight=prepared[3],
+                    prepared.group_design,
+                    prepared.group_targets,
+                    sample_weight=prepared.group_weight,
                 )
                 return StrategyModelGroupArtifact(
                     model_index=model_index,
-                    coordinate_groups=prepared[0],
+                    coordinate_groups=prepared.coordinate_groups,
                     predictor=AdapterPredictor(adapter),
                 )
 
-            worker_count = min(max_workers, len(model_indices))
-            if worker_count == 1:
+            fit_model_group = fit_generic
+
+        worker_count = min(max_workers, len(model_indices))
+        if worker_count == 1:
+            model_groups = tuple(
+                fit_model_group(index) for index in model_indices
+            )
+        else:
+            with ThreadPoolExecutor(max_workers=worker_count) as executor:
                 model_groups = tuple(
-                    fit_model_group(index) for index in model_indices
+                    executor.map(fit_model_group, model_indices)
                 )
-            else:
-                with ThreadPoolExecutor(max_workers=worker_count) as executor:
-                    model_groups = tuple(
-                        executor.map(fit_model_group, model_indices)
-                    )
 
         return CanonicalStrategyArtifact(
             target_plan=self.target_plan,
@@ -278,6 +284,21 @@ class CanonicalTrainer:
         targets: np.ndarray,
         coordinates: tuple[TargetCoordinate, ...],
     ) -> np.ndarray:
+        steps = len(coordinates) // len(self.config.problem.targets)
+        # 完整 time-major 网格（canonical 调用坐标恒为完整块）时，逐坐标
+        # 列收集等价于一次 reshape；仅非完整块保留通用列索引路径。
+        expected = tuple(
+            TargetCoordinate(target, horizon_step)
+            for horizon_step in range(1, steps + 1)
+            for target in self.config.problem.targets
+        )
+        if coordinates == expected:
+            # 列收集即 time-major 顺序，收口到 (N, steps, K) 走张量合同唯一实现
+            return unflatten_time_major(
+                targets[:, :steps, :].reshape(targets.shape[0], -1),
+                steps=steps,
+                width=len(self.config.problem.targets),
+            )
         target_indices = {
             target: index
             for index, target in enumerate(self.config.problem.targets)
@@ -292,8 +313,6 @@ class CanonicalTrainer:
                 for coordinate in coordinates
             )
         )
-        steps = len(coordinates) // len(self.config.problem.targets)
-        # 列收集即 time-major 顺序，收口到 (N, steps, K) 走张量合同唯一实现
         return unflatten_time_major(flat, steps=steps, width=len(self.config.problem.targets))
 
 

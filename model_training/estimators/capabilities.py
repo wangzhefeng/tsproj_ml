@@ -9,6 +9,7 @@
   ``SharedMultiQuantilePool``，并 re-export 下沉件以兼容既有导入。
 """
 
+import hashlib
 import itertools
 import threading
 from collections.abc import Iterable, Mapping
@@ -34,6 +35,27 @@ __all__ = ["EstimatorCapabilities"]  # 合同类型自 specs 再导出（向后�
 
 # 下沉件的向后兼容别名：旧测试与内部引用使用私有名
 _ModelFactoryEstimator = ModelFactoryEstimator
+
+
+def _stable_params_repr(params: Mapping[str, object] | None) -> str:
+    """探测缓存键的稳定序列化：排序键 + 递归稳定容器表示。
+
+    params 只含 JSON 型标量与列表/字典（YAML 合同保证）；含不可
+    稳定序列化对象时退化为 repr，探测仍正确（仅退缓存效果）。
+    """
+    def render(value):
+        if isinstance(value, Mapping):
+            return "{" + ", ".join(
+                f"{key!r}: {render(value[key])}" for key in sorted(value)
+            ) + "}"
+        if isinstance(value, (list, tuple)):
+            return "[" + ", ".join(render(item) for item in value) + "]"
+        return repr(value)
+    return render(dict(params or {}))
+
+
+_PROBE_CACHE: dict[tuple[str, str], ProbeResult] = {}
+_PROBE_CACHE_LOCK = threading.Lock()
 
 
 @dataclass(frozen=True, slots=True, init=False)
@@ -109,20 +131,29 @@ def resolve_model_capabilities(
     capabilities = MODEL_FACTORY_CAPABILITY_REGISTRY.lookup(normalized)
     if not probe_native:
         return capabilities
-    probe = probe_native_multioutput(
-        make_model_factory(
-            normalized,
-            params,
-            # Native multi-output support is independent of the caller's
-            # runtime feature width. The behavioral probe owns its synthetic
-            # two-column design, so binding the runtime schema here would
-            # create a false negative whenever that schema is not width two.
-            feature_names=None,
+    # 行为探测结论只依赖 (model_type, params)：探测自带合成两列设计，
+    # 与调用方运行时 feature 宽度无关。逐折逐配置重复拟合同参数时
+    # 直接复用正向结论，避免每折都真实 clone+fit+predict 一遍。
+    cache_key = (normalized, _stable_params_repr(params))
+    with _PROBE_CACHE_LOCK:
+        cached = _PROBE_CACHE.get(cache_key)
+    if cached is None:
+        cached = probe_native_multioutput(
+            make_model_factory(
+                normalized,
+                params,
+                # Native multi-output support is independent of the caller's
+                # runtime feature width. The behavioral probe owns its synthetic
+                # two-column design, so binding the runtime schema here would
+                # create a false negative whenever that schema is not width two.
+                feature_names=None,
+            )
         )
-    )
+        with _PROBE_CACHE_LOCK:
+            _PROBE_CACHE[cache_key] = cached
     return replace(
         capabilities,
-        native_multi_target_point=probe.supported,
+        native_multi_target_point=cached.supported,
         native_multi_target_quantile=False,
     )
 
@@ -185,6 +216,10 @@ class SharedMultiQuantilePool:
         self.feature_names = tuple(feature_names or ())
         self.checkpoint: FitCheckpoint | None = None
         self._fitted: dict[int, ModelFactoryEstimator] = {}
+        # position -> 首个 level 到达时的训练载荷摘要：shape + 字节级
+        # blake2b。后续 level 同 position 摘要不一致即 RAISE——共享
+        # booster 的位置对齐不变量从 docstring 升级为运行时防御。
+        self._position_digests: dict[int, tuple[tuple[int, ...], str]] = {}
         self._lock = threading.Lock()
 
     def __getstate__(self) -> dict:
@@ -222,8 +257,30 @@ class SharedMultiQuantilePool:
         *,
         sample_weight=None,
     ) -> None:
+        design = np.asarray(X)
+        targets = np.asarray(y)
+        weight = None if sample_weight is None else np.asarray(sample_weight)
+        shapes: tuple[int, ...] = design.shape + targets.shape
+        if weight is not None:
+            shapes = shapes + weight.shape
+        digest = (
+            shapes,
+            hashlib.blake2b(
+                design.tobytes() + targets.tobytes()
+                + (b"" if weight is None else weight.tobytes()),
+                digest_size=16,
+            ).hexdigest(),
+        )
         with self._lock:
             if position in self._fitted:
+                prior = self._position_digests.get(position)
+                if prior is not None and prior != digest:
+                    raise ValueError(
+                        f"shared quantile position {position} received a "
+                        "different training payload across quantile levels; "
+                        "canonical training must use one identical "
+                        "(X, y, sample_weight) per position for all levels"
+                    )
                 return  # 幂等：该位置已由首个 level 训练
             estimator = ModelFactoryEstimator(
                 self.model_type,
@@ -249,6 +306,7 @@ class SharedMultiQuantilePool:
                     arrays=(np.asarray(X), np.asarray(y), sample_weight), fit=fit_booster,
                 )
             self._fitted[position] = estimator
+            self._position_digests[position] = digest
 
     def predict_position(self, position: int, X: object) -> np.ndarray:
         try:

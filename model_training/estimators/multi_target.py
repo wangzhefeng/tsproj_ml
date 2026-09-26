@@ -49,6 +49,8 @@ class _BaseMultiTargetAdapter:
         self.horizon = horizon
         self.probabilistic_mode = probabilistic_mode
         self.metadata = AdapterMetadata(self.target_coordinates)
+        self.estimators: tuple[object, ...] = ()
+        self.estimator: object = None
         self._is_fit = False
 
     def __getstate__(self):
@@ -192,6 +194,25 @@ class IndependentMultiTargetAdapter(_BaseMultiTargetAdapter):
         )
         return self
 
+    @classmethod
+    def assemble_from_task_results(
+        cls,
+        adapter: "IndependentMultiTargetAdapter",
+        fitted_estimators: Sequence[object],
+    ) -> "IndependentMultiTargetAdapter":
+        """批量/逐列拟合任务完成后回填拟合态（由调度器调用，不绕过封装）。
+
+        调度器（``fit_independent_adapters``）负责并行执行；拟合态字段
+        的写入收口在本方法，避免模块级函数从类外改写私有状态。
+        """
+        if not adapter._is_fit:
+            if not callable(adapter.estimator_factory):
+                raise RuntimeError("adapter cannot be fit more than once")
+            adapter.estimators = tuple(fitted_estimators)
+            adapter.estimator_factory = None
+            adapter._is_fit = True
+        return adapter
+
     def predict(self, X: np.ndarray) -> np.ndarray:
         self._require_fit()
         design = self._validated_design(X)
@@ -295,14 +316,16 @@ def fit_independent_adapters(
     adapters = []
     for adapter, task_count in prepared:
         task_results = fitted[cursor : cursor + task_count]
-        adapter.estimators = tuple(
-            estimator
-            for result in task_results
-            for estimator in result
+        adapters.append(
+            IndependentMultiTargetAdapter.assemble_from_task_results(
+                adapter,
+                tuple(
+                    estimator
+                    for result in task_results
+                    for estimator in result
+                ),
+            )
         )
-        adapter.estimator_factory = None
-        adapter._is_fit = True
-        adapters.append(adapter)
         cursor += task_count
     return tuple(adapters)
 
@@ -406,6 +429,7 @@ class NativeMultiTargetAdapter(_BaseMultiTargetAdapter):
     def predict(self, X: np.ndarray) -> np.ndarray:
         self._require_fit()
         design = self._validated_design(X)
+        assert self.estimator is not None
         flat_prediction = np.asarray(self.estimator.predict(design), dtype=float)
         expected_shape = (design.shape[0], len(self.target_coordinates))
         if flat_prediction.shape != expected_shape:

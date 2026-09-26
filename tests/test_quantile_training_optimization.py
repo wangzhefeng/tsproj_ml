@@ -345,6 +345,64 @@ class XgbNativeMultiQuantileTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             view.predict(np.zeros((2, 1)))
 
+    def test_position_payload_mismatch_across_levels_raises(self):
+        # 位置对齐不变量的运行时防御：同 position 不同训练载荷必须
+        # RAISE，而不是静默复用首个 level 的 booster（错误结果无告警）。
+        levels = (0.1, 0.5)
+        pool = SharedMultiQuantilePool(
+            "xgb",
+            {"n_estimators": 5, "max_depth": 2},
+            levels,
+            ("x",),
+        )
+        X = np.linspace(0.0, 1.0, 40).reshape(-1, 1)
+        y = X[:, 0] * 2.0
+
+        first = pool.factory_for_level(0)()
+        first.fit(X, y)
+        second = pool.factory_for_level(1)()
+        with self.assertRaisesRegex(ValueError, "different training payload"):
+            second.fit(X, y * 3.0)
+        # 数值不同但 shape 相同同样触发（字节级摘要）
+        y_mutated = y.copy()
+        y_mutated[0] += 1.0
+        with self.assertRaisesRegex(ValueError, "different training payload"):
+            second.fit(X, y_mutated)
+
+    def test_position_payload_shape_mismatch_across_levels_raises(self):
+        levels = (0.1, 0.5)
+        pool = SharedMultiQuantilePool(
+            "xgb",
+            {"n_estimators": 5, "max_depth": 2},
+            levels,
+            ("x",),
+        )
+        X = np.linspace(0.0, 1.0, 40).reshape(-1, 1)
+        y = X[:, 0] * 2.0
+
+        first = pool.factory_for_level(0)()
+        first.fit(X, y)
+        second = pool.factory_for_level(1)()
+        with self.assertRaisesRegex(ValueError, "different training payload"):
+            second.fit(X[:20], y[:20])
+
+    def test_position_identical_payload_across_levels_is_idempotent(self):
+        # 同载荷幂等不受摘要校验影响：仍只训练一次
+        levels = (0.1, 0.5, 0.9)
+        pool = SharedMultiQuantilePool(
+            "xgb",
+            {"n_estimators": 5, "max_depth": 2},
+            levels,
+            ("x",),
+        )
+        X = np.linspace(0.0, 1.0, 40).reshape(-1, 1)
+        y = X[:, 0] * 2.0
+
+        for level_index in range(len(levels)):
+            view = pool.factory_for_level(level_index)()
+            view.fit(X, y)
+        self.assertEqual(len(pool._fitted), 1)
+
     def test_unsupported_model_type_raises(self):
         with self.assertRaises(ValueError):
             SharedMultiQuantilePool("lgb", {}, (0.5,), ("x",))

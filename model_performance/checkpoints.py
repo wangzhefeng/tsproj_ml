@@ -20,6 +20,7 @@ from uuid import uuid4
 import numpy as np
 
 from forecasting_core.checkpoints import FitCheckpointError
+from utils.runtime_env import RUNTIME_DEPENDENCY_PACKAGES
 
 try:
     import fcntl
@@ -47,15 +48,14 @@ def implementation_fingerprint() -> str:
     root = Path(__file__).resolve().parents[1]
     digest = hashlib.sha256()
     for package in ("forecasting_core", "data_loading", "feature_engineering",
-                    "model_training", "model_forecasting", "model_performance",
+                    "model_training", "model_predicting", "model_performance",
                     "pipeline", "probabilistic", "models", "decomposition",
                     "model_building", "model_testing", "utils"):
         for path in sorted((root / package).rglob("*.py")):
             digest.update(str(path.relative_to(root)).encode())
             digest.update(hashlib.sha256(path.read_bytes()).digest())
     versions = {"python": platform.python_version()}
-    for name in ("numpy", "pandas", "scipy", "scikit-learn", "lightgbm",
-                 "xgboost", "catboost", "statsmodels", "chinese-calendar"):
+    for name in RUNTIME_DEPENDENCY_PACKAGES:
         try:
             versions[name] = importlib.metadata.version(name)
         except importlib.metadata.PackageNotFoundError:

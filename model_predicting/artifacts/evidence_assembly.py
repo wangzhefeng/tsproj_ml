@@ -1,4 +1,4 @@
-"""Canonical evidence assembly for lifecycle artifacts.
+"""生命周期产物的 canonical 证据组装。
 
 自 ``pipeline/lifecycle.py`` 迁入（2026-09-27 证据域聚集）：四个纯
 组装函数只消费 ``CompiledFeatures`` / feature_schema / config，输出产物
@@ -207,3 +207,11 @@ def compiled_lineage(
         tuple(feature_lineage),
         {key: availability_summary[key] for key in sorted(availability_summary)},
     )
+
+
+__all__ = [
+    "compiled_lineage",
+    "holdout_proof_summary",
+    "proof_payload",
+    "source_lineage_payload",
+]

@@ -1,4 +1,4 @@
-"""Canonical long-format forecast results; non-canonical input is rejected."""
+"""Canonical long 格式预测结果；非 canonical 输入一律拒绝。"""
 
 from __future__ import annotations
 
@@ -21,11 +21,11 @@ from model_testing.artifacts.reporting import (
 )
 
 
-# 纯张量->long 转换自本模块迁出至 model_testing/artifacts/tensor_frames.py（2026-09-06 R5b，
-# 供回测评分体共用且不构成包环）；此处 re-export 保持既有消费面零改动。
-from model_testing.artifacts.tensor_frames import (  # noqa: F401,E402
+# 纯张量->long 转换的唯一实现在 model_testing/artifacts/tensor_frames.py（2026-09-06
+# R5b 迁出，供回测评分体共用且不构成包环）；此处只 import 本模块自用件，不做转发
+# 再导出（2026-09-28 门面收口：消费方改走 tensor_frames 直引）。
+from model_testing.artifacts.tensor_frames import (
     CANONICAL_KEY_COLUMNS,
-    backtest_tensors_to_long,
     distribution_to_long,
     point_tensor_to_long,
 )
@@ -86,6 +86,8 @@ def _plot_forecast_series(
     Preds 线首点回接历史最后一个真实值，保证两段视觉连续；历史段末端画
     forecast origin 竖线分隔参照区与预测区。
     """
+    # pyplot 延迟到调用时导入：保证模块顶 matplotlib.use("Agg") 先生效，
+    # 且 import 本模块不立即加载重量级 pyplot。
     import matplotlib.pyplot as plt
 
     forecast_frame = forecast_frame.copy()
@@ -206,7 +208,6 @@ def _plot_forecast(
                 if history_frame is not None
                 else None
             ),
-            dpi=300,
         )
         return
     plots_dir = output_dir / "prediction_plots"
@@ -220,12 +221,11 @@ def _plot_forecast(
                 if history_frame is not None
                 else None
             ),
-            dpi=300,
         )
 
 
 class CanonicalResultReader:
-    """Read canonical long-schema results."""
+    """读取 canonical long schema 结果。"""
 
     @staticmethod
     def read_prediction(
@@ -258,15 +258,8 @@ class CanonicalResultReader:
             return result
         raise ValueError(f"non-canonical backtest file: {path}")
 
-    @staticmethod
-    def read_scores(path: str | Path) -> pd.DataFrame:
-        return pd.read_csv(path)
-
 
 __all__ = [
     "CanonicalResultReader",
-    "backtest_tensors_to_long",
-    "distribution_to_long",
-    "point_tensor_to_long",
     "write_forecast_results",
 ]

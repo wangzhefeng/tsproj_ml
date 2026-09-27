@@ -1,7 +1,7 @@
-"""回测结果写盘与可视化（R5b 自 model_forecasting/results.py 迁出，2026-09-06，方案 v3）。
+"""回测结果写盘与可视化（R5b 自 model_predicting/artifacts/results.py 迁出，2026-09-06，方案 v3）。
 
 回测产物（cv_plot_df/test_scores*/windows_results/总图）属于「模型测试」输出，
-随 R5 归入 model_testing；预测侧写盘仍在 model_forecasting.results（经 plotting
+随 R5 归入 model_testing；预测侧写盘仍在 model_predicting.artifacts.results（经 plotting
 复用本模块的共享绘图工具）。绘图用未掩码原始值，掩码只用于指标计算。
 """
 

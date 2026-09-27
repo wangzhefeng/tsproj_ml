@@ -46,11 +46,11 @@ class CanonicalOnlyRuntimeTest(unittest.TestCase):
             build_model(legacy)
 
     def test_legacy_runtime_classes_are_not_public(self):
-        import model_forecasting.predictor
+        import model_predicting.loops.predictor
         import model_training.trainer
 
         self.assertFalse(hasattr(run, "Model"))
-        self.assertFalse(hasattr(model_forecasting.predictor, "Forecaster"))
+        self.assertFalse(hasattr(model_predicting.loops.predictor, "Forecaster"))
         self.assertFalse(hasattr(model_training.trainer, "Trainer"))
 
     def test_models_shims_are_removed(self):
@@ -61,7 +61,7 @@ class CanonicalOnlyRuntimeTest(unittest.TestCase):
     def test_legacy_layers_are_removed(self):
         self.assertFalse((ROOT / "config" / "generate_configs.py").exists())
         self.assertFalse((ROOT / "models" / "multistep").exists())
-        self.assertFalse((ROOT / "model_forecasting" / "legacy").exists())
+        self.assertFalse((ROOT / "model_predicting" / "legacy").exists())
         self.assertFalse((ROOT / "config" / "config_sections.py").exists())
         self.assertFalse((ROOT / "config" / "univariate_config.py").exists())
         self.assertFalse((ROOT / "config" / "multivariate_config.py").exists())

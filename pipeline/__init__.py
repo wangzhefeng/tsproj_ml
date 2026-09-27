@@ -11,5 +11,5 @@
 - `batch_runtime.py` / `batch_artifacts.py`：可恢复批调度与产物验收（`batch_run.py` 调用）。
 
 依赖方向：本包向下调用全部阶段模块（data_loading/feature_engineering/model_training/
-model_testing/model_forecasting/model_ensemble 服务注入）；阶段模块不反向 import 本包。
+model_testing/model_predicting/model_ensemble 服务注入）；阶段模块不反向 import 本包。
 """

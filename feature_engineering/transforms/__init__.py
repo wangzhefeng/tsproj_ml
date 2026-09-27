@@ -1,6 +1,6 @@
 """feature_engineering.transforms
 
-特征与目标变换三件套（2026-09-06 R3 自 model_forecasting + feature_engineering/scaling
+特征与目标变换三件套（2026-09-06 R3 自 model_predicting + feature_engineering/scaling
 归位为子包，方案 v3，.hermes/plans/2026-09-06_162605）。
 
 - `pipeline.py`：目标变换栈（calendar normalization → decomposition → scaling，

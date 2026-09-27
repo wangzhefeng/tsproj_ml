@@ -11,7 +11,7 @@ import unittest
 import pandas as pd
 
 from data_process.load_event_detection import suppress_boundary_artifacts
-from model_forecasting.results import CanonicalResultReader
+from model_predicting.artifacts.results import CanonicalResultReader
 
 
 ROOT = Path(__file__).resolve().parents[1]

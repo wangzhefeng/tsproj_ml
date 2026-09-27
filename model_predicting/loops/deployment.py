@@ -1,14 +1,13 @@
-"""Prediction from a self-contained canonical strategy bundle.
+"""自包含 canonical 策略 bundle 的部署预测。
 
-The deployment caller supplies feature rows compiled in ``bundle.input_schema``
-column order.  This module owns all persisted preprocessing, selected-feature
-alignment, strategy execution, quantile assembly, and target-space restoration;
-it never reads model YAML or training/OOF caches.
+部署调用方按 ``bundle.input_schema`` 列序提供编译好的特征行。本模块负责
+全部持久化预处理、selected-feature 对齐、策略执行、分位组装与目标空间
+逆变换；不读模型 YAML 与训练/OOF 缓存。
 """
 
 from __future__ import annotations
 
-from typing import Any, Callable
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -16,18 +15,15 @@ import pandas as pd
 from feature_engineering.selection import selected_indices_for_artifact
 from forecasting_core.artifacts import ForecastModelBundle, MarginalForecastDistribution
 from forecasting_core.specs import ForecastStrategySpec
-from forecasting_core.tensors import MarginalQuantileForecastTensor, PointForecastTensor
-from model_forecasting.predictor import repair_marginal_quantile_crossing
+from forecasting_core.tensors import PointForecastTensor
+from model_predicting.contracts.protocols import FeatureProvider
+from model_predicting.loops.predictor import assemble_marginal_quantile_distribution
 from probabilistic.calibration import pi_column_names
 from model_training.strategies import (
     CanonicalStrategyArtifact,
-    TargetCoordinate,
     get_standard_executor,
 )
 from model_training.quantile import CanonicalMarginalQuantileArtifact
-
-
-FeatureProvider = Callable[..., np.ndarray]
 
 
 def predict_strategy_bundle(
@@ -39,7 +35,7 @@ def predict_strategy_bundle(
     raw_feature_provider: FeatureProvider | None = None,
     purpose: str = 'production',
 ) -> PointForecastTensor | MarginalForecastDistribution:
-    """Predict from one schema-2 strategy bundle without config or cache IO."""
+    """从单个 schema-2 策略 bundle 预测，不做 config 或缓存 IO。"""
     if not isinstance(bundle, ForecastModelBundle) or bundle.schema_version != 2:
         raise TypeError("bundle must be a schema-2 ForecastModelBundle")
     if purpose not in {'production', 'research_replay'}:
@@ -214,69 +210,24 @@ def _predict_quantiles(
     feature_provider: FeatureProvider | None,
     crossing_method: str = "median_preserving_isotonic",
 ) -> MarginalForecastDistribution:
-    point_artifact = artifact.artifacts_by_level[artifact.point_level]
-    has_dependencies = any(point_artifact.target_plan.dependencies)
-    if has_dependencies and feature_provider is None:
-        raise ValueError("recursive quantile deployment requires raw_feature_provider")
-    point = _predict_point(
-        strategy,
-        point_artifact,
-        design,
-        series_ids=series_ids,
-        forecast_times=forecast_times,
-        feature_provider=feature_provider,
-    )
-    median_predictions = {
-        TargetCoordinate(target, step): point.values[:, step - 1, target_index]
-        for step in range(1, point.n_steps + 1)
-        for target_index, target in enumerate(point.targets)
-    }
-
-    def median_path_provider(call_index, coordinates, dependencies, _predicted):
-        assert feature_provider is not None
-        return feature_provider(
-            call_index,
-            coordinates,
-            dependencies,
-            median_predictions,
-        )
-
-    tensors = {artifact.point_level: point}
-    for level in artifact.levels:
-        if level == artifact.point_level:
-            continue
-        tensors[level] = _predict_point(
+    def predict_level(level_artifact, provider):
+        return _predict_point(
             strategy,
-            artifact.artifacts_by_level[level],
+            level_artifact,
             design,
             series_ids=series_ids,
             forecast_times=forecast_times,
-            feature_provider=(
-                median_path_provider if has_dependencies else feature_provider
-            ),
+            feature_provider=provider,
         )
-    ordered = [tensors[level] for level in artifact.levels]
-    # 交叉修复以 bundle 内概率规格为准（部署期不读 YAML），与训练期同口径。
-    quantiles = repair_marginal_quantile_crossing(
-        MarginalQuantileForecastTensor(
-            values=np.stack([tensor.values for tensor in ordered], axis=-1),
-            levels=artifact.levels,
-            point_level=artifact.point_level,
-            series_ids=ordered[0].series_ids,
-            forecast_times=ordered[0].forecast_times,
-            targets=ordered[0].targets,
-        ),
-        method=crossing_method,
-    )
-    return MarginalForecastDistribution(
-        point=quantiles.point(),
-        quantiles=quantiles,
-        dependence_model=None,
-        metadata={
-            "recursive_propagation": "median_path",
-            "crossing_method": crossing_method,
-        },
+
+    # 交叉修复以 bundle 内概率规格为准（部署期不读 YAML），与训练期同口径；
+    # median path 组装段与训练期共享 assemble_marginal_quantile_distribution。
+    return assemble_marginal_quantile_distribution(
+        artifact,
+        crossing_method=crossing_method,
+        feature_provider=feature_provider,
+        predict_level=predict_level,
     )
 
 
-__all__ = ["FeatureProvider", "predict_strategy_bundle"]
+__all__ = ["predict_strategy_bundle"]

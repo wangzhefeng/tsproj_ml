@@ -731,7 +731,7 @@ def require_matching_point_axes(
     """逐轴校验两个 point 张量对齐（series/targets/forecast_times）。
 
     轴对齐是张量合同的一部分，消费方（评估 `model_evaluation/point.py`、结果读写
-    `model_forecasting/results.py`）共用本函数，不各自实现（2026-08-30 评估模块化）。
+    `model_predicting/artifacts/results.py`）共用本函数，不各自实现（2026-08-30 评估模块化）。
     """
     if (
         actual.series_ids != prediction.series_ids

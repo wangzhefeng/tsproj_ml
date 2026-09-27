@@ -1,7 +1,6 @@
-# -*- coding: utf-8 -*-
 """Canonical forecaster（2026-08-29 架构收敛自旧 models/ModelForecasting.py 迁入，实现逐字保真）。"""
 
-from typing import Any
+from typing import Any, Callable
 
 import numpy as np
 import pandas as pd
@@ -23,7 +22,7 @@ from forecasting_core.artifacts import MarginalForecastDistribution
 
 
 class CanonicalForecaster:
-    """Execute a fitted canonical strategy artifact and preserve ``(N,H,K)``."""
+    """执行已拟合的 canonical 策略 artifact，保持 ``(N,H,K)`` 形状合同。"""
 
     def __init__(
         self,
@@ -141,8 +140,86 @@ def repair_marginal_quantile_crossing(
     )
 
 
+def assemble_marginal_quantile_distribution(
+    artifact: CanonicalMarginalQuantileArtifact,
+    *,
+    crossing_method: str,
+    feature_provider: Callable[..., np.ndarray] | None,
+    predict_level: Callable[
+        [CanonicalStrategyArtifact, Callable[..., np.ndarray] | None],
+        PointForecastTensor,
+    ],
+) -> MarginalForecastDistribution:
+    """逐分位点预测张量组装为 ``(N,H,K,Q)`` 边际分布（median path 递归 + 交叉修复）。
+
+    训练期（``CanonicalMarginalQuantileForecaster``）与部署期
+    （``predict_strategy_bundle``）共用本组装段；两侧仅「单 level 如何预测」
+    （predict_level 回调）与 crossing 配置来源（config vs bundle spec）不同。
+    """
+    point_artifact = artifact.artifacts_by_level[artifact.point_level]
+    has_recursive_dependencies = any(point_artifact.target_plan.dependencies)
+    if has_recursive_dependencies and feature_provider is None:
+        raise ValueError(
+            "recursive quantile median_path requires a fixed-schema feature_provider"
+        )
+    point_tensor = predict_level(point_artifact, feature_provider)
+    median_predictions = {
+        TargetCoordinate(target, step): point_tensor.values[
+            :, step - 1, target_index
+        ]
+        for step in range(1, point_tensor.n_steps + 1)
+        for target_index, target in enumerate(point_tensor.targets)
+    }
+
+    def median_path_provider(call_index, coordinates, dependencies, _predicted):
+        assert feature_provider is not None
+        return feature_provider(
+            call_index,
+            coordinates,
+            dependencies,
+            median_predictions,
+        )
+
+    tensors_by_level = {artifact.point_level: point_tensor}
+    for level in artifact.levels:
+        if level == artifact.point_level:
+            continue
+        tensors_by_level[level] = predict_level(
+            artifact.artifacts_by_level[level],
+            (
+                median_path_provider
+                if has_recursive_dependencies
+                else feature_provider
+            ),
+        )
+    point_tensors = [tensors_by_level[level] for level in artifact.levels]
+    quantiles = repair_marginal_quantile_crossing(
+        MarginalQuantileForecastTensor(
+            values=np.stack(
+                [tensor.values for tensor in point_tensors],
+                axis=-1,
+            ),
+            levels=artifact.levels,
+            point_level=artifact.point_level,
+            series_ids=point_tensors[0].series_ids,
+            forecast_times=point_tensors[0].forecast_times,
+            targets=point_tensors[0].targets,
+        ),
+        method=crossing_method,
+    )
+    return MarginalForecastDistribution(
+        point=quantiles.point(),
+        quantiles=quantiles,
+        dependence_model=None,
+        metadata={
+            "recursive_propagation": "median_path",
+            "crossing_method": crossing_method,
+        },
+    )
+
+
 class CanonicalMarginalQuantileForecaster:
-    """Forecast every marginal quantile artifact into ``(N,H,K,Q)``."""
+    """将每个边际分位 artifact 预测为 ``(N,H,K,Q)`` 张量。"""
 
     def __init__(
         self,
@@ -162,93 +239,34 @@ class CanonicalMarginalQuantileForecaster:
         self,
         X: np.ndarray,
         *,
-        series_ids: tuple,
+        series_ids: tuple[Any, ...],
         forecast_times: pd.DatetimeIndex,
         feature_provider=None,
     ) -> MarginalForecastDistribution:
-        point_artifact = self.artifact.artifacts_by_level[self.artifact.point_level]
-        has_recursive_dependencies = any(point_artifact.target_plan.dependencies)
-        if has_recursive_dependencies and feature_provider is None:
-            raise ValueError(
-                "recursive quantile median_path requires a fixed-schema feature_provider"
-            )
-        point_tensor = CanonicalForecaster(
-            self.config,
-            point_artifact,
-        ).predict(
-            X,
-            series_ids=series_ids,
-            forecast_times=forecast_times,
-            feature_provider=feature_provider,
-        )
-        median_predictions = {
-            TargetCoordinate(target, step): point_tensor.values[
-                :, step - 1, target_index
-            ]
-            for step in range(1, point_tensor.n_steps + 1)
-            for target_index, target in enumerate(point_tensor.targets)
-        }
-
-        def median_path_provider(call_index, coordinates, dependencies, _predicted):
-            assert feature_provider is not None
-            return feature_provider(
-                call_index,
-                coordinates,
-                dependencies,
-                median_predictions,
-            )
-
-        tensors_by_level = {self.artifact.point_level: point_tensor}
-        for level in self.artifact.levels:
-            if level == self.artifact.point_level:
-                continue
-            tensors_by_level[level] = CanonicalForecaster(
-                self.config,
-                self.artifact.artifacts_by_level[level],
-            ).predict(
+        def predict_level(level_artifact, provider):
+            return CanonicalForecaster(self.config, level_artifact).predict(
                 X,
                 series_ids=series_ids,
                 forecast_times=forecast_times,
-                feature_provider=(
-                    median_path_provider
-                    if has_recursive_dependencies
-                    else feature_provider
-                ),
+                feature_provider=provider,
             )
-        point_tensors = [tensors_by_level[level] for level in self.artifact.levels]
-        values = np.stack(
-            [tensor.values for tensor in point_tensors],
-            axis=-1,
-        )
+
         # 交叉修复消费 probabilistic.crossing.method（2026-09-01 裂缝修复：
         # 此前无条件修复，配置被静默忽略）。
         crossing_method, _report_raw = resolve_crossing_settings(
             self.config.probabilistic
         )
-        quantiles = repair_marginal_quantile_crossing(
-            MarginalQuantileForecastTensor(
-                values=values,
-                levels=self.artifact.levels,
-                point_level=self.artifact.point_level,
-                series_ids=point_tensors[0].series_ids,
-                forecast_times=point_tensors[0].forecast_times,
-                targets=point_tensors[0].targets,
-            ),
-            method=crossing_method,
-        )
-        return MarginalForecastDistribution(
-            point=quantiles.point(),
-            quantiles=quantiles,
-            dependence_model=None,
-            metadata={
-                "recursive_propagation": "median_path",
-                "crossing_method": crossing_method,
-            },
+        return assemble_marginal_quantile_distribution(
+            self.artifact,
+            crossing_method=crossing_method,
+            feature_provider=feature_provider,
+            predict_level=predict_level,
         )
 
 
 __all__ = [
     "CanonicalForecaster",
     "CanonicalMarginalQuantileForecaster",
+    "assemble_marginal_quantile_distribution",
     "repair_marginal_quantile_crossing",
 ]

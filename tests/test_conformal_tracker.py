@@ -191,7 +191,7 @@ class DeploymentPiColumnWiringTest(unittest.TestCase):
             MarginalQuantileForecastTensor,
             PointForecastTensor,
         )
-        from model_forecasting.results import distribution_to_long
+        from model_testing.artifacts.tensor_frames import distribution_to_long
 
         times = pd.date_range("2026-01-01", periods=2, freq="1h")
         point = PointForecastTensor(
@@ -243,7 +243,7 @@ class DeploymentPiColumnWiringTest(unittest.TestCase):
             MarginalQuantileForecastTensor,
             PointForecastTensor,
         )
-        from model_forecasting.results import distribution_to_long
+        from model_testing.artifacts.tensor_frames import distribution_to_long
 
         times = pd.date_range("2026-01-01", periods=2, freq="1h")
         point = PointForecastTensor(

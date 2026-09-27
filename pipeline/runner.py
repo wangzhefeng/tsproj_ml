@@ -39,7 +39,7 @@ from forecasting_core.specs import (
 )
 from forecasting_core.origin import resolve_origin
 from model_testing.contracts.primitives import seasonal_naive_tensor
-from model_forecasting.persistence import (
+from model_predicting.artifacts.persistence import (
     build_strategy_model_bundle,
     persist_model_bundle,
 )
@@ -60,7 +60,7 @@ from forecasting_core.runtime_resources import (
     RuntimeExecutionPlan,
     RuntimeResourceBudget,
 )
-from model_forecasting.evidence import collect_model_evidence, dependency_versions, json_evidence
+from model_predicting.artifacts.evidence_collect import collect_model_evidence, dependency_versions, json_evidence
 from pipeline.lifecycle import BacktestRuntimeResult, CanonicalRuntimeResult, run_lifecycle
 from model_testing.contracts.protocols import BacktestWindow
 from model_testing.contracts.windows import raw_history_backtest_windows, rolling_backtest_windows

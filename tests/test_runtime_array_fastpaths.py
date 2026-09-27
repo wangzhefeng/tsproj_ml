@@ -14,7 +14,7 @@ from feature_engineering.compiler import (
     FeatureSchema,
     VisibilityProof,
 )
-from model_forecasting.evidence_assembly import holdout_proof_summary
+from model_predicting.artifacts.evidence_assembly import holdout_proof_summary
 from pipeline.runner import _sample_selector
 from model_training.estimators import make_model_factory
 

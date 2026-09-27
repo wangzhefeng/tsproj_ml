@@ -8,7 +8,7 @@ import numpy as np
 import pandas as pd
 import test_canonical_runtime_smoke as smoke
 from data_loading import SourceRegistry
-from model_forecasting.deployment import predict_strategy_bundle
+from model_predicting.loops.deployment import predict_strategy_bundle
 from pipeline.runner import run_canonical_config
 from pipeline.supervised_design import SupervisedDesignBuilder
 from model_building.pickle_io import ModelDeployPkl

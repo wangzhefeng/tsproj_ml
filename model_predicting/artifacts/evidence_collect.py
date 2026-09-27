@@ -1,4 +1,4 @@
-"""Readable execution evidence; never part of semantic configuration identity."""
+"""可读执行证据；永不进入语义配置身份。"""
 from __future__ import annotations
 
 from collections.abc import Mapping
@@ -11,11 +11,16 @@ import numpy as np
 from typing import Any
 
 from model_building.wrappers.base import BaseModel
+from utils.runtime_env import RUNTIME_DEPENDENCY_PACKAGES
+
+# 证据遍历的 artifact 宿主包前缀：__dict__ 递归只深入这些包的对象，
+# 新增生产 artifact 宿主包时必须登记此处，否则该包节点被静默跳过（不 RAISE）。
+_ARTIFACT_MODULE_PREFIXES = ("model_training.", "probabilistic.")
 
 
 def dependency_versions() -> dict[str, str]:
     result = {"python": platform.python_version()}
-    for package in ("numpy", "pandas", "scipy", "scikit-learn", "lightgbm", "xgboost", "catboost", "statsmodels", "chinese-calendar"):
+    for package in RUNTIME_DEPENDENCY_PACKAGES:
         try:
             result[package] = version(package)
         except PackageNotFoundError:
@@ -24,7 +29,7 @@ def dependency_versions() -> dict[str, str]:
 
 
 def json_evidence(payload: Any) -> Any:
-    """Snapshot native scalar parameters; unsupported objects remain explicitly marked."""
+    """快照原生标量参数；不支持的对象显式标记而非静默丢弃。"""
     def encode(value: Any) -> Any:
         if isinstance(value, np.generic):
             return encode(value.item())
@@ -43,7 +48,7 @@ def json_evidence(payload: Any) -> Any:
 
 
 def collect_model_evidence(artifact: Any) -> list[dict[str, Any]]:
-    """Read fitted wrapper state without fitting or predicting; deduplicate shared boosters."""
+    """只读已拟合 wrapper 状态，不执行拟合/预测；共享 booster 去重。"""
     visited: set[int] = set()
     records = []
 
@@ -73,9 +78,12 @@ def collect_model_evidence(artifact: Any) -> list[dict[str, Any]]:
         elif is_dataclass(value) and not isinstance(value, type):
             for field in fields(value):
                 walk(getattr(value, field.name), f"{path}/{field.name}")
-        elif type(value).__module__.startswith(("model_training.", "probabilistic.")) and hasattr(value, "__dict__"):
+        elif type(value).__module__.startswith(_ARTIFACT_MODULE_PREFIXES) and hasattr(value, "__dict__"):
             for key, item in vars(value).items():
                 walk(item, f"{path}/{key}")
 
     walk(artifact, "artifact")
     return records
+
+
+__all__ = ["collect_model_evidence", "dependency_versions", "json_evidence"]

@@ -40,7 +40,7 @@ from forecasting_core.specs import (
 from run import CanonicalModel
 from config.config_loader import load_yaml_config
 from model_building.pickle_io import ModelDeployPkl
-from model_forecasting.predictor import CanonicalForecaster
+from model_predicting.loops.predictor import CanonicalForecaster
 from model_training.trainer import CanonicalTrainer
 
 

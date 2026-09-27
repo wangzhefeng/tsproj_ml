@@ -17,14 +17,14 @@ from forecasting_core.specs import (
     TargetAdapter,
 )
 from forecasting_core.tensors import PointForecastTensor
-from model_forecasting.evidence_assembly import (
-    compiled_lineage as _compiled_lineage,
-    holdout_proof_summary as _holdout_proof_summary,
-    proof_payload as _proof_payload,
-    source_lineage_payload as _source_lineage_payload,
+from model_predicting.artifacts.evidence_assembly import (
+    compiled_lineage,
+    holdout_proof_summary,
+    proof_payload,
+    source_lineage_payload,
 )
-from model_forecasting.persistence import persist_model_bundle
-from model_forecasting.results import write_forecast_results
+from model_predicting.artifacts.persistence import persist_model_bundle
+from model_predicting.artifacts.results import write_forecast_results
 from pipeline.run_state import write_run_state
 from model_testing.loops.calendar_month import run_calendar_month_backtest
 from model_testing.loops.expanding_window import run_expanding_window_backtest
@@ -238,10 +238,10 @@ def execute_lifecycle(
             final_calibration_audit["selected_windows"],
             final_calibration_audit["selected_scores"],
         )
-    visibility_proof = _proof_payload(final_audit)
-    holdout_visibility_proof = _holdout_proof_summary(holdout_audit)
-    source_lineage = _source_lineage_payload(final_audit)
-    feature_lineage, availability_summary = _compiled_lineage(
+    visibility_proof = proof_payload(final_audit)
+    holdout_visibility_proof = holdout_proof_summary(holdout_audit)
+    source_lineage = source_lineage_payload(final_audit)
+    feature_lineage, availability_summary = compiled_lineage(
         builder.feature_schema,
         visibility_proof,
         config,

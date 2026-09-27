@@ -9,12 +9,14 @@ import numpy as np
 import pandas as pd
 
 from model_evaluation.point import evaluate_point_forecasts
-from model_forecasting.results import (
+from model_predicting.artifacts.results import (
     CanonicalResultReader,
+    write_forecast_results,
+)
+from model_testing.artifacts.tensor_frames import (
     backtest_tensors_to_long,
     distribution_to_long,
     point_tensor_to_long,
-    write_forecast_results,
 )
 from model_testing.artifacts.reporting import write_backtest_results
 from forecasting_core.tensors import (

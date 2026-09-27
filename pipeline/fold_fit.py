@@ -13,7 +13,7 @@ from forecasting_core.runtime_resources import RuntimeExecutionPlan
 from forecasting_core.specs import ForecastConfigSpec, TargetAdapter
 from forecasting_core.tensors import PointForecastTensor
 from pipeline.supervised_design import SupervisedDesignBuilder
-from model_forecasting.predictor import (
+from model_predicting.loops.predictor import (
     CanonicalForecaster,
     CanonicalMarginalQuantileForecaster,
 )

@@ -1,7 +1,7 @@
-"""Canonical model bundle construction and persistence.
+"""Canonical 模型 bundle 构造与持久化。
 
-This module owns the durable schema-2 artifact boundary. Runtime orchestration
-builds training state and delegates serialization here.
+本模块拥有持久化 schema-2 产物边界；运行时编排构建训练状态，
+序列化委托到本模块。
 """
 
 from __future__ import annotations
@@ -29,7 +29,7 @@ def build_strategy_model_bundle(
     series_ids: tuple[Any, ...] = (),
     calibration_state: Mapping[str, Any] | None = None,
 ) -> ForecastModelBundle:
-    """Build a schema-2 bundle without making the training layer own IO types."""
+    """构造 schema-2 bundle；IO 类型不落在训练层。"""
     if not isinstance(trainer, CanonicalTrainer):
         raise TypeError("trainer must be a CanonicalTrainer")
     if not isinstance(artifact, CanonicalStrategyArtifact):
@@ -42,7 +42,8 @@ def build_strategy_model_bundle(
     )
     estimator_payload = config.estimator.canonical_payload()
     estimator_payload["capabilities"] = trainer.capabilities.canonical_payload()
-    assert config.strategy is not None
+    if config.strategy is None:
+        raise ValueError("canonical config must declare a strategy")
     return ForecastModelBundle(
         schema_version=2,
         model=artifact,
@@ -81,7 +82,7 @@ def persist_model_bundle(
     bundle: ForecastModelBundle,
     model_dir: str | Path,
 ) -> tuple[Path, Path]:
-    """Persist one schema-2 model bundle and its readable schema metadata."""
+    """持久化单个 schema-2 模型 bundle 及其可读 schema 元数据。"""
     output_dir = Path(model_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
     model_path = output_dir / "model.pkl"

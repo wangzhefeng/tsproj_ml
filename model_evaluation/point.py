@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """点预测评估：MAE/RMSE/MAPE/Accuracy + seasonal-naive 对照 + 聚合加权 + 评估掩码。
 
-自 `model_forecasting/results.py` 迁入（2026-08-30 evaluation 模块化），实现逐字保真；
+自 `model_predicting/artifacts/results.py` 迁入（2026-08-30 evaluation 模块化），实现逐字保真；
 掩码与概率评估（`model_evaluation/marginal.py`）共用 `build_eval_mask_payload`，
 保证同一业务口径（D13 rewire 纪律的延续）。
 """

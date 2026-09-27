@@ -12,7 +12,8 @@ from forecasting_core.artifacts import ForecastModelBundle, MarginalForecastDist
 from forecasting_core.tensors import MarginalQuantileForecastTensor, PointForecastTensor
 from model_ensemble.artifacts import EnsembleArtifact
 from model_ensemble.predictor import combine_members
-from model_forecasting.deployment import FeatureProvider, predict_strategy_bundle
+from model_predicting.contracts.protocols import FeatureProvider
+from model_predicting.loops.deployment import predict_strategy_bundle
 
 
 def predict_ensemble_bundle(

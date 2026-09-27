@@ -1,8 +1,8 @@
-"""canonical 张量到 long DataFrame 的纯转换（R5b 自 model_forecasting/results.py 迁出）。
+"""canonical 张量到 long DataFrame 的纯转换（R5b 自 model_predicting/artifacts/results.py 迁出）。
 
 只依赖 forecasting_core 合同类型与 numpy/pandas，无 IO、无绘图——
-供 model_testing 评分体与 model_forecasting/model_ensemble 结果写盘共用，
-不构成 model_testing -> model_forecasting 的包环。
+供 model_testing 评分体与 model_predicting/model_ensemble 结果写盘共用，
+不构成 model_testing -> model_predicting 的包环。
 """
 
 from __future__ import annotations

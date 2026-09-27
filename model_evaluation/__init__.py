@@ -2,8 +2,8 @@
 """评估模块（2026-08-30 流水线阶段重排新建，回应「独立评估模块」架构决策）。
 
 职责边界：只做**指标计算**（点评估、评估掩码、边际 quantile 评估、指标内核），
-不写结果文件（结果读写 schema 留在 `model_forecasting/results.py`）、不做预测期
-后处理（crossing 修复在 `model_forecasting/forecaster.py`）。
+不写结果文件（结果读写 schema 留在 `model_predicting/artifacts/results.py`）、不做预测期
+后处理（crossing 修复在 `model_predicting/loops/predictor.py`）。
 
 - `mask.py`：评估掩码（percentile/absolute/combined）——点/概率评估共用口径；
 - `point.py`：点预测评估（MAE/RMSE/MAPE/Accuracy + naive 对照 + 聚合加权）；

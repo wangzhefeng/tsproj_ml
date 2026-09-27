@@ -6,7 +6,7 @@ fixed-step（model_testing.loops.fixed_step）与 calendar-month（model_testing
 调用方负责折构造与并行调度，本模块只消费每折已完成的 (fit 结果, origin, 窗口号)。
 
 输入输出均为 forecasting_core 合同类型 + model_evaluation 评分帧；不 import
-model_forecasting（runner 以显式 FoldScoringRunner 协议传入），供两侧共用且不构成包环。
+model_predicting（runner 以显式 FoldScoringRunner 协议传入），供两侧共用且不构成包环。
 """
 
 from __future__ import annotations

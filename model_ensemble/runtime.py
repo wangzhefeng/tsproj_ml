@@ -32,7 +32,8 @@ from model_ensemble.specs import EnsembleConfigSpec, EnsembleSpecError
 from model_ensemble.trainer import fit_ensemble, generate_oof_for_config
 from forecasting_core.origin import resolve_origin
 from data_loading import SourceRegistry
-from model_forecasting.results import backtest_tensors_to_long, write_forecast_results
+from model_predicting.artifacts.results import write_forecast_results
+from model_testing.artifacts.tensor_frames import backtest_tensors_to_long
 from utils.log_util import logger
 from forecasting_core.specs.config import parse_model_config
 from forecasting_core.tensors import (

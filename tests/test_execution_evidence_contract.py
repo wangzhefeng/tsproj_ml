@@ -15,7 +15,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 class ExecutionEvidenceContractTest(unittest.TestCase):
     def test_native_nan_sentinel_and_numpy_parameters_are_json_safe_snapshots(self):
-        from model_forecasting.evidence import json_evidence
+        from model_predicting.artifacts.evidence_collect import json_evidence
         source = {"missing": float("nan"), "threads": np.int64(2), "levels": np.array([0.1, 0.9])}
         snapshot = json_evidence(source)
         self.assertEqual(snapshot["missing"], {"nonfinite_float": "nan"})

@@ -1,6 +1,6 @@
 """回测与 OOF 折共用的 rolling-origin 时间合同。
 
-E1 自 `model_forecasting/runtime.py`（`_label_start`、`_label_end`、
+E1 自 `model_predicting/runtime.py`（`_label_start`、`_label_end`、
 `_holdout_training_indices`、`_rolling_backtest_windows`）抽出。这里的函数
 刻意与任何 runtime 类型解耦：只接受显式时间几何（origin offset / horizon
 步数），使 ensemble OOF 切分器（E3）可以复用完全相同的语义。

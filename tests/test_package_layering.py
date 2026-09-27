@@ -7,10 +7,11 @@
 2. 包级依赖图不存在强连通分量；
 3. 不允许用函数内 project import 绕过循环；
 4. ``model_ensemble`` 只能通过 Protocol/注入获取单模型 runner，
-   对 ``model_forecasting`` 的依赖限于稳定结果写入接口。
+   对 ``model_predicting`` 的依赖限于部署入口、注入协议与稳定结果写入接口
+   （loops.deployment / contracts.protocols / artifacts.results）。
 
 稳定合同位于 ``forecasting_core/``；``pipeline/`` 负责运行编排，
-``model_forecasting/`` 负责预测、部署与预测产物。
+``model_predicting/`` 负责预测、部署与预测产物。
 """
 
 import ast
@@ -25,7 +26,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 PROJECT_PACKAGES = {
     "forecasting_core",
-    "model_forecasting",
+    "model_predicting",
     "pipeline",
     "model_performance",
     "model_ensemble",
@@ -76,7 +77,7 @@ ALLOWED_PACKAGES = {
         "model_building",
         "utils",
     },
-    "model_forecasting": {
+    "model_predicting": {
         "data_loading",
         "decomposition",
         "feature_engineering",
@@ -99,7 +100,7 @@ ALLOWED_PACKAGES = {
         "model_performance",
         "model_testing",
         "model_training",
-        "model_forecasting",
+        "model_predicting",
         "model_ensemble",
         "models",
         "model_building",
@@ -111,7 +112,7 @@ ALLOWED_PACKAGES = {
         "data_loading",
         "forecasting_core",
         "model_evaluation",
-        "model_forecasting",
+        "model_predicting",
         "model_testing",
         "utils",
     },
@@ -125,10 +126,12 @@ ALLOWED_ROOTS = {
         "forecasting_core.specs",
         "forecasting_core.tensors",
         "model_evaluation",
-        "model_forecasting.deployment",
-        "model_forecasting.results",
+        "model_predicting.loops.deployment",
+        "model_predicting.artifacts.results",
+        "model_predicting.contracts.protocols",  # FeatureProvider 注入协议（2026-09-28 子包划分）
         "forecasting_core.origin",  # 预测原点解析（部署路径通用原语）
         "model_testing.contracts.geometry",  # 共享标签安全合同，不暴露 runner 执行面
+        "model_testing.artifacts.tensor_frames",  # 张量->long 纯转换唯一实现（2026-09-28 直引收口）
         "utils",
     },
 }
@@ -328,7 +331,7 @@ class InterPackageLayeringTest(unittest.TestCase):
         self.assertEqual(self._violations("model_evaluation"), [])
 
     def test_forecasting_orchestration(self):
-        self.assertEqual(self._violations("model_forecasting"), [])
+        self.assertEqual(self._violations("model_predicting"), [])
 
     def test_probabilistic_capability(self):
         self.assertEqual(self._violations("probabilistic"), [])
@@ -364,7 +367,7 @@ class InterPackageLayeringTest(unittest.TestCase):
         self.assertNotIn("pipeline.runner", imports)
 
     def test_forecasting_runtime_delegates_design_fit_and_calendar_backtest(self):
-        """C4（R6 更新）：编排实现统一在 pipeline，model_forecasting 只剩预测模块。"""
+        """C4（R6 更新）：编排实现统一在 pipeline，model_predicting 只剩预测模块。"""
         expected_pipeline = {
             "runner.py",
             "lifecycle.py",

@@ -12,6 +12,6 @@
 - `transform_cache.py`：批内 fold transform 复用及指纹。
 - `batch_memory.py`：有界内存缓存和采样 RSS。
 
-本包依赖 forecasting_core/model_training/models/feature_engineering；批量调度
-（batch_runtime/batch_artifacts）属流程编排，位于 model_forecasting。
+本包依赖 forecasting_core/model_training/model_building/feature_engineering；批量调度
+（batch_runtime/batch_artifacts）属流程编排，位于 pipeline。
 """

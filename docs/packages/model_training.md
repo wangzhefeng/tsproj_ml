@@ -8,9 +8,9 @@
 - `strategies/`：七种标准多步 executor。
 - `estimators/`：能力探测和 independent/chain/native adapter。
 
-本包依赖 `forecasting_core` 与 `model_building`，不依赖 `probabilistic` 或 `model_forecasting`。Quantile estimator factory 由上层注入。
+本包依赖 `forecasting_core` 与 `model_building`，不依赖 `probabilistic` 或 `model_predicting`。Quantile estimator factory 由上层注入。
 
-**预测侧消费事实**（2026-09-26 核实，避免误判为分层违规）：`model_forecasting` 六处 import 本包（`predictor.py`/`deployment.py` 消费 strategies executor 与 quantile artifact，`persistence.py` 消费 `CanonicalStrategyArtifact`/`CanonicalTrainer`），`model_performance/resource_planner.py` 消费 `supports_native_multi_quantile` 与 `target_plan_for_config`——「加载 bundle 做预测」路径依赖训练包。该边在分层 DAG 中合法（`model_forecasting → model_training` 在 ALLOWED_PACKAGES），语义纯度问题已登记 OPT-025（与 OPT-023 绑定同一触发条件），触发时上收 executor 与 artifact 合同，届时本条随之修订。
+**预测侧消费事实**（2026-09-26 核实，避免误判为分层违规）：`model_predicting` 六处 import 本包（`predictor.py`/`deployment.py` 消费 strategies executor 与 quantile artifact，`persistence.py` 消费 `CanonicalStrategyArtifact`/`CanonicalTrainer`），`model_performance/resource_planner.py` 消费 `supports_native_multi_quantile` 与 `target_plan_for_config`——「加载 bundle 做预测」路径依赖训练包。该边在分层 DAG 中合法（`model_predicting → model_training` 在 ALLOWED_PACKAGES），语义纯度问题已登记 OPT-025（与 OPT-023 绑定同一触发条件），触发时上收 executor 与 artifact 合同，届时本条随之修订。
 
 ETS/naive/theta 的 catalog 标记为 native_history，不进入本包监督回归 trainer/adapter；由 pipeline 对每折有界真实历史直接调用 fit_history（runner 按 `model_building/adapters/native_registry.py::NATIVE_HISTORY_MODELS` 注册表分发）。资源合同允许 native_history 工作负载零特征，记录原始历史行数与实际候选拟合数，不把 horizon 个输出误报为 horizon 个回归模型。
 

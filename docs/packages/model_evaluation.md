@@ -16,4 +16,4 @@
 - `build_eval_mask_payload()` 为点和概率评估生成共用口径，`build_eval_mask()` 执行阈值筛选。评估掩码只改变评分样本，不改训练数据和原始预测曲线。
 - `metrics.py` 的 `pinball_loss/interval_metrics/crossing_metrics/wilson_interval` 是指标内核，不负责修复预测。
 
-结果 CSV 的 long schema、写盘和绘图由 `model_forecasting/results.py` 承载；crossing 修复由 forecaster 承载，CQR 校准由 `probabilistic/calibration.py` 承载。Ensemble 的融合 OOF 评分复用本包，不另维护一份指标公式。
+结果 CSV 的 long schema、写盘和绘图由 `model_predicting/artifacts/results.py` 承载；crossing 修复由 forecaster 承载，CQR 校准由 `probabilistic/calibration.py` 承载。Ensemble 的融合 OOF 评分复用本包，不另维护一份指标公式。

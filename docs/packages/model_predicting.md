@@ -1,15 +1,20 @@
-# model_forecasting
+# model_predicting
 
-`model_forecasting/` 是预测、部署与预测产物层；单模型生命周期和批调度属于 `pipeline/`。
+`model_predicting/` 是预测、部署与预测产物层；单模型生命周期和批调度属于 `pipeline/`。子包按消费方划分（2026-09-28）：`contracts/` 注入协议、`loops/` 执行、`artifacts/` 落盘与证据；无子包级转发门面，消费方走完整点路径。
 
-- `persistence.py`：`build_strategy_model_bundle()` 统一 schema-2 final bundle 构造，`persist_model_bundle()` 持久化。
-- `predictor.py`：point 与 marginal quantile 推理，recursive quantile 使用 median path；包含张量 crossing 修复。
-- `deployment.py`：`predict_strategy_bundle()`，消费已加载 bundle 和显式部署输入，不重新训练。
-- `evidence.py`：现有模型状态的只读参数快照及 JSON 安全转换，不执行拟合/预测。
-- `evidence_assembly.py`：生命周期产物证据组装（visibility proof / holdout proof 摘要 / source lineage / feature lineage 四个纯函数）；自 `pipeline/lifecycle.py` 迁入（2026-09-27 证据域聚集），实现逐字保真，由 lifecycle 调用。
-- `results.py`：预测 canonical long result 写盘、绘图与 `CanonicalResultReader`；回测产物写盘属于 `model_testing/artifacts/reporting.py`。
+- `loops/predictor.py`：point 与 marginal quantile 推理，recursive quantile 使用 median path；包含张量 crossing 修复与 `assemble_marginal_quantile_distribution()`（median path 逐分位组装唯一实现，训练期与部署期共用）。
+- `loops/deployment.py`：`predict_strategy_bundle()`，消费已加载 bundle 和显式部署输入，不重新训练；分位数组装经 `loops/predictor.py` 共享函数，仅单 level 预测回调与 crossing 配置来源（bundle spec）不同。
+- `contracts/protocols.py`：`FeatureProvider` 特征注入协议唯一来源；训练期由 `pipeline/fold_fit` 注入，部署期由部署调用方/ensemble 注入。
+- `artifacts/persistence.py`：`build_strategy_model_bundle()` 统一 schema-2 final bundle 构造，`persist_model_bundle()` 持久化。
+- `artifacts/evidence_collect.py`：运行时只读采集——现有模型状态的参数快照、环境版本与 JSON 安全转换，不执行拟合/预测（2026-09-28 自 `evidence.py` 改名，与 `evidence_assembly.py` 的「组装」对偶）。
+- `artifacts/evidence_assembly.py`：生命周期产物证据组装（visibility proof / holdout proof 摘要 / source lineage / feature lineage 四个纯函数）；自 `pipeline/lifecycle.py` 迁入（2026-09-27 证据域聚集），实现逐字保真，由 lifecycle 调用。
+- `artifacts/results.py`：预测 canonical long result 写盘、绘图与 `CanonicalResultReader`；回测产物写盘属于 `model_testing/artifacts/reporting.py`。
 
-`CanonicalResultReader.read_prediction(path)` / `read_backtest(path)` 读取完整 long 表并解析时间，拒绝非 canonical 文件；不提供隐式格式转换或筛选。原未生效的 `target` / `series_id` 参数已移除，调用方需在返回的 DataFrame 上显式筛选。未使用的 `_plot_timeseries` 再导出已退出；现役 long 转换再导出保留。
+`CanonicalResultReader.read_prediction(path)` / `read_backtest(path)` 读取完整 long 表并解析时间，拒绝非 canonical 文件；不提供隐式格式转换或筛选。原未生效的 `target` / `series_id` 参数已移除，调用方需在返回的 DataFrame 上显式筛选。未使用的 `_plot_timeseries` 再导出已退出。无 schema 校验的 `read_scores` 已删除（2026-09-28，全仓零消费）。long 转换唯一实现在 `model_testing/artifacts/tensor_frames.py`，本模块只 import 自用件、不再转发再导出（2026-09-28 门面收口；model_ensemble 经门禁白名单直引 tensor_frames）。
+
+`dependency_versions()` 的运行时依赖包名清单与实现指纹共用 `utils/runtime_env.RUNTIME_DEPENDENCY_PACKAGES` 唯一来源（2026-09-28 单源化）；缺失哨兵串两侧各自维护（证据 `"not_installed"` / 指纹 `"absent"`，后者进指纹身份不扰动）。
+
+包目录取名 `model_predicting`（2026-09-28 自 `model_forecasting` 改名，行为零变化；历史引用见 git）。
 
 稳定类型全部来自 `forecasting_core/`。本包不得反向 import `pipeline` 或 `model_ensemble`；目标/特征变换属于 `feature_engineering/transforms/`。
 

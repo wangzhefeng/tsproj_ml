@@ -70,7 +70,7 @@
     {
       "id": "runtime",
       "type": "backend",
-      "label": "model_forecasting/",
+      "label": "model_predicting/",
       "sublabel": "运行时编排与产物持久化",
       "pos": [
         320,

@@ -26,7 +26,7 @@
 - 经显式授权的天气研究回放与严格 as-of 分开：发布时间假设写入独立研究配方，保留真实接收/发布事实，不把hindcast标成业务forecast；研究证据及bundle必须标记不可实盘，默认部署入口拒绝研究bundle。
 - 包依赖只允许从上往下（L4 入口 → L3 能力扩展 → L2 编排 → `forecasting_core` 合同层 → 阶段顶层包 → L1 → L0），同层禁止互依，禁止函数内延迟 import 绕行与下划线私有跨包导入；门禁 `tests/test_package_layering.py`。
 - canonical fingerprint 只取语义 payload；并行度、日志、输出目录不进 fingerprint。修改语义后适用新身份，不自动重跑、不删除存量结果。
-- 结果目录统一 `results/{pretrained_models,results_test,results_forecast}/<scenario_subpath>/<result_identity>/`；identity 规则与 long 结果 schema 见 `docs/packages/model_forecasting.md`。
+- 结果目录统一 `results/{pretrained_models,results_test,results_forecast}/<scenario_subpath>/<result_identity>/`；identity 规则与 long 结果 schema 见 `docs/packages/model_predicting.md`。
 - target transform 顺序固定 `calendar normalization → decomposition → scaling`，point/quantile 严格逆序恢复，状态按 `(series_id,target)` 隔离。
 - 回测与 final fit 使用同一配置训练窗口；融合成员 final fit 与对应单模型同一显式窗口。
 - 模型静态描述唯一入口 `model_building/catalog.py`；构造参数严格校验，未知参数 RAISE，不静默丢弃、不静默降级。
@@ -45,7 +45,7 @@
 | 动特征编译/目标与特征变换 | `docs/packages/feature_engineering.md` |
 | 动目标分解/分量外推/通用周期诊断 | `docs/packages/decomposition.md`、`docs/packages/ts_kernels.md` |
 | 动回测几何/逐折评分/回测产物 | `docs/packages/model_testing.md` |
-| 动预测/部署/证据与 bundle 持久化 | `docs/packages/model_forecasting.md` |
+| 动预测/部署/证据与 bundle 持久化 | `docs/packages/model_predicting.md` |
 | 动训练器/策略 executor/estimator 能力 | `docs/packages/model_training.md` |
 | 动模型工厂/参数校验/别名 | `docs/packages/model_building.md` |
 | 动 ensemble/OOF/融合方法 | `docs/packages/model_ensemble.md` |

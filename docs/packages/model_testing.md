@@ -1,6 +1,6 @@
 # model_testing
 
-`model_testing/` 是模型测试包：滑窗回测的几何、原语、逐折评分与回测产物落盘。2026-09-27 按职责细分三个子包；2026-09-28 补齐 `__init__.py`（纯包说明，不 re-export 符号，消费方全路径导入，与 `model_training`/model_forecasting 门面收口约定一致）：
+`model_testing/` 是模型测试包：滑窗回测的几何、原语、逐折评分与回测产物落盘。2026-09-27 按职责细分三个子包；2026-09-28 补齐 `__init__.py`（纯包说明，不 re-export 符号，消费方全路径导入，与 `model_training`/model_predicting 门面收口约定一致）：
 
 - `contracts/`：公共合同与几何（包外消费面）。
   - `protocols.py`（原 `contracts.py`）：`FoldScoringRunner`、`BacktestRunner`、runner factory、设计视图与窗口协议；模型和变换对象作为不透明载荷，不依赖上层实现类型。
@@ -8,13 +8,13 @@
   - `windows.py`：回测窗口构造——rolling 系（fixed/sliding/expanding）折与显式原始历史（train_history_steps，仅 fixed-step）窗口（2026-09-27 自 `pipeline.supervised_design` 下沉，折载体复用 `geometry.RollingOriginFold`；`minimum_history` 由调用方显式传入）。
   - `primitives.py`：actual tensor、seasonal-naive 与正整数校验；forecast origin 解析已迁入 `forecasting_core/origin.py`（2026-09-27，部署路径通用原语）。
 - `loops/`：回测循环形态与共用逐折体。`fixed_step.py` 内含 rolling 系共用引擎 `run_rolling_backtest()`，`sliding_window.py`/`expanding_window.py` 为薄入口（sliding 重叠折不拼总图，expanding 训练集逐折扩大）。
-  - `scoring.py`：两种回测共用的逐折评分体 `score_holdout_fold()`——predict 后处理 → point/probabilistic 评分 → CQR apply-before-collect → 执行证据；通过 `FoldScoringRunner` 消费公开能力，本包不 import model_forecasting。
+  - `scoring.py`：两种回测共用的逐折评分体 `score_holdout_fold()`——predict 后处理 → point/probabilistic 评分 → CQR apply-before-collect → 执行证据；通过 `FoldScoringRunner` 消费公开能力，本包不 import model_predicting。
   - `fixed_step.py`：固定步长回测的并行拟合、按窗口顺序评分、聚合、provider 日志与回测产物写盘；历史准备委托 runner。
   - `sliding_window.py`：重叠滑窗回测入口（stride_steps < horizon；`stitch_overview=False`）。
   - `expanding_window.py`：扩展窗回测入口（训练集不截断；backtest-only）。
   - `calendar_month.py`：calendar-month 回测生命周期（折构造、动态 config、并行拟合调度）；消费 scoring 共用体。
 - `artifacts/`：产物写盘与可视化。
-  - `tensor_frames.py`：canonical 张量到 long DataFrame 的纯转换，供 scoring 与 model_forecasting/model_ensemble 结果写盘共用。
+  - `tensor_frames.py`：canonical 张量到 long DataFrame 的纯转换，供 scoring 与 model_predicting/model_ensemble 结果写盘共用。
   - `reporting.py`：回测产物写盘与可视化（cv_plot_df/test_scores*/windows_results/总图）。
   - `decomposition_reports.py`：接收已计算的分解诊断 DataFrame，独占创建 CSV、不覆盖；不导入分解算法，不自动启用诊断。
 - 逐窗图与总图统一约定Trues=actual_value实线、Preds=predict_value点划线；调用绘图助手时真值使用显式 `y_true` 参数，防止位置参数对调。回归见 `tests/test_backtest_plot_labels.py`。
@@ -23,7 +23,7 @@
 
 fixed-step 显式原始历史窗口通过 runner 的 `for_backtest_window()` 取得独立有界上下文；串行、并行拟合均由同一折上下文评分，不共用可变历史起点。窗口 metadata 记录 raw_history_start/end、train_history_steps 与预热后的 training_sample_count。actual 正常评分，不按离线填充来源新增掩码。
 
-本包依赖 `forecasting_core`、`data_loading`、`model_evaluation`、`probabilistic`（CQR tracker 类型）及 `utils` 日志；不 import pipeline/model_forecasting/model_ensemble。指标计算属于 `model_evaluation/`。
+本包依赖 `forecasting_core`、`data_loading`、`model_evaluation`、`probabilistic`（CQR tracker 类型）及 `utils` 日志；不 import pipeline/model_predicting/model_ensemble。指标计算属于 `model_evaluation/`。
 
 `model_testing` 不是 `tests/` 测试套件；不恢复旧 `ModelTesting` 类。
 

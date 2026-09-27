@@ -7,7 +7,7 @@
 - `deployment.py`：`predict_strategy_bundle()`，消费已加载 bundle 和显式部署输入，不重新训练。
 - `evidence.py`：现有模型状态的只读参数快照及 JSON 安全转换，不执行拟合/预测。
 - `evidence_assembly.py`：生命周期产物证据组装（visibility proof / holdout proof 摘要 / source lineage / feature lineage 四个纯函数）；自 `pipeline/lifecycle.py` 迁入（2026-09-27 证据域聚集），实现逐字保真，由 lifecycle 调用。
-- `results.py`：预测 canonical long result 写盘、绘图与 `CanonicalResultReader`；回测产物写盘属于 `model_testing/reporting.py`。
+- `results.py`：预测 canonical long result 写盘、绘图与 `CanonicalResultReader`；回测产物写盘属于 `model_testing/artifacts/reporting.py`。
 
 `CanonicalResultReader.read_prediction(path)` / `read_backtest(path)` 读取完整 long 表并解析时间，拒绝非 canonical 文件；不提供隐式格式转换或筛选。原未生效的 `target` / `series_id` 参数已移除，调用方需在返回的 DataFrame 上显式筛选。未使用的 `_plot_timeseries` 再导出已退出；现役 long 转换再导出保留。
 

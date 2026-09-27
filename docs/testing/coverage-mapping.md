@@ -6,6 +6,8 @@
 
 严格原始历史窗口的定向验证：`test_raw_history_window` 覆盖请求下界、single/batch、expanding、窗口扰动、serial/parallel、cache/checkpoint 及入口拒绝；默认 integration 发现，不加入 skip 或 fast 白名单。
 
+rolling 系回测形态（2026-09-27 新增）：`test_window_backtest_modes` 默认 integration，覆盖 sliding_window/expanding_window 的 spec 解析合同（字段缺失/禁字段/非法 horizon_mode 拒绝）、expanding 几何训练集逐折扩大、sliding 重叠折与 stride≥horizon 拒绝、`stitch_overview=False` 产物合同（不拼总图、逐窗图与 csv 照常），以及两种形态的合成数据端到端 backtest-only smoke（metadata mode 标签、训练样本数递增）与 expanding final fit 拒绝。
+
 ## 精简与覆盖映射
 
 - 核心残留清理：`test_core_cleanup_contract` 默认 integration，验证退役定义无 shim、无效结果筛选/事件 config 参数拒绝、完整多序列多目标 long 表读回、非 canonical 拒绝及 pickle IO 新进程导入不初始化日志。
@@ -53,7 +55,7 @@
 - 模型测试使用 `models.factory`、`models.wrappers.<family>` 与 `models.pickle_io`。`test_model_wrapper_persistence` 验证各 family 的新路径 pickle 往返预测、旧路径无 shim/拒绝加载，以及 pickle IO 导入不修改 `sys.path`；参数校验和多目标 adapter 的原有断言保留。
 - layering 的 `PROJECT_PACKAGES` 包含 `pipeline` 与 `model_performance`；新包必须注册，不能靠漏扫换取门禁通过。
 - 依赖白名单门禁遍历全部 `PROJECT_PACKAGES` 并核对注册集合；新增包自动进入检查。两个新包的非法依赖探针验证门禁确实报错，而不仅验证当前仓库为绿。
-- `test_backtest_lifecycle_split` 覆盖 runner 的显式协议能力、串行/并行窗口评分顺序与历史传参、running/completed/failed 状态以及 BaseException 原样传播；生命周期静态检查位于 `pipeline/lifecycle.py`，逐折证据接线检查指向 `model_testing/fixed_step.py` 与 calendar-month。这些接缝测试不替代真实配置产物 diff。
+- `test_backtest_lifecycle_split` 覆盖 runner 的显式协议能力、串行/并行窗口评分顺序与历史传参、running/completed/failed 状态以及 BaseException 原样传播；生命周期静态检查位于 `pipeline/lifecycle.py`，逐折证据接线检查指向 `model_testing/loops/fixed_step.py` 与 calendar-month。这些接缝测试不替代真实配置产物 diff。
 
 ```bash
 env -u PYTHONPATH .venv/bin/python tests/run_suite.py integration --match test_compiler_shared_rules

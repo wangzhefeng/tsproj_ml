@@ -12,6 +12,11 @@ fixed-step 的 `validation.train_history_steps: W` 表示每折仅读取原点�
 
 Fixed-step validation 使用 `history_steps/train_window_steps/fold_count/stride_steps`，均以监督 origin steps 保存；calendar-month 使用 `train_window_days/fold_count/stride_months`，训练窗按原始日数计，每个历史月和最终目标月动态解析 28/29/30/31 步。
 
+rolling 系另有两种形态（2026-09-27 新增）：
+
+- `horizon_mode: sliding_window`：字段同 fixed-step 四件，语义为 `stride_steps < horizon` 的重叠滑窗评估（同一时刻被多折预测）；窗口构造期校验 stride < horizon，否则 RAISE 指引改用 fixed_steps；产物不拼接总图（逐窗图与 csv 照常），禁用 `train_history_steps`。
+- `horizon_mode: expanding_window`：字段为 `history_steps/fold_count/stride_steps` 三件，禁止 `train_window_steps` 与 `train_history_steps`；每折训练集取全部合格历史候选、随折扩大；无固定训练窗口语义，暂限 `--backtest-only`（final fit/bundle RAISE）。
+
 final fit 与回测使用相同训练窗口合同，不再隐式切换为全部历史。
 
 ## 时间边界

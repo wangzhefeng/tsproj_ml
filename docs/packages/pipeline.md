@@ -5,7 +5,7 @@
 `pipeline/` 负责单模型生命周期、监督设计与批量运行编排；根 `run.py` / `batch_run.py` 调用本包。融合仍由独立 `model_ensemble/` 负责，通过入口注入 runner 与执行服务复用单模型链。
 
 - `runner.py`：`CanonicalBaseModelRunner` 与 `run_canonical_config()`；提供训练、预测、历史准备和只读证据能力，run 入口设置线程限制后委托生命周期。构造期即校验 native 历史模型参数与 `probabilistic.mode=quantile` 能力冲突（2026-09-27 前置，不再等到折拟合期）。
-- `lifecycle.py`：`run_lifecycle()` 管理完成状态与异常传播，`execute_lifecycle()` 组织回测、CQR、final fit、预测和持久化；回测几何按 `validation.backtest` spec 类型显式分派（fixed-step / calendar-month，缺失即 RAISE）；产物证据组装函数位于 `model_forecasting/evidence_assembly.py`（2026-09-27 迁出）。结果类型仍由 runner 公开导出。
+- `lifecycle.py`：`run_lifecycle()` 管理完成状态与异常传播，`execute_lifecycle()` 组织回测、CQR、final fit、预测和持久化；回测几何按 `validation.backtest` spec 类型显式分派（fixed-step / sliding-window / expanding-window / calendar-month，缺失即 RAISE；expanding-window 暂限 backtest-only）；产物证据组装函数位于 `model_forecasting/evidence_assembly.py`（2026-09-27 迁出）。结果类型仍由 runner 公开导出。
 - `supervised_design.py`：`SupervisedDesignBuilder`、information set、训练/预测设计、监督标签窗口、`minimum_history_rows()`；批编译不支持的设计保留 single 路径，不隐式替换 provider。
 - `fold_fit.py`：fold/final 特征选择、变换与训练服务；回测和 final fit 共用配置训练窗口。
 - `run_state.py`：running/completed/failed 状态写入和 completed 校验；状态不是跨目录事务，外部直接加载 pickle 不自动消费状态。
@@ -20,7 +20,7 @@
 
 `SupervisedDesignBuilder` 经 `SourceRegistry.target_history_coverage()` 获取目标源序列/时间覆盖，再在本包决定 `series_order`、unknown/incomplete policy、训练窗口和监督张量。数据读取、验证及公共 identity 选择由数据层提供；runner、batch runtime、lifecycle 通过 registry 的公开 `base_dir`/`generators` 取得上下文，不穿透私有状态。递归预测目标 provider 与 oracle 标签策略仍属于本包，不迁入通用数据层。
 
-fixed-step/calendar-month 循环分别位于 `model_testing/fixed_step.py` 与 `model_testing/calendar_month.py`；通过显式回测协议消费 runner 能力，逐折评分都委托 `model_testing/scoring.py`。目标变换识别与并行拟合所需的标签历史由 runner 的 `backtest_target_histories()` 提供，测试包不导入具体变换实现。预测/部署和 bundle 构造持久化位于 `model_forecasting/`，final bundle 构造由 `build_strategy_model_bundle()` 统一处理。
+fixed-step/calendar-month 循环分别位于 `model_testing/loops/fixed_step.py` 与 `model_testing/loops/calendar_month.py`，回测窗口构造位于 `model_testing/contracts/windows.py`；通过显式回测协议消费 runner 能力，逐折评分都委托 `model_testing/loops/scoring.py`。目标变换识别与并行拟合所需的标签历史由 runner 的 `backtest_target_histories()` 提供，测试包不导入具体变换实现。预测/部署和 bundle 构造持久化位于 `model_forecasting/`，final bundle 构造由 `build_strategy_model_bundle()` 统一处理。
 
 `CanonicalBaseModelRunner.execution_evidence(artifact, target_transform)` 提供公开只读证据能力，供回测与融合成员通过协议调用；不为收集证据再次拟合或预测。CQR 收集在 final fit 前完成，部署只应用已保存校准状态。
 

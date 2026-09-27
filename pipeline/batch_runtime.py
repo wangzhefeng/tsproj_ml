@@ -34,7 +34,7 @@ from model_performance.resource_planner import (
     plan_runtime_execution,
 )
 from model_performance.transform_cache import FoldTransformCache
-from model_testing.primitives import resolve_origin
+from forecasting_core.origin import resolve_origin
 from pipeline.batch_artifacts import (
     artifact_paths,
     artifact_digests,

@@ -12,9 +12,9 @@ import pandas as pd
 from forecasting_core.specs import FixedStepBacktestSpec
 from pipeline.lifecycle import run_lifecycle
 from pipeline.runner import CanonicalBaseModelRunner
-from model_testing.contracts import BacktestRunner, FoldScoringRunner
-from model_testing.fixed_step import run_fixed_step_backtest
-from model_testing.scoring import FoldScoreResult
+from model_testing.contracts.protocols import BacktestRunner, FoldScoringRunner
+from model_testing.loops.fixed_step import run_fixed_step_backtest
+from model_testing.loops.scoring import FoldScoreResult
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -88,8 +88,8 @@ class BacktestLifecycleSplitTest(unittest.TestCase):
                         point_scores=pd.DataFrame({"score": [1.0]}),
                     )
 
-                with patch("model_testing.fixed_step.score_holdout_fold", side_effect=score), patch(
-                    "model_testing.fixed_step.write_backtest_results"
+                with patch("model_testing.loops.fixed_step.score_holdout_fold", side_effect=score), patch(
+                    "model_testing.loops.fixed_step.write_backtest_results"
                 ) as write:
                     metadata, tracker, audit = run_fixed_step_backtest(runner, Path(directory), mode="point")
                 self.assertEqual([x["window"] for x in scored], [1, 2])

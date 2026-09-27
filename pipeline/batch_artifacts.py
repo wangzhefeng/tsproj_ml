@@ -15,7 +15,7 @@ import numpy as np
 import pandas as pd
 
 from forecasting_core.artifacts import ForecastModelBundle, QuantileGrid
-from model_testing.geometry import TimeGeometry, scheduled_origin_indices
+from model_testing.contracts.geometry import TimeGeometry, scheduled_origin_indices
 from pipeline.run_state import require_completed_state
 
 

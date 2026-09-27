@@ -1,4 +1,4 @@
-"""Calendar-month backtest orchestration for the canonical runtime."""
+"""canonical runtime 的自然月回测编排。"""
 
 from __future__ import annotations
 
@@ -17,11 +17,11 @@ from forecasting_core.specs import (
     ForecastConfigSpec,
 )
 from model_evaluation.point import resolve_aggregate_weighting
-from model_testing.reporting import write_backtest_results
+from model_testing.artifacts.reporting import write_backtest_results
 
-from model_testing import geometry as validation
-from model_testing.scoring import score_holdout_fold
-from model_testing.contracts import BacktestRunner, BacktestRunnerFactory
+from model_testing.contracts import geometry as backtest_geometry
+from model_testing.loops.scoring import score_holdout_fold
+from model_testing.contracts.protocols import BacktestRunner, BacktestRunnerFactory
 from pandas.tseries.frequencies import to_offset
 from probabilistic.calibration import ConformalCalibrationTracker
 from forecasting_core.probabilistic_spec import probabilistic_spec_from_mapping
@@ -41,7 +41,7 @@ def run_calendar_month_backtest(
         raise TypeError(
             "calendar-month backtest requires CalendarMonthBacktestSpec"
         )
-    folds = validation.calendar_month_folds(
+    folds = backtest_geometry.calendar_month_folds(
         final_runner.builder.target_history_times(final_runner.origin),
         train_window_days=backtest.train_window_days,
         fold_count=backtest.fold_count,

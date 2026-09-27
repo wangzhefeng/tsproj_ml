@@ -1,7 +1,6 @@
-# -*- coding: utf-8 -*-
 """回测逐折评分共用体（R5b，2026-09-06 自两份重复循环体合一，方案 v3）。
 
-fixed-step（model_testing.fixed_step）与 calendar-month（model_testing.calendar_month）
+fixed-step（model_testing.loops.fixed_step）与 calendar-month（model_testing.loops.calendar_month）
 的逐折「predict 后处理 → 评分 → CQR apply/collect → 证据」体是同一条业务规则，
 此前两处各写一遍（2026-09-01 CQR 接线时就双份维护）。本模块抽出唯一实现：
 调用方负责折构造与并行调度，本模块只消费每折已完成的 (fit 结果, origin, 窗口号)。
@@ -23,8 +22,8 @@ from model_evaluation.marginal import evaluate_marginal_distribution
 from model_evaluation.point import evaluate_point_forecasts
 from probabilistic.calibration import ConformalCalibrationTracker
 
-from model_testing.tensor_frames import backtest_tensors_to_long
-from model_testing.contracts import FitResult, FoldScoringRunner
+from model_testing.artifacts.tensor_frames import backtest_tensors_to_long
+from model_testing.contracts.protocols import FitResult, FoldScoringRunner
 
 
 @dataclass

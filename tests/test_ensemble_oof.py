@@ -21,7 +21,7 @@ from model_ensemble.artifacts import OOFPredictionArtifact
 from model_ensemble.oof import oof_fold_origins
 
 
-from model_testing import geometry as validation
+from model_testing.contracts import geometry as backtest_geometry
 
 
 class OOFFoldOriginsTest(unittest.TestCase):
@@ -29,7 +29,7 @@ class OOFFoldOriginsTest(unittest.TestCase):
 
     @staticmethod
     def _fake_runner(origins):
-        geometry = validation.TimeGeometry(
+        geometry = backtest_geometry.TimeGeometry(
             offset=pd.tseries.frequencies.to_offset("1h"),
             horizon=2,
         )

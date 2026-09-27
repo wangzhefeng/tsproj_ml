@@ -1,10 +1,9 @@
-"""Shared rolling-origin time contract for backtests and OOF folds.
+"""回测与 OOF 折共用的 rolling-origin 时间合同。
 
-Extracted in E1 from `model_forecasting/runtime.py` (`_label_start`, `_label_end`,
-`_holdout_training_indices`, `_rolling_backtest_windows`). The functions here
-are deliberately decoupled from any runtime type: they take explicit time
-geometry (origin offset / horizon steps) so the ensemble OOF splitter (E3) can
-reuse the exact same semantics.
+E1 自 `model_forecasting/runtime.py`（`_label_start`、`_label_end`、
+`_holdout_training_indices`、`_rolling_backtest_windows`）抽出。这里的函数
+刻意与任何 runtime 类型解耦：只接受显式时间几何（origin offset / horizon
+步数），使 ensemble OOF 切分器（E3）可以复用完全相同的语义。
 """
 
 from __future__ import annotations
@@ -16,7 +15,7 @@ import pandas as pd
 
 
 def label_start(origin: pd.Timestamp, offset: pd.tseries.frequencies.BaseOffset) -> pd.Timestamp:
-    """First timestamp a forecast made at ``origin`` predicts."""
+    """在 ``origin`` 时刻所作预报的第一个时间戳。"""
     return origin + offset
 
 
@@ -25,7 +24,7 @@ def label_end(
     offset: pd.tseries.frequencies.BaseOffset,
     horizon: int,
 ) -> pd.Timestamp:
-    """Last timestamp a forecast made at ``origin`` predicts."""
+    """在 ``origin`` 时刻所作预报的最后一个时间戳。"""
     return origin + horizon * offset
 
 
@@ -37,10 +36,10 @@ def is_label_safe(
     *,
     gap_steps: int = 0,
 ) -> bool:
-    """Require label_end strictly before the holdout's embargo boundary.
+    """要求 label_end 严格早于 holdout 的 embargo 边界。
 
-    A positive gap excludes grid steps before the first holdout label; it
-    never shifts the forecast itself. Calendar offsets stay calendar offsets.
+    正的 gap 排除 holdout 首个标签之前的网格步；它从不移动预测本身，
+    calendar offset 保持 calendar offset。
     """
     if isinstance(gap_steps, bool) or not isinstance(gap_steps, int) or gap_steps < 0:
         raise ValueError("gap_steps must be a non-negative integer")
@@ -50,7 +49,7 @@ def is_label_safe(
 
 @dataclass(frozen=True, slots=True)
 class TimeGeometry:
-    """Explicit origin-step geometry shared by backtests and OOF folds."""
+    """回测与 OOF 折共用的显式 origin-step 时间几何。"""
 
     offset: pd.tseries.frequencies.BaseOffset
     horizon: int
@@ -63,7 +62,7 @@ class TimeGeometry:
 
 
 class OriginTimeline(Protocol):
-    """Read-only time geometry required for selecting supervised folds."""
+    """选择监督折所需的只读时间几何。"""
 
     @property
     def geometry(self) -> TimeGeometry: ...
@@ -74,7 +73,7 @@ class OriginTimeline(Protocol):
 
 @dataclass(frozen=True, slots=True)
 class CalendarMonthFold:
-    """One complete calendar-month holdout with a fixed preceding day window."""
+    """一个完整自然月 holdout，配固定的前置日窗口训练集。"""
 
     window: int
     origin_index: int
@@ -92,11 +91,11 @@ def calendar_month_folds(
     fold_count: int,
     stride_months: int,
 ) -> tuple[CalendarMonthFold, ...]:
-    """Build complete month-aligned folds in chronological order.
+    """按时间顺序构造完整自然月对齐的折。
 
-    Each fold predicts one whole month and trains on exactly the preceding
-    ``train_window_days`` daily rows. The newest complete month anchors the
-    sequence; preceding folds are spaced by ``stride_months`` calendar months.
+    每折预测一个完整自然月，训练集为严格前置的 ``train_window_days`` 个
+    日频行；折序列以最新完整月锚定，更早的折按 ``stride_months`` 个
+    自然月间隔排列。
     """
     if (
         isinstance(train_window_days, bool)
@@ -174,7 +173,7 @@ def calendar_month_folds(
 
 @dataclass(frozen=True, slots=True)
 class RollingOriginFold:
-    """One rolling-origin split: origins before ``origin`` train the holdout."""
+    """一个 rolling-origin 切分：``origin`` 之前的 origins 训练该 holdout。"""
 
     window: int
     origin_index: int
@@ -183,20 +182,13 @@ class RollingOriginFold:
     metadata: dict[str, Any]
 
 
-def _positive_int(source: dict[str, Any], field: str, default: int) -> int:
-    value = source.get(field, default)
-    if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
-        raise ValueError(f"validation.{field} must be a positive integer")
-    return value
-
-
 def scheduled_origin_indices(
     origins: tuple[pd.Timestamp, ...],
     geometry: TimeGeometry,
     schedule_origin: pd.Timestamp,
     stride_steps: int,
 ) -> tuple[int, ...]:
-    """Select the formal schedule grid, newest first, from complete origins."""
+    """从完整 origins 中选择正式调度网格，最新在前。"""
     if isinstance(stride_steps, bool) or not isinstance(stride_steps, int) or stride_steps <= 0:
         raise ValueError("stride_steps must be a positive integer")
     if not origins:
@@ -222,18 +214,25 @@ def rolling_origin_folds(
     geometry: TimeGeometry,
     *,
     history_steps: int | None,
-    train_window_steps: int,
+    train_window_steps: int | None,
     fold_count: int,
     stride_steps: int,
     schedule_origin: pd.Timestamp | None = None,
 ) -> tuple[RollingOriginFold, ...]:
-    """Rolling-origin folds with an explicit supervised-origin-step contract.
+    """带显式 supervised-origin-step 合同的 rolling-origin 折。
 
-    The candidate set is the last ``history_steps`` origins; holdouts are the
-    last ``fold_count`` candidates spaced ``stride_steps`` apart, chronologically
-    ordered; each holdout trains on the last ``train_window_steps`` candidates
-    whose labels end strictly before the holdout label start.
+    候选集为最后 ``history_steps`` 个 origins；holdout 为其中按
+    ``stride_steps`` 间隔的最后 ``fold_count`` 个，按时间顺序排列；
+    每个 holdout 用标签严格结束于 holdout 标签起点之前的候选训练——
+    ``train_window_steps`` 为整数时取最后该数个（fixed/sliding），
+    为 None 时取全部合格候选（expanding，训练集随折扩大）。
     """
+    if train_window_steps is not None and (
+        isinstance(train_window_steps, bool)
+        or not isinstance(train_window_steps, int)
+        or train_window_steps <= 0
+    ):
+        raise ValueError("train_window_steps must be a positive integer or None")
     if history_steps is None:
         history_steps = len(origins)
     history_steps = min(len(origins), history_steps)
@@ -250,11 +249,12 @@ def rolling_origin_folds(
     for window, origin_index in enumerate(reversed(candidates), start=1):
         holdout_origin = origins[origin_index]
         holdout_label_start = geometry.label_start(holdout_origin)
-        train_indices = tuple(
+        eligible = tuple(
             index
             for index in range(history_start, origin_index)
             if is_label_safe(origins[index], geometry.offset, geometry.horizon, holdout_label_start)
-        )[-train_window_steps:]
+        )
+        train_indices = eligible if train_window_steps is None else eligible[-train_window_steps:]
         if not train_indices:
             raise ValueError(
                 "canonical rolling backtest requires at least one non-overlapping "

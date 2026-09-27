@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """canonical 张量到 long DataFrame 的纯转换（R5b 自 model_forecasting/results.py 迁出）。
 
 只依赖 forecasting_core 合同类型与 numpy/pandas，无 IO、无绘图——
@@ -14,8 +13,8 @@ import pandas as pd
 from forecasting_core.tensors import PointForecastTensor, require_matching_point_axes
 from forecasting_core.artifacts import MarginalForecastDistribution, QuantileGrid
 
-_CANONICAL_KEY_COLUMNS = ["series_id", "time", "target"]
-_BACKTEST_KEY_COLUMNS = [*_CANONICAL_KEY_COLUMNS, "window"]
+CANONICAL_KEY_COLUMNS = ["series_id", "time", "target"]
+BACKTEST_KEY_COLUMNS = [*CANONICAL_KEY_COLUMNS, "window"]
 
 
 def point_tensor_to_long(tensor: PointForecastTensor) -> pd.DataFrame:
@@ -36,7 +35,7 @@ def point_tensor_to_long(tensor: PointForecastTensor) -> pd.DataFrame:
                     }
                 )
     frame = pd.DataFrame(rows)
-    if frame.duplicated(_CANONICAL_KEY_COLUMNS).any():
+    if frame.duplicated(CANONICAL_KEY_COLUMNS).any():
         raise ValueError("canonical point result keys must be unique")
     return frame
 
@@ -101,7 +100,7 @@ def backtest_tensors_to_long(
     )
     frame = actual_frame.merge(
         prediction_frame,
-        on=_CANONICAL_KEY_COLUMNS,
+        on=CANONICAL_KEY_COLUMNS,
         how="inner",
         validate="one_to_one",
     )
@@ -115,7 +114,7 @@ def backtest_tensors_to_long(
         if len(valid) != len(frame):
             raise ValueError("plot_valid must match canonical long row count")
     frame["plot_valid"] = valid
-    if frame.duplicated(_BACKTEST_KEY_COLUMNS).any():
+    if frame.duplicated(BACKTEST_KEY_COLUMNS).any():
         raise ValueError("canonical backtest result keys must be unique")
     quantile_columns = [column for column in frame if column.startswith("predict_q")]
     return frame[

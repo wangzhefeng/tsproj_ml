@@ -15,19 +15,16 @@ from forecasting_core.tensors import PointForecastTensor
 from forecasting_core.artifacts import MarginalForecastDistribution
 
 # 预测图复用回测侧的时间轴与文件名格式工具，不再导出未使用的绘图入口。
-from model_testing.reporting import (
-    _format_time_axis,
-    _safe_plot_name,
+from model_testing.artifacts.reporting import (
+    format_time_axis,
+    safe_plot_name,
 )
 
 
-_CANONICAL_KEY_COLUMNS = ["series_id", "time", "target"]
-_BACKTEST_KEY_COLUMNS = [*_CANONICAL_KEY_COLUMNS, "window"]
-
-
-# 纯张量->long 转换自本模块迁出至 model_testing/tensor_frames.py（2026-09-06 R5b，
+# 纯张量->long 转换自本模块迁出至 model_testing/artifacts/tensor_frames.py（2026-09-06 R5b，
 # 供回测评分体共用且不构成包环）；此处 re-export 保持既有消费面零改动。
-from model_testing.tensor_frames import (  # noqa: F401,E402
+from model_testing.artifacts.tensor_frames import (  # noqa: F401,E402
+    CANONICAL_KEY_COLUMNS,
     backtest_tensors_to_long,
     distribution_to_long,
     point_tensor_to_long,
@@ -183,7 +180,7 @@ def _plot_forecast_series(
     axis.set_ylabel("Value")
     axis.grid(True, alpha=0.3)
     axis.legend(loc="upper left", fontsize="small")
-    _format_time_axis(axis, forecast_frame["time"])
+    format_time_axis(axis, forecast_frame["time"])
     figure.autofmt_xdate(rotation=30)
     figure.tight_layout()
     figure.savefig(output_path, dpi=dpi, bbox_inches="tight")
@@ -217,7 +214,7 @@ def _plot_forecast(
         _plot_forecast_series(
             frame[frame["target"] == target],
             f"Forecast: {target}",
-            plots_dir / f"{_safe_plot_name(target)}.png",
+            plots_dir / f"{safe_plot_name(target)}.png",
             (
                 history_frame[history_frame["target"] == target]
                 if history_frame is not None
@@ -235,7 +232,7 @@ class CanonicalResultReader:
         path: str | Path,
     ) -> pd.DataFrame:
         frame = pd.read_csv(path)
-        if set(_CANONICAL_KEY_COLUMNS + ["predict_value"]).issubset(frame):
+        if set(CANONICAL_KEY_COLUMNS + ["predict_value"]).issubset(frame):
             result = frame.copy()
             result["time"] = pd.to_datetime(result["time"])
             return result

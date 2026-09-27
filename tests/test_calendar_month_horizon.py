@@ -4,7 +4,7 @@ import unittest
 
 import pandas as pd
 
-from model_testing.geometry import calendar_month_folds
+from model_testing.contracts.geometry import calendar_month_folds
 
 
 class CalendarMonthHorizonTest(unittest.TestCase):

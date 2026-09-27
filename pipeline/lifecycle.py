@@ -11,7 +11,9 @@ from feature_engineering import cache as compiled_cache
 from forecasting_core.artifacts import ForecastModelBundle, MarginalForecastDistribution
 from forecasting_core.specs import (
     CalendarMonthBacktestSpec,
+    ExpandingWindowBacktestSpec,
     ForecastConfigSpec,
+    SlidingWindowBacktestSpec,
     TargetAdapter,
 )
 from forecasting_core.tensors import PointForecastTensor
@@ -24,8 +26,10 @@ from model_forecasting.evidence_assembly import (
 from model_forecasting.persistence import persist_model_bundle
 from model_forecasting.results import write_forecast_results
 from pipeline.run_state import write_run_state
-from model_testing.calendar_month import run_calendar_month_backtest
-from model_testing.fixed_step import run_fixed_step_backtest
+from model_testing.loops.calendar_month import run_calendar_month_backtest
+from model_testing.loops.expanding_window import run_expanding_window_backtest
+from model_testing.loops.fixed_step import run_fixed_step_backtest
+from model_testing.loops.sliding_window import run_sliding_window_backtest
 from utils.log_util import logger
 
 @dataclass(frozen=True, slots=True)
@@ -137,7 +141,7 @@ def execute_lifecycle(
     if backtest_only:
         test_dir = test_dir / "backtest_only"
     # 回测几何显式分派：按 validation.backtest 的 spec 类型选执行器，
-    # 不依赖 fixed_step 返回 None 的隐式回退协议；两执行器产物合同一致。
+    # 不依赖 fixed_step 返回 None 的隐式回退协议；各执行器产物合同一致。
     backtest_spec = config.validation.backtest
     if backtest_spec is None:
         raise ValueError("canonical lifecycle requires a configured backtest geometry")
@@ -147,6 +151,14 @@ def execute_lifecycle(
             runner_factory=runner.calendar_runner_factory,
         )
         holdout_audit = ()
+    elif isinstance(backtest_spec, SlidingWindowBacktestSpec):
+        holdout_metadata, calibration_tracker, holdout_audit = run_sliding_window_backtest(
+            runner, test_dir, mode=mode,
+        )
+    elif isinstance(backtest_spec, ExpandingWindowBacktestSpec):
+        holdout_metadata, calibration_tracker, holdout_audit = run_expanding_window_backtest(
+            runner, test_dir, mode=mode,
+        )
     else:
         holdout_metadata, calibration_tracker, holdout_audit = run_fixed_step_backtest(
             runner, test_dir, mode=mode,

@@ -11,7 +11,7 @@ import numpy as np
 import pandas as pd
 from threadpoolctl import threadpool_limits
 
-from model_testing import geometry as validation
+from model_testing.contracts import geometry as backtest_geometry
 from data_loading import (
     BUILTIN_GENERATORS,
     SourceRegistry,
@@ -30,8 +30,15 @@ from feature_engineering.selection import (
     selected_indices_for_artifact,
 )
 from utils.log_util import logger
-from forecasting_core.specs import CalendarMonthBacktestSpec, FixedStepBacktestSpec, ForecastConfigSpec
-from model_testing.primitives import resolve_origin, seasonal_naive_tensor
+from forecasting_core.specs import (
+    CalendarMonthBacktestSpec,
+    ExpandingWindowBacktestSpec,
+    FixedStepBacktestSpec,
+    ForecastConfigSpec,
+    SlidingWindowBacktestSpec,
+)
+from forecasting_core.origin import resolve_origin
+from model_testing.contracts.primitives import seasonal_naive_tensor
 from model_forecasting.persistence import (
     build_strategy_model_bundle,
     persist_model_bundle,
@@ -55,16 +62,15 @@ from forecasting_core.runtime_resources import (
 )
 from model_forecasting.evidence import collect_model_evidence, dependency_versions, json_evidence
 from pipeline.lifecycle import BacktestRuntimeResult, CanonicalRuntimeResult, run_lifecycle
-from model_testing.contracts import BacktestWindow
+from model_testing.contracts.protocols import BacktestWindow
+from model_testing.contracts.windows import raw_history_backtest_windows, rolling_backtest_windows
 from pipeline.supervised_design import (
-    _BacktestWindow,
     SupervisedDesignBuilder,
-    raw_history_backtest_windows,
     _actual_at_origin,
     _label_end,
-    _rolling_backtest_windows,
     _sample_indices,
     _supervised_arrays,
+    minimum_history_rows,
 )
 from pipeline.fold_fit import (
     _fit_point,
@@ -85,8 +91,9 @@ from model_performance.resource_planner import (
 # native_registry.py：纯 wrapper 接线属模型层，非编排层职责；runner 经
 # _native_history_cls 按 model_type 分发。
 
-# 回测公开原语（seasonal-naive 基线、actual 张量、origin 解析）位于
-# model_testing/primitives.py；本文件经公开名消费。
+# 回测公开原语（seasonal-naive 基线、actual 张量）位于
+# model_testing/contracts/primitives.py，origin 解析位于 forecasting_core/origin.py；
+# 本文件经公开名消费。
 
 
 def _sample_selector(
@@ -349,8 +356,8 @@ class CanonicalBaseModelRunner:
         self.builder.categorical_schema = tuple(payload["categorical_schema"])
 
     @property
-    def geometry(self) -> validation.TimeGeometry:
-        return validation.TimeGeometry(
+    def geometry(self) -> backtest_geometry.TimeGeometry:
+        return backtest_geometry.TimeGeometry(
             offset=self.builder.offset,
             horizon=self.config.problem.horizon,
         )
@@ -389,13 +396,22 @@ class CanonicalBaseModelRunner:
             self.workload,
         )
 
-    def backtest_windows(self) -> tuple[_BacktestWindow, ...]:
+    def backtest_windows(self) -> tuple[backtest_geometry.RollingOriginFold, ...]:
         if self.config.validation.get("train_history_steps") is not None:
-            return raw_history_backtest_windows(self.builder, self.origin)
+            return raw_history_backtest_windows(
+                config=self.config,
+                registry=self.builder.registry,
+                offset=self.builder.offset,
+                origin=self.origin,
+                minimum_history=minimum_history_rows(self.config),
+            )
         if isinstance(self.config.validation.backtest, CalendarMonthBacktestSpec):
             return ()
-        return _rolling_backtest_windows(
-            self.builder, self.supervised_origins,
+        return rolling_backtest_windows(
+            self.supervised_origins,
+            offset=self.builder.offset,
+            horizon=self.config.problem.horizon,
+            backtest=self.config.validation.backtest,
             schedule_origin=(self.origin if self.config.validation.get("schedule_mode") == "intraday" else None),
         )
 
@@ -711,13 +727,18 @@ class CanonicalBaseModelRunner:
         if self.config.validation.get("train_history_steps") is not None:
             raise ValueError("train_history_steps currently requires backtest-only; final fit/bundle unsupported")
         backtest = self.config.validation.backtest
-        if isinstance(backtest, FixedStepBacktestSpec):
+        if isinstance(backtest, (FixedStepBacktestSpec, SlidingWindowBacktestSpec)):
+            # sliding 与 fixed 同为固定长度训练窗口，final fit 语义一致
             first_origin_index = max(
                 0,
                 len(self.supervised_origins) - backtest.train_window_steps,
             )
             origin_indices = tuple(
                 range(first_origin_index, len(self.supervised_origins))
+            )
+        elif isinstance(backtest, ExpandingWindowBacktestSpec):
+            raise ValueError(
+                "expanding_window backtest is backtest-only; final fit/bundle unsupported"
             )
         elif isinstance(backtest, CalendarMonthBacktestSpec):
             raw_history_times = self.builder.target_history_times(self.origin)

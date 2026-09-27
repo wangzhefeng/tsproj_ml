@@ -8,11 +8,15 @@ from typing import Any, Iterator, Mapping
 import pandas as pd
 from pandas.tseries.frequencies import to_offset
 from forecasting_core.probabilistic_spec import probabilistic_spec_from_mapping
-from forecasting_core.specs import FixedStepBacktestSpec
+from forecasting_core.specs import (
+    ExpandingWindowBacktestSpec,
+    FixedStepBacktestSpec,
+    SlidingWindowBacktestSpec,
+)
 from model_evaluation.point import resolve_aggregate_weighting
-from model_testing.contracts import BacktestRunner, BacktestWindow, FitResult
-from model_testing.reporting import write_backtest_results
-from model_testing.scoring import score_holdout_fold
+from model_testing.contracts.protocols import BacktestRunner, BacktestWindow, FitResult
+from model_testing.artifacts.reporting import write_backtest_results
+from model_testing.loops.scoring import score_holdout_fold
 from probabilistic.calibration import ConformalCalibrationTracker
 from utils.log_util import logger
 
@@ -82,11 +86,17 @@ def _fit_raw_history_windows(
         del contexts, results
 
 
-def run_fixed_step_backtest(
+def run_rolling_backtest(
     runner: BacktestRunner, test_dir: Path, *, mode: str,
+    stitch_overview: bool = True, mode_label: str = "fixed_steps",
 ) -> tuple[dict[str, Any] | None, ConformalCalibrationTracker | None, tuple[Any, ...]]:
+    """rolling 系回测共用引擎（fixed/sliding/expanding）。
+
+    折构造由 runner 按 spec 分派（contracts/windows.py），本引擎负责并行拟合、
+    按窗口顺序评分、聚合与产物写盘；``stitch_overview=False``（sliding 重叠折）
+    时跳过拼接总图，``mode_label`` 写入回测 metadata。
+    """
     config = runner.config
-    builder = runner.builder
     aggregate_weights = resolve_aggregate_weighting(
         config.problem.targets,
         config.validation.get("aggregate_weighting"),
@@ -184,19 +194,26 @@ def run_fixed_step_backtest(
     _log_provider_usage(holdout_audit)
     if cv_frames:
         backtest = config.validation.backtest
-        if not isinstance(backtest, FixedStepBacktestSpec):
-            raise TypeError("fixed backtest results require FixedStepBacktestSpec")
+        if not isinstance(
+            backtest,
+            (FixedStepBacktestSpec, SlidingWindowBacktestSpec, ExpandingWindowBacktestSpec),
+        ):
+            raise TypeError("rolling backtest results require a rolling-mode backtest spec")
         windows = runner.backtest_windows()
         holdout_metadata = {
             **windows[-1].metadata,
-            "mode": "fixed_steps",
+            "mode": mode_label,
             "history_steps": backtest.history_steps,
-            "train_window_steps": backtest.train_window_steps,
             "fold_count": backtest.fold_count,
             "stride_steps": backtest.stride_steps,
             "windows": [window.metadata for window in windows],
             "execution_evidence": holdout_execution_evidence,
         }
+        if isinstance(backtest, FixedStepBacktestSpec):
+            holdout_metadata["train_window_steps"] = backtest.train_window_steps
+            holdout_metadata["train_history_steps"] = backtest.train_history_steps
+        elif isinstance(backtest, SlidingWindowBacktestSpec):
+            holdout_metadata["train_window_steps"] = backtest.train_window_steps
         if calibration_audits:
             holdout_metadata["calibration"] = calibration_audits
         write_backtest_results(
@@ -214,7 +231,15 @@ def run_fixed_step_backtest(
                 if prob_score_frames
                 else None
             ),
+            stitch_overview=stitch_overview,
         )
     else:
         holdout_metadata = None
     return holdout_metadata, calibration_tracker, holdout_audit
+
+
+def run_fixed_step_backtest(
+    runner: BacktestRunner, test_dir: Path, *, mode: str,
+) -> tuple[dict[str, Any] | None, ConformalCalibrationTracker | None, tuple[Any, ...]]:
+    """固定步长回测入口：rolling 引擎的 fixed_steps 形态（不重叠、拼接总图）。"""
+    return run_rolling_backtest(runner, test_dir, mode=mode)

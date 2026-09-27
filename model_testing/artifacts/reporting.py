@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """回测结果写盘与可视化（R5b 自 model_forecasting/results.py 迁出，2026-09-06，方案 v3）。
 
 回测产物（cv_plot_df/test_scores*/windows_results/总图）属于「模型测试」输出，
@@ -18,10 +17,10 @@ import pandas as pd
 
 from model_evaluation.point import EVALUATION_AGGREGATION
 
-from model_testing.tensor_frames import _BACKTEST_KEY_COLUMNS
+from model_testing.artifacts.tensor_frames import BACKTEST_KEY_COLUMNS
 
 
-def _safe_plot_name(target: str) -> str:
+def safe_plot_name(target: str) -> str:
     value = re.sub(r"[^A-Za-z0-9._-]+", "-", str(target)).strip("-.")
     return value or "target"
 
@@ -64,7 +63,7 @@ def _plot_timeseries(
 
 
 
-def _format_time_axis(axis, times: pd.Series) -> None:
+def format_time_axis(axis, times: pd.Series) -> None:
     """日期轴自适应刻度（旧版同款：避免高频数据刻度标签重叠成黑块）。"""
     from matplotlib.dates import AutoDateLocator, DateFormatter
 
@@ -132,7 +131,7 @@ def _plot_series_pair(
     axis.set_ylabel("Value")
     axis.grid(True, alpha=0.3)
     axis.legend(loc="upper left", fontsize="small")
-    _format_time_axis(axis, plot_frame["time"])
+    format_time_axis(axis, plot_frame["time"])
     figure.autofmt_xdate(rotation=30)
     figure.tight_layout()
     figure.savefig(output_path, dpi=dpi, bbox_inches="tight")
@@ -182,7 +181,7 @@ def _plot_window(
         axis.set_ylabel("Value")
         axis.grid(True, alpha=0.3)
         axis.legend(loc="upper left", fontsize="small")
-        _format_time_axis(axis, target_frame["time"])
+        format_time_axis(axis, target_frame["time"])
     axes[-1, 0].set_xlabel("Time")
     figure.suptitle(f"Window {int(window)}", fontsize=14)
     figure.tight_layout(rect=(0, 0, 1, 0.98))
@@ -212,7 +211,9 @@ def write_backtest_results(
     aggregate_weighting: Mapping[str, float],
     metadata: Mapping[str, Any] | None = None,
     probabilistic_scores_df: pd.DataFrame | None = None,
+    stitch_overview: bool = True,
 ) -> tuple[Path, Path]:
+    """stitch_overview=False（sliding 重叠折）时跳过拼接总图，保留 csv 与逐窗图。"""
     output_path = Path(output_dir)
     output_path.mkdir(parents=True, exist_ok=True)
     required = {
@@ -227,7 +228,7 @@ def write_backtest_results(
     missing = required - set(cv_plot_df)
     if missing:
         raise ValueError(f"canonical backtest is missing columns: {sorted(missing)}")
-    if cv_plot_df.duplicated(_BACKTEST_KEY_COLUMNS).any():
+    if cv_plot_df.duplicated(BACKTEST_KEY_COLUMNS).any():
         raise ValueError("canonical backtest result keys must be unique")
     cv_path = output_path / "cv_plot_df.csv"
     scores_path = output_path / "test_scores_df.csv"
@@ -301,13 +302,14 @@ def write_backtest_results(
     )
     for window in window_numbers:
         _plot_window(cv_plot_df, window, targets, windows_dir)
-    if len(targets) == 1:
-        _plot_backtest(cv_plot_df, output_path / "test_prediction.png", targets[0])
-    else:
-        for target in targets:
-            _plot_backtest(
-                cv_plot_df,
-                output_path / "target_plots" / f"{_safe_plot_name(target)}.png",
-                target,
-            )
+    if stitch_overview:
+        if len(targets) == 1:
+            _plot_backtest(cv_plot_df, output_path / "test_prediction.png", targets[0])
+        else:
+            for target in targets:
+                _plot_backtest(
+                    cv_plot_df,
+                    output_path / "target_plots" / f"{safe_plot_name(target)}.png",
+                    target,
+                )
     return cv_path, scores_path

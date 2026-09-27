@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from model_testing import geometry as validation
+from model_testing.contracts import geometry as backtest_geometry
 from pipeline.runner import CanonicalBaseModelRunner, SourceRegistry
 
 
@@ -17,8 +17,8 @@ def _origins(count: int) -> tuple[pd.Timestamp, ...]:
     return tuple(pd.date_range("2026-01-01", periods=count, freq="1h"))
 
 
-def _geometry(horizon: int = 2) -> validation.TimeGeometry:
-    return validation.TimeGeometry(
+def _geometry(horizon: int = 2) -> backtest_geometry.TimeGeometry:
+    return backtest_geometry.TimeGeometry(
         offset=pd.tseries.frequencies.to_offset("1h"),
         horizon=horizon,
     )
@@ -27,7 +27,7 @@ def _geometry(horizon: int = 2) -> validation.TimeGeometry:
 class RollingOriginFoldContractTest(unittest.TestCase):
     def test_folds_exclude_overlapping_training_samples(self):
         origins = _origins(24)
-        folds = validation.rolling_origin_folds(
+        folds = backtest_geometry.rolling_origin_folds(
             origins,
             _geometry(horizon=2),
             history_steps=None,
@@ -51,7 +51,7 @@ class RollingOriginFoldContractTest(unittest.TestCase):
 
     def test_folds_are_chronologically_ordered(self):
         origins = _origins(24)
-        folds = validation.rolling_origin_folds(
+        folds = backtest_geometry.rolling_origin_folds(
             origins,
             _geometry(),
             history_steps=None,
@@ -67,7 +67,7 @@ class RollingOriginFoldContractTest(unittest.TestCase):
         # label_end == holdout label_start -> excluded -> empty train set
         origins = _origins(2)
         with self.assertRaises(ValueError):
-            validation.rolling_origin_folds(
+            backtest_geometry.rolling_origin_folds(
                 origins,
                 _geometry(),
                 history_steps=None,

@@ -1,5 +1,8 @@
 """分解诊断产物写入；只接收已计算报告，不依赖分解算法或私有状态。"""
+from __future__ import annotations
+
 from pathlib import Path
+
 import pandas as pd
 
 
@@ -8,10 +11,10 @@ def write_diagnostics_report(report: pd.DataFrame | None, output_dir: Path, suff
         return None
     if "/" in suffix or "\\" in suffix:
         raise ValueError("Diagnostic suffix must be a filename suffix, not a path.")
-    return write_residual_diagnostics(report, output_dir / f"decomposition_diagnostics{suffix}.csv")
+    return _write_diagnostics_csv(report, output_dir / f"decomposition_diagnostics{suffix}.csv")
 
 
-def write_residual_diagnostics(report: pd.DataFrame, output_path: Path) -> Path:
+def _write_diagnostics_csv(report: pd.DataFrame, output_path: Path) -> Path:
     """独占创建，避免同一窗口或重复运行静默覆盖旧报告。"""
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)

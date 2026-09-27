@@ -19,7 +19,7 @@ from data_loading import SourceRegistry
 from forecasting_core.specs import CalendarMonthBacktestSpec, FixedStepBacktestSpec, ForecastConfigSpec
 from model_ensemble.loader import resolve_members, validate_member_sources
 from pipeline.supervised_design import minimum_history_rows
-from model_testing.geometry import calendar_month_folds
+from model_testing.contracts.geometry import calendar_month_folds
 
 
 def plan_single_model(config, root, *, origin=None, coverage_cache=None):

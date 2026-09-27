@@ -18,7 +18,7 @@ from decomposition import (
 )
 
 from decomposition.diagnostics.components import summarize_components
-from model_testing.decomposition_reports import write_diagnostics_report
+from model_testing.artifacts.decomposition_reports import write_diagnostics_report
 
 
 def _stl_args(periods=(24,), method="stl"):

@@ -127,8 +127,8 @@ ALLOWED_ROOTS = {
         "model_evaluation",
         "model_forecasting.deployment",
         "model_forecasting.results",
-        "model_testing.primitives",
-        "model_testing.geometry",  # 共享标签安全合同，不暴露 runner 执行面
+        "forecasting_core.origin",  # 预测原点解析（部署路径通用原语）
+        "model_testing.contracts.geometry",  # 共享标签安全合同，不暴露 runner 执行面
         "utils",
     },
 }
@@ -342,7 +342,7 @@ class InterPackageLayeringTest(unittest.TestCase):
             package = root / "model_ensemble"
             package.mkdir()
             (package / "probe.py").write_text(
-                "from model_testing.geometry import is_label_safe\n"
+                "from model_testing.contracts.geometry import is_label_safe\n"
                 "from pipeline.runner import CanonicalBaseModelRunner\n",
                 encoding="utf-8",
             )

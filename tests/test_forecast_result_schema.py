@@ -16,7 +16,7 @@ from model_forecasting.results import (
     point_tensor_to_long,
     write_forecast_results,
 )
-from model_testing.reporting import write_backtest_results
+from model_testing.artifacts.reporting import write_backtest_results
 from forecasting_core.tensors import (
     MarginalQuantileForecastTensor,
     PointForecastTensor,

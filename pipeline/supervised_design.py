@@ -27,8 +27,8 @@ from forecasting_core.specs import (
 )
 from forecasting_core.tensors import PointForecastTensor
 from feature_engineering.transforms import CanonicalTargetTransform
-from model_testing import geometry as validation
-from model_testing.primitives import actual_tensor
+from model_testing.contracts import geometry as backtest_geometry
+from model_testing.contracts.primitives import actual_tensor
 from model_training.strategies import (
     TargetCoordinate,
     target_plan_for_config,
@@ -912,88 +912,7 @@ def _label_end(
     builder: SupervisedDesignBuilder,
     origin: pd.Timestamp,
 ) -> pd.Timestamp:
-    return validation.label_end(origin, builder.offset, builder.config.problem.horizon)
-
-
-@dataclass(frozen=True, slots=True)
-class _BacktestWindow:
-    window: int
-    origin_index: int
-    origin: pd.Timestamp
-    train_indices: tuple[int, ...]
-    metadata: dict[str, Any]
-
-
-def raw_history_backtest_windows(
-    builder: SupervisedDesignBuilder,
-    origin: pd.Timestamp,
-) -> tuple[_BacktestWindow, ...]:
-    """只按时间覆盖调度；返回各折有界 runner 内的局部训练索引。"""
-    spec = builder.config.validation.backtest
-    if not isinstance(spec, FixedStepBacktestSpec) or spec.train_history_steps is None:
-        raise ValueError("raw history windows require train_history_steps")
-    coverage = builder.registry.target_history_coverage()
-    times = coverage[0].times
-    if any(not item.times.equals(times) for item in coverage[1:]):
-        raise ValueError("target sources must share the same history grid")
-    times = times[times <= origin]
-    if times.empty or times[-1] != origin or not times.equals(pd.date_range(times[0], origin, freq=builder.config.problem.freq)):
-        raise ValueError("raw history backtest requires a complete regular history grid")
-    minimum = minimum_history_rows(builder.config)
-    available = tuple(times[minimum - 1:len(times) - builder.config.problem.horizon])[-spec.history_steps:]
-    windows = _rolling_backtest_windows(
-        builder, available,
-        schedule_origin=origin if builder.config.validation.get("schedule_mode") == "intraday" else None,
-    )
-    if len(windows) != spec.fold_count:
-        raise ValueError("train_history_steps cannot provide requested fold_count")
-    result = []
-    for window in windows:
-        start = window.origin - (spec.train_history_steps - 1) * builder.offset
-        if start < times[0] or len(window.train_indices) != spec.train_window_steps:
-            raise ValueError("train_history_steps cannot provide the complete requested fold history")
-        result.append(_BacktestWindow(
-            window=window.window, origin_index=window.origin_index, origin=window.origin,
-            train_indices=tuple(range(spec.train_window_steps)),
-            metadata={**window.metadata, "raw_history_start": start.isoformat(),
-                      "raw_history_end": window.origin.isoformat(),
-                      "train_history_steps": spec.train_history_steps},
-        ))
-    return tuple(result)
-
-
-def _rolling_backtest_windows(
-    builder: SupervisedDesignBuilder,
-    supervised_origins: tuple[pd.Timestamp, ...],
-    *,
-    schedule_origin: pd.Timestamp | None = None,
-) -> tuple[_BacktestWindow, ...]:
-    backtest = builder.config.validation.backtest
-    if not isinstance(backtest, FixedStepBacktestSpec):
-        raise TypeError("fixed-step backtest requires FixedStepBacktestSpec")
-    geometry = validation.TimeGeometry(
-        offset=builder.offset,
-        horizon=builder.config.problem.horizon,
-    )
-    folds = validation.rolling_origin_folds(
-        supervised_origins,
-        geometry,
-        history_steps=backtest.history_steps,
-        train_window_steps=backtest.train_window_steps,
-        fold_count=backtest.fold_count,
-        stride_steps=backtest.stride_steps,
-        schedule_origin=schedule_origin,
-    )
-    return tuple(
-        _BacktestWindow(
-            window=fold.window,
-            origin_index=fold.origin_index,
-            origin=fold.origin,
-            train_indices=fold.train_indices,
-            metadata=fold.metadata,
-        )
-        for fold in folds
-    )
+    return backtest_geometry.label_end(origin, builder.offset, builder.config.problem.horizon)
 
 
 def _actual_at_origin(

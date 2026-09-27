@@ -6,12 +6,12 @@ from dataclasses import dataclass
 import pandas as pd
 
 from model_ensemble.oof import oof_fold_origins
-from model_testing import geometry as validation
+from model_testing.contracts import geometry as backtest_geometry
 
 
 @dataclass
 class Timeline:
-    geometry: validation.TimeGeometry
+    geometry: backtest_geometry.TimeGeometry
     supervised_origins: tuple[pd.Timestamp, ...]
 
 
@@ -19,7 +19,7 @@ class OOFGapContractTest(unittest.TestCase):
     @staticmethod
     def runner(freq="1h", count=30):
         return Timeline(
-            geometry=validation.TimeGeometry(
+            geometry=backtest_geometry.TimeGeometry(
                 offset=pd.tseries.frequencies.to_offset(freq), horizon=2,
             ),
             supervised_origins=tuple(pd.date_range("2026-01-01", periods=count, freq=freq)),
@@ -88,11 +88,11 @@ class OOFGapContractTest(unittest.TestCase):
         holdout = runner.supervised_origins[-1]
         for gap in (0, 1, 3):
             safe = holdout - (geometry.horizon + gap) * geometry.offset
-            self.assertTrue(validation.is_label_safe(
+            self.assertTrue(backtest_geometry.is_label_safe(
                 safe, geometry.offset, geometry.horizon,
                 geometry.label_start(holdout), gap_steps=gap,
             ))
-            self.assertFalse(validation.is_label_safe(
+            self.assertFalse(backtest_geometry.is_label_safe(
                 safe + geometry.offset, geometry.offset, geometry.horizon,
                 geometry.label_start(holdout), gap_steps=gap,
             ))

@@ -12,8 +12,8 @@ import numpy as np
 import pandas as pd
 from threadpoolctl import threadpool_limits
 
-from models.factory import ModelFactory
-from models.pickle_io import ModelDeployPkl
+from model_building.factory import ModelFactory
+from model_building.pickle_io import ModelDeployPkl
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -39,7 +39,7 @@ class ModelWrapperPersistenceTest(unittest.TestCase):
             for name, (params, module) in cases.items():
                 with self.subTest(model=name):
                     model = ModelFactory().create_model(name, params, log_params=False)
-                    self.assertEqual(type(model).__module__, f"models.wrappers.{module}")
+                    self.assertEqual(type(model).__module__, f"model_building.wrappers.{module}")
                     model.fit(X, y)
                     expected = model.predict(X)
                     io = ModelDeployPkl(str(Path(directory) / f"{name}.pkl"))
@@ -49,7 +49,7 @@ class ModelWrapperPersistenceTest(unittest.TestCase):
                     np.testing.assert_array_equal(loaded.predict(X), expected)
 
     def test_old_module_paths_are_not_shims(self):
-        for module in ("models.ModelFactory", "models.ModelSaveLoad"):
+        for module in ("model_building.ModelFactory", "model_building.ModelSaveLoad"):
             with self.subTest(module=module):
                 self.assertIsNone(importlib.util.find_spec(module))
         # Trusted test payload: protocol-0 GLOBAL referencing the deliberately removed class path.
@@ -60,7 +60,7 @@ class ModelWrapperPersistenceTest(unittest.TestCase):
         code = (
             "import sys; sys.path.insert(0, sys.argv[1]); "
             "import joblib; import utils.log_util; "
-            "before = list(sys.path); import models.pickle_io; "
+            "before = list(sys.path); import model_building.pickle_io; "
             "assert sys.path == before, (before, sys.path)"
         )
         environment = dict(os.environ)

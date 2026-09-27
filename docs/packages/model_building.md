@@ -1,4 +1,4 @@
-# models
+# model_building
 
 `models/` 承载底层 estimator factory、模型静态描述、原生参数预检与 pickle IO。
 
@@ -46,4 +46,4 @@
 
 ## Pickle 路径兼容边界
 
-wrapper 类的持久化路径为 `models.wrappers.<family>`。按 D3 裁决，旧 `models.ModelFactory` 路径的存量 bundle 作废，不提供 shim 或自动迁移；需要重新训练生成新 bundle。此兼容边界不改变 YAML、schema-2 bundle 字段或预测数值，也不删除存量产物。
+wrapper 类的持久化路径为 `model_building.wrappers.<family>`。按 D3 裁决，旧 `model_building.ModelFactory` 路径的存量 bundle 作废，不提供 shim 或自动迁移；需要重新训练生成新 bundle。此兼容边界不改变 YAML、schema-2 bundle 字段或预测数值，也不删除存量产物。

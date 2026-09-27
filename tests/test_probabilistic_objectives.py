@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """Quantile 原生参数注入与概率 spec 身份测试。
 
-quantile 能力拒绝的生产唯一入口是 `models/catalog.py::quantile_parameters`
+quantile 能力拒绝的生产唯一入口是 `model_building/catalog.py::quantile_parameters`
 （参数注入边界 RAISE）；原 `model_training/objectives.py` 包装层无生产消费者，
 已于 2026-09-25 退役。
 """
@@ -12,7 +12,7 @@ from pathlib import Path
 from config.config_loader import load_yaml_config
 from forecasting_core.specs import EstimatorSpec, ForecastConfigSpec
 from forecasting_core.probabilistic_spec import probabilistic_spec_from_mapping
-from models.catalog import quantile_parameters
+from model_building.catalog import quantile_parameters
 
 
 class QuantileObjectiveMappingTest(unittest.TestCase):

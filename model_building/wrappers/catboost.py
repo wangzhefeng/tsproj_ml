@@ -6,9 +6,9 @@ import numpy as np
 import pandas as pd
 import catboost as cab
 from utils.log_util import logger
-from models.preflight import filter_fit_params as _filter_fit_params, filter_valid_params as _filter_valid_params
-from models.preflight.catboost import process_synonym_params
-from models.wrappers.base import BaseModel, DEFAULT_EARLY_STOPPING_ROUNDS
+from model_building.preflight import filter_fit_params as _filter_fit_params, filter_valid_params as _filter_valid_params
+from model_building.preflight.catboost import process_synonym_params
+from model_building.wrappers.base import BaseModel, DEFAULT_EARLY_STOPPING_ROUNDS
 
 
 class CatBoostModel(BaseModel):

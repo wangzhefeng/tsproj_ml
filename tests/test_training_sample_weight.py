@@ -19,7 +19,7 @@ from model_training.weights import (
     resolve_training_sample_weight,
     training_sample_weight_spec,
 )
-from models.catalog import MODEL_CATALOG
+from model_building.catalog import MODEL_CATALOG
 
 
 class _FakeEstimator:

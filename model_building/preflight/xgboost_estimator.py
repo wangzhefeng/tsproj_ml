@@ -1,7 +1,7 @@
 """XGBoost 预检父进程侧辅助：特征名提取（私有 API 收口）。
 
 私有 API：``xgboost.data.pandas_feature_info``——升级 xgboost 时复核
-（见 docs/packages/models.md 私有 API 依赖清单）。
+（见 docs/packages/model_building.md 私有 API 依赖清单）。
 本模块仅父进程导入；不进入 worker 子进程（worker 模块文件名为
 xgboost.py，子进程直跑时不得重依赖 pandas/xgboost.data，避免
 sys.path[0] 下的同名脚本遮蔽第三方包）。
@@ -14,7 +14,7 @@ import pandas as pd
 
 from xgboost.data import pandas_feature_info
 
-from models.preflight.xgb_preflight import validate_xgb_parameters
+from model_building.preflight.xgb_preflight import validate_xgb_parameters
 
 
 def validate_estimator(

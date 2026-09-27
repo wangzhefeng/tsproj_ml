@@ -4,7 +4,7 @@ import unittest
 import numpy as np
 import pandas as pd
 
-from models.wrappers.seasonal_template import SeasonalTemplateModel
+from model_building.wrappers.seasonal_template import SeasonalTemplateModel
 
 
 def _frame(n=200, with_holiday=True):

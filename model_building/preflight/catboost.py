@@ -1,7 +1,7 @@
 """CatBoost 同义参数归一化（进程内薄封装）。
 
 私有 API：``catboost.core._process_synonyms``——把 ``iterations``/``n_estimators``
-等同义参数归一化为规范名。升级 catboost 时必须复核（见 docs/packages/models.md
+等同义参数归一化为规范名。升级 catboost 时必须复核（见 docs/packages/model_building.md
 私有 API 依赖清单）。
 """
 

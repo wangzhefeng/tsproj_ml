@@ -29,7 +29,7 @@
 - 结果目录统一 `results/{pretrained_models,results_test,results_forecast}/<scenario_subpath>/<result_identity>/`；identity 规则与 long 结果 schema 见 `docs/packages/model_forecasting.md`。
 - target transform 顺序固定 `calendar normalization → decomposition → scaling`，point/quantile 严格逆序恢复，状态按 `(series_id,target)` 隔离。
 - 回测与 final fit 使用同一配置训练窗口；融合成员 final fit 与对应单模型同一显式窗口。
-- 模型静态描述唯一入口 `models/catalog.py`；构造参数严格校验，未知参数 RAISE，不静默丢弃、不静默降级。
+- 模型静态描述唯一入口 `model_building/catalog.py`；构造参数严格校验，未知参数 RAISE，不静默丢弃、不静默降级。
 - 改动被测模块必须同步修复测试导入与接口断言。
 - 改动功能必须同步相关文档：语义变化时同批更新对应模块 README 或 `docs/` 章节；发现文档与实现冲突，以实现为准并同批修文档，不留漂移。
 
@@ -47,7 +47,7 @@
 | 动回测几何/逐折评分/回测产物 | `docs/packages/model_testing.md` |
 | 动预测/部署/证据与 bundle 持久化 | `docs/packages/model_forecasting.md` |
 | 动训练器/策略 executor/estimator 能力 | `docs/packages/model_training.md` |
-| 动模型工厂/参数校验/别名 | `docs/packages/models.md` |
+| 动模型工厂/参数校验/别名 | `docs/packages/model_building.md` |
 | 动 ensemble/OOF/融合方法 | `docs/packages/model_ensemble.md` |
 | 动离线数据准备/事件标签工具链 | `docs/packages/data_process.md` |
 | 改测试结构/执行分层 | `docs/testing/` |

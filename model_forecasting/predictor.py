@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Canonical forecaster（2026-08-29 架构收敛自 models/ModelForecasting.py 迁入，实现逐字保真）。"""
+"""Canonical forecaster（2026-08-29 架构收敛自旧 models/ModelForecasting.py 迁入，实现逐字保真）。"""
 
 from typing import Any
 

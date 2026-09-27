@@ -10,8 +10,8 @@ import numpy as np
 import pandas as pd
 import xgboost as xgb
 
-from models.wrappers.xgboost import XGBoostModel
-from models.preflight import xgb_preflight as xgb_validation
+from model_building.wrappers.xgboost import XGBoostModel
+from model_building.preflight import xgb_preflight as xgb_validation
 
 
 class XGBParameterPreflightTest(unittest.TestCase):

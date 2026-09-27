@@ -6,9 +6,9 @@ import numpy as np
 import pandas as pd
 import xgboost as xgb
 from utils.log_util import logger
-from models.preflight import filter_fit_params as _filter_fit_params, filter_valid_params as _filter_valid_params
-from models.preflight.xgboost_estimator import validate_estimator as validate_xgb_estimator
-from models.wrappers.base import BaseModel, DEFAULT_EARLY_STOPPING_ROUNDS
+from model_building.preflight import filter_fit_params as _filter_fit_params, filter_valid_params as _filter_valid_params
+from model_building.preflight.xgboost_estimator import validate_estimator as validate_xgb_estimator
+from model_building.wrappers.base import BaseModel, DEFAULT_EARLY_STOPPING_ROUNDS
 
 
 class XGBoostModel(BaseModel):

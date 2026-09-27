@@ -1,13 +1,13 @@
 """canonical 合同 estimator 适配层与原生序列模型注册表。"""
 
-from models.adapters.canonical import (
+from model_building.adapters.canonical import (
     ModelFactoryEstimator,
     ProbeResult,
     make_model_factory,
     probe_native_multioutput,
     supports_native_multi_quantile,
 )
-from models.adapters.native_registry import (
+from model_building.adapters.native_registry import (
     NATIVE_HISTORY_MODELS,
     native_history_cls,
 )

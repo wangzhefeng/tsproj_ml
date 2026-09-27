@@ -9,7 +9,7 @@
 | [forecasting_core.md](forecasting_core.md) | 稳定预测合同层（不依赖任何项目包） |
 | [utils.md](utils.md) | L0 基础工具（不依赖任何项目包） |
 | [ts_kernels.md](ts_kernels.md) | 低层时序统计算法库 |
-| [models.md](models.md) | estimator factory、catalog、wrappers、pickle IO |
+| [model_building.md](model_building.md) | estimator factory、catalog、wrappers、pickle IO |
 | [model_evaluation.md](model_evaluation.md) | 生产评估公式 |
 | [decomposition.md](decomposition.md) | 目标分解与分量外推（含 8 个子包职责明细） |
 

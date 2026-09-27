@@ -21,7 +21,7 @@ def _seasonal_history(periods=720, period=24, seed=2026):
 
 class NativeNaiveTest(unittest.TestCase):
     def test_three_modes_match_closed_form_definitions(self):
-        from models.wrappers.naive import NaiveModel
+        from model_building.wrappers.naive import NaiveModel
         history = _seasonal_history()
         times = history.index
         # naive：末值平推
@@ -45,17 +45,17 @@ class NativeNaiveTest(unittest.TestCase):
         self.assertEqual(evidence["seasonal_periods"], 24)
 
     def test_catalog_native_contract_and_strict_parameters(self):
-        from models.catalog import MODEL_CATALOG
+        from model_building.catalog import MODEL_CATALOG
         self.assertIn("naive", MODEL_CATALOG)
         self.assertTrue(MODEL_CATALOG["naive"].native_history)
-        cls = importlib.import_module("models.wrappers.naive").NaiveModel
+        cls = importlib.import_module("model_building.wrappers.naive").NaiveModel
         for params in ({"typo": 1}, {"mode": "theta"}, {"seasonal_periods": True},
                        {"seasonal_periods": 1}):
             with self.subTest(params=params), self.assertRaises((ValueError, TypeError)):
                 cls(params)
 
     def test_history_rejection_follows_ets_contract(self):
-        cls = importlib.import_module("models.wrappers.naive").NaiveModel
+        cls = importlib.import_module("model_building.wrappers.naive").NaiveModel
         times = pd.date_range("2026-01-01", periods=60, freq="1h")
         history = pd.Series(100 + np.sin(np.arange(60)), index=times)
         model = cls({"mode": "drift"})
@@ -73,9 +73,9 @@ class NativeNaiveTest(unittest.TestCase):
                 history, as_of=times[-1], freq="1h")
 
     def test_pickle_roundtrip(self):
-        self.assertIsNotNone(importlib.util.find_spec("models.wrappers.naive"),
+        self.assertIsNotNone(importlib.util.find_spec("model_building.wrappers.naive"),
                              "native Naive implementation is missing")
-        cls = importlib.import_module("models.wrappers.naive").NaiveModel
+        cls = importlib.import_module("model_building.wrappers.naive").NaiveModel
         history = _seasonal_history()
         model = cls({"mode": "seasonal_naive", "seasonal_periods": 24})
         model.fit_history(history, as_of=history.index[-1], freq='1h')
@@ -87,7 +87,7 @@ class NativeNaiveTest(unittest.TestCase):
 
 class NativeThetaTest(unittest.TestCase):
     def test_fit_forecast_and_evidence_on_seasonal_series(self):
-        from models.wrappers.theta import ThetaModel
+        from model_building.wrappers.theta import ThetaModel
         history = _seasonal_history()
         times = history.index
         model = ThetaModel({"seasonal_periods": 24})
@@ -106,10 +106,10 @@ class NativeThetaTest(unittest.TestCase):
         self.assertGreater(prediction.max() - prediction.min(), seasonal_amplitude * 0.5)
 
     def test_catalog_native_contract_and_strict_parameters(self):
-        from models.catalog import MODEL_CATALOG
+        from model_building.catalog import MODEL_CATALOG
         self.assertIn("theta", MODEL_CATALOG)
         self.assertTrue(MODEL_CATALOG["theta"].native_history)
-        cls = importlib.import_module("models.wrappers.theta").ThetaModel
+        cls = importlib.import_module("model_building.wrappers.theta").ThetaModel
         for params in ({"typo": 1}, {"seasonal_periods": True},
                        {"method": "arima"}, {"theta": 0.5}, {"theta": True},
                        {"deseasonalize": "yes"}):
@@ -117,7 +117,7 @@ class NativeThetaTest(unittest.TestCase):
                 cls(params)
 
     def test_history_rejection_and_multiplicative_guard(self):
-        cls = importlib.import_module("models.wrappers.theta").ThetaModel
+        cls = importlib.import_module("model_building.wrappers.theta").ThetaModel
         times = pd.date_range("2026-01-01", periods=60, freq="1h")
         history = pd.Series(100 + np.sin(np.arange(60)), index=times)
         model = cls({"deseasonalize": False})
@@ -135,9 +135,9 @@ class NativeThetaTest(unittest.TestCase):
                 shifted, as_of=times[-1], freq="1h")
 
     def test_pickle_roundtrip(self):
-        self.assertIsNotNone(importlib.util.find_spec("models.wrappers.theta"),
+        self.assertIsNotNone(importlib.util.find_spec("model_building.wrappers.theta"),
                              "native Theta implementation is missing")
-        cls = importlib.import_module("models.wrappers.theta").ThetaModel
+        cls = importlib.import_module("model_building.wrappers.theta").ThetaModel
         history = _seasonal_history()
         model = cls({"seasonal_periods": 24})
         model.fit_history(history, as_of=history.index[-1], freq='1h')

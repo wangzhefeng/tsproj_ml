@@ -11,7 +11,7 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-from models.catalog import MODEL_CATALOG
+from model_building.catalog import MODEL_CATALOG
 from model_training.weights.temporal import temporal_sample_weight
 
 

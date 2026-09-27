@@ -8,7 +8,7 @@ import lightgbm as lgb
 import numpy as np
 import pandas as pd
 
-from models.factory import ModelFactory
+from model_building.factory import ModelFactory
 
 
 class NativeParameterValidationTest(unittest.TestCase):

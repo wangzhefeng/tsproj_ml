@@ -5,8 +5,8 @@ import numpy as np
 import pandas as pd
 from sklearn.ensemble import RandomForestRegressor, HistGradientBoostingRegressor
 from utils.log_util import logger
-from models.preflight import filter_valid_params as _filter_valid_params
-from models.wrappers.base import BaseModel
+from model_building.preflight import filter_valid_params as _filter_valid_params
+from model_building.wrappers.base import BaseModel
 
 
 class RandomForestModel(BaseModel):

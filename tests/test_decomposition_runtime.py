@@ -11,7 +11,7 @@ from data_loading import SourceRegistry
 from model_forecasting.deployment import predict_strategy_bundle
 from model_pipeline.runner import run_canonical_config
 from model_pipeline.supervised_design import SupervisedDesignBuilder
-from models.pickle_io import ModelDeployPkl
+from model_building.pickle_io import ModelDeployPkl
 
 
 class DecompositionRuntimeTest(unittest.TestCase):

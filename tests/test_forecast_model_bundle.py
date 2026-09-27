@@ -7,7 +7,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from models.pickle_io import ModelDeployPkl
+from model_building.pickle_io import ModelDeployPkl
 from forecasting_core.probabilistic_spec import ProbabilisticSpec
 from forecasting_core.artifacts import ForecastModelBundle
 

@@ -14,7 +14,7 @@ from model_ensemble.deployment import predict_ensemble_bundle
 from model_ensemble.loader import load_ensemble_config
 from model_ensemble.runtime import run_ensemble_config
 from model_pipeline.supervised_design import SupervisedDesignBuilder
-from models.pickle_io import ModelDeployPkl
+from model_building.pickle_io import ModelDeployPkl
 from test_ensemble_runtime import EnsembleRuntimeTestBase, RUNTIME_SERVICES
 from test_weather_registry import weather_data
 

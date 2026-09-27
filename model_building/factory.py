@@ -2,17 +2,17 @@
 
 import copy
 from typing import Any, Dict, Optional
-from models.catalog import MODEL_CATALOG
-from models.wrappers.base import BaseModel
-from models.wrappers.lightgbm import LightGBMModel
-from models.wrappers.xgboost import XGBoostModel
-from models.wrappers.catboost import CatBoostModel
-from models.wrappers.sklearn_tree import RandomForestModel, HistGBModel
-from models.wrappers.linear import RidgeModel, ElasticNetModel, LassoModel, QuantileRegressorModel
-from models.wrappers.seasonal_template import SeasonalTemplateModel
-from models.wrappers.ets import ETSModel
-from models.wrappers.naive import NaiveModel
-from models.wrappers.theta import ThetaModel
+from model_building.catalog import MODEL_CATALOG
+from model_building.wrappers.base import BaseModel
+from model_building.wrappers.lightgbm import LightGBMModel
+from model_building.wrappers.xgboost import XGBoostModel
+from model_building.wrappers.catboost import CatBoostModel
+from model_building.wrappers.sklearn_tree import RandomForestModel, HistGBModel
+from model_building.wrappers.linear import RidgeModel, ElasticNetModel, LassoModel, QuantileRegressorModel
+from model_building.wrappers.seasonal_template import SeasonalTemplateModel
+from model_building.wrappers.ets import ETSModel
+from model_building.wrappers.naive import NaiveModel
+from model_building.wrappers.theta import ThetaModel
 
 
 class ModelFactory:

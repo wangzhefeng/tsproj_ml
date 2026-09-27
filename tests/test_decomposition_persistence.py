@@ -10,7 +10,7 @@ import pandas as pd
 from decomposition import DecompositionPipeline, build_pipeline_from_args
 from decomposition.composition.additive import AdditiveComposer
 from decomposition.contracts.types import ComponentForecast
-from models.pickle_io import ModelDeployPkl
+from model_building.pickle_io import ModelDeployPkl
 
 
 class DecompositionPersistenceTest(unittest.TestCase):

@@ -2,7 +2,7 @@
 import ast
 from pathlib import Path
 import unittest
-from models.catalog import MODEL_CATALOG, quantile_parameters
+from model_building.catalog import MODEL_CATALOG, quantile_parameters
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -11,7 +11,7 @@ class ModelCatalogContractTest(unittest.TestCase):
     def test_all_aliases_resolve_to_existing_wrapper_classes(self):
         classes = {
             node.name
-            for path in (ROOT / "models/wrappers").glob("*.py")
+            for path in (ROOT / "model_building/wrappers").glob("*.py")
             for node in ast.parse(path.read_text()).body
             if isinstance(node, ast.ClassDef)
         }

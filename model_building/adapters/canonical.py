@@ -23,8 +23,8 @@ import numpy as np
 import pandas as pd
 from sklearn.base import clone
 
-from models.catalog import MODEL_CATALOG, quantile_parameters
-from models.factory import ModelFactory
+from model_building.catalog import MODEL_CATALOG, quantile_parameters
+from model_building.factory import ModelFactory
 
 
 def _normalize_model_type(value: object) -> str:
@@ -112,7 +112,7 @@ class ModelFactoryEstimator:
     """Adapt the project ModelFactory wrappers to the canonical ndarray contract.
 
     原 ``model_training/estimators/capabilities.py::_ModelFactoryEstimator``
-    （2026-09-26 适配层下沉 models/adapters，私有名同步公开化；
+    （2026-09-26 适配层下沉 model_building/adapters，私有名同步公开化；
     引用旧私有类路径的存量 pickle 按仓库惯例作废重训）。
     """
 

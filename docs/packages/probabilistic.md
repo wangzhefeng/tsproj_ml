@@ -2,11 +2,11 @@
 
 `probabilistic/` 是概率校准能力包（CQR），仅含校准内核：
 quantile 逐 level 训练编排在 `model_training/quantile.py`，quantile 能力拒绝由
-`models/catalog.py::quantile_parameters` 在参数注入边界执行。
+`model_building/catalog.py::quantile_parameters` 在参数注入边界执行。
 
 - `calibration.py`：CQR 数学内核与 apply-before-collect 追踪器；score 统一调用 `compute_nonconformity_scores`。有限且有效的倒置区间直接报错，整批 score 校验通过后才追加记录；原有非有限值及评估掩码筛选保留。
 - 张量 crossing 修复由 `model_forecasting.predictor.repair_marginal_quantile_crossing` 承载，不在本包维护重复的 DataFrame 通路。
-- 原生 quantile 参数注入唯一实现为 `models.catalog.quantile_parameters`。
+- 原生 quantile 参数注入唯一实现为 `model_building.catalog.quantile_parameters`。
 
 稳定概率合同位于 `forecasting_core/{probabilistic_spec,artifacts}.py`；point/quantile forecaster 位于 `model_forecasting/predictor.py`。Canonical runtime 显式启用 CQR 时输出 `predict_pi*`，final 修正量随 bundle 保存并用于部署，不在部署期重校准。
 

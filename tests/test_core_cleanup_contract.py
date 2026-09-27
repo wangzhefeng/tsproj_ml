@@ -95,7 +95,7 @@ class CoreCleanupContractTest(unittest.TestCase):
         environment.pop("PYTHONPATH", None)
         code = (
             "import sys; sys.path.insert(0, sys.argv[1]); "
-            "import models.pickle_io; "
+            "import model_building.pickle_io; "
             "assert 'utils.log_util' not in sys.modules"
         )
         with tempfile.TemporaryDirectory() as directory:

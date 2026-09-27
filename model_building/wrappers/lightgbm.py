@@ -5,9 +5,9 @@ import numpy as np
 import pandas as pd
 import lightgbm as lgb
 from utils.log_util import logger
-from models.preflight.lightgbm import validate_lgbm_params
-from models.preflight import filter_fit_params as _filter_fit_params
-from models.wrappers.base import BaseModel, DEFAULT_EARLY_STOPPING_ROUNDS
+from model_building.preflight.lightgbm import validate_lgbm_params
+from model_building.preflight import filter_fit_params as _filter_fit_params
+from model_building.wrappers.base import BaseModel, DEFAULT_EARLY_STOPPING_ROUNDS
 
 
 class LightGBMModel(BaseModel):

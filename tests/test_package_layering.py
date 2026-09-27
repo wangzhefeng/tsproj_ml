@@ -255,9 +255,9 @@ class InterPackageLayeringTest(unittest.TestCase):
         self.assertEqual(list(_iter_imports(ast.parse("from ..trainer import Trainer"), "model_training.estimators")), [("model_training.trainer", 1)])
 
     def test_dynamic_aliases_and_constants_are_visible(self):
-        tree = ast.parse('import importlib as il\nfrom importlib import import_module as load\nTARGET = "models.factory"\nil.import_module(TARGET)\nload("model_pipeline.runner")\n__import__("forecasting_core.specs")\n')
+        tree = ast.parse('import importlib as il\nfrom importlib import import_module as load\nTARGET = "model_building.factory"\nil.import_module(TARGET)\nload("model_pipeline.runner")\n__import__("forecasting_core.specs")\n')
         modules = {module for module, _ in _iter_imports(tree)}
-        self.assertTrue({"models.factory", "model_pipeline.runner", "forecasting_core.specs"} <= modules)
+        self.assertTrue({"model_building.factory", "model_pipeline.runner", "forecasting_core.specs"} <= modules)
 
     def _violations(self, pkg: str) -> list[str]:
         pkg_dir = ROOT / pkg

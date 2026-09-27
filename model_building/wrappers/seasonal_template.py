@@ -6,7 +6,7 @@ import numpy as np
 import pandas as pd
 from scipy.optimize import nnls
 from utils.log_util import logger
-from models.wrappers.base import BaseModel, nan_defense_fit_state
+from model_building.wrappers.base import BaseModel, nan_defense_fit_state
 
 
 class SeasonalTemplateModel(BaseModel):

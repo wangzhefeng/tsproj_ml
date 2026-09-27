@@ -14,7 +14,7 @@ from forecasting_core.specs.weather import WeatherGenerationSpec
 from forecasting_core.probabilistic_spec import probabilistic_spec_from_mapping
 from model_training.strategies import CanonicalStrategyArtifact
 from model_training.trainer import CanonicalTrainer
-from models.pickle_io import ModelDeployPkl
+from model_building.pickle_io import ModelDeployPkl
 
 
 def build_strategy_model_bundle(

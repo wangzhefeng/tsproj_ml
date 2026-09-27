@@ -9,6 +9,6 @@
 - ``pickle_io.py``：模型与缩放器 pickle 保存/加载（部署侧消费）。
 
 门面约定：本包根不 re-export 任何符号（消费方一律全路径导入，如
-``from models.catalog import MODEL_CATALOG``）；子包门面各自约定，
-见 ``models/preflight/__init__.py`` 与 ``models/adapters/__init__.py``。
+``from model_building.catalog import MODEL_CATALOG``）；子包门面各自约定，
+见 ``model_building/preflight/__init__.py`` 与 ``model_building/adapters/__init__.py``。
 """

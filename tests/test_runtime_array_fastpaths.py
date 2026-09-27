@@ -137,7 +137,7 @@ class EstimatorInputFastPathTest(unittest.TestCase):
         values = np.column_stack((100.0 + step, step % 7.0))
         target = values[:, 0] * 2.0
 
-        with patch("models.wrappers.seasonal_template.logger.info") as log_info:
+        with patch("model_building.wrappers.seasonal_template.logger.info") as log_info:
             estimator.fit(values, target)
 
         log_info.assert_not_called()

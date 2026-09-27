@@ -21,8 +21,8 @@ from model_training.weights import (
     resolve_training_sample_weight,
     training_sample_weight_spec,
 )
-from models.adapters.native_registry import native_history_cls as _native_history_cls
-from models.catalog import MODEL_CATALOG
+from model_building.adapters.native_registry import native_history_cls as _native_history_cls
+from model_building.catalog import MODEL_CATALOG
 from feature_engineering import cache as compiled_cache
 from feature_engineering.selection import (
     CanonicalFeatureSelector,
@@ -81,7 +81,7 @@ from model_performance.resource_planner import (
     runtime_budget_for_config,
 )
 
-# 原生序列模型注册表已下沉 models/adapters/native_registry.py（2026-09-26：
+# 原生序列模型注册表已下沉 model_building/adapters/native_registry.py（2026-09-26：
 # 纯 wrapper 接线属模型层，非编排层职责）；runner 经 _native_history_cls 分发。
 
 # P3/D3：回测原语已公开化至 model_testing/backtest.py（2026-09-06 R1 清扫：

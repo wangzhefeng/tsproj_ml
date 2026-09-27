@@ -2,7 +2,7 @@
 
 2026-09-26 适配层下沉拆分：
 - ndarray 合同适配器（``ModelFactoryEstimator``）、工厂、行为探测与
-  原生多分位判定下沉至 ``models/adapters/canonical.py``（零合同层依赖）；
+  原生多分位判定下沉至 ``model_building/adapters/canonical.py``（零合同层依赖）；
 - 本模块保留合同层职责：``EstimatorCapabilities`` 类型实例的能力注册表
   （``CapabilityRegistry`` / ``MODEL_FACTORY_CAPABILITY_REGISTRY``）、
   ``resolve_model_capabilities``、依赖 checkpoint 的
@@ -21,7 +21,7 @@ import numpy as np
 
 from forecasting_core.checkpoints import FitCheckpoint
 from forecasting_core.specs.estimator import EstimatorCapabilities
-from models.adapters.canonical import (
+from model_building.adapters.canonical import (
     ModelFactoryEstimator,
     ProbeResult,
     _normalize_model_type,
@@ -29,7 +29,7 @@ from models.adapters.canonical import (
     probe_native_multioutput,
     supports_native_multi_quantile,
 )
-from models.catalog import MODEL_CATALOG
+from model_building.catalog import MODEL_CATALOG
 
 __all__ = ["EstimatorCapabilities"]  # 合同类型自 specs 再导出（向后兼容）
 

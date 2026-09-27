@@ -16,7 +16,7 @@ from forecasting_core.specs import ForecastConfigSpec, TargetAdapter
 from model_training.estimators import supports_native_multi_quantile
 from model_training.strategies import target_plan_for_config
 from model_performance.performance_profiles import resolve_performance_profile
-from models.catalog import MODEL_CATALOG
+from model_building.catalog import MODEL_CATALOG
 
 
 _THREAD_PARAM_BY_MODEL = {

@@ -37,7 +37,7 @@ def _plot_timeseries(
 ) -> None:
     """单条曲线组：actual 实线（可缺）+ predict 虚线 + 可选 quantile 区间带。
 
-    线型与旧版 models/ModelTesting.py::test_results_save 一致（Trues 实线 /
+    线型与旧版 ModelTesting.py::test_results_save 一致（Trues 实线 /
     Preds 点划线 / PI 带 alpha=0.15）；绘图用未掩码原始值，保证线条连续
     （掩码只用于指标计算，不参与绘图——旧版同口径）。
     """

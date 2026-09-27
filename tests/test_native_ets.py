@@ -11,7 +11,7 @@ import pandas as pd
 class NativeETSTest(unittest.TestCase):
     def test_real_five_minute_period_and_all_candidate_failures(self):
         from unittest.mock import patch
-        from models.wrappers.ets import ETSModel
+        from model_building.wrappers.ets import ETSModel
         times = pd.date_range('2026-08-01', periods=4032, freq='5min')
         rng = np.random.default_rng(2026)
         history = pd.Series(100 + np.sin(np.arange(4032) * 2 * np.pi / 288) + rng.normal(0, .03, 4032), index=times)
@@ -20,7 +20,7 @@ class NativeETSTest(unittest.TestCase):
         self.assertEqual(model.forecast(288).shape, (288,))
         self.assertEqual(model.execution_evidence()['history_count'], 4032)
         self.assertEqual(model.execution_evidence()['seasonal_periods'], 288)
-        with patch('models.wrappers.ets.StatsmodelsETS', side_effect=ValueError('explicit candidate failure')):
+        with patch('model_building.wrappers.ets.StatsmodelsETS', side_effect=ValueError('explicit candidate failure')):
             with self.assertRaisesRegex(ValueError, 'all ETS candidates failed'):
                 model.fit_history(history, as_of=times[-1], freq='5min')
         self.assertEqual(len(model.execution_evidence()['candidates']), 3)
@@ -29,10 +29,10 @@ class NativeETSTest(unittest.TestCase):
             model.forecast(288)
 
     def test_catalog_native_contract_and_strict_parameters(self):
-        from models.catalog import MODEL_CATALOG
+        from model_building.catalog import MODEL_CATALOG
         self.assertIn("ets", MODEL_CATALOG)
         self.assertTrue(MODEL_CATALOG["ets"].native_history)
-        cls = importlib.import_module("models.wrappers.ets").ETSModel
+        cls = importlib.import_module("model_building.wrappers.ets").ETSModel
         for params in ({"typo": 1}, {"seasonal_periods": True},
                        {"maxiter": 1001}, {"selection": "auto"},
                        {"candidates": []}, {"candidates": ["ANA", "ANA"]},
@@ -41,7 +41,7 @@ class NativeETSTest(unittest.TestCase):
                 cls(params)
 
     def test_history_rejection_and_failed_refit_does_not_reuse_state(self):
-        cls = importlib.import_module("models.wrappers.ets").ETSModel
+        cls = importlib.import_module("model_building.wrappers.ets").ETSModel
         times = pd.date_range("2026-01-01", periods=60, freq="1h")
         history = pd.Series(100 + np.sin(np.arange(60)), index=times)
         model = cls({"seasonal_periods": 12, "candidates": ["ANN"]})
@@ -56,9 +56,9 @@ class NativeETSTest(unittest.TestCase):
 
     def test_native_history_fit_and_pickle_roundtrip(self):
         # 动态导入让 RED 明确定位缺失的原生序列实现。
-        self.assertIsNotNone(importlib.util.find_spec("models.wrappers.ets"),
+        self.assertIsNotNone(importlib.util.find_spec("model_building.wrappers.ets"),
                              "native ETS implementation is missing")
-        cls = importlib.import_module("models.wrappers.ets").ETSModel
+        cls = importlib.import_module("model_building.wrappers.ets").ETSModel
         times = pd.date_range("2026-01-01", periods=120, freq="1h")
         x = np.arange(len(times))
         history = pd.Series(100 + 2 * np.sin(x * 2 * np.pi / 12) + 0.01 * x,

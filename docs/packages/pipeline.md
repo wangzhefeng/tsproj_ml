@@ -1,15 +1,15 @@
-# model_pipeline
+# pipeline
 
 严格原始历史通路（历史来源：联通场景，已随 2026-09-25 收敛退役，能力与合同保留）：`runner.py` 在逐折 fit 边界接入原生序列模型 ETS/naive/theta（经 `model_building/adapters/native_registry.py::NATIVE_HISTORY_MODELS` 注册表按 model_type 分发，消费 `builder.target_history(origin)` 的完整时序，不使用监督标签拟合）及 seasonal residual（每个监督原点独立减基线、预测原位恢复）；`supervised_design.py` 负责基线张量、原始单位递归 provider 与预热长度。残差限 Local/raw-history/point/无目标变换，仍沿用 backtest-only 与禁止 final bundle 的合同。块天气与同槽/近期状态在公共 compiler 中实现，不在场景脚本旁路实现。
 
-`model_pipeline/` 负责单模型生命周期、监督设计与批量运行编排；根 `run.py` / `batch_run.py` 调用本包。融合仍由独立 `model_ensemble/` 负责，通过入口注入 runner 与执行服务复用单模型链。
+`pipeline/` 负责单模型生命周期、监督设计与批量运行编排；根 `run.py` / `batch_run.py` 调用本包。融合仍由独立 `model_ensemble/` 负责，通过入口注入 runner 与执行服务复用单模型链。
 
-- `runner.py`：`CanonicalBaseModelRunner` 与 `run_canonical_config()`；提供训练、预测、历史准备和只读证据能力，run 入口设置线程限制后委托生命周期。
-- `lifecycle.py`：`run_lifecycle()` 管理完成状态与异常传播，`execute_lifecycle()` 组织回测、CQR、final fit、预测和持久化；包含 `CanonicalRuntimeResult` 与产物元数据助手。结果类型仍由 runner 公开导出。
-- `supervised_design.py`：`SupervisedDesignBuilder`、information set、训练/预测设计、监督标签窗口、`probe_training_design()`、`minimum_history_rows()`；批编译不支持的设计保留 single 路径，不隐式替换 provider。
+- `runner.py`：`CanonicalBaseModelRunner` 与 `run_canonical_config()`；提供训练、预测、历史准备和只读证据能力，run 入口设置线程限制后委托生命周期。构造期即校验 native 历史模型参数与 `probabilistic.mode=quantile` 能力冲突（2026-09-27 前置，不再等到折拟合期）。
+- `lifecycle.py`：`run_lifecycle()` 管理完成状态与异常传播，`execute_lifecycle()` 组织回测、CQR、final fit、预测和持久化；回测几何按 `validation.backtest` spec 类型显式分派（fixed-step / calendar-month，缺失即 RAISE）；产物证据组装函数位于 `model_forecasting/evidence_assembly.py`（2026-09-27 迁出）。结果类型仍由 runner 公开导出。
+- `supervised_design.py`：`SupervisedDesignBuilder`、information set、训练/预测设计、监督标签窗口、`minimum_history_rows()`；批编译不支持的设计保留 single 路径，不隐式替换 provider。
 - `fold_fit.py`：fold/final 特征选择、变换与训练服务；回测和 final fit 共用配置训练窗口。
 - `run_state.py`：running/completed/failed 状态写入和 completed 校验；状态不是跨目录事务，外部直接加载 pickle 不自动消费状态。
-- `batch_runtime.py`：`run_canonical_batch()`、`verify_batch_results()` 与报告，负责跨配置 preflight、调度、恢复和验收。
+- `batch_runtime.py`：`run_canonical_batch()`、`verify_batch_results()` 与报告，负责跨配置 preflight、调度、恢复和验收。preflight 构造与执行段同样传入 `checkpoint_root`（2026-09-27）：构造期配置错误（ValueError 等）被包装为 `FitCheckpointError` 后按单任务 failed 隔离，不再炸整批。
 - `batch_artifacts.py`：产物路径、摘要、时间网格、维度与 bundle 身份验收；只看文件存在不能判 completed。
 
 ## 编排边界

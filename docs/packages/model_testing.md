@@ -17,7 +17,7 @@
 
 fixed-step 显式原始历史窗口通过 runner 的 `for_backtest_window()` 取得独立有界上下文；串行、并行拟合均由同一折上下文评分，不共用可变历史起点。窗口 metadata 记录 raw_history_start/end、train_history_steps 与预热后的 training_sample_count。actual 正常评分，不按离线填充来源新增掩码。
 
-本包依赖 `forecasting_core`、`data_loading`、`model_evaluation`、`probabilistic`（CQR tracker 类型）及 `utils` 日志；不 import model_pipeline/model_forecasting/model_ensemble。指标计算属于 `model_evaluation/`。
+本包依赖 `forecasting_core`、`data_loading`、`model_evaluation`、`probabilistic`（CQR tracker 类型）及 `utils` 日志；不 import pipeline/model_forecasting/model_ensemble。指标计算属于 `model_evaluation/`。
 
 `model_testing` 不是 `tests/` 测试套件；不恢复旧 `ModelTesting` 类。
 

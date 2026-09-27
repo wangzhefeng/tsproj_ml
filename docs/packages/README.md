@@ -28,7 +28,7 @@
 |---|---|
 | [model_training.md](model_training.md) | 训练器与七策略 executor |
 | [model_testing.md](model_testing.md) | 回测几何、评分与产物 |
-| [model_pipeline.md](model_pipeline.md) | 生命周期编排与批调度 |
+| [pipeline.md](pipeline.md) | 生命周期编排与批调度 |
 | [model_forecasting.md](model_forecasting.md) | 预测、部署与 bundle 持久化 |
 | [model_performance.md](model_performance.md) | 资源规划、性能档、checkpoint |
 | [probabilistic.md](probabilistic.md) | CQR 校准内核 |

@@ -6,7 +6,7 @@
 - `wrappers/`：按 family 保留原生模型封装；`base.py` 为共享基类/构造模板（`_resolve_params` → `_build_estimator` 钩子、`_require_fitted`、NaN 防御共享 `nan_defense_fit_state`），`lightgbm.py`、`xgboost.py`、`catboost.py` 为 boosting 封装，`sklearn_tree.py` 为 RF/HistGB，`linear.py` 为 Ridge/ElasticNet/Lasso/QuantileRegressor，`seasonal_template.py` 为 SeasonalTemplate（支持 `day_type_split` 与 `holiday_split` 按 `is_holiday` 列分组，后者优先且列缺失时回退），`ets.py`/`naive.py`/`theta.py` 为直接消费原始时序历史的原生序列模型。参数校验统一来自 `preflight/`，wrappers 只保留训练/预测本体。
 - `pickle_io.py`：`ModelDeployPkl` 的底层 pickle 保存/加载，导入不修改 `sys.path`，也不再因未用 logger 导入而初始化项目日志；对象保存/加载行为不变。
 
-训练在 `model_training/`，推理/产物在 `model_forecasting/`，生命周期编排在 `model_pipeline/`，稳定 bundle 合同在 `forecasting_core/artifacts.py`。本包不得反向 import 上述高层包。
+训练在 `model_training/`，推理/产物在 `model_forecasting/`，生命周期编排在 `pipeline/`，稳定 bundle 合同在 `forecasting_core/artifacts.py`。本包不得反向 import 上述高层包。
 
 ## 描述表与参数校验
 
@@ -42,7 +42,7 @@
 
 **SARIMA 不在本层**：日内高频季节周期（如 288）下 SARIMA 的季节 AR 多项式阶数不可行，工程上不提供该成员；低频月度场景如需再立项。LightGBM 多分位共享池同样未做：当前全部配置为 `mode: point`（quantile 消费者为零），待 quantile 场景立项。
 
-`catalog.native_history` 与资源计划显式区分无监督特征的序列模型；runner 保留共用调度几何，但不使用监督 Y 拟合原生模型——`model_pipeline/runner.py::NATIVE_HISTORY_MODELS` 注册表按 model_type 分发（新增成员 = catalog 一条 descriptor + 注册表一条映射，漏接线 RAISE）。原生对象可以在可信 pickle 中往返恢复并从拟合原点续预测；不把对象往返视为 schema-2 部署 bundle 验收。严格原始历史窗口（历史来源：联通场景，已随 2026-09-25 收敛退役）仍只支持 backtest-only，final fit/bundle 拒绝合同保持不变。测试覆盖及执行入口见 `docs/testing/`；`.hermes/plans/` 下的实施证据仅保留在本地，不随仓库分发。
+`catalog.native_history` 与资源计划显式区分无监督特征的序列模型；runner 保留共用调度几何，但不使用监督 Y 拟合原生模型——`pipeline/runner.py::NATIVE_HISTORY_MODELS` 注册表按 model_type 分发（新增成员 = catalog 一条 descriptor + 注册表一条映射，漏接线 RAISE）。原生对象可以在可信 pickle 中往返恢复并从拟合原点续预测；不把对象往返视为 schema-2 部署 bundle 验收。严格原始历史窗口（历史来源：联通场景，已随 2026-09-25 收敛退役）仍只支持 backtest-only，final fit/bundle 拒绝合同保持不变。测试覆盖及执行入口见 `docs/testing/`；`.hermes/plans/` 下的实施证据仅保留在本地，不随仓库分发。
 
 ## Pickle 路径兼容边界
 

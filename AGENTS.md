@@ -40,7 +40,7 @@
 | 任务 | 先读 |
 |---|---|
 | 写/改配置 YAML、时间边界、低频与外生约定 | `docs/config/` |
-| 动生命周期编排/监督设计/批调度 | `docs/packages/model_pipeline.md` |
+| 动生命周期编排/监督设计/批调度 | `docs/packages/pipeline.md` |
 | 动资源规划/性能档/checkpoint/运行缓存 | `docs/packages/model_performance.md` |
 | 动特征编译/目标与特征变换 | `docs/packages/feature_engineering.md` |
 | 动目标分解/分量外推/通用周期诊断 | `docs/packages/decomposition.md`、`docs/packages/ts_kernels.md` |

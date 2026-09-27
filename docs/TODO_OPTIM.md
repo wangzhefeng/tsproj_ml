@@ -55,3 +55,22 @@
   - `env -u PYTHONPATH .venv/bin/python tests/run_suite.py fast`：290 项 OK；`... integration`：683 项 OK（233.046s）。
   - `env -u PYTHONPATH .venv/bin/python -m compileall -q model_training model_pipeline feature_engineering` OK。
 - **风险**：声明 `validation.training.sample_weight` 的配置产生新语义身份（fingerprint 变化、结果目录新建）；存量 171 份活动配置（全 LightGBM，能力兼容）均未声明，不受影响。compiler stats 白名单为行为变更——存量配置若有拼错统计名会在编译期报错（这正是目的）；活动配置实测全过。
+
+### OPT-026 model_pipeline 点/分位拟合分派模板收敛（4 处同构）
+
+- **状态**：待处理
+- **登记日期**：2026-09-27
+- **当前事实**：`model_pipeline/fold_fit.py::_fit_point`（138-184）与 `_fit_quantile`（187-274）头部同构约 30 行（checkpoint.child → capabilities → trainer 构造 → 调度参数解析）；`runner.py::fit`（540-565）与 `fit_final`（802-826）各自再写一次 mode 二分分派。同一「构造+checkpoint+调度」形状出现 4 处。2026-09-27 model_pipeline 优化会话已做项：B1 preflight 单任务隔离、A 批卫生（batch_size 常量化、死赋值清理、私有别名公开化、回测几何显式分派）、证据四函数迁出、B4 native+quantile 构造期前置、B5 实现指纹进程内缓存 + 包清单补 model_building + layering 门禁补盲；A1 模板合并因改动面大、且与并发会话（model_building 重命名）同场，降级为本条目登记。
+- **影响**：新增 probabilistic mode 或调整 checkpoint/调度接线时需同步 4 处；漏改一处只在特定路径生效，属 RAISE 可见工程债而非静默错误。
+- **建议方向**：合并为单一分派入口（「构造+checkpoint+组装」统一函数，仅调度入口不同），对齐 model_training 会话已沉淀的「统一 fit 调度」模式。
+- **风险**：控制流改写面大（两个文件、4 个调用点），需 fast + 定向（runtime_checkpoints / canonical_transforms / sample_weight_wiring / batch_runtime）四件套验证；行为零变化验证靠既有 parity 测试。
+- **验收标准**：4 处分派收敛为 1 个实现；`compileall` + `tests/run_suite.py fast` + 上述定向全过；`git diff --check` 干净；本条目标记已完成并附验证命令。
+
+### OPT-027 lifecycle 证据组装函数迁出与批调度 preflight 隔离（已完成批次记录）
+
+- **状态**：已完成（2026-09-27）
+- **登记日期**：2026-09-27
+- **当前事实**：model_pipeline 优化批次落地五项：(1) B1——`batch_runtime._preflight_groups` 补传 `checkpoint_root`，构造期 ValueError 被包装为 FitCheckpointError 后按单任务 failed 隔离（旧行为：整批 171 任务标 failed）；(2) A 批——`TRAINING_COMPILE_BATCH_SIZE` 常量化、`_runner=None` 死赋值删除、`read_text` 补 encoding、`actual_tensor` 别名公开化、回测几何按 spec 类型显式分派（backtest 缺失前置 RAISE，替代 fixed_step 返回 None 的探测回退协议）；(3) 证据域聚集——`proof_payload`/`holdout_proof_summary`/`source_lineage_payload`/`compiled_lineage` 四函数自 lifecycle.py 迁入新建 `model_forecasting/evidence_assembly.py`（实现逐字保真），lifecycle 543→362 行；(4) B4——runner 构造期对 native 历史模型 + `probabilistic.mode=quantile` 前置 RAISE（原到折拟合期才报）；(5) B5 + 并发遗留修复——`implementation_fingerprint` 进程内缓存，包清单补 `model_building`（models/ 更名后实现文件曾不再进指纹），layering 门禁 PROJECT_PACKAGES/ALLOWED 同步补 model_building 并新增 `test_model_building_stays_infra`。
+- **影响**：preflight 错误隔离符合 docstring 声明语义；证据组装与 evidence.py 同域维护；native quantile 错误前移到构造期（含 batch preflight 阶段）；批跑指纹计算从 171 次全仓哈希降为 1 次。实现指纹值因包清单修正而变化（属预期——原值漏掉了 model_building 实现文件，是身份失真修正）。
+- **验证命令及结果**：`compileall` model_pipeline/model_forecasting/model_performance/tests 改动文件 OK；`git diff --check` 干净；`tests/run_suite.py fast` 291 项 OK（含 3 项新增：preflight ValueError 隔离、native quantile 构造期拒绝、model_building 门禁）；`tests.test_package_layering` 23 项 OK；定向 `test_batch_runtime`(13)/`test_batch_calendar_checkpoint`(1)/`test_runtime_checkpoints`+`test_compiled_feature_cache`(36 总)/`test_backtest_only`+`test_backtest_lifecycle_split`+`test_lifecycle_static_contract`+`test_canonical_transforms`+`test_sample_weight_wiring`(29 总)/`test_runtime_array_fastpaths`(8)/`test_raw_history_window`(9) 全过；`implementation_fingerprint()` 双调用一致性断言通过。
+- **风险**：A1 模板合并拆至 OPT-026。追加（2026-09-27 用户点名后执行）：`_output_paths` legacy 三键分支与 spec `OUTPUT_FIELDS` 三键字段已删除（零活动消费，语义变更已授权）；`probe_training_design`/`TrainingDesignProbe` 零调用方已删除；验证 `compileall` + fast + 定向全过。

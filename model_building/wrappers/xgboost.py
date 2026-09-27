@@ -1,4 +1,4 @@
-"""xgboost: estimator wrappers extracted from the model factory."""
+"""XGBoost 封装：梯度提升树回归（MAE 损失默认，子进程参数预检）。"""
 
 import json
 from typing import Any, Dict, Optional
@@ -13,13 +13,13 @@ from model_building.wrappers.base import BaseModel, DEFAULT_EARLY_STOPPING_ROUND
 
 class XGBoostModel(BaseModel):
     """
-    XGBoost模型封装
+    XGBoost 梯度提升树封装
 
     特点:
-    - 性能优秀
-    - 正则化能力强
-    - GPU加速支持
-    - 广泛应用
+    - 二阶泰勒近似分裂（正则化目标：叶子权重 + 树复杂度罚项）
+    - 原生支持 MAE / quantile 损失，缺省 reg:absoluteerror
+    - 每次拟合前经子进程预检参数表面（未知参数 RAISE，见 preflight）
+    - GPU 加速可用（tree_method），本项目配置为 CPU 多线程
     """
 
     DEFAULT_PARAMS = {

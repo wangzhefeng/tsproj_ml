@@ -1,4 +1,4 @@
-"""lightgbm: estimator wrappers extracted from the model factory."""
+"""LightGBM 封装：直方图梯度提升树（叶子优先生长，MAE 损失默认）。"""
 
 from typing import Any, Dict, Optional
 import numpy as np
@@ -12,14 +12,16 @@ from model_building.wrappers.base import BaseModel, DEFAULT_EARLY_STOPPING_ROUND
 
 class LightGBMModel(BaseModel):
     """
-    LightGBM 模型封装
+    LightGBM 直方图梯度提升树封装
 
     特点:
-    - 训练速度快
-    - 内存占用小
-    - 支持类别特征
-    - 适合大数据集
+    - 直方图分箱分裂 + leaf-wise 生长（同叶数下损失更低，需配
+      max_depth / num_leaves 控过拟合）
+    - 原生 NaN 容忍（缺失值自动学默认方向），无需预填补
+    - 原生类别特征（categorical_feature 指定列，无需独热编码）
+    - 构造参数经别名全集严格校验（未知参数 RAISE，见 preflight）
     """
+
 
     DEFAULT_PARAMS = {
         "boosting_type": "gbdt",

@@ -1,29 +1,14 @@
 # -*- coding: utf-8 -*-
 
-# ***************************************************
-# * File        : pickle_io.py
-# * Author      : Zhefeng Wang
-# * Email       : zfwang7@gmail.com
-# * Date        : 2026-02-28
-# * Version     : 0.1.101716
-# * Description : 模型与缩放器 pickle 保存/加载
-# ***************************************************
+"""模型与缩放器 pickle 保存/加载（离线部署唯一持久化入口）。"""
 
-
-# python libraries
 import os
-
 import pickle
 import joblib
 
 
 class ModelDeployPkl:
-    """
-    模型离线部署类
-
-    （2026-08-29 架构收敛 D7：ModelDeploy 抽象基类与 ModelDeployPmml 已删除——
-    PMML 部署链路全仓零消费；本类为唯一保留的 pickle 保存/加载入口。）
-    """
+    """pickle 部署封装：保存训练产物、按路径重载（唯一持久化入口）。"""
     def __init__(self, save_file_path: str):
         # 模型保存的目标路径，统一转为字符串以兼容 pathlib.Path
         self.save_file_path = os.fspath(save_file_path)

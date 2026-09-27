@@ -11,7 +11,13 @@ from statsmodels.tsa.exponential_smoothing.ets import ETSModel as StatsmodelsETS
 
 
 class ETSModel:
-    """有限加性候选、原生 BIC/AICc 选择；失败证据不隐去。"""
+    """
+    指数平滑状态空间模型（Error-Trend-Seasonal，加性误差族）。
+
+    候选集固定为四个加性误差形态（ANN/ANA/AAA/AAdA），逐个拟合后按
+    BIC 或 AICc 选最优；每个候选的收敛状态、警告与估计参数全部进入
+    execution_evidence，失败候选的证据不隐去。
+    """
 
     DEFAULT_PARAMS = {
         "seasonal_periods": 288,
@@ -80,8 +86,10 @@ class ETSModel:
         ) else 10
         if len(values) < required:
             raise ValueError(f"ETS history requires at least {required} raw points")
-        # 只估计平滑参数，不把 288 个初始季节状态变成数值优化参数。
-        # heuristic 初始化仍完全消费当前 as-of 历史，不来自窗口外数据。
+        # heuristic 初始化只估计平滑参数（alpha/beta/phi/gamma），
+        # 不把 m 个初始季节状态变成数值优化参数（否则 288 周期下
+        # 参数维度爆炸且易过拟合窗口噪声）；初始化完全来自当前
+        # as-of 历史，不引入窗口外信息。
         series = pd.Series(values.copy(), index=expected)
         records = []
         best = None

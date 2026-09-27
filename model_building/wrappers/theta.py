@@ -1,7 +1,8 @@
-"""原生 Theta：显式有序历史输入，不提供监督回归 fit/predict 接口。
+"""原生 Theta：显式有序历史输入，不走监督回归 fit/predict 接口。
 
-经典 Theta 方法（Assimakopoulos & Nikolopoulos 2000；Hyndman & Billah 2003
-证明 theta=2 且带漂移的形态等价于带漂移简单指数平滑）。statsmodels 实现
+经典 Theta 方法（Assimakopoulos & Nikolopoulos 2000）：对去季节化序列
+做二阶差分得到漂移项，再把原序列与 2×二阶差分外推线性组合，等价于
+带漂移的简单指数平滑（Hyndman & Billah 2003 证明）。statsmodels 实现
 只暴露单一 theta 线组合，本封装按 ETS 同款严格合同消费：
 规则时间网格、末端恰为 as_of、有限值、未知参数 RAISE；估计失败直接
 RAISE，不静默降级。``method`` 透传季节性 Oswal/检测显著性检验方式。

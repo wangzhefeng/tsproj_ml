@@ -1,4 +1,4 @@
-"""Catalog-driven estimator construction; implementations live in wrappers/."""
+"""模型工厂：按 catalog 注册表把 model_type 别名分派到 wrapper 类构造实例。"""
 
 import copy
 from typing import Any, Dict, Optional
@@ -16,11 +16,7 @@ from model_building.wrappers.theta import ThetaModel
 
 
 class ModelFactory:
-    """
-    模型工厂 (Model Factory)
-
-    用于创建不同类型的模型实例
-    """
+    """模型工厂：model_type（含别名）→ wrapper 类实例的统一构造入口。"""
     # 支持的模型映射
     _models = {
         alias: globals()[descriptor.wrapper]

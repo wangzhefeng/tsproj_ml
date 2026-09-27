@@ -109,11 +109,11 @@ def probe_native_multioutput(estimator_factory: Callable[[], object]) -> ProbeRe
 
 
 class ModelFactoryEstimator:
-    """Adapt the project ModelFactory wrappers to the canonical ndarray contract.
+    """把 ModelFactory wrapper 的 DataFrame 接口适配为 canonical ndarray 合同。
 
-    原 ``model_training/estimators/capabilities.py::_ModelFactoryEstimator``
-    （2026-09-26 适配层下沉 model_building/adapters，私有名同步公开化；
-    引用旧私有类路径的存量 pickle 按仓库惯例作废重训）。
+    - 入参 ndarray → 按 catalog.dataframe_input 决定是否包 DataFrame；
+    - ridge 走标量单输出路径，另提供 fit_multi_output 快路径
+      （一次矩阵分解输出全部目标列，切片视图共享同一估计器）。
     """
 
     def __init__(

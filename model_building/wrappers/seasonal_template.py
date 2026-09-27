@@ -1,4 +1,4 @@
-"""seasonal_template: estimator wrappers extracted from the model factory."""
+"""季节模板基线：历史周期同时刻的非负加权重放（climatology 家族）。"""
 
 import re
 from typing import Any, Dict, Optional

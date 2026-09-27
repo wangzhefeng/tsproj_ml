@@ -13,18 +13,18 @@ DEFAULT_EARLY_STOPPING_ROUNDS = 50
 
 class BaseModel(ABC):
     """
-    模型基类 (Base Model Class)
+    模型基类：统一「构造 → 训练 → 预测」模板。
 
-    所有具体模型必须继承此类并实现抽象方法。
+    构造流程（模板方法）：
+    1. ``_resolve_params(supplied)``：DEFAULT_PARAMS 深拷贝合并用户参数
+       （用户参数优先），子类可覆写以插入家族特定校验
+       （别名全集 / 签名白名单 / synonym 归一化）；
+    2. 参数日志（log_params=True 时）；
+    3. ``_build_estimator()``：构造底层估计器（或返回 None 表示
+       无估计器成员、由子类自持拟合状态）。
 
-    构造走统一模板（2026-09-26 模板收敛）：
-    1. ``_resolve_params(supplied)``：DEFAULT_PARAMS 深拷贝合并用户参数，
-       子类覆写以插入家族特定校验（别名全集 / 签名白名单 / synonym 归一化）；
-    2. 参数日志；
-    3. ``_build_estimator()``：构造底层估计器（或无估计器成员的拟合状态）。
-
-    实例属性 ``params`` / ``model`` / ``is_fitted`` 与历史行为逐项一致，
-    pickle 路径与属性名不变，存量 bundle 不受影响。
+    实例属性 ``params`` / ``model`` / ``is_fitted`` 参与 pickle 持久化，
+    改名或移除会破坏存量 bundle 的重载。
     """
 
     DEFAULT_PARAMS: Dict[str, Any] = {}

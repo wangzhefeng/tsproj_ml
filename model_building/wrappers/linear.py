@@ -1,4 +1,4 @@
-"""linear: estimator wrappers extracted from the model factory."""
+"""线性族封装：Ridge / ElasticNet / LASSO / QuantileRegressor 共用一套模板。"""
 
 import copy
 from typing import Any, Dict, Optional
@@ -114,11 +114,11 @@ class QuantileRegressorModel(_LinearModelBase):
     """
     QuantileRegressor 线性分位数回归基线
 
-    默认 quantile=0.5 + alpha=1e-3。alpha 不可取 0：alpha=0 时 LP 解不唯一
-    （退化多面体），HiGHS 返回任意顶点，滑窗小样本和强共线特征下容易产生
-    巨大系数并在外推期预测爆炸。1e-3 是日频 baseline 六个完整自然月的生产
-    消融最优值；sklearn 官方默认 1.0 在该场景过度收缩。分位数预测路径由
-    Trainer._inject_quantile_params 注入目标 quantile。
+    默认 quantile=0.5 + alpha=1e-3（LP 求解的 L1 正则强度）。alpha 不可取 0：
+    alpha=0 时 LP 解不唯一（退化多面体），HiGHS 返回任意顶点，滑窗小样本
+    和强共线特征下容易产生巨大系数并在外推期预测爆炸；1e-3 为生产消融
+    最优值（sklearn 默认 1.0 在负荷预测场景过度收缩）。
+    分位数目标由训练层经 quantile_parameters 注入（catalog 唯一入口）。
     """
 
     ESTIMATOR_CLS = QuantileRegressor

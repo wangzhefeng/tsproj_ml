@@ -1,4 +1,4 @@
-"""sklearn_tree: estimator wrappers extracted from the model factory."""
+"""sklearn 树系封装：随机森林（bagging）与直方图 GBDT（无外部依赖对照组）。"""
 
 from typing import Any, Dict, Optional
 import numpy as np
@@ -11,14 +11,15 @@ from model_building.wrappers.base import BaseModel
 
 class RandomForestModel(BaseModel):
     """
-    Random Forest 模型封装
+    随机森林封装（bagging 集成：行采样 + 列采样 + 决策树基学习器）
 
     特点:
-    - 鲁棒性强
-    - 不易过拟合
-    - 可解释性好
-    - 并行化训练
+    - 方差削减型集成（bagging 平均），对噪声与离群点鲁棒
+    - 双随机（bootstrap 行 + 每分裂列子集）去相关树
+    - feature_importances_ 提供杂质度重要性
+    - 树间独立可并行（n_jobs），无早停（先长满再平均）
     """
+
 
     DEFAULT_PARAMS = {
         "n_estimators": 100,
@@ -70,13 +71,13 @@ class RandomForestModel(BaseModel):
 
 class HistGBModel(BaseModel):
     """
-    HistGradientBoosting 模型封装（sklearn 原生直方图 GBDT）
+    sklearn 直方图梯度提升树封装（LightGBM 的无外部依赖对照组）
 
     特点:
-    - 零外部依赖（sklearn 内置）
+    - sklearn 内置实现（零第三方依赖，部署面最小）
     - 原生支持 MAE（absolute_error）与分位数（quantile）损失
-    - 支持类别特征（构造参数 categorical_features，列索引）
-    - 训练/预测速度快，适合作为 LightGBM 的无依赖对照组
+    - 原生 NaN 容忍（缺失值训练期学默认方向）
+    - 支持类别特征（构造参数 categorical_features，列索引声明）
 
     注意:
     - 无线程数构造参数（底层走 OpenMP，由 OMP_NUM_THREADS 环境变量控制）

@@ -1,13 +1,15 @@
-"""原生 Naive 基线族：显式有序历史输入，不提供监督回归 fit/predict 接口。
+"""原生 Naive 基线族：只消费显式有序历史，不走监督回归 fit/predict 接口。
 
-三种模式（M3/M4 竞赛标准基线，纯 numpy 闭式计算）：
-- naive           ặ_{n+h} = y_n（最后观测值平推）
-- drift           ặ_{n+h} = y_n + h·(y_n - y_1)/(n-1)（随机游走加漂移）
-- seasonal_naive  ặ_{n+h} = y_{n+h-m·k}（m 为季节周期，k=⌈h/m⌉）
+三种模式（M3/M4 竞赛标准基线，纯 numpy 闭式计算，无可估参数、
+不存在不收敛问题）：
 
-与 ETS 相同的严格输入合同：规则时间网格、末端恰为 as_of、有限值、
-未知参数 RAISE；fit_history / forecast / execution_evidence 三件套
-与 ETSModel 逐字段对齐，供 pipeline 注册表统一分发。
+    naive           ŷ_{n+h} = y_n                     （最后观测值平推）
+    drift           ŷ_{n+h} = y_n + h·(y_n - y_1)/(n-1)   （随机游走加漂移）
+    seasonal_naive  ŷ_{n+h} = y_{n+h-m·k}             （m 为季节周期，k=⌈h/m⌉）
+
+严格输入合同（与 ETSModel 对齐）：规则时间网格、末端恰为 as_of、
+有限值、未知参数 RAISE。fit_history / forecast / execution_evidence
+三件套供 pipeline 按原生序列注册表统一分发。
 """
 from __future__ import annotations
 
@@ -21,7 +23,7 @@ _MODES = ("naive", "drift", "seasonal_naive")
 
 
 class NaiveModel:
-    """闭式基线；无估计参数，不存在不收敛问题。"""
+    """闭式基线：无估计参数、无可调超参，直接由历史值平推外推。"""
 
     DEFAULT_PARAMS = {
         "mode": "naive",

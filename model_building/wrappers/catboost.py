@@ -1,4 +1,4 @@
-"""catboost: estimator wrappers extracted from the model factory."""
+"""CatBoost 封装：对称树梯度提升（有序提升 + 目标统计类别编码）。"""
 
 import copy
 from typing import Any, Dict, Optional
@@ -13,14 +13,16 @@ from model_building.wrappers.base import BaseModel, DEFAULT_EARLY_STOPPING_ROUND
 
 class CatBoostModel(BaseModel):
     """
-    CatBoost 模型封装
+    CatBoost 对称树梯度提升封装
 
     特点:
-    - 自动处理类别特征
-    - 对默认参数不敏感
-    - 过拟合风险低
-    - 性能优秀
+    - 有序提升（ordered Boosting）缓解梯度偏差引起的预测偏移
+    - 目标统计类别编码内置（类别高基数下防目标泄漏）
+    - 同层对称树（oblivious tree）推理快、正则化强
+    - 同义参数（如 verbose/logging_level）在构造前归一化，避免
+      默认值压过显式别名
     """
+
 
     DEFAULT_PARAMS = {
         "loss_function": "MAE",

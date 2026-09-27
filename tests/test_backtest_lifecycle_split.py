@@ -10,8 +10,8 @@ from unittest.mock import Mock, patch
 import pandas as pd
 
 from forecasting_core.specs import FixedStepBacktestSpec
-from model_pipeline.lifecycle import run_lifecycle
-from model_pipeline.runner import CanonicalBaseModelRunner
+from pipeline.lifecycle import run_lifecycle
+from pipeline.runner import CanonicalBaseModelRunner
 from model_testing.contracts import BacktestRunner, FoldScoringRunner
 from model_testing.fixed_step import run_fixed_step_backtest
 from model_testing.scoring import FoldScoreResult
@@ -25,7 +25,7 @@ class BacktestLifecycleSplitTest(unittest.TestCase):
             for name, value in vars(protocol).items():
                 if not name.startswith("_") and callable(value):
                     self.assertTrue(callable(getattr(CanonicalBaseModelRunner, name, None)), name)
-        tree = ast.parse((ROOT / "model_pipeline/runner.py").read_text())
+        tree = ast.parse((ROOT / "pipeline/runner.py").read_text())
         names = {n.name for n in ast.walk(tree) if isinstance(n, ast.FunctionDef)}
         self.assertNotIn("_execute_lifecycle", names)
         self.assertNotIn("_run", names)
@@ -41,12 +41,12 @@ class BacktestLifecycleSplitTest(unittest.TestCase):
                 self.assertEqual(json.loads(state_path.read_text())["status"], "running")
                 return "result"
 
-            with patch("model_pipeline.lifecycle._output_paths", return_value=(model_dir,) * 4):
-                with patch("model_pipeline.lifecycle.execute_lifecycle", side_effect=execute):
+            with patch("pipeline.lifecycle._output_paths", return_value=(model_dir,) * 4):
+                with patch("pipeline.lifecycle.execute_lifecycle", side_effect=execute):
                     self.assertEqual(run_lifecycle(runner), "result")
                 self.assertEqual(json.loads(state_path.read_text())["status"], "completed")
                 error = KeyboardInterrupt("test cancellation")
-                with patch("model_pipeline.lifecycle.execute_lifecycle", side_effect=error):
+                with patch("pipeline.lifecycle.execute_lifecycle", side_effect=error):
                     with self.assertRaises(KeyboardInterrupt) as caught:
                         run_lifecycle(runner)
                 self.assertIs(caught.exception, error)

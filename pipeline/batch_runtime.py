@@ -1,11 +1,12 @@
 """Recoverable RawDesignGroup batch runtime for canonical model configs."""
 from __future__ import annotations
 
+import errno
 import hashlib
 import json
-import errno
 import os
 import threading
+import uuid
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -24,19 +25,23 @@ else:
 from config.config_loader import load_yaml_config
 from data_loading import BUILTIN_GENERATORS, SourceRegistry
 from feature_engineering.cache import compute_raw_design_fingerprint
+from forecasting_core.checkpoints import FitCheckpointError
 from forecasting_core.runtime_resources import RuntimeResourceBudget
 from forecasting_core.specs import ForecastConfigSpec
-
-from model_pipeline.batch_artifacts import (
-    artifact_paths, artifact_digests, artifacts_complete, validate_artifacts,
-)
 from model_performance.batch_memory import BoundedPayloadCache, SampledRSS
-from forecasting_core.checkpoints import FitCheckpointError
-from uuid import uuid4
-from model_performance.resource_planner import detect_runtime_budget, plan_runtime_execution
-from model_pipeline.runner import CanonicalBaseModelRunner
+from model_performance.resource_planner import (
+    detect_runtime_budget,
+    plan_runtime_execution,
+)
 from model_performance.transform_cache import FoldTransformCache
 from model_testing.primitives import resolve_origin
+from pipeline.batch_artifacts import (
+    artifact_paths,
+    artifact_digests,
+    artifacts_complete,
+    validate_artifacts,
+)
+from pipeline.runner import CanonicalBaseModelRunner
 
 
 _BATCH_LOCKS: dict[Path, threading.Lock] = {}
@@ -189,7 +194,7 @@ def _batch_id(paths: tuple[Path, ...], output_root: Path) -> str:
     ).hexdigest()[:16]
 
 
-def _preflight_groups(groups, state, root, budget, config_workers):
+def _preflight_groups(groups, state, root, budget, config_workers, checkpoint_root):
     """Validate every group before any fit; retain only metadata between groups.
 
     Compilation uses the durable RawDesign cache. Execution reloads one group at
@@ -213,11 +218,15 @@ def _preflight_groups(groups, state, root, budget, config_workers):
                 runner = CanonicalBaseModelRunner(
                     task.config, task.registry, task.origin,
                     compiled_cache_root=root, resource_budget=budget,
+                    checkpoint_root=checkpoint_root,
                     precompiled_payload=raw_payload,
                     precompiled_fingerprint=group_key if raw_payload is not None else None,
                 )
             except RuntimeError:
                 # The execution construction path records config compile failures.
+                # checkpoint_root 在场时构造期错误被包装为 FitCheckpointError
+                # （RuntimeError 子类），ValueError 等配置错误同样落入此分支，
+                # 单任务记 failed，其余组照常规划（与执行段行为一致）。
                 continue
             if raw_payload is None:
                 raw_payload = runner.raw_design_payload()
@@ -465,14 +474,16 @@ def _run_canonical_batch_locked(
         _write_state(state_path, state)
 
     checkpoint_root = Path(state.setdefault(
-        "checkpoint_root", str(root / "_batch_state" / batch_id / "checkpoints" / uuid4().hex)
+        "checkpoint_root", str(root / "_batch_state" / batch_id / "checkpoints" / uuid.uuid4().hex)
     ))
     groups: dict[str, list[_BatchTask]] = {}
     for task in tasks:
         groups.setdefault(task.raw_fingerprint, []).append(task)
 
     try:
-        state["preflight"] = _preflight_groups(groups, state, root, budget, config_workers)
+        state["preflight"] = _preflight_groups(
+            groups, state, root, budget, config_workers, checkpoint_root,
+        )
     except Exception as exc:
         for task in tasks:
             task_state = state["tasks"][task.task_id]
@@ -678,7 +689,6 @@ def _run_canonical_batch_locked(
         outcomes = ()
         raw_payload = None
         runner = None
-        _runner = None
         result = None
 
     statuses = [value.get("status") for value in state["tasks"].values()]
@@ -735,7 +745,7 @@ def run_canonical_batch(
         except BaseException as exc:
             state_path = lock_path.with_suffix(".json")
             if state_path.is_file():
-                state = json.loads(state_path.read_text())
+                state = json.loads(state_path.read_text(encoding="utf-8"))
                 for task in state.get("tasks", {}).values():
                     if task.get("status") in {"running", "verifying"}:
                         task.update({"status": "failed", "error": {

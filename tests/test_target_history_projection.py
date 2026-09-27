@@ -5,7 +5,7 @@ import unittest
 import pandas as pd
 from data_loading import SourceRegistry
 from forecasting_core.specs import DataSpec
-from model_pipeline.supervised_design import SupervisedDesignBuilder
+from pipeline.supervised_design import SupervisedDesignBuilder
 import test_feature_visibility_compiler as fixtures
 
 

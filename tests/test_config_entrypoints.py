@@ -21,7 +21,7 @@ from model_ensemble.contracts import EnsembleRuntimeServices
 from model_ensemble.loader import load_ensemble_config
 from model_ensemble.runtime import run_ensemble_config
 from model_training.estimators.capabilities import EstimatorCapabilities
-from model_pipeline.runner import (
+from pipeline.runner import (
     CanonicalBaseModelRunner,
     persist_model_bundle,
     run_canonical_config,

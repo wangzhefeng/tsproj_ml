@@ -9,7 +9,7 @@
 4. ``model_ensemble`` 只能通过 Protocol/注入获取单模型 runner，
    对 ``model_forecasting`` 的依赖限于稳定结果写入接口。
 
-稳定合同位于 ``forecasting_core/``；``model_pipeline/`` 负责运行编排，
+稳定合同位于 ``forecasting_core/``；``pipeline/`` 负责运行编排，
 ``model_forecasting/`` 负责预测、部署与预测产物。
 """
 
@@ -26,11 +26,12 @@ ROOT = Path(__file__).resolve().parents[1]
 PROJECT_PACKAGES = {
     "forecasting_core",
     "model_forecasting",
-    "model_pipeline",
+    "pipeline",
     "model_performance",
     "model_ensemble",
     "probabilistic",
     "models",
+    "model_building",
     "decomposition",
     "ts_kernels",
     "data_process",
@@ -50,6 +51,7 @@ ALLOWED_PACKAGES = {
     "decomposition": {"ts_kernels"},
     "ts_kernels": set(),
     "models": {"utils"},
+    "model_building": {"utils"},
     "data_loading": {"forecasting_core"},
     "feature_engineering": {
         "forecasting_core",
@@ -57,7 +59,7 @@ ALLOWED_PACKAGES = {
         "decomposition",
         "utils",
     },
-    "model_training": {"forecasting_core", "models"},
+    "model_training": {"forecasting_core", "models", "model_building"},
     "model_testing": {
         "utils",
         "forecasting_core",
@@ -71,6 +73,7 @@ ALLOWED_PACKAGES = {
         "feature_engineering",
         "model_training",
         "models",
+        "model_building",
         "utils",
     },
     "model_forecasting": {
@@ -83,10 +86,11 @@ ALLOWED_PACKAGES = {
         "model_testing",
         "model_training",
         "models",
+        "model_building",
         "probabilistic",
         "utils",
     },
-    "model_pipeline": {
+    "pipeline": {
         "data_loading",
         "decomposition",
         "feature_engineering",
@@ -98,6 +102,7 @@ ALLOWED_PACKAGES = {
         "model_forecasting",
         "model_ensemble",
         "models",
+        "model_building",
         "probabilistic",
         "utils",
     },
@@ -236,8 +241,8 @@ class InterPackageLayeringTest(unittest.TestCase):
         gate_name = "test_all_packages_follow_dependency_whitelists"
         self.assertTrue(hasattr(type(self), gate_name))
         for owner, target in (
-            ("model_performance", "model_pipeline.runner"),
-            ("model_pipeline", "data_process.periodicity_analysis"),
+            ("model_performance", "pipeline.runner"),
+            ("pipeline", "data_process.periodicity_analysis"),
         ):
             with self.subTest(owner=owner), tempfile.TemporaryDirectory() as directory:
                 root = Path(directory)
@@ -255,9 +260,9 @@ class InterPackageLayeringTest(unittest.TestCase):
         self.assertEqual(list(_iter_imports(ast.parse("from ..trainer import Trainer"), "model_training.estimators")), [("model_training.trainer", 1)])
 
     def test_dynamic_aliases_and_constants_are_visible(self):
-        tree = ast.parse('import importlib as il\nfrom importlib import import_module as load\nTARGET = "model_building.factory"\nil.import_module(TARGET)\nload("model_pipeline.runner")\n__import__("forecasting_core.specs")\n')
+        tree = ast.parse('import importlib as il\nfrom importlib import import_module as load\nTARGET = "model_building.factory"\nil.import_module(TARGET)\nload("pipeline.runner")\n__import__("forecasting_core.specs")\n')
         modules = {module for module, _ in _iter_imports(tree)}
-        self.assertTrue({"model_building.factory", "model_pipeline.runner", "forecasting_core.specs"} <= modules)
+        self.assertTrue({"model_building.factory", "pipeline.runner", "forecasting_core.specs"} <= modules)
 
     def _violations(self, pkg: str) -> list[str]:
         pkg_dir = ROOT / pkg
@@ -302,6 +307,11 @@ class InterPackageLayeringTest(unittest.TestCase):
     def test_models_stays_infra(self):
         self.assertEqual(self._violations("models"), [])
 
+    def test_model_building_stays_infra(self):
+        # 2026-09-27 门禁补盲：models/ 更名 model_building/ 后 PROJECT_PACKAGES
+        # 未同步，门禁对新包失明（_violations 对缺席目录静默返回空）。
+        self.assertEqual(self._violations("model_building"), [])
+
     def test_data_loading_stage(self):
         self.assertEqual(self._violations("data_loading"), [])
 
@@ -333,13 +343,13 @@ class InterPackageLayeringTest(unittest.TestCase):
             package.mkdir()
             (package / "probe.py").write_text(
                 "from model_testing.geometry import is_label_safe\n"
-                "from model_pipeline.runner import CanonicalBaseModelRunner\n",
+                "from pipeline.runner import CanonicalBaseModelRunner\n",
                 encoding="utf-8",
             )
             with patch.object(sys.modules[__name__], "ROOT", root):
                 violations = self._violations("model_ensemble")
             self.assertEqual(len(violations), 1)
-            self.assertIn("model_pipeline.runner", violations[0])
+            self.assertIn("pipeline.runner", violations[0])
 
     def test_package_graph_is_acyclic(self):
         self.assertEqual(_find_cycle(_package_edges()), [])
@@ -351,10 +361,10 @@ class InterPackageLayeringTest(unittest.TestCase):
         runtime = ROOT / "model_ensemble/runtime.py"
         tree = ast.parse(runtime.read_text(encoding="utf-8"))
         imports = [module for module, _ in _iter_imports(tree)]
-        self.assertNotIn("model_pipeline.runner", imports)
+        self.assertNotIn("pipeline.runner", imports)
 
     def test_forecasting_runtime_delegates_design_fit_and_calendar_backtest(self):
-        """C4（R6 更新）：编排实现统一在 model_pipeline，model_forecasting 只剩预测模块。"""
+        """C4（R6 更新）：编排实现统一在 pipeline，model_forecasting 只剩预测模块。"""
         expected_pipeline = {
             "runner.py",
             "lifecycle.py",
@@ -364,11 +374,11 @@ class InterPackageLayeringTest(unittest.TestCase):
         }
         self.assertTrue(
             expected_pipeline.issubset(
-                {path.name for path in (ROOT / "model_pipeline").glob("*.py")}
+                {path.name for path in (ROOT / "pipeline").glob("*.py")}
             )
         )
         runner_tree = ast.parse(
-            (ROOT / "model_pipeline" / "runner.py").read_text(encoding="utf-8")
+            (ROOT / "pipeline" / "runner.py").read_text(encoding="utf-8")
         )
         owned = {
             node.name

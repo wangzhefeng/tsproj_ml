@@ -1,7 +1,6 @@
-"""model_pipeline
+"""pipeline
 
-`model_pipeline/` 是全流程编排包（方案 v3，2026-09-06 R6 自 model_forecasting 迁入，
-`.hermes/plans/2026-09-06_162605`）：把「数据管道 → 特征工程 → 模型训练 → 模型测试 →
+`pipeline/` 是全流程编排包：把「数据管道 → 特征工程 → 模型训练 → 模型测试 →
 模型预测」串成完整生命周期，`run.py` / `batch_run.py` 只调用本包。
 
 - `runner.py`：`CanonicalBaseModelRunner` 执行能力与 `run_canonical_config()`。

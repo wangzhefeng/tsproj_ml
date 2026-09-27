@@ -2,20 +2,28 @@
 from __future__ import annotations
 
 import json
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from pathlib import Path
 from time import perf_counter
-from typing import Any, Mapping, cast
+from typing import Any, Mapping
 
-from data_loading.information.information_set import WeatherSourceLineage
-from feature_engineering import CompiledFeatures
 from feature_engineering import cache as compiled_cache
 from forecasting_core.artifacts import ForecastModelBundle, MarginalForecastDistribution
-from forecasting_core.specs import ForecastConfigSpec, TargetAdapter
+from forecasting_core.specs import (
+    CalendarMonthBacktestSpec,
+    ForecastConfigSpec,
+    TargetAdapter,
+)
 from forecasting_core.tensors import PointForecastTensor
+from model_forecasting.evidence_assembly import (
+    compiled_lineage as _compiled_lineage,
+    holdout_proof_summary as _holdout_proof_summary,
+    proof_payload as _proof_payload,
+    source_lineage_payload as _source_lineage_payload,
+)
 from model_forecasting.persistence import persist_model_bundle
 from model_forecasting.results import write_forecast_results
-from model_pipeline.run_state import write_run_state
+from pipeline.run_state import write_run_state
 from model_testing.calendar_month import run_calendar_month_backtest
 from model_testing.fixed_step import run_fixed_step_backtest
 from utils.log_util import logger
@@ -43,199 +51,6 @@ def _write_json(path: Path, payload: Mapping[str, Any]) -> None:
     path.write_text(
         json.dumps(payload, ensure_ascii=False, indent=2),
         encoding="utf-8",
-    )
-
-
-def _proof_payload(compiled_items: tuple[CompiledFeatures, ...]) -> list[dict[str, Any]]:
-    payload = []
-    seen = set()
-    for compiled in compiled_items:
-        for proof in compiled.visibility_proof:
-            item = asdict(proof)
-            key = tuple(item.items())
-            if key in seen:
-                continue
-            seen.add(key)
-            item["target_time"] = proof.target_time.isoformat()
-            item["source_time"] = (
-                proof.source_time.isoformat() if proof.source_time is not None else None
-            )
-            item["forecast_origin"] = proof.forecast_origin.isoformat()
-            item["available_at"] = (
-                proof.available_at.isoformat() if proof.available_at is not None else None
-            )
-            payload.append(item)
-    return payload
-
-
-def _holdout_proof_summary(
-    compiled_items: tuple[CompiledFeatures, ...],
-) -> dict[str, Any]:
-    group_by = (
-        "forecast_origin",
-        "feature_name",
-        "source_name",
-        "role",
-        "provider",
-    )
-    grouped: dict[tuple[Any, ...], dict[str, Any]] = {}
-    total_lookups = 0
-    for compiled in compiled_items:
-        for proof in compiled.visibility_proof:
-            total_lookups += 1
-            key = (
-                proof.forecast_origin,
-                proof.feature_name,
-                proof.source_name,
-                proof.role,
-                proof.provider,
-            )
-            item = grouped.get(key)
-            if item is None:
-                item = {
-                    "forecast_origin": proof.forecast_origin,
-                    "feature_name": proof.feature_name,
-                    "source_name": proof.source_name,
-                    "role": proof.role,
-                    "provider": proof.provider,
-                    "lookup_count": 0,
-                    "horizon_step_min": proof.horizon_step,
-                    "horizon_step_max": proof.horizon_step,
-                    "target_time_min": proof.target_time,
-                    "target_time_max": proof.target_time,
-                    "source_time_count": 0,
-                    "source_time_min": proof.source_time,
-                    "source_time_max": proof.source_time,
-                    "available_at_min": proof.available_at,
-                    "available_at_max": proof.available_at,
-                }
-                grouped[key] = item
-            item["lookup_count"] += 1
-            item["horizon_step_min"] = min(
-                item["horizon_step_min"], proof.horizon_step
-            )
-            item["horizon_step_max"] = max(
-                item["horizon_step_max"], proof.horizon_step
-            )
-            item["target_time_min"] = min(item["target_time_min"], proof.target_time)
-            item["target_time_max"] = max(item["target_time_max"], proof.target_time)
-            item["available_at_min"] = min(
-                item["available_at_min"], proof.available_at
-            )
-            item["available_at_max"] = max(
-                item["available_at_max"], proof.available_at
-            )
-            if proof.source_time is not None:
-                item["source_time_count"] += 1
-                item["source_time_min"] = (
-                    proof.source_time
-                    if item["source_time_min"] is None
-                    else min(item["source_time_min"], proof.source_time)
-                )
-                item["source_time_max"] = (
-                    proof.source_time
-                    if item["source_time_max"] is None
-                    else max(item["source_time_max"], proof.source_time)
-                )
-
-    serialized = []
-    timestamp_fields = (
-        "forecast_origin",
-        "target_time_min",
-        "target_time_max",
-        "source_time_min",
-        "source_time_max",
-        "available_at_min",
-        "available_at_max",
-    )
-    for grouped_item in grouped.values():
-        item = dict(grouped_item)
-        for field in timestamp_fields:
-            value = item[field]
-            item[field] = value.isoformat() if value is not None else None
-        serialized.append(item)
-    return {
-        "group_by": list(group_by),
-        "total_lookups": total_lookups,
-        "group_count": len(serialized),
-        "groups": serialized,
-    }
-
-
-def _source_lineage_payload(
-    compiled_items: tuple[CompiledFeatures, ...],
-) -> list[dict[str, Any]]:
-    payload = []
-    seen = set()
-    for compiled in compiled_items:
-        for lineage in compiled.source_lineage:
-            item = {
-                "source": lineage.source_name,
-                "path_version": lineage.path_version,
-                "path": lineage.path,
-                "availability": lineage.availability_policy,
-                "includes_target_labels": lineage.includes_target_labels,
-            }
-            if isinstance(lineage, WeatherSourceLineage):
-                item["weather_evidence"] = lineage.weather_evidence
-            key = tuple(item.items())
-            if key not in seen:
-                seen.add(key)
-                payload.append(item)
-    return payload
-
-
-def _compiled_lineage(
-    feature_schema: tuple[str, ...],
-    proof_payload: list[dict[str, Any]],
-    config: ForecastConfigSpec,
-) -> tuple[tuple[dict[str, Any], ...], dict[str, list[str]]]:
-    by_feature = {}
-    for item in proof_payload:
-        by_feature.setdefault(item["feature_name"], item)
-    feature_lineage = []
-    availability_summary: dict[str, list[str]] = {}
-    source_availability = {
-        source.name: (
-            source.availability.value if source.availability is not None else "static"
-        )
-        for source in config.data.sources
-    }
-    for feature in feature_schema:
-        if feature in config.problem.series_id_cols:
-            feature_lineage.append(
-                {
-                    "feature": feature,
-                    "source": "series_identity",
-                    "role": "key",
-                    "source_time": None,
-                    "provider": None,
-                    "availability": "static",
-                }
-            )
-            availability_summary.setdefault("static", []).append(feature)
-            continue
-        proof = by_feature[feature]
-        availability = cast(
-            str,
-            "known_future"
-            if proof["source_name"] == "calendar"
-            else source_availability.get(proof["source_name"], proof["role"]),
-        )
-        feature_lineage.append(
-            {
-                "feature": feature,
-                "source": proof["source_name"],
-                "role": proof["role"],
-                "source_time": proof["source_time"],
-                "provider": proof["provider"],
-                "availability": availability,
-            }
-        )
-        availability_summary.setdefault(availability, []).append(feature)
-    return (
-        tuple(feature_lineage),
-        {key: availability_summary[key] for key in sorted(availability_summary)},
     )
 
 
@@ -269,16 +84,6 @@ def _output_paths(
         model_dir = Path(str(directories["checkpoints"])) / scenario / result_identity
         test_dir = Path(str(directories["tests"])) / scenario / result_identity
         forecast_dir = Path(str(directories["forecast"])) / scenario / result_identity
-        return forecast_dir, model_dir, test_dir, forecast_dir
-    legacy_directories = {
-        "checkpoints_dir": "model",
-        "test_results_dir": "test",
-        "pred_results_dir": "forecast",
-    }
-    if set(legacy_directories).issubset(output):
-        model_dir = Path(str(output["checkpoints_dir"])) / scenario / result_identity
-        test_dir = Path(str(output["test_results_dir"])) / scenario / result_identity
-        forecast_dir = Path(str(output["pred_results_dir"])) / scenario / result_identity
         return forecast_dir, model_dir, test_dir, forecast_dir
     legacy_scenario = str(output.get("scenario_subpath", scenario)).strip("/") or scenario
     legacy_root = Path(str(output.get("results_root", "results")))
@@ -331,19 +136,24 @@ def execute_lifecycle(
     )
     if backtest_only:
         test_dir = test_dir / "backtest_only"
-    holdout_metadata, calibration_tracker, holdout_audit = run_fixed_step_backtest(
-        runner, test_dir, mode=mode,
-    )
-    if holdout_metadata is None:
+    # 回测几何显式分派：按 validation.backtest 的 spec 类型选执行器，
+    # 不依赖 fixed_step 返回 None 的隐式回退协议；两执行器产物合同一致。
+    backtest_spec = config.validation.backtest
+    if backtest_spec is None:
+        raise ValueError("canonical lifecycle requires a configured backtest geometry")
+    if isinstance(backtest_spec, CalendarMonthBacktestSpec):
         holdout_metadata, calibration_tracker = run_calendar_month_backtest(
             config, runner.registry, runner, test_dir,
             runner_factory=runner.calendar_runner_factory,
         )
+        holdout_audit = ()
+    else:
+        holdout_metadata, calibration_tracker, holdout_audit = run_fixed_step_backtest(
+            runner, test_dir, mode=mode,
+        )
 
     runner.stage_wall_seconds["backtest"] = perf_counter() - backtest_started
     if backtest_only:
-        if holdout_metadata is None:
-            raise ValueError("backtest-only requires configured backtest geometry")
         _write_json(test_dir / "backtest_metadata.json", {
             "execution_mode": "backtest_only",
             "result_method": config.result_method(),
@@ -381,9 +191,8 @@ def execute_lifecycle(
         final_target_transform,
     )
     final_audit = builder.audit
-    # CQR final（2026-09-01 激活）：修正量入 bundle（部署自包含），
-    # predict_pi<coverage>_* 列写入 prediction.csv；修正量由全部满足
-    # as-of 的历史折池化计算。
+    # CQR final：修正量写入 bundle（部署自包含），predict_pi<coverage>_*
+    # 列写入 prediction.csv；修正量由全部满足 as-of 的历史折池化计算。
     calibration_state = None
     forecast_extra_columns = None
     if calibration_tracker is not None:
@@ -425,8 +234,9 @@ def execute_lifecycle(
         visibility_proof,
         config,
     )
-    # bundle 构建唯一入口（R6b）：消除与方法版 build_final_bundle 的漂移双份；
-    # 单模型路径经 extras 传入完整产物元数据，ensemble 成员路径不传走默认。
+    # bundle 构建唯一入口：lifecycle 经 runner.build_final_bundle 组装，
+    # 不持有平行实现；单模型路径经 extras 传入完整产物元数据，
+    # ensemble 成员路径不传走默认。
     bundle = runner.build_final_bundle(
         final_feature_scaler,
         final_target_transform,
@@ -450,8 +260,8 @@ def execute_lifecycle(
 
     persist_model_bundle(bundle, model_dir)
 
-    # 预测图历史参照段（2026-09-02）：as-of origin 的 target_history 末段
-    # （5×horizon 步）随预测图绘制；历史段时间轴 <= origin，与预测段不重叠。
+    # 预测图历史参照段：as-of origin 的 target_history 末段（5×horizon 步）
+    # 随预测图绘制；历史段时间轴 <= origin，与预测段不重叠。
     try:
         forecast_history = builder.target_history(origin)
         history_steps = max(1, int(config.problem.horizon) * 5)

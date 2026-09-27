@@ -12,9 +12,9 @@ import numpy as np
 import pandas as pd
 
 from data_loading import SourceRegistry
-from model_pipeline.supervised_design import minimum_history_rows
-from model_pipeline.supervised_design import SupervisedDesignBuilder
-from model_pipeline.runner import run_canonical_config
+from pipeline.supervised_design import minimum_history_rows
+from pipeline.supervised_design import SupervisedDesignBuilder
+from pipeline.runner import run_canonical_config
 from forecasting_core.specs import (
     ColumnSpec,
     DataSourceSpec,

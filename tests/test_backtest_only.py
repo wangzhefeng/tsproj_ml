@@ -13,8 +13,8 @@ import pandas as pd
 import yaml
 
 import test_canonical_runtime_smoke as smoke
-from model_pipeline.runner import CanonicalBaseModelRunner, run_canonical_config
-from model_pipeline.lifecycle import run_lifecycle
+from pipeline.runner import CanonicalBaseModelRunner, run_canonical_config
+from pipeline.lifecycle import run_lifecycle
 import run as entrypoint
 
 
@@ -71,8 +71,8 @@ class BacktestOnlyTest(unittest.TestCase):
             model_state.write_text('{"status":"completed","existing":true}')
             runner = SimpleNamespace(config=SimpleNamespace(fingerprint=lambda: "fixture"))
             for error in (RuntimeError("fixture failure"), KeyboardInterrupt("fixture cancellation")):
-                with patch("model_pipeline.lifecycle._output_paths", return_value=paths), patch(
-                    "model_pipeline.lifecycle.execute_lifecycle", side_effect=error
+                with patch("pipeline.lifecycle._output_paths", return_value=paths), patch(
+                    "pipeline.lifecycle.execute_lifecycle", side_effect=error
                 ):
                     with self.assertRaises(type(error)) as caught:
                         run_lifecycle(runner, backtest_only=True)
@@ -92,8 +92,8 @@ class BacktestOnlyTest(unittest.TestCase):
             forbidden = AssertionError("backtest-only entered final lifecycle")
             with patch.object(CanonicalBaseModelRunner, "final_bundle_inputs", side_effect=forbidden), patch.object(
                 CanonicalBaseModelRunner, "fit_final", side_effect=forbidden
-            ), patch("model_pipeline.lifecycle.persist_model_bundle", side_effect=forbidden), patch(
-                "model_pipeline.lifecycle.write_forecast_results", side_effect=forbidden
+            ), patch("pipeline.lifecycle.persist_model_bundle", side_effect=forbidden), patch(
+                "pipeline.lifecycle.write_forecast_results", side_effect=forbidden
             ):
                 result = run_canonical_config(config, output_root=root / "results", backtest_only=True)
             self.assertEqual(type(result).__name__, "BacktestRuntimeResult")

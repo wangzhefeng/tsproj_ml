@@ -36,13 +36,20 @@ def _json(value: Any) -> bytes:
 
 
 def implementation_fingerprint() -> str:
-    """Hash actual implementation files and installed numerical library versions."""
+    """Hash actual implementation files and installed numerical library versions.
+
+    进程内缓存（2026-09-27）：输入是全部实现包的 .py 文件 + 已装库版本，
+    进程生命周期内必然不变；此前批跑 171 任务会重复全仓哈希 171 次。
+    """
+    cached = _IMPLEMENTATION_FINGERPRINT_CACHE.get("value")
+    if cached is not None:
+        return cached
     root = Path(__file__).resolve().parents[1]
     digest = hashlib.sha256()
     for package in ("forecasting_core", "data_loading", "feature_engineering",
                     "model_training", "model_forecasting", "model_performance",
-                    "model_pipeline", "probabilistic", "models", "decomposition",
-                    "model_testing", "utils"):
+                    "pipeline", "probabilistic", "models", "decomposition",
+                    "model_building", "model_testing", "utils"):
         for path in sorted((root / package).rglob("*.py")):
             digest.update(str(path.relative_to(root)).encode())
             digest.update(hashlib.sha256(path.read_bytes()).digest())
@@ -54,7 +61,12 @@ def implementation_fingerprint() -> str:
         except importlib.metadata.PackageNotFoundError:
             versions[name] = "absent"
     digest.update(_json(versions))
-    return digest.hexdigest()
+    value = digest.hexdigest()
+    _IMPLEMENTATION_FINGERPRINT_CACHE["value"] = value
+    return value
+
+
+_IMPLEMENTATION_FINGERPRINT_CACHE: dict[str, str] = {}
 
 
 def runtime_checkpoint_errors(method):

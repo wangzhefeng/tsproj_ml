@@ -28,7 +28,7 @@ from model_ensemble.contracts import EnsembleRuntimeServices
 from model_ensemble.loader import load_ensemble_config
 from model_ensemble.runtime import run_ensemble_config
 from model_ensemble.specs import EnsembleSpecError
-from model_pipeline.runner import CanonicalBaseModelRunner, persist_model_bundle
+from pipeline.runner import CanonicalBaseModelRunner, persist_model_bundle
 from model_performance.resource_planner import plan_ensemble_resources
 
 from fixtures.legacy_nnls import fit_nonnegative_stacking_weights

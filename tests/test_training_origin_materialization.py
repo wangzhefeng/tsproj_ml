@@ -8,7 +8,7 @@ import numpy as np
 import pandas as pd
 from data_loading import BUILTIN_GENERATORS, SourceRegistry
 from forecasting_core.specs import ColumnSpec, DataSourceSpec, DataSpec
-from model_pipeline.supervised_design import SupervisedDesignBuilder
+from pipeline.supervised_design import SupervisedDesignBuilder
 import test_canonical_runtime_smoke as smoke
 
 

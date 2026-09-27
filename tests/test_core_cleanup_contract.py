@@ -24,7 +24,7 @@ class CoreCleanupContractTest(unittest.TestCase):
                 "_legacy_spec", "_legacy_fields_are_explicit",
                 "resolve_probabilistic_spec", "apply_probabilistic_spec_to_args",
             },
-            "model_pipeline/supervised_design.py": {"_labels", "_holdout_training_indices"},
+            "pipeline/supervised_design.py": {"_labels", "_holdout_training_indices"},
             "model_ensemble/runtime.py": {"_member_origin"},
             "model_ensemble/contracts.py": {"FusionMethod"},
             "model_ensemble/trainer.py": {"MemberAuditScores"},

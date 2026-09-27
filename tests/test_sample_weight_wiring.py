@@ -25,7 +25,7 @@ from forecasting_core.specs import (
     ForecastConfigSpec,
     ForecastStrategySpec,
 )
-from model_pipeline.runner import CanonicalBaseModelRunner, SourceRegistry
+from pipeline.runner import CanonicalBaseModelRunner, SourceRegistry
 from tests.test_ensemble_parity import (
     _base_data,
     _base_features,
@@ -142,8 +142,8 @@ class SampleWeightWiringTest(unittest.TestCase):
 
 def _transforms(runner: CanonicalBaseModelRunner):
     """复用 fit 的真实变换流程（_fit_runtime_transforms 路径）。"""
-    from model_pipeline.fold_fit import _fit_runtime_transforms
-    from model_pipeline.runner import _label_end
+    from pipeline.fold_fit import _fit_runtime_transforms
+    from pipeline.runner import _label_end
 
     windows = runner.backtest_windows()
     train_indices = windows[0].train_indices

@@ -84,8 +84,8 @@ def _environment_hashes(base_dir: Path) -> dict[str, str]:
 def _compilation_implementation_hashes() -> dict[str, str]:
     """绑定原始设计的代码来源，不导入运行层，也不绑定无关模型实现。"""
     root = Path(__file__).resolve().parents[1]
-    # R6（2026-09-06）：design.py 已迁 model_pipeline/supervised_design.py
-    paths = [root / "model_pipeline" / "supervised_design.py"]
+    # R6（2026-09-06）：design.py 已迁 pipeline/supervised_design.py
+    paths = [root / "pipeline" / "supervised_design.py"]
     for package in (
         "forecasting_core", "data_loading", "feature_engineering",
         "model_training/strategies", "model_testing", "decomposition",

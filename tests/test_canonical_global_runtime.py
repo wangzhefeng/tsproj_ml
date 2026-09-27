@@ -11,7 +11,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from model_pipeline.runner import run_canonical_config
+from pipeline.runner import run_canonical_config
 from forecasting_core.specs import (
     ColumnSpec,
     DataSourceSpec,

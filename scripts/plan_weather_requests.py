@@ -18,7 +18,7 @@ from config.config_loader import load_yaml_config
 from data_loading import SourceRegistry
 from forecasting_core.specs import CalendarMonthBacktestSpec, FixedStepBacktestSpec, ForecastConfigSpec
 from model_ensemble.loader import resolve_members, validate_member_sources
-from model_pipeline.supervised_design import minimum_history_rows
+from pipeline.supervised_design import minimum_history_rows
 from model_testing.geometry import calendar_month_folds
 
 

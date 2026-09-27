@@ -5,7 +5,7 @@ catalog 声明 ``native_history=True`` 的成员必须在此注册，漏接线 R
 ``fit_history(history, as_of, freq) / forecast(steps) / execution_evidence()``
 三件套，见 model_building/wrappers/ets.py 等。
 
-成员注册表供 ``model_pipeline`` 的分发函数 ``native_history_cls``
+成员注册表供 ``pipeline`` 的分发函数 ``native_history_cls``
 消费：catalog 声明了 ``native_history=True`` 而 query 到的 model_type
 不在表内即 RAISE。
 """

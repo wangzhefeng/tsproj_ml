@@ -12,7 +12,7 @@ from test_weather_compiler import config_fixture
 class WeatherRequestPlanningTest(unittest.TestCase):
     def test_fixed_origins_match_real_runtime_without_fitting(self):
         from data_loading import SourceRegistry
-        from model_pipeline.runner import CanonicalBaseModelRunner
+        from pipeline.runner import CanonicalBaseModelRunner
         from scripts.plan_weather_requests import plan_single_model
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

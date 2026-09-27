@@ -4,7 +4,7 @@
 ``validation.training.sample_weight`` 声明，解析锚点模式（cutoff 用
 history_cutoff，latest_origin 用 max(origins)），对不支持加权的模型
 前置 RAISE；权重算法本体在 temporal.py。消费点为编排层拟合入口
-（model_pipeline/fold_fit.py），折路径与 final fit 共用本函数。
+（pipeline/fold_fit.py），折路径与 final fit 共用本函数。
 """
 from __future__ import annotations
 

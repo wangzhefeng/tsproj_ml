@@ -54,9 +54,9 @@ from forecasting_core.runtime_resources import (
     RuntimeResourceBudget,
 )
 from model_forecasting.evidence import collect_model_evidence, dependency_versions, json_evidence
-from model_pipeline.lifecycle import BacktestRuntimeResult, CanonicalRuntimeResult, run_lifecycle
+from pipeline.lifecycle import BacktestRuntimeResult, CanonicalRuntimeResult, run_lifecycle
 from model_testing.contracts import BacktestWindow
-from model_pipeline.supervised_design import (
+from pipeline.supervised_design import (
     _BacktestWindow,
     SupervisedDesignBuilder,
     raw_history_backtest_windows,
@@ -66,7 +66,7 @@ from model_pipeline.supervised_design import (
     _sample_indices,
     _supervised_arrays,
 )
-from model_pipeline.fold_fit import (
+from pipeline.fold_fit import (
     _fit_point,
     _fit_quantile,
     _fit_runtime_transforms,
@@ -81,11 +81,12 @@ from model_performance.resource_planner import (
     runtime_budget_for_config,
 )
 
-# 原生序列模型注册表已下沉 model_building/adapters/native_registry.py（2026-09-26：
-# 纯 wrapper 接线属模型层，非编排层职责）；runner 经 _native_history_cls 分发。
+# 原生序列模型（ETS/naive/theta）注册表位于 model_building/adapters/
+# native_registry.py：纯 wrapper 接线属模型层，非编排层职责；runner 经
+# _native_history_cls 按 model_type 分发。
 
-# P3/D3：回测原语已公开化至 model_testing/backtest.py（2026-09-06 R1 清扫：
-# 删除写而不用的 _positive_validation_int/_actual_tensor 别名，仍用的两处改公开名）。
+# 回测公开原语（seasonal-naive 基线、actual 张量、origin 解析）位于
+# model_testing/primitives.py；本文件经公开名消费。
 
 
 def _sample_selector(
@@ -103,11 +104,10 @@ def _sample_selector(
 
 
 class CanonicalBaseModelRunner:
-    """Public narrow facade over the validated single-model runtime path.
+    """经验证单模型运行时路径的窄门面。
 
-    Extracted in E1 (v4 §6.1). Single-model `run_canonical_config` delegates to
-    `run`; ensemble members (E5+) depend only on this facade, never on runtime
-    private helpers.
+    `run_canonical_config` 委托 `run` 执行；ensemble 成员只依赖本门面的
+    公开能力面，不触碰运行时私有助手。
     """
 
     @runtime_checkpoint_errors
@@ -132,6 +132,13 @@ class CanonicalBaseModelRunner:
         native_cls = _native_history_cls(config.estimator.model_type)
         if native_cls is not None:
             # 构造期即校验参数（未知参数 RAISE），与 ETS 原行为一致
+            if str(config.probabilistic.get("mode", "point")) != "point":
+                # 能力前置校验：native 历史模型不支持 scalar quantile，
+                # 在构造期与参数校验同点位 RAISE（batch preflight 亦在此隔离）。
+                raise ValueError(
+                    f"model_type {config.estimator.model_type!r} (native history) "
+                    "does not support probabilistic.mode=quantile"
+                )
             native_cls(dict(config.estimator.params))
         self.calendar_runner_factory: Any = CanonicalBaseModelRunner
         self.registry = registry
@@ -531,9 +538,9 @@ class CanonicalBaseModelRunner:
                 as_of=self.origin, freq=self.config.problem.freq,
             )
             return feature_scaler, target_transform, X_train_transformed, Y_train_transformed, artifact
-        # 监督特征选择（2026-08-30 专项）：有监督步骤挂在训练 fit 边界，
-        # 每个回测窗口/最终训练各自重拟合，只消费当前训练窗 (X, Y)，无泄漏；
-        # 选中集写入 artifact.feature_schema，预测端按同名子集对齐。
+        # 监督特征选择：挂在训练 fit 边界——每个回测窗口与最终训练
+        # 各自重拟合，只消费当前训练窗 (X, Y)，无泄漏；选中集写入
+        # artifact.feature_schema，预测端按同名子集对齐。
         X_train_transformed, feature_schema = self._apply_feature_selection(
             X_train_transformed, Y_train_transformed
         )
@@ -609,8 +616,8 @@ class CanonicalBaseModelRunner:
             return PointForecastTensor(artifact.forecast(len(forecast_times))[None, :, None],
                                        self.series_ids, forecast_times, self.config.problem.targets)
         base_design = designs[0]
-        # 特征选择对齐（2026-08-30 专项）：artifact.feature_schema 是训练期选中集，
-        # 预测端把全 schema 设计矩阵按同名子集对齐（provider 输出同为全 schema 宽）。
+        # 特征选择对齐：artifact.feature_schema 是训练期选中集，预测端把
+        # 全 schema 设计矩阵按同名子集对齐（provider 输出同为全 schema 宽）。
         artifact_schema = (
             artifact.feature_schema
             if isinstance(artifact, CanonicalStrategyArtifact)
@@ -686,7 +693,7 @@ class CanonicalBaseModelRunner:
         )[1:]
 
     def target_history(self, origin: pd.Timestamp) -> PointForecastTensor:
-        """Full target history as-of origin (forecast-plot context; E5+ Protocol)."""
+        """origin 的 as-of 完整目标历史（预测图参照段；ensemble 协议面）。"""
         return self.builder.target_history(origin)
 
     def final_bundle_inputs(self) -> tuple[
@@ -840,8 +847,8 @@ class CanonicalBaseModelRunner:
         ``extras``（可选）：单模型生命周期传入的附加产物元数据——
         ``unknown_series_policy``（来自 builder 训练域校验，默认 "raise"）、
         ``availability_summary``、``visibility_proof``、``feature_lineage``、
-        ``source_lineage``、``calibration_state``。ensemble 成员路径不传，
-        行为与迁移前逐字一致。
+        ``source_lineage``、``calibration_state``。ensemble 成员路径不传 extras，
+        走默认产物元数据。
         """
         extras = dict(extras or {})
         if self.config.validation.get("train_history_steps") is not None:
@@ -901,9 +908,9 @@ class CanonicalBaseModelRunner:
         X_by_call: tuple[np.ndarray, ...],
         Y: np.ndarray,
     ) -> tuple[tuple[np.ndarray, ...], tuple[str, ...]]:
-        """监督特征选择（features.selection，2026-08-30 专项）。
+        """监督特征选择（features.selection）。
 
-        有监督步骤挂在训练 fit 边界：每个回测窗口与最终训练各自重拟合选择器，
+        挂在训练 fit 边界：每个回测窗口与最终训练各自重拟合选择器，
         只消费当前训练窗的 (X, Y)，无泄漏；未配置/未启用时原样直通。
         选中集进入 artifact.feature_schema，预测端按同名子集对齐。
         """
@@ -968,7 +975,6 @@ class CanonicalBaseModelRunner:
             "target_transform_window": target_transform.fit_window_metadata,
             "fitted_models": models,
         })
-
 
     def backtest_target_histories(
         self, windows: tuple[BacktestWindow, ...],

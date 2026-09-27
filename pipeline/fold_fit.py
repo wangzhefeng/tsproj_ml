@@ -12,7 +12,7 @@ from forecasting_core.artifacts import MarginalForecastDistribution
 from forecasting_core.runtime_resources import RuntimeExecutionPlan
 from forecasting_core.specs import ForecastConfigSpec, TargetAdapter
 from forecasting_core.tensors import PointForecastTensor
-from model_pipeline.supervised_design import SupervisedDesignBuilder
+from pipeline.supervised_design import SupervisedDesignBuilder
 from model_forecasting.predictor import (
     CanonicalForecaster,
     CanonicalMarginalQuantileForecaster,
@@ -40,8 +40,8 @@ def _fit_runtime_transforms(
     builder: SupervisedDesignBuilder,
     X_by_call: tuple[np.ndarray, ...],
     Y: np.ndarray,
-    origins: tuple[pd.Timestamp, ...],
-    sample_series_ids: tuple[Any, ...],
+    training_origins: tuple[pd.Timestamp, ...],
+    training_sample_series_ids: tuple[Any, ...],
     history_cutoff: pd.Timestamp,
     *,
     target_history: PointForecastTensor | None = None,
@@ -78,15 +78,15 @@ def _fit_runtime_transforms(
             target_history
             if target_history is not None
             else builder.target_history(history_cutoff),
-            origins, horizon=config.problem.horizon, freq=config.problem.freq,
+            training_origins, horizon=config.problem.horizon, freq=config.problem.freq,
             decomposition_history_steps=target_transform.transformations["decomposition"].get("fit_history_steps"),
         )
         target_transform.fit_transform(context, scaling_times=scaling_times)
         target_transform.fit_window_metadata = window_audit
     transformed_Y = target_transform.transform_training(
         Y,
-        origins,
-        series_ids=sample_series_ids,
+        training_origins,
+        series_ids=training_sample_series_ids,
     )
     return feature_scaler, target_transform, transformed_X, transformed_Y
 
@@ -147,6 +147,12 @@ def _fit_point(
     checkpoint: FitCheckpoint | None = None,
     sample_weight: np.ndarray | None = None,
 ):
+    """点预测拟合：构造 CanonicalTrainer 并在给定训练窗上拟合。
+
+    estimator 运行参数由执行计划推导（线程档等）；checkpoint 开启时以
+    config 指纹 + 特征 schema + 参数为子节点身份，命中即复用完成拟合。
+    sample_weight 为 None 时不加权。
+    """
     resolved_plan = execution_plan or _runtime_execution_plan(config)
     runtime_params = _planned_estimator_params(config, resolved_plan)
     if checkpoint is not None:
@@ -196,6 +202,12 @@ def _fit_quantile(
     checkpoint: FitCheckpoint | None = None,
     sample_weight: np.ndarray | None = None,
 ):
+    """分位预测拟合：逐 quantile level 训练边际分位模型。
+
+    两条路径：支持原生多分位的模型（xgboost）走共享 booster 池，单次训练
+    输出全 level；其余模型逐 level 独立构造 estimator，level 间线程并行。
+    worker_plan 为 (level_workers, output_workers) 显式覆盖执行计划。
+    """
     resolved_plan = execution_plan or _runtime_execution_plan(config)
     runtime_params = _planned_estimator_params(config, resolved_plan)
     if checkpoint is not None:
@@ -213,9 +225,9 @@ def _fit_quantile(
         raise ValueError(
             f"model_type {config.estimator.model_type!r} does not support scalar quantiles"
         )
-    # xgb 原生多分位（2026-09-01）：单 booster 输出整个 grid，训练成本
-    # ≈1× 而非 Q×；共享位置对齐要求逐 level 串行。其余模型走逐 level
-    # 独立训练 + 线程并行（数值与历史串行完全一致）。
+    # 原生多分位（xgboost）：单 booster 输出整个分位 grid，训练成本 ≈1×
+    # 而非 Q×；共享 booster 的位置对齐要求逐 level 串行。其余模型走逐
+    # level 独立训练 + 线程并行（数值与串行完全一致）。
     if supports_native_multi_quantile(config.estimator.model_type):
         levels = tuple(
             float(level) for level in config.probabilistic.get("quantiles", ())
@@ -282,6 +294,11 @@ def _predict(
     forecast_times: pd.DatetimeIndex,
     series_ids: tuple[Any, ...],
 ):
+    """按 probabilistic.mode 分派 forecaster 执行递归预测。
+
+    point 走 CanonicalForecaster，quantile 走 CanonicalMarginalQuantileForecaster；
+    递归策略的第 2+ 步特征经 provider 重新编译（消费已预测目标值）。
+    """
     kwargs = {
         "series_ids": series_ids,
         "forecast_times": forecast_times,

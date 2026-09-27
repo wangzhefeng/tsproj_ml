@@ -25,7 +25,7 @@ from forecasting_core.specs import (
     ForecastStrategySpec,
 )
 from fixtures.runtime_planning import plan_for_config
-from model_pipeline.runner import CanonicalBaseModelRunner
+from pipeline.runner import CanonicalBaseModelRunner
 
 
 class _TrackingRunner(CanonicalBaseModelRunner):

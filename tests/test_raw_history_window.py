@@ -1,6 +1,7 @@
 """严格原始历史窗口：先截断再编译；合成数据真实拟合与隔离验证。"""
 from dataclasses import replace
 from pathlib import Path
+import re
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -10,10 +11,10 @@ import pandas as pd
 
 from data_loading import InformationSetRequest, SourceRegistry
 from forecasting_core.specs.validation import RuntimeValidationSpec
-from forecasting_core.specs import ColumnSpec
+from forecasting_core.specs import ColumnSpec, EstimatorSpec
 from model_training.estimators.capabilities import _ModelFactoryEstimator
-from model_pipeline.runner import CanonicalBaseModelRunner, run_canonical_config
-from model_pipeline.supervised_design import minimum_history_rows
+from pipeline.runner import CanonicalBaseModelRunner, run_canonical_config
+from pipeline.supervised_design import minimum_history_rows
 from tests import test_canonical_runtime_smoke as smoke
 
 
@@ -97,7 +98,7 @@ class RawHistoryWindowTest(unittest.TestCase):
             replace(config, probabilistic={"mode": "quantile", "quantiles": [0.1, 0.5, 0.9]})
         with self.assertRaisesRegex(ValueError, "train_history_steps"):
             replace(config, features=replace(config.features, transformations={"target": {"scaling": {"method": "standard"}}}))
-        with patch("model_pipeline.runner.SourceRegistry", side_effect=AssertionError("must reject before source IO")):
+        with patch("pipeline.runner.SourceRegistry", side_effect=AssertionError("must reject before source IO")):
             with self.assertRaisesRegex(ValueError, "backtest.only"):
                 run_canonical_config(config)
         runner = self.runner(config)
@@ -203,6 +204,30 @@ class RawHistoryWindowTest(unittest.TestCase):
         pd.testing.assert_frame_equal(frames[0], frames[1])
         self.assertEqual(len(frames[0]), 6)
         self.assertFalse(frames[0].isna().any(axis=None))
+
+    def test_native_quantile_mode_rejected_at_runner_construction(self):
+        """native 历史模型 + quantile 在构造期 RAISE（不等到折拟合期）。
+
+        spec 层只拦 train_history_steps+quantile 组合；native 不带
+        train_history_steps 时由 runner 构造期能力校验前置拦截。
+        """
+        config = smoke.CanonicalRuntimeSmokeTest().build_config(
+            self.path, mode="quantile",
+        )
+        config = replace(
+            config,
+            estimator=EstimatorSpec(
+                model_type="naive",
+                target_adapter="independent",
+                params={"mode": "naive"},
+            ),
+        )
+        with self.assertRaisesRegex(
+            ValueError, re.escape("does not support probabilistic.mode=quantile")
+        ):
+            CanonicalBaseModelRunner(
+                config, SourceRegistry(config.data, self.root), self.times[47],
+            )
 
 
 if __name__ == "__main__":

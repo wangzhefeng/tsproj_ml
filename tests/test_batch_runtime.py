@@ -29,14 +29,14 @@ from forecasting_core.specs import (
     ForecastProblemSpec,
     ForecastStrategySpec,
 )
-from model_pipeline.batch_runtime import (
+from pipeline.batch_runtime import (
     _SharedBatchRunnerFactory,
     _batch_id,
     _resolve_config_pool_thread_limit,
     run_canonical_batch,
     verify_batch_results,
 )
-from model_pipeline.runner import CanonicalBaseModelRunner
+from pipeline.runner import CanonicalBaseModelRunner
 from model_performance.transform_cache import FoldTransformCache
 
 
@@ -114,6 +114,21 @@ class CanonicalBatchRuntimeTest(unittest.TestCase):
             next(iter(state["groups"].values()))["raw_payload_load_count"],
             0,
         )
+
+    def test_preflight_value_error_isolated_to_failed_task(self) -> None:
+        """构造期 ValueError 不炸整批：FitCheckpointError 包装后被单任务隔离。"""
+        output_root = self.root / "preflight-value-error-results"
+
+        with patch.object(
+            CanonicalBaseModelRunner,
+            "_compile_supervised_arrays",
+            side_effect=ValueError("injected config validation failure"),
+        ):
+            report = run_canonical_batch(self.paths, output_root=output_root)
+
+        # 两个任务在执行段逐个失败（preflight 段同样被隔离），整批不抛异常。
+        self.assertEqual(report.completed_count, 0)
+        self.assertEqual(report.failed_count, 2)
 
     def test_explicit_profile_above_batch_child_budget_fails_before_groups(self) -> None:
         config = self._config("lgb", "batch/lgb", {})
@@ -289,7 +304,7 @@ class CanonicalBatchRuntimeTest(unittest.TestCase):
         compile_calls = 0
         transform_calls = 0
         original_compile = CanonicalBaseModelRunner._compile_supervised_arrays
-        from model_pipeline import runner as runtime_module
+        from pipeline import runner as runtime_module
 
         original_transform = runtime_module._fit_runtime_transforms
 

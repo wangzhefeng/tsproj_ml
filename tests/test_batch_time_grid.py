@@ -1,7 +1,7 @@
 """Pure CSV timestamp geometry, with no model construction or execution."""
 import unittest
 import pandas as pd
-from model_pipeline.batch_artifacts import validate_time_grid
+from pipeline.batch_artifacts import validate_time_grid
 
 
 class BatchTimeGridTest(unittest.TestCase):

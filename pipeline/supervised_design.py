@@ -28,11 +28,17 @@ from forecasting_core.specs import (
 from forecasting_core.tensors import PointForecastTensor
 from feature_engineering.transforms import CanonicalTargetTransform
 from model_testing import geometry as validation
-from model_testing.primitives import actual_tensor as _actual_tensor
+from model_testing.primitives import actual_tensor
 from model_training.strategies import (
     TargetCoordinate,
     target_plan_for_config,
 )
+
+
+# 批量训练行编译的每批 origin 数：128 平衡「批内 information set
+# 物化合并」与「峰值内存」；调整只影响 wall time 与峰值 RSS，
+# 不影响语义。
+TRAINING_COMPILE_BATCH_SIZE = 128
 
 
 class _PredictedTargetProvider:
@@ -118,14 +124,6 @@ class _OracleTargetProvider:
         return self._origin
 
 
-@dataclass(frozen=True, slots=True)
-class TrainingDesignProbe:
-    """一个真实训练 origin 的 canonical 设计编译摘要。"""
-
-    origin: pd.Timestamp
-    design_shapes: tuple[tuple[int, ...], ...]
-    target_shape: tuple[int, ...]
-    feature_names: tuple[str, ...]
 
 
 def _split_batch_designs(
@@ -479,8 +477,8 @@ class SupervisedDesignBuilder:
                     if self.is_global
                     else frame
                 )
-                # 性能（2026-08-30 方案 A）：与特征编译共用 information_set 的
-                # 时间→行位置映射；未注册时登记一次。语义不变：非恰好一行即 RAISE。
+                # 性能：与特征编译共用 information_set 的时间→行位置映射，
+                # 未注册时登记一次；非恰好一行即 RAISE（语义守卫）。
                 try:
                     _frames, time_lookup = information_set.row_position_lookup(
                         source.name
@@ -770,25 +768,6 @@ class SupervisedDesignBuilder:
         return (base_design,), provider
 
 
-def probe_training_design(
-    config: ForecastConfigSpec,
-    registry: SourceRegistry,
-    origin: pd.Timestamp,
-) -> TrainingDesignProbe:
-    """Compile one production-equivalent training row without fitting a model."""
-    normalized_origin = pd.Timestamp(origin)
-    if not isinstance(normalized_origin, pd.Timestamp):
-        raise ValueError("training design probe origin must be a valid timestamp")
-    builder = SupervisedDesignBuilder(config, registry)
-    designs, targets = builder.training_row(normalized_origin)
-    return TrainingDesignProbe(
-        origin=normalized_origin,
-        design_shapes=tuple(tuple(design.shape) for design in designs),
-        target_shape=tuple(targets.shape),
-        feature_names=builder.feature_schema,
-    )
-
-
 def minimum_history_rows(config: ForecastConfigSpec) -> int:
     """Return visible rows required before one supervised origin is valid."""
     configured_lags = tuple(
@@ -884,10 +863,9 @@ def _supervised_arrays(
     else:
         candidate_origins = available_origins
     rows = []
-    batch_size = 128
-    for start in range(0, len(candidate_origins), batch_size):
+    for start in range(0, len(candidate_origins), TRAINING_COMPILE_BATCH_SIZE):
         rows.extend(
-            builder.training_rows(candidate_origins[start : start + batch_size])
+            builder.training_rows(candidate_origins[start : start + TRAINING_COMPILE_BATCH_SIZE])
         )
     if len(rows) < 2:
         raise ValueError("canonical runtime requires at least two complete supervised samples")
@@ -1027,7 +1005,7 @@ def _actual_at_origin(
 ) -> PointForecastTensor:
     n_series = len(series_ids)
     start = origin_index * n_series
-    return _actual_tensor(
+    return actual_tensor(
         config,
         Y_all[start : start + n_series],
         forecast_times,

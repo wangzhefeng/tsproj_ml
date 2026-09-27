@@ -2,7 +2,7 @@
 import ast
 from pathlib import Path
 import unittest
-from model_pipeline.run_state import require_completed_state
+from pipeline.run_state import require_completed_state
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -23,7 +23,7 @@ class LifecycleStaticContractTest(unittest.TestCase):
                 require_completed_state(payload, "fixture")
 
     def test_calendar_backtest_precedes_final_fit_and_bundle_persistence(self):
-        tree = ast.parse((ROOT / "model_pipeline/lifecycle.py").read_text())
+        tree = ast.parse((ROOT / "pipeline/lifecycle.py").read_text())
         run = next(n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef) and n.name == "execute_lifecycle")
         calls = {}
         for node in ast.walk(run):
@@ -43,7 +43,7 @@ class LifecycleStaticContractTest(unittest.TestCase):
 
     def test_no_post_completion_calendar_hook(self):
         for name in ("runner.py", "batch_runtime.py"):
-            self.assertNotIn("overwrite_calendar_month_backtest", (ROOT / "model_pipeline" / name).read_text())
+            self.assertNotIn("overwrite_calendar_month_backtest", (ROOT / "pipeline" / name).read_text())
 
 
 if __name__ == "__main__":

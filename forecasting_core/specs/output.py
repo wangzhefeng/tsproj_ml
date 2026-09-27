@@ -20,9 +20,6 @@ OUTPUT_FIELDS = frozenset(
         "overlay",
         "scenario_subpath",
         "results_root",
-        "checkpoints_dir",
-        "test_results_dir",
-        "pred_results_dir",
     }
 )
 

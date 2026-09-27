@@ -1,7 +1,7 @@
 """Runtime contracts between the ensemble package and base-model execution.
 
 `BaseModelRunner` is the structural protocol the ensemble trainer/predictor
-rely on; `CanonicalBaseModelRunner` (model_pipeline.runner) is the reference
+rely on; `CanonicalBaseModelRunner` (pipeline.runner) is the reference
 implementation. Fusion functions are selected by the trainer module registry.
 """
 

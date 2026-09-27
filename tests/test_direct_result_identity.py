@@ -11,7 +11,7 @@ import pandas as pd
 
 from config.config_loader import load_yaml_config
 from forecasting_core.specs import ForecastStrategySpec
-from model_pipeline.runner import run_canonical_config
+from pipeline.runner import run_canonical_config
 from scripts.audit_forecast_configs import _build_single_row
 import test_canonical_runtime_smoke as smoke
 import test_forecast_config_fingerprint as fingerprints

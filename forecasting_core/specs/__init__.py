@@ -16,9 +16,11 @@ from forecasting_core.specs.probabilistic import ProbabilisticConfigSpec
 from forecasting_core.specs.strategy import ForecastStrategySpec, StrategyName
 from forecasting_core.specs.validation import (
     CalendarMonthBacktestSpec,
+    ExpandingWindowBacktestSpec,
     FixedStepBacktestSpec,
     RuntimePerformanceSpec,
     RuntimeValidationSpec,
+    SlidingWindowBacktestSpec,
 )
 
 __all__ = [
@@ -35,6 +37,8 @@ __all__ = [
     "DataSpec",
     "ProbabilisticConfigSpec",
     "FixedStepBacktestSpec",
+    "SlidingWindowBacktestSpec",
+    "ExpandingWindowBacktestSpec",
     "CalendarMonthBacktestSpec",
     "RuntimePerformanceSpec",
     "RuntimeValidationSpec",

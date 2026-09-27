@@ -133,9 +133,10 @@ def _validate_time_geometry(
     if schedule_mode not in {"daily", "intraday"}:
         raise ValueError("validation.schedule_mode must be daily or intraday")
     horizon_mode = str(validation.get("horizon_mode", "fixed_steps")).lower()
-    if horizon_mode not in {"fixed_steps", "calendar_month"}:
+    if horizon_mode not in {"fixed_steps", "sliding_window", "expanding_window", "calendar_month"}:
         raise ValueError(
-            "validation.horizon_mode must be fixed_steps or calendar_month"
+            "validation.horizon_mode must be fixed_steps, sliding_window, "
+            "expanding_window or calendar_month"
         )
     if horizon_mode != "calendar_month":
         return

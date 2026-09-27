@@ -47,6 +47,55 @@ class FixedStepBacktestSpec:
 
 
 @dataclass(frozen=True, slots=True)
+class SlidingWindowBacktestSpec:
+    """重叠滑窗几何：与 fixed-step 同字段族，语义为 stride_steps < horizon。
+
+    测试折相互重叠（同一时刻被多个折预测），折级评分照常逐折进行，
+    产物侧不拼接总图。stride_steps >= horizon 时与 fixed_steps 无差异，
+    在窗口构造期 RAISE。
+    """
+
+    history_steps: int
+    train_window_steps: int
+    fold_count: int
+    stride_steps: int
+
+    def __post_init__(self) -> None:
+        for field_name in (
+            "history_steps",
+            "train_window_steps",
+            "fold_count",
+            "stride_steps",
+        ):
+            value = getattr(self, field_name)
+            if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+                raise ValueError(f"validation.{field_name} must be a positive integer")
+        if self.train_window_steps >= self.history_steps:
+            raise ValueError(
+                "validation.train_window_steps must be smaller than history_steps"
+            )
+
+
+@dataclass(frozen=True, slots=True)
+class ExpandingWindowBacktestSpec:
+    """扩展窗几何：每折训练集为全部合格历史候选（不截断 train_window_steps）。
+
+    无固定训练窗口长度，final fit 的窗口语义因此无定义——暂限
+    backtest-only（与 train_history_steps 同一先例）。
+    """
+
+    history_steps: int
+    fold_count: int
+    stride_steps: int
+
+    def __post_init__(self) -> None:
+        for field_name in ("history_steps", "fold_count", "stride_steps"):
+            value = getattr(self, field_name)
+            if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+                raise ValueError(f"validation.{field_name} must be a positive integer")
+
+
+@dataclass(frozen=True, slots=True)
 class CalendarMonthBacktestSpec:
     """Month-aligned geometry: raw training days and month-spaced folds."""
 
@@ -61,7 +110,12 @@ class CalendarMonthBacktestSpec:
                 raise ValueError(f"validation.{field_name} must be a positive integer")
 
 
-BacktestSpec = FixedStepBacktestSpec | CalendarMonthBacktestSpec
+BacktestSpec = (
+    FixedStepBacktestSpec
+    | SlidingWindowBacktestSpec
+    | ExpandingWindowBacktestSpec
+    | CalendarMonthBacktestSpec
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -247,9 +301,10 @@ class RuntimeValidationSpec(FrozenMappingSpec):
         if schedule_mode not in {"daily", "intraday"}:
             raise ValueError("validation.schedule_mode must be daily or intraday")
         horizon_mode = str(payload.get("horizon_mode", "fixed_steps")).lower()
-        if horizon_mode not in {"fixed_steps", "calendar_month"}:
+        if horizon_mode not in {"fixed_steps", "sliding_window", "expanding_window", "calendar_month"}:
             raise ValueError(
-                "validation.horizon_mode must be fixed_steps or calendar_month"
+                "validation.horizon_mode must be fixed_steps, sliding_window, "
+                "expanding_window or calendar_month"
             )
         backtest = _parse_backtest_geometry(
             payload,
@@ -284,22 +339,48 @@ def _parse_backtest_geometry(
     )
     calendar_fields = frozenset({"train_window_days", "fold_count", "stride_months"})
     keys = set(payload)
-    if horizon_mode == "fixed_steps":
+    if horizon_mode in {"fixed_steps", "sliding_window", "expanding_window"}:
         forbidden = sorted(keys & {"train_window_days", "stride_months"})
         if forbidden:
             raise ValueError(
-                f"fixed_steps validation forbids calendar fields in {source}: {forbidden}"
+                f"{horizon_mode} validation forbids calendar fields in {source}: {forbidden}"
+            )
+        if horizon_mode == "expanding_window":
+            forbidden = sorted(keys & {"train_window_steps", "train_history_steps"})
+            if forbidden:
+                raise ValueError(
+                    f"expanding_window validation forbids fields in {source}: {forbidden}"
+                )
+            required_fields = frozenset({"history_steps", "fold_count", "stride_steps"})
+        else:
+            required_fields = fixed_fields
+        if horizon_mode == "sliding_window" and "train_history_steps" in keys:
+            raise ValueError(
+                f"sliding_window validation forbids train_history_steps in {source}"
             )
         present = keys & fixed_fields
         if not present and not required and "train_history_steps" not in keys:
             return None
-        missing = sorted(fixed_fields - keys)
+        missing = sorted(required_fields - keys)
         if missing:
             raise ValueError(
-                f"fixed_steps validation missing geometry fields in {source}: {missing}"
+                f"{horizon_mode} validation missing geometry fields in {source}: {missing}"
             )
         if "train_history_steps" in payload and payload["train_history_steps"] is None:
             raise ValueError("validation.train_history_steps must be a positive integer")
+        if horizon_mode == "sliding_window":
+            return SlidingWindowBacktestSpec(
+                history_steps=payload["history_steps"],
+                train_window_steps=payload["train_window_steps"],
+                fold_count=payload["fold_count"],
+                stride_steps=payload["stride_steps"],
+            )
+        if horizon_mode == "expanding_window":
+            return ExpandingWindowBacktestSpec(
+                history_steps=payload["history_steps"],
+                fold_count=payload["fold_count"],
+                stride_steps=payload["stride_steps"],
+            )
         return FixedStepBacktestSpec(
             history_steps=payload["history_steps"],
             train_window_steps=payload["train_window_steps"],
@@ -311,7 +392,7 @@ def _parse_backtest_geometry(
     forbidden = sorted(keys & {"history_steps", "train_window_steps", "stride_steps", "train_history_steps"})
     if forbidden:
         raise ValueError(
-            f"calendar_month validation forbids fixed-step fields in {source}: {forbidden}"
+            f"calendar_month validation forbids rolling-mode fields in {source}: {forbidden}"
         )
     present = keys & calendar_fields
     if not present and not required:
@@ -331,8 +412,10 @@ def _parse_backtest_geometry(
 __all__ = [
     "BacktestSpec",
     "CalendarMonthBacktestSpec",
+    "ExpandingWindowBacktestSpec",
     "FixedStepBacktestSpec",
     "RuntimePerformanceSpec",
     "RuntimeValidationSpec",
+    "SlidingWindowBacktestSpec",
     "VALIDATION_FIELDS",
 ]

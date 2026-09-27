@@ -1,4 +1,12 @@
-"""Shared canonical strategy target planning and prediction execution."""
+"""标准多步策略的共享底座：target plan 几何 + 统一预测循环。
+
+``StrategyTargetPlan`` 把 (targets, horizon, strategy spec) 解析为调用
+序列：``call_coordinates``（每次模型调用的输出坐标块）、``dependencies``
+（每次调用可见的已预测坐标，recursive/dirrec 族非空）、``model_indices``
+（调用 → 共享模型组映射）。七种策略 executor 的行为差异全部由 plan
+几何表达，预测循环本身策略无关；``single_model_horizon`` 布局经
+``target_plan_for_config`` 把 Direct 的逐 horizon 模型折叠为单模型共享。
+"""
 
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, replace
@@ -146,7 +154,7 @@ class AdapterPredictor:
                 "multi-target adapter prediction must have shape (N, H, K); "
                 f"got {prediction.shape}"
             )
-        # (N, H, K) -> (N, H*K)：time-major 压平合同唯一实现（tensors.py）
+        # (N, H, K) -> (N, H*K)：time-major 压平走张量合同唯一实现
         return flatten_time_major(
             prediction, steps=prediction.shape[1], width=prediction.shape[2]
         )
@@ -277,10 +285,10 @@ class StandardStrategyExecutor:
                         "the same row count as X"
                     )
             elif dependencies:
-                # 无 provider 回退路径（仅测试/轻量直连使用）：把已预测
-                # 坐标逐调用列拼接进设计矩阵，O(H²) 拷贝。生产递归路径
-                # 必须走 compiler 的 feature_provider（见 runner.py 接线），
-                # 不得依赖此分支承载大规模 horizon。
+                # 无 provider 回退：把已预测坐标逐调用列拼接进设计矩阵，
+                # O(H²) 拷贝，仅供测试/轻量直连。生产递归路径必须走
+                # compiler 的 feature_provider（runner 接线），不得以此
+                # 分支承载大规模 horizon。
                 design = np.column_stack(
                     (design_base, *(predicted[coordinate] for coordinate in dependencies))
                 )

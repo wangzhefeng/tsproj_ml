@@ -1,4 +1,13 @@
-"""Canonical adapters between estimators and ``(N, H, K)`` targets."""
+"""multi-target adapter：把标量估计器适配到 ``(N, H, K)`` 监督目标。
+
+三种适配形态共享本模块的校验与拟合基础件：
+- independent：每个输出坐标一个独立标量模型（可批量拟合）；
+- regressor-chain：链式拟合，第 i 列模型把前 i-1 列真值拼入设计；
+- native：单模型原生多输出（一次 fit 消费全部列）。
+
+输入合同：``fit(X, Y, sample_weight)`` 的 Y 为 time-major 展平前的
+``(N, H, K)``；输出合同：``predict(X)`` 同形状三维数组。
+"""
 
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
@@ -153,7 +162,7 @@ class _BaseMultiTargetAdapter:
         return prediction
 
     def _reshape_prediction(self, flat_prediction: np.ndarray) -> np.ndarray:
-        # (N, steps*K) -> (N, steps, K)：time-major 合同唯一实现（tensors.py）
+        # (N, H*K) -> (N, H, K)：time-major 还原走张量合同唯一实现
         return unflatten_time_major(
             flat_prediction,
             steps=self.horizon,
@@ -202,8 +211,9 @@ class IndependentMultiTargetAdapter(_BaseMultiTargetAdapter):
     ) -> "IndependentMultiTargetAdapter":
         """批量/逐列拟合任务完成后回填拟合态（由调度器调用，不绕过封装）。
 
-        调度器（``fit_independent_adapters``）负责并行执行；拟合态字段
-        的写入收口在本方法，避免模块级函数从类外改写私有状态。
+        调度器（``fit_independent_adapters``）负责并行执行与结果汇总；
+        拟合态字段（estimators/factory 置空/_is_fit）的写入只发生在
+        本方法，模块级函数不从类外改写私有状态。
         """
         if not adapter._is_fit:
             if not callable(adapter.estimator_factory):

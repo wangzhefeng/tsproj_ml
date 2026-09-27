@@ -1,5 +1,11 @@
 # -*- coding: utf-8 -*-
-"""Canonical trainer（2026-08-29 架构收敛自旧 models/ModelTraining.py 迁入，类实现逐字保真）。"""
+"""Canonical trainer：按策略调用组织训练，产出 ``CanonicalStrategyArtifact``。
+
+训练流程：config → ``StrategyTargetPlan``（调用坐标/依赖/模型分组）→
+逐共享模型组拼接 (X, Y, weight) 载荷 → 按 ``target_adapter`` 分派
+multi-target adapter 拟合 → 组装为不可变 strategy artifact（不含结果
+IO 与部署 bundle，两者由上层编排负责）。
+"""
 
 # python libraries
 from collections.abc import Callable
@@ -285,15 +291,16 @@ class CanonicalTrainer:
         coordinates: tuple[TargetCoordinate, ...],
     ) -> np.ndarray:
         steps = len(coordinates) // len(self.config.problem.targets)
-        # 完整 time-major 网格（canonical 调用坐标恒为完整块）时，逐坐标
-        # 列收集等价于一次 reshape；仅非完整块保留通用列索引路径。
+        # 完整 time-major 网格时，逐坐标列收集等价于一次 reshape 快路径；
+        # 非完整块（理论路径）保留通用列索引，两路输出同为 (N, steps, K)。
         expected = tuple(
             TargetCoordinate(target, horizon_step)
             for horizon_step in range(1, steps + 1)
             for target in self.config.problem.targets
         )
         if coordinates == expected:
-            # 列收集即 time-major 顺序，收口到 (N, steps, K) 走张量合同唯一实现
+            # 列收集顺序即 time-major：reshape 成 (N, steps, K) 后走张量合同
+            # 唯一实现，不在训练层重写压平/还原逻辑
             return unflatten_time_major(
                 targets[:, :steps, :].reshape(targets.shape[0], -1),
                 steps=steps,

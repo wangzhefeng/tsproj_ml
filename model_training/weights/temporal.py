@@ -54,7 +54,11 @@ def temporal_sample_weight(
     anchor_time,
     spec: Mapping | None,
 ) -> np.ndarray | None:
-    """按 origin 年龄生成指数衰减权重（半衰期以天计，2 的幂次衰减）。
+    """按 origin 年龄生成指数衰减权重。
+
+    权重公式：``w = exp2(-(age - age_min) / halflife_days)``，age 为
+    锚点与样本原点的时间差（天）。先平移到最老样本（保证至少一个
+    权重为 1，避免长历史下整批下溢），再按 normalization 归一。
 
     Args:
         origins: 每个训练样本的监督原点时间（可为 DatetimeIndex 或可转

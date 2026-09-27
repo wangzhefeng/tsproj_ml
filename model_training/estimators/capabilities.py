@@ -1,12 +1,17 @@
-"""Estimator capability declarations and behavioral probes.
+"""估计器能力注册与行为探测（合同层职责）。
 
-2026-09-26 适配层下沉拆分：
-- ndarray 合同适配器（``ModelFactoryEstimator``）、工厂、行为探测与
-  原生多分位判定下沉至 ``model_building/adapters/canonical.py``（零合同层依赖）；
-- 本模块保留合同层职责：``EstimatorCapabilities`` 类型实例的能力注册表
-  （``CapabilityRegistry`` / ``MODEL_FACTORY_CAPABILITY_REGISTRY``）、
-  ``resolve_model_capabilities``、依赖 checkpoint 的
-  ``SharedMultiQuantilePool``，并 re-export 下沉件以兼容既有导入。
+职责：
+- ``CapabilityRegistry`` / ``MODEL_FACTORY_CAPABILITY_REGISTRY``：从模型
+  catalog 静态描述构建 ``EstimatorCapabilities`` 查询表（别名归一化、
+  重复注册 RAISE）；
+- ``resolve_model_capabilities``：静态查询 + 可选行为探测
+  （``probe_native=True`` 时以合成设计实测原生多输出支持，结论按
+  ``(model_type, params)`` 正向缓存）；
+- ``SharedMultiQuantilePool``：依赖 checkpoint 的多分位共享池。
+
+ndarray 合同适配器（``ModelFactoryEstimator``）、工厂与探测探针本体在
+``model_building/adapters/canonical.py``；本模块 re-export 下沉件以兼容
+既有导入路径。
 """
 
 import hashlib
@@ -132,8 +137,8 @@ def resolve_model_capabilities(
     if not probe_native:
         return capabilities
     # 行为探测结论只依赖 (model_type, params)：探测自带合成两列设计，
-    # 与调用方运行时 feature 宽度无关。逐折逐配置重复拟合同参数时
-    # 直接复用正向结论，避免每折都真实 clone+fit+predict 一遍。
+    # 与调用方运行时 feature 宽度无关，故以该二元组为缓存键；逐折逐
+    # 配置重复拟合同参数时直接复用结论，不重复 clone+fit+predict。
     cache_key = (normalized, _stable_params_repr(params))
     with _PROBE_CACHE_LOCK:
         cached = _PROBE_CACHE.get(cache_key)
@@ -216,14 +221,15 @@ class SharedMultiQuantilePool:
         self.feature_names = tuple(feature_names or ())
         self.checkpoint: FitCheckpoint | None = None
         self._fitted: dict[int, ModelFactoryEstimator] = {}
-        # position -> 首个 level 到达时的训练载荷摘要：shape + 字节级
-        # blake2b。后续 level 同 position 摘要不一致即 RAISE——共享
-        # booster 的位置对齐不变量从 docstring 升级为运行时防御。
+        # position -> 首个 level 到达时的训练载荷摘要（shape + 字节级
+        # blake2b）。后续 level 同 position 摘要不一致即 RAISE：位置对齐
+        # 不变量不只靠「同 config → 同调用顺序」的约定，还由运行时防御
+        # 兜底（跨 level 载荷不同 = 对齐假设已破坏）。
         self._position_digests: dict[int, tuple[tuple[int, ...], str]] = {}
         self._lock = threading.Lock()
 
     def __getstate__(self) -> dict:
-        # 线程锁不可序列化；bundle 部署期只读 pool（不再 fit），重建即可
+        # 线程锁不可 pickle；部署侧只读 pool（fit 已完成），反序列化时重建锁即可
         state = dict(self.__dict__)
         state["_lock"] = None
         state["checkpoint"] = None
@@ -281,7 +287,7 @@ class SharedMultiQuantilePool:
                         "canonical training must use one identical "
                         "(X, y, sample_weight) per position for all levels"
                     )
-                return  # 幂等：该位置已由首个 level 训练
+                return  # 幂等：该位置已由首个 level 训练完同一载荷
             estimator = ModelFactoryEstimator(
                 self.model_type,
                 self.params,

@@ -15,9 +15,9 @@ from forecasting_core.checkpoints import FitCheckpoint
 from forecasting_core.specs import ForecastConfigSpec
 from forecasting_core.probabilistic_spec import validate_quantile_grid
 
-# level 间线程并行的默认 worker 上限。约束规则（level 并行时嵌套
-# output workers 压为 1）保留在训练层，但上限数值集中在此常量，
-# 便于资源档标定时单点调整（三轮真实对照证据见 OPT-016 记录）。
+# level 间线程并行的默认 worker 上限；约束规则——level 并行时嵌套
+# output workers 压为 1——由 train() 实施。上限数值集中在此常量，
+# 资源档标定时单点调整。
 DEFAULT_LEVEL_WORKERS_CAP = 4
 
 
@@ -73,7 +73,7 @@ class CanonicalMarginalQuantileTrainer:
         raw_levels = config.probabilistic.get("quantiles")
         if not isinstance(raw_levels, (list, tuple)):
             raise TypeError("probabilistic.quantiles must be a sequence")
-        # 网格校验统一走合同层唯一实现（2026-09-01 去重：不再本地重复校验）
+        # 分位点网格校验走合同层唯一实现，本层不重复校验规则
         levels = validate_quantile_grid(raw_levels, point_quantile=float(
             config.probabilistic.get("point_quantile", 0.5)
         ))
@@ -147,7 +147,7 @@ class CanonicalMarginalQuantileTrainer:
                 for future in futures:
                     level = futures[future]
                     results[level] = future.result()
-                # 按 levels 顺序重建，结果 dict 与串行路径完全同构
+                # 按 levels 顺序重建 dict，保证与串行路径的结果顺序同构
                 artifacts = {level: results[level] for level in levels}
         return CanonicalMarginalQuantileArtifact(
             levels=self.levels,

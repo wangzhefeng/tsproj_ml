@@ -19,6 +19,7 @@ from forecasting_core.specs._mapping import (
     validate_nested_mappings,
 )
 from forecasting_core.probabilistic_spec import validate_quantile_grid
+from forecasting_core.point_intervals import ResidualCalibrationSpec
 
 
 PROBABILISTIC_FIELDS = frozenset(
@@ -116,6 +117,11 @@ def _validate_probability_semantics(payload: Mapping[str, Any]) -> None:
     mode = str(payload.get("mode", "point")).lower()
     if mode not in {"point", "quantile"}:
         raise ValueError("probabilistic.mode must be point or quantile")
+    calibration = payload.get("calibration")
+    if isinstance(calibration, Mapping) and calibration.get("method") == "absolute_residual":
+        if mode != "point":
+            raise ValueError("absolute_residual requires point mode")
+        ResidualCalibrationSpec.from_mapping(calibration)
     if mode == "point":
         return
     raw_levels = payload.get("quantiles")

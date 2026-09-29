@@ -13,6 +13,8 @@
 | [data-roles.md](data-roles.md) | 数据角色、外生来源、低频与中国节假日约定 | 接新数据源/低频场景 |
 | [weather.md](weather.md) | 气象文件与列分流、天气证据边界、天气生成合同 | 动天气特征/资产 |
 | [seasonal-features.md](seasonal-features.md) | `same_slot`/`recent_state`/`block_weather`、`seasonal_baseline` 残差基线 | 用高级 as-of 变换 |
+| [自动调参配方](../packages/model_tuning.md) | 独立搜索 YAML 与 canonical 候选/最优模型 YAML | 调参；不在模型配置内增加搜索字段 |
+| [点预测区间](point-intervals.md) | 独立残差区间、分组校准、可用性与部署合同 | point 模型需要不确定性输出 |
 
 ## 场景数据备注
 

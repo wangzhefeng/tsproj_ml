@@ -202,6 +202,7 @@ VALIDATION_FIELDS = frozenset(
         "aggregate_weighting",
         "seasonal_naive_lag",
         "train_history_steps",
+        "refit_every",
     }
 )
 
@@ -272,6 +273,8 @@ class RuntimeValidationSpec(FrozenMappingSpec):
         """Validation geometry/semantics without execution-only controls."""
         payload = self.canonical_payload()
         payload.pop("performance", None)
+        if payload.get("refit_every", 1) == 1:
+            payload.pop("refit_every", None)
         return payload
 
     @classmethod
@@ -312,6 +315,14 @@ class RuntimeValidationSpec(FrozenMappingSpec):
             source=source,
             required=require_geometry,
         )
+        refit_every = payload.get("refit_every", 1)
+        if isinstance(refit_every, bool) or not isinstance(refit_every, int) or refit_every < 0:
+            raise ValueError("validation.refit_every must be a non-negative integer")
+        if refit_every != 1:
+            if backtest is None or horizon_mode == "calendar_month":
+                raise ValueError("non-default refit_every requires rolling geometry, not calendar-month")
+            if payload.get("train_history_steps") is not None:
+                raise ValueError("non-default refit_every does not support train_history_steps")
         performance = (
             RuntimePerformanceSpec.from_mapping(
                 payload["performance"],

@@ -21,6 +21,8 @@ from forecasting_core.tensors import PointForecastTensor
 from model_evaluation.marginal import evaluate_marginal_distribution
 from model_evaluation.point import evaluate_point_forecasts
 from probabilistic.calibration import ConformalCalibrationTracker
+from probabilistic.residual import ResidualCalibrationTracker
+from model_evaluation.point_intervals import evaluate_point_intervals
 
 from model_testing.artifacts.tensor_frames import backtest_tensors_to_long
 from model_testing.contracts.protocols import FitResult, FoldScoringRunner
@@ -46,7 +48,7 @@ def score_holdout_fold(
     origin: pd.Timestamp,
     origin_index: int,
     window: int,
-    calibration_tracker: ConformalCalibrationTracker | None,
+    calibration_tracker: ConformalCalibrationTracker | ResidualCalibrationTracker | None,
     aggregate_weights: Any,
     eval_mask_config: Mapping[str, Any] | None,
 ) -> FoldScoreResult:
@@ -70,7 +72,13 @@ def score_holdout_fold(
     )
     frame = backtest_tensors_to_long(actual, prediction, window=window)
     calibration_audit = None
-    if calibration_tracker is not None:
+    calibrated_point = None
+    if isinstance(calibration_tracker, ResidualCalibrationTracker):
+        calibrated_point = calibration_tracker.apply(point, forecast_origin=origin)
+        frame = backtest_tensors_to_long(actual, calibrated_point, window=window)
+        calibration_audit = {"method": "absolute_residual", "statuses": list(calibrated_point.statuses)}
+        calibration_tracker.collect(actual, point, forecast_origin=origin, window=window)
+    elif calibration_tracker is not None:
         # apply-before-collect：当前折只消费严格更早折的校准池
         frame, calibration_audit = calibration_tracker.apply_to_frame(
             frame,
@@ -90,7 +98,9 @@ def score_holdout_fold(
         eval_mask=eval_mask_config,
     )
     probabilistic_scores = None
-    if isinstance(prediction, MarginalForecastDistribution):
+    if calibrated_point is not None:
+        probabilistic_scores = evaluate_point_intervals(actual, calibrated_point, eval_mask=eval_mask_config, window=window)
+    elif isinstance(prediction, MarginalForecastDistribution):
         probabilistic_scores = evaluate_marginal_distribution(
             actual,
             prediction,

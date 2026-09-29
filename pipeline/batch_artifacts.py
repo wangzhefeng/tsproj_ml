@@ -15,6 +15,7 @@ import numpy as np
 import pandas as pd
 
 from forecasting_core.artifacts import ForecastModelBundle, QuantileGrid
+from forecasting_core.point_intervals import ResidualCalibrationSpec, pi_column_names
 from model_testing.contracts.geometry import TimeGeometry, scheduled_origin_indices
 from pipeline.run_state import require_completed_state
 
@@ -36,7 +37,7 @@ def artifact_paths(result: Any) -> dict[str, str]:
         "resolved_config": result.forecast_dir / "resolved_config.json",
         "result_metadata": result.test_dir / "result_metadata.json",
     }
-    if result.bundle.probabilistic_spec.mode == "quantile":
+    if result.bundle.probabilistic_spec.mode == "quantile" or isinstance(result.bundle.probabilistic_spec.calibration, ResidualCalibrationSpec):
         paths["probabilistic_scores"] = result.test_dir / "test_scores_probabilistic_df.csv"
     if (result.model_dir / "run_state.json").exists():
         paths["lifecycle"] = result.model_dir / "run_state.json"
@@ -119,6 +120,24 @@ def validate_artifacts(task: Mapping[str, Any], *, require_digests: bool = True)
             raise ValueError("batch prediction CSV target/series axes mismatch")
         pd.to_datetime(frame["time"], errors="raise")
         prediction_columns = [col for col in frame if col.startswith("predict_")]
+        if isinstance(bundle.probabilistic_spec.calibration, ResidualCalibrationSpec):
+            lower, upper = pi_column_names(bundle.probabilistic_spec.calibration.target_coverage)
+            if not {lower, upper, "pi_available", "pi_status"} <= set(frame.columns):
+                raise ValueError("point interval CSV is missing explicit availability columns")
+            if frame["pi_available"].dtype != bool:
+                raise ValueError("point interval availability must be non-null boolean")
+            available = frame["pi_available"].to_numpy()
+            bounds = frame[[lower, upper]].to_numpy(dtype=float)
+            if (not np.isfinite(bounds[available]).all() or not np.isnan(bounds[~available]).all()
+                    or (bounds[available, 0] > bounds[available, 1]).any()):
+                raise ValueError("point interval bounds/availability mismatch")
+            statuses = frame["pi_status"].to_numpy()
+            if (not (statuses[available] == "applied").all()
+                    or not np.isin(statuses[~available], ["insufficient_windows", "insufficient_scores", "insufficient_rank"]).all()):
+                raise ValueError("point interval status/availability mismatch")
+            if any(column.startswith("predict_q") for column in prediction_columns):
+                raise ValueError("point residual intervals cannot contain quantile columns")
+            prediction_columns = [column for column in prediction_columns if column not in {lower, upper}]
         if not np.isfinite(frame[prediction_columns].to_numpy(dtype=float)).all():
             raise ValueError("batch prediction CSV contains nonfinite predictions")
     if len(forecast) != n_series * horizon * n_targets:
@@ -167,6 +186,9 @@ def validate_artifacts(task: Mapping[str, Any], *, require_digests: bool = True)
         scores = pd.read_csv(paths[name])
         if scores.empty or not {"target", "scope"} <= set(scores.columns):
             raise ValueError(f"batch {name} schema missing target/scope")
+    if isinstance(bundle.probabilistic_spec.calibration, ResidualCalibrationSpec):
+        if "probabilistic_scores" not in paths or pd.read_csv(paths["probabilistic_scores"]).empty:
+            raise ValueError("point interval artifacts missing interval scores")
     if bundle.probabilistic_spec.mode == "quantile":
         if "probabilistic_scores" not in paths:
             raise ValueError("batch quantile results missing probabilistic scores")

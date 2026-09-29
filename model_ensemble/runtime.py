@@ -229,6 +229,11 @@ def run_ensemble_config(
         member_config = parse_model_config(member_raw, source=member.config_ref)
         if member_config.validation.get("train_history_steps") is not None:
             raise EnsembleSpecError("Ensemble members do not support train_history_steps")
+        if member_config.validation.get("refit_every", 1) != 1:
+            raise EnsembleSpecError("Ensemble members do not support non-default refit_every")
+        calibration = member_config.probabilistic.get("calibration", {})
+        if isinstance(calibration, Mapping) and calibration.get("method") == "absolute_residual":
+            raise EnsembleSpecError("Ensemble members do not support absolute_residual calibration")
         member_configs[member.name] = member_config
         member_fingerprints[member.name] = member_config.fingerprint()
         registry = SourceRegistry(member_config.data, source_root)

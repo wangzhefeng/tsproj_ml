@@ -18,6 +18,8 @@ from model_testing.contracts.protocols import BacktestRunner, BacktestWindow, Fi
 from model_testing.artifacts.reporting import write_backtest_results
 from model_testing.loops.scoring import score_holdout_fold
 from probabilistic.calibration import ConformalCalibrationTracker
+from probabilistic.residual import ResidualCalibrationTracker
+from forecasting_core.point_intervals import ResidualCalibrationSpec
 from utils.log_util import logger
 
 def _log_provider_usage(audits: Any) -> None:
@@ -89,7 +91,7 @@ def _fit_raw_history_windows(
 def run_rolling_backtest(
     runner: BacktestRunner, test_dir: Path, *, mode: str,
     stitch_overview: bool = True, mode_label: str = "fixed_steps",
-) -> tuple[dict[str, Any] | None, ConformalCalibrationTracker | None, tuple[Any, ...]]:
+) -> tuple[dict[str, Any] | None, ConformalCalibrationTracker | ResidualCalibrationTracker | None, tuple[Any, ...]]:
     """rolling 系回测共用引擎（fixed/sliding/expanding）。
 
     折构造由 runner 按 spec 分派（contracts/windows.py），本引擎负责并行拟合、
@@ -114,10 +116,12 @@ def run_rolling_backtest(
     # CQR（2026-09-01 激活）：quantile 且声明 calibration 时启用 as-of
     # 校准追踪器；回测逐折 apply-before-collect，final 用全部合格历史折。
     calibration_tracker = None
-    if mode == "quantile":
-        prob_spec = probabilistic_spec_from_mapping(
-            config.probabilistic.canonical_payload()
+    prob_spec = probabilistic_spec_from_mapping(config.probabilistic.canonical_payload())
+    if isinstance(prob_spec.calibration, ResidualCalibrationSpec):
+        calibration_tracker = ResidualCalibrationTracker(
+            prob_spec.calibration, freq_offset=to_offset(str(config.problem.freq)),
         )
+    elif mode == "quantile":
         if prob_spec.calibration is not None:
             calibration_tracker = ConformalCalibrationTracker(
                 prob_spec,
@@ -126,15 +130,19 @@ def run_rolling_backtest(
     calibration_audits: list[dict[str, Any]] = []
     backtest_windows = runner.backtest_windows()
     strict_history = config.validation.get("train_history_steps") is not None
+    refit_every = config.validation.get("refit_every", 1)
+    fit_indices = tuple(index for index in range(len(backtest_windows))
+                        if index == 0 or (refit_every > 0 and index % refit_every == 0))
+    fit_windows = tuple(backtest_windows[index] for index in fit_indices)
 
     window_workers = min(
         runner.execution_plan.window_workers,
-        max(1, len(backtest_windows)),
+        max(1, len(fit_windows)),
     )
     parallel_fits = None
     strict_fits = _fit_raw_history_windows(runner, backtest_windows, window_workers) if strict_history else None
     if not strict_history and window_workers > 1 and backtest_windows:
-        target_histories = runner.backtest_target_histories(backtest_windows)
+        target_histories = runner.backtest_target_histories(fit_windows)
 
         def fit_window(item):
             backtest_window, target_history = item
@@ -145,23 +153,31 @@ def run_rolling_backtest(
             )
 
         with ThreadPoolExecutor(max_workers=window_workers) as executor:
-            parallel_fits = tuple(
+            parallel_fits = dict(zip(fit_indices,
                 executor.map(
                     fit_window,
-                    zip(backtest_windows, target_histories),
-                )
-            )
+                    zip(fit_windows, target_histories),
+                ),
+            ))
 
+    fit_result = None
+    fitted_window = None
     for window_index, backtest_window in enumerate(backtest_windows):
+        refitted = window_index in fit_indices
         if strict_fits is not None:
             fold_runner, fit_result = next(strict_fits)
         else:
             fold_runner = runner
-            fit_result = (
-                parallel_fits[window_index]
-                if parallel_fits is not None
-                else runner.fit(backtest_window.train_indices)
-            )
+            if refitted:
+                fit_result = (
+                    parallel_fits[window_index]
+                    if parallel_fits is not None
+                    else runner.fit(backtest_window.train_indices)
+                )
+        if refitted:
+            fitted_window = backtest_window
+        if fit_result is None or fitted_window is None:
+            raise RuntimeError("backtest must fit before reusing model state")
         builder = fold_runner.builder
         builder.reset_audit()
         fold = score_holdout_fold(
@@ -187,9 +203,13 @@ def run_rolling_backtest(
             "window": fold.window,
             "origin": fold.origin.isoformat(),
             **fold.execution_evidence,
+            **({"refitted": refitted, "fit_origin": fitted_window.origin.isoformat(),
+                "fit_window": fitted_window.window, "fit_metadata": dict(fitted_window.metadata)}
+               if "refit_every" in config.validation else {}),
         })
         if strict_history:
-            del fold_runner, fit_result, builder
+            del fold_runner, builder
+            fit_result = None
     holdout_audit = tuple(holdout_audits)
     _log_provider_usage(holdout_audit)
     if cv_frames:
@@ -240,6 +260,6 @@ def run_rolling_backtest(
 
 def run_fixed_step_backtest(
     runner: BacktestRunner, test_dir: Path, *, mode: str,
-) -> tuple[dict[str, Any] | None, ConformalCalibrationTracker | None, tuple[Any, ...]]:
+) -> tuple[dict[str, Any] | None, ConformalCalibrationTracker | ResidualCalibrationTracker | None, tuple[Any, ...]]:
     """固定步长回测入口：rolling 引擎的 fixed_steps 形态（不重叠、拼接总图）。"""
     return run_rolling_backtest(runner, test_dir, mode=mode)

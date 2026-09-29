@@ -14,6 +14,7 @@
 ## 运行与验证
 
 统一入口 `run.py --config-yaml <path>`（必须显式指定配置，无默认值）；测试 `tests/run_suite.py fast|all`。
+自动调参入口 `tune.py --config-yaml <base.yaml> --search-yaml <search.yaml> --study-dir <new-directory>`，合同与边界见 [`docs/packages/model_tuning.md`](docs/packages/model_tuning.md)。
 环境约定、验证命令与纪律的唯一事实源：[`AGENTS.md`](AGENTS.md) §运行与验证。
 
 ## 文档目录

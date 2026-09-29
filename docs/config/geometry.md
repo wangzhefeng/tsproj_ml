@@ -19,6 +19,13 @@ rolling 系另有两种形态（2026-09-27 新增）：
 
 final fit 与回测使用相同训练窗口合同，不再隐式切换为全部历史。
 
+## 重训周期
+
+`validation.refit_every` 为非负整数（不接受 bool）：省略或 1 表示每折重训，0 表示仅首折训练，N>1 表示第 1、1+N、1+2N… 折重训。仅 rolling 系支持非默认值；calendar-month 与显式 train_history_steps 拒绝非默认值。
+Ensemble 的 OOF 仍独立管理共同拟合窗口，成员配置的非默认 refit_every 显式拒绝，不静默忽略。
+
+复用时同时冻结模型、feature scaler、target transform 和 selector；每折仍按当前 origin 读取可见历史与未来已知输入，校准池仍按时间顺序 apply-before-collect。重训按当折配置训练窗口进行，final fit 无论周期如何都按原训练窗口重新执行。非默认值属于实验语义、进入 fingerprint；显式 1 与省略身份相同。执行证据记录 refitted、fit_origin 和实际拟合窗口，不能把计划窗口误报为已用于训练。
+
 ## 时间边界
 
 - `now_time` 配置值 = 最后一个已知数据点；日志/文件名的时间戳按 `now_time` 原值。

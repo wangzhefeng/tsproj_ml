@@ -7,8 +7,9 @@ from typing import List, Optional, Sequence, Tuple
 import numpy as np
 import pandas as pd
 
-from forecasting_core.probabilistic_spec import ProbabilisticSpec, validate_cqr_params
+from forecasting_core.probabilistic_spec import CalibrationSpec, ProbabilisticSpec, validate_cqr_params
 from forecasting_core.artifacts import QuantileGrid
+from forecasting_core.point_intervals import pi_column_names
 
 
 @dataclass(frozen=True)
@@ -218,18 +219,6 @@ def calibrate_quantile_band(
     return lower - correction, upper + correction, correction
 
 
-def pi_column_names(target_coverage: float) -> Tuple[str, str]:
-    """``predict_pi<coverage>_lower/upper`` 列名的唯一生成入口。"""
-    coverage = float(target_coverage)
-    validate_cqr_params(alpha=1.0 - coverage, min_scores=1)
-    coverage_percent = coverage * 100.0
-    if np.isclose(coverage_percent, round(coverage_percent), atol=1e-10):
-        token = str(int(round(coverage_percent)))
-    else:
-        token = f"{coverage_percent:.6f}".rstrip("0").rstrip(".").replace(".", "p")
-    return f"predict_pi{token}_lower", f"predict_pi{token}_upper"
-
-
 def attach_cqr_interval_columns(
     frame: pd.DataFrame,
     lower: np.ndarray,
@@ -271,7 +260,7 @@ class ConformalCalibrationTracker:
             raise TypeError("spec must be a ProbabilisticSpec")
         calibration = spec.calibration
         interval = spec.calibration_interval
-        if calibration is None or interval is None:
+        if not isinstance(calibration, CalibrationSpec) or interval is None:
             raise ValueError(
                 "ConformalCalibrationTracker requires spec.calibration referencing "
                 "a configured interval"

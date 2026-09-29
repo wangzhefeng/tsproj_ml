@@ -8,6 +8,7 @@ import math
 import warnings
 from dataclasses import dataclass
 from typing import Any, Iterable, Mapping, Optional, Tuple
+from forecasting_core.point_intervals import ResidualCalibrationSpec
 
 
 _SUPPORTED_CROSSING_METHODS = {
@@ -199,7 +200,7 @@ class ProbabilisticSpec:
     crossing_method: str
     crossing_report_raw: bool
     intervals: tuple[IntervalSpec, ...]
-    calibration: Optional[CalibrationSpec]
+    calibration: CalibrationSpec | ResidualCalibrationSpec | None
     schema_version: int = 1
 
     def __post_init__(self) -> None:
@@ -219,10 +220,12 @@ class ProbabilisticSpec:
             )
 
         if mode == "point":
-            if self.intervals or self.calibration is not None:
+            if self.intervals or (self.calibration is not None and not isinstance(self.calibration, ResidualCalibrationSpec)):
                 raise ValueError("point mode forbids intervals and calibration")
             levels: tuple[float, ...] = ()
         else:
+            if isinstance(self.calibration, ResidualCalibrationSpec):
+                raise ValueError("absolute_residual requires point mode")
             levels = validate_quantile_grid(self.quantiles, self.point_quantile)
             names = [interval.name for interval in self.intervals]
             if len(set(names)) != len(names):
@@ -268,7 +271,7 @@ class ProbabilisticSpec:
 
     @property
     def calibration_interval(self) -> Optional[IntervalSpec]:
-        if self.calibration is None:
+        if self.calibration is None or isinstance(self.calibration, ResidualCalibrationSpec):
             return None
         return self.interval_by_name(self.calibration.interval_name)
 
@@ -306,7 +309,12 @@ def _new_spec(raw_mapping: Mapping[str, Any]) -> ProbabilisticSpec:
     _validate_unknown_keys(mapping, _TOP_LEVEL_KEYS, "probabilistic")
     mode = str(mapping.get("mode", "point") or "point").lower()
     if mode == "point":
-        forbidden = [key for key in ("intervals", "calibration") if mapping.get(key)]
+        raw_calibration = mapping.get("calibration")
+        calibration = None
+        if isinstance(raw_calibration, Mapping) and raw_calibration.get("method") == "absolute_residual":
+            calibration = ResidualCalibrationSpec.from_mapping(raw_calibration)
+        forbidden = [key for key in ("intervals", "calibration")
+                     if mapping.get(key) and not (key == "calibration" and calibration is not None)]
         if forbidden:
             raise ValueError(f"point mode forbids {', '.join(forbidden)}")
         return ProbabilisticSpec(
@@ -317,7 +325,7 @@ def _new_spec(raw_mapping: Mapping[str, Any]) -> ProbabilisticSpec:
             crossing_method="none",
             crossing_report_raw=True,
             intervals=(),
-            calibration=None,
+            calibration=calibration,
             schema_version=1,
         )
     if mode != "quantile":

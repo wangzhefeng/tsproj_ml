@@ -29,6 +29,7 @@
 批调度与产物完成验收见 [`pipeline.md`](pipeline.md)；资源规划、性能档、checkpoint、fold 变换缓存与有界内存缓存见 [`model_performance.md`](model_performance.md)。
 
 部署只使用已保存的模型、变换和校准状态；不会重新选择训练窗口或读取训练期缓存来重建模型。
+启用 point `absolute_residual` 时，在目标逆变换后返回 `PointIntervalForecast`；未启用仍返回原点张量。按保存的序列/目标/horizon 轴匹配，拒绝使用校准原点以后的残差去预测历史；样本不足组以 `pi_available=false` 明示，不伪造 quantile。预测/回测图支持独立 `predict_pi*` 区间带。
 
 ## 执行链与结果
 

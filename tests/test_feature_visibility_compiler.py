@@ -5,6 +5,7 @@ import tempfile
 import unittest
 from pathlib import Path
 import re
+from unittest.mock import patch
 
 import numpy as np
 import pandas as pd
@@ -269,14 +270,39 @@ class FeatureVisibilityCompilerTest(unittest.TestCase):
 
     def test_compile_resets_derived_cache_between_information_sets(self):
         self.write_fixture()
-        config = self.build_config()
+        config = self.build_config(transformations={"advanced": {
+            "rolling": {"columns": ["load"], "windows": [2], "stats": ["mean"]},
+        }})
         request = self.request()
         compiler = FeatureCompiler(config)
-        compiler._compile_scope_aux["stale"] = object()
+        original = self.materialize(config, request)
+        rows = pd.read_csv(self.base_dir / "targets.csv")
+        rows["load"] += 1000.0
+        rows.to_csv(self.base_dir / "targets.csv", index=False)
+        changed = self.materialize(config, request)
+        expected = FeatureCompiler(config).compile(original, request)
+        compile_datetime = compiler._compile_datetime
+        for fail_inner in (False, True):
+            nested = []
 
-        compiler.compile(self.materialize(config, request), request)
+            def nested_compile(*args, **kwargs):
+                if not nested:
+                    nested.append(True)
+                    if fail_inner:
+                        with patch.object(compiler, "_compile_history_transformations", side_effect=ValueError("inner failed")):
+                            with self.assertRaisesRegex(ValueError, "inner failed"):
+                                compiler.compile(changed, request)
+                    else:
+                        compiler.compile(changed, request)
+                return compile_datetime(*args, **kwargs)
 
-        self.assertNotIn("stale", compiler._compile_scope_aux)
+            with self.subTest(fail_inner=fail_inner):
+                with patch.object(compiler, "_compile_datetime", side_effect=nested_compile):
+                    actual = compiler.compile(original, request)
+                pd.testing.assert_frame_equal(actual.frame, expected.frame, check_exact=True)
+                self.assertEqual(actual.visibility_proof, expected.visibility_proof)
+        subsequent = compiler.compile(changed, request)
+        np.testing.assert_array_equal(subsequent.frame["load_rolling_mean_2"], [1002.5, 1002.5])
 
     def test_direct_rejects_target_lag_that_would_consume_a_future_prediction(self):
         self.write_fixture()
@@ -696,6 +722,43 @@ class FeatureVisibilityCompilerTest(unittest.TestCase):
                     np.array([-1.0, 1.0]),
                     atol=1e-15,
                 )
+
+    def test_global_history_features_are_isolated_by_series(self):
+        self.write_fixture(global_scope=True)
+        config = self.build_config(
+            global_scope=True,
+            transformations={"advanced": {
+                "rolling": {
+                    "columns": ["load", "power", "humidity"],
+                    "windows": [2], "stats": ["mean"],
+                },
+                "expanding": {"columns": ["load"], "stats": ["mean"]},
+                "percent_change": {"columns": ["load"], "periods": [1]},
+            }},
+        )
+        base_request = self.request(global_scope=True)
+        compiler = FeatureCompiler(config)
+        for identities in (("A", "B"), ("B", "A")):
+            request = InformationSetRequest(
+                forecast_origin=base_request.forecast_origin,
+                forecast_times=base_request.forecast_times,
+                series_ids=identities,
+            )
+            with self.subTest(identities=identities):
+                result = compiler.compile(self.materialize(config, request), request)
+                for identity, offset in (("A", 0.0), ("B", 1000.0)):
+                    rows = result.frame.loc[result.frame["site_id"] == identity]
+                    # 独立期望来自 fixture 的各序列原始历史，不调用编译器生成。
+                    expected = {
+                        "load_rolling_mean_2": offset + 2.5,
+                        "power_rolling_mean_2": offset + 25.0,
+                        "humidity_rolling_mean_2": offset + 250.0,
+                        "load_expanding_mean": offset + 2.0,
+                        "load_pct_change_1": (offset + 3.0) / (offset + 2.0) - 1.0,
+                    }
+                    self.assertEqual(len(rows), 2)
+                    for name, value in expected.items():
+                        np.testing.assert_array_equal(rows[name], [value, value])
 
     def test_legacy_datetime_aliases_are_rejected_for_canonical_configs(self):
         self.write_fixture()

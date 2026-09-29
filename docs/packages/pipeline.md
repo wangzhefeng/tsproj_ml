@@ -8,6 +8,7 @@
 - `lifecycle.py`：`run_lifecycle()` 管理完成状态与异常传播，`execute_lifecycle()` 组织回测、CQR、final fit、预测和持久化；回测几何按 `validation.backtest` spec 类型显式分派（fixed-step / sliding-window / expanding-window / calendar-month，缺失即 RAISE；expanding-window 暂限 backtest-only）；产物证据组装函数位于 `model_predicting/artifacts/evidence_assembly.py`（2026-09-27 迁出，2026-09-28 随子包划分落入 artifacts/）。结果类型仍由 runner 公开导出。
 - `supervised_design.py`：`SupervisedDesignBuilder`、information set、训练/预测设计、监督标签窗口、`minimum_history_rows()`；批编译不支持的设计保留 single 路径，不隐式替换 provider。
 - `fold_fit.py`：fold/final 特征选择、变换与训练服务；回测和 final fit 共用配置训练窗口。
+- `online.py`：Local/单目标源/有限历史特征的有界部署会话，严格追加、显式历史重建、状态恢复与内容寻址来源证据；不训练、不更新校准。支持面见 [online-prediction](../config/online-prediction.md)。
 - `run_state.py`：running/completed/failed 状态写入和 completed 校验；状态不是跨目录事务，外部直接加载 pickle 不自动消费状态。
 - `batch_runtime.py`：`run_canonical_batch()`、`verify_batch_results()` 与报告，负责跨配置 preflight、调度、恢复和验收。preflight 构造与执行段同样传入 `checkpoint_root`（2026-09-27）：构造期配置错误（ValueError 等）被包装为 `FitCheckpointError` 后按单任务 failed 隔离，不再炸整批。
 - `batch_artifacts.py`：产物路径、摘要、时间网格、维度与 bundle 身份验收；只看文件存在不能判 completed。

@@ -16,6 +16,7 @@ from forecasting_core.specs.probabilistic import ProbabilisticConfigSpec
 from forecasting_core.specs.strategy import ForecastStrategySpec
 from forecasting_core.specs.validation import (
     CalendarMonthBacktestSpec,
+    FixedStepBacktestSpec,
     RuntimeValidationSpec,
 )
 
@@ -212,6 +213,10 @@ class ForecastConfigSpec:
         _validate_global_source_keys(problem, data)
         _validate_feature_columns(data, features)
         _validate_time_geometry(problem, validation_spec)
+        calibration = probabilistic_spec.get("calibration")
+        if isinstance(calibration, Mapping) and calibration.get("method") == "absolute_residual":
+            if not isinstance(validation_spec.backtest, FixedStepBacktestSpec) or validation_spec.get("train_history_steps") is not None:
+                raise ValueError("absolute_residual currently requires fixed-step without train_history_steps")
         if validation_spec.get("train_history_steps") is not None:
             if problem.is_global or probabilistic_spec.get("mode", "point") != "point" or features.transformations.get("target"):
                 raise ValueError(

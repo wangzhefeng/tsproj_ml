@@ -68,17 +68,12 @@ class CompilerSharedRulesTest(unittest.TestCase):
         info = SourceRegistry(config.data, self.fixture.base_dir).materialize(request)
         single = compiler.compile(info, request)
         with patch.object(compiler, "compile", wraps=compiler.compile) as single_path:
-            if fallback:
-                with self.assertWarnsRegex(RuntimeWarning, "falling back"):
-                    batch = compiler.compile_batch([info], [request])[0]
-                self.assertEqual(single_path.call_count, 1)
-            else:
-                batch = compiler.compile_batch([info], [request])[0]
-                single_path.assert_not_called()
-        # 改前 global single 的历史派生缓存跨 identity 复用；分别冻结两条
-        # 路径，不在行为不变重构中修正该数值问题。fallback 本来就走 single。
-        if not global_scope or fallback:
-            pd.testing.assert_frame_equal(single.frame, batch.frame, check_exact=True)
+            # fixture 键保留历史名称 fallback，原先回退的特征现在也必须批编译。
+            self.assertTrue(compiler.batch_eligibility([request]).eligible)
+            batch = compiler.compile_batch([info], [request])[0]
+            single_path.assert_not_called()
+        # Global 与 Local 都必须隔离序列，不能豁免 single/batch 数值一致性。
+        pd.testing.assert_frame_equal(single.frame, batch.frame, check_exact=True)
         self.assertEqual(single.visibility_proof, batch.visibility_proof)
         self.assertEqual(single.source_lineage, batch.source_lineage)
         return {"single": snapshot(single), "batch": snapshot(batch)}

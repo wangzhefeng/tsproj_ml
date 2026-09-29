@@ -38,6 +38,7 @@
 | `model_testing/` | fixed-step/calendar-month 几何、actual/seasonal-naive、逐折评分与回测产物 |
 | `model_evaluation/` | 点预测与边际 quantile 指标、eval mask |
 | `pipeline/` | 单模型生命周期、监督设计、fold/final fit 编排、批调度与验收 |
+| `model_tuning/` | L3 搜索配方、串行 Optuna trial、独立 holdout 与最终产物验收；入口 `tune.py`，向下依赖 pipeline |
 | `model_predicting/` | point/quantile 预测、crossing、部署、bundle 与预测 long result |
 | `model_performance/` | 资源规划、性能档、checkpoint、变换缓存与有界内存缓存 |
 | `probabilistic/` | CQR 校准内核与 apply-before-collect 追踪器 |

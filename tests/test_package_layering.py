@@ -25,6 +25,7 @@ from unittest.mock import patch
 ROOT = Path(__file__).resolve().parents[1]
 
 PROJECT_PACKAGES = {
+    "model_tuning",
     "forecasting_core",
     "model_predicting",
     "pipeline",
@@ -46,6 +47,7 @@ PROJECT_PACKAGES = {
 
 # 包级允许的项目内依赖（自身包隐含允许）。该表本身即目标 DAG。
 ALLOWED_PACKAGES = {
+    "model_tuning": {"forecasting_core", "data_loading", "pipeline", "model_testing"},
     "utils": set(),
     "forecasting_core": set(),
     "data_process": {"ts_kernels"},

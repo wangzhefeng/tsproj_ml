@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from collections.abc import Iterator, Mapping, Sequence
+from contextlib import contextmanager
+from contextvars import ContextVar
+from dataclasses import dataclass, field
 from time import perf_counter
 from typing import Any, Literal, cast
 import warnings
@@ -31,8 +33,10 @@ from forecasting_core.specs import (
 from feature_engineering.spectral import (
     fourier_features,
     normalize_band_periods,
-    signal_entropy,
     wavelet_energy_features,
+)
+from feature_engineering.history_statistics import (
+    history_statistic, rolling_statistics, time_since_event,
 )
 from feature_engineering.transform_specs import (
     normalize_feature_scaling,
@@ -111,6 +115,14 @@ class CompiledFeatures:
         return self._frame.copy(deep=True)
 
 
+@dataclass(slots=True)
+class CompilationContext:
+    """一次编译的帧与派生缓存；退出作用域即释放，不进入持久化状态。"""
+
+    frames: dict[str, dict[str, Any]]
+    auxiliary: dict[str, Any] = field(default_factory=dict)
+
+
 class FeatureCompiler:
     """Compile features from one strict materialized information set."""
 
@@ -163,29 +175,40 @@ class FeatureCompiler:
             self.features.transformations.get("datetime_categorical", ()),
         )
         self._validate_runtime_transformations()
-        # 性能（2026-09-01）：known_future property 每次访问都对全部帧做 deep copy，
-        # 而编译按 (identity, horizon_step) 逐行进入 _compile_known_future——
-        # 5 折 × 96 步 = 480 次全帧拷贝是多外生列场景的主要耗时。
-        # 按 information_set 身份缓存一次取值（帧不可变，copy 一次即足够）。
-        # compile 作用域的帧缓存：compile() 进入时按当前 information_set 取一次
-        # 三角色帧（property 会 deep copy），作用域内全部逐行查询共享这一份。
-        self._compile_scope_frames: dict[str, dict[str, Any]] = {}
-        self._compile_scope_aux: dict[str, Any] = {}
+        self._context: ContextVar[CompilationContext | None] = ContextVar(
+            "feature_compilation_context", default=None,
+        )
         self.last_batch_stage_wall_seconds: dict[str, float] = {
             "batch_prepare": 0.0,
             "batch_feature_columns": 0.0,
             "finish_and_proof_validation": 0.0,
         }
 
-    def _prime_compile_scope(self, information_set: MaterializedInformationSet) -> None:
-        """compile() 进入时调用：刷新当前信息集的帧与派生缓存。"""
-        self._compile_scope_frames = {
-            ColumnRole.TARGET.value: information_set.target_history,
-            ColumnRole.OBSERVED_PAST.value: information_set.observed_past,
-            ColumnRole.KNOWN_FUTURE.value: information_set.known_future,
-        }
-        # Compiler 会跨 backtest origin 复用；派生缓存只在单次 compile 内有效。
-        self._compile_scope_aux = {}
+    @contextmanager
+    def _compilation_scope(
+        self,
+        information_set: MaterializedInformationSet | None = None,
+        *,
+        frames: dict[str, dict[str, Any]] | None = None,
+    ) -> Iterator[CompilationContext]:
+        if frames is None:
+            frames = {} if information_set is None else {
+                ColumnRole.TARGET.value: information_set.target_history,
+                ColumnRole.OBSERVED_PAST.value: information_set.observed_past,
+                ColumnRole.KNOWN_FUTURE.value: information_set.known_future,
+            }
+        context = CompilationContext(frames)
+        token = self._context.set(context)
+        try:
+            yield context
+        finally:
+            self._context.reset(token)
+
+    def _active_context(self) -> CompilationContext:
+        context = self._context.get()
+        if context is None:
+            raise RuntimeError("feature compilation requires an active scope")
+        return context
 
     def _role_frames(
         self,
@@ -193,7 +216,7 @@ class FeatureCompiler:
         role: ColumnRole,
     ) -> dict[str, Any]:
         """返回 compile 作用域内的角色帧（避免逐行 property 访问触发 deep copy）。"""
-        frames = self._compile_scope_frames.get(role.value)
+        frames = self._active_context().frames.get(role.value)
         if frames is None:
             raise RuntimeError(
                 "compile-scope frames not primed; call compile() entry first"
@@ -214,134 +237,134 @@ class FeatureCompiler:
             raise TypeError("information_set must be a MaterializedInformationSet")
         if not isinstance(request, InformationSetRequest):
             raise TypeError("request must be an InformationSetRequest")
-        self._prime_compile_scope(information_set)
-        if request.H != self.problem.horizon:
-            raise ValueError(
-                "information-set horizon does not match ForecastProblemSpec: "
-                f"request={request.H}, problem={self.problem.horizon}"
+        with self._compilation_scope(information_set):
+            if request.H != self.problem.horizon:
+                raise ValueError(
+                    "information-set horizon does not match ForecastProblemSpec: "
+                    f"request={request.H}, problem={self.problem.horizon}"
+                )
+            if request.target_access != "history_only":
+                raise ValueError("feature compilation requires target_access='history_only'")
+
+            target_providers = self._normalize_providers(target_future_providers)
+            observed_providers = self._normalize_providers(observed_future_providers)
+            identities = self._request_identities(request)
+            selected_steps = self._normalize_horizon_steps(horizon_steps, request.H)
+            rows: list[dict[str, Any]] = []
+            proofs: list[VisibilityProof] = []
+
+            for identity in identities:
+                for step_index in selected_steps:
+                    target_time = cast(pd.Timestamp, request.forecast_times[step_index])
+                    target_timestamp = cast(pd.Timestamp, pd.Timestamp(target_time))
+                    history_anchor_time = self._history_anchor_time(
+                        request,
+                        target_timestamp,
+                    )
+                    row = self._identity_payload(identity)
+                    row["target_time"] = target_timestamp
+                    row["horizon_step"] = step_index + 1
+
+                    self._compile_lag_mapping(
+                        row=row,
+                        proofs=proofs,
+                        role=ColumnRole.TARGET,
+                        lag_mapping=self.features.target_lags,
+                        identity=identity,
+                        target_time=target_timestamp,
+                        source_anchor_time=history_anchor_time,
+                        step_index=step_index,
+                        request=request,
+                        information_set=information_set,
+                        providers=target_providers,
+                    )
+                    self._compile_lag_mapping(
+                        row=row,
+                        proofs=proofs,
+                        role=ColumnRole.OBSERVED_PAST,
+                        lag_mapping=self.features.observed_past_lags,
+                        identity=identity,
+                        target_time=target_timestamp,
+                        source_anchor_time=history_anchor_time,
+                        step_index=step_index,
+                        request=request,
+                        information_set=information_set,
+                        providers=observed_providers,
+                    )
+                    self._compile_known_future(
+                        row,
+                        proofs,
+                        identity,
+                        target_timestamp,
+                        step_index,
+                        request,
+                        information_set,
+                    )
+                    self._compile_static(
+                        row,
+                        proofs,
+                        identity,
+                        target_timestamp,
+                        step_index,
+                        request,
+                        information_set,
+                    )
+                    self._compile_datetime(
+                        row,
+                        proofs,
+                        target_timestamp,
+                        step_index,
+                        request,
+                    )
+                    self._compile_transformations(
+                        row,
+                        proofs,
+                        identity,
+                        target_timestamp,
+                        step_index,
+                        request,
+                        information_set,
+                    )
+                    rows.append(row)
+
+            frame = pd.DataFrame(rows)
+            key_columns = [*self.problem.series_id_cols, "target_time", "horizon_step"]
+            feature_names = tuple(column for column in frame.columns if column not in key_columns)
+            categorical_names = tuple(
+                column
+                for source in self.data.sources
+                for column_spec in source.columns
+                if column_spec.categorical and column_spec.name in feature_names
+                for column in (column_spec.name,)
             )
-        if request.target_access != "history_only":
-            raise ValueError("feature compilation requires target_access='history_only'")
-
-        target_providers = self._normalize_providers(target_future_providers)
-        observed_providers = self._normalize_providers(observed_future_providers)
-        identities = self._request_identities(request)
-        selected_steps = self._normalize_horizon_steps(horizon_steps, request.H)
-        rows: list[dict[str, Any]] = []
-        proofs: list[VisibilityProof] = []
-
-        for identity in identities:
-            for step_index in selected_steps:
-                target_time = request.forecast_times[step_index]
-                target_timestamp = cast(pd.Timestamp, pd.Timestamp(target_time))
-                history_anchor_time = self._history_anchor_time(
-                    request,
-                    target_timestamp,
-                )
-                row = self._identity_payload(identity)
-                row["target_time"] = target_timestamp
-                row["horizon_step"] = step_index + 1
-
-                self._compile_lag_mapping(
-                    row=row,
-                    proofs=proofs,
-                    role=ColumnRole.TARGET,
-                    lag_mapping=self.features.target_lags,
-                    identity=identity,
-                    target_time=target_timestamp,
-                    source_anchor_time=history_anchor_time,
-                    step_index=step_index,
-                    request=request,
-                    information_set=information_set,
-                    providers=target_providers,
-                )
-                self._compile_lag_mapping(
-                    row=row,
-                    proofs=proofs,
-                    role=ColumnRole.OBSERVED_PAST,
-                    lag_mapping=self.features.observed_past_lags,
-                    identity=identity,
-                    target_time=target_timestamp,
-                    source_anchor_time=history_anchor_time,
-                    step_index=step_index,
-                    request=request,
-                    information_set=information_set,
-                    providers=observed_providers,
-                )
-                self._compile_known_future(
-                    row,
-                    proofs,
-                    identity,
-                    target_timestamp,
-                    step_index,
-                    request,
-                    information_set,
-                )
-                self._compile_static(
-                    row,
-                    proofs,
-                    identity,
-                    target_timestamp,
-                    step_index,
-                    request,
-                    information_set,
-                )
-                self._compile_datetime(
-                    row,
-                    proofs,
-                    target_timestamp,
-                    step_index,
-                    request,
-                )
-                self._compile_transformations(
-                    row,
-                    proofs,
-                    identity,
-                    target_timestamp,
-                    step_index,
-                    request,
-                    information_set,
-                )
-                rows.append(row)
-
-        frame = pd.DataFrame(rows)
-        key_columns = [*self.problem.series_id_cols, "target_time", "horizon_step"]
-        feature_names = tuple(column for column in frame.columns if column not in key_columns)
-        categorical_names = tuple(
-            column
-            for source in self.data.sources
-            for column_spec in source.columns
-            if column_spec.categorical and column_spec.name in feature_names
-            for column in (column_spec.name,)
-        )
-        categorical_names = (
-            *categorical_names,
-            *(
-                f"dt_{name}"
-                for name in self.datetime_categorical
-                if f"dt_{name}" in feature_names
-            ),
-        )
-        normalized_cutoff = pd.Timestamp(
-            request.forecast_origin
-            if visibility_cutoff is None
-            else visibility_cutoff
-        )
-        if normalized_cutoff is pd.NaT:
-            raise ValueError("visibility_cutoff must be a valid timestamp")
-        cutoff = cast(pd.Timestamp, normalized_cutoff)
-        if cutoff < request.forecast_origin:
-            raise ValueError("visibility_cutoff must be at or after forecast_origin")
-        self._validate_visibility_proofs(proofs, cutoff)
-        return CompiledFeatures(
-            frame=frame,
-            schema=FeatureSchema(
-                feature_names=feature_names,
-                categorical_names=tuple(dict.fromkeys(categorical_names)),
-            ),
-            source_lineage=information_set.lineage,
-            visibility_proof=proofs,
-        )
+            categorical_names = (
+                *categorical_names,
+                *(
+                    f"dt_{name}"
+                    for name in self.datetime_categorical
+                    if f"dt_{name}" in feature_names
+                ),
+            )
+            normalized_cutoff = pd.Timestamp(
+                request.forecast_origin
+                if visibility_cutoff is None
+                else visibility_cutoff
+            )
+            if normalized_cutoff is pd.NaT:
+                raise ValueError("visibility_cutoff must be a valid timestamp")
+            cutoff = cast(pd.Timestamp, normalized_cutoff)
+            if cutoff < request.forecast_origin:
+                raise ValueError("visibility_cutoff must be at or after forecast_origin")
+            self._validate_visibility_proofs(proofs, cutoff)
+            return CompiledFeatures(
+                frame=frame,
+                schema=FeatureSchema(
+                    feature_names=feature_names,
+                    categorical_names=tuple(dict.fromkeys(categorical_names)),
+                ),
+                source_lineage=information_set.lineage,
+                visibility_proof=proofs,
+            )
 
     def compile_batch(
         self,
@@ -412,9 +435,7 @@ class FeatureCompiler:
                 batch_cutoffs,
             )
 
-        previous_scope = self._compile_scope_frames
-        previous_aux = self._compile_scope_aux
-        try:
+        with self._compilation_scope():
             prepare_started = perf_counter()
             items = []
             frame_cache: dict[
@@ -477,9 +498,6 @@ class FeatureCompiler:
                 "finish_and_proof_validation"
             ] = perf_counter() - finish_started
             return compiled
-        finally:
-            self._compile_scope_frames = previous_scope
-            self._compile_scope_aux = previous_aux
 
     def batch_eligibility(
         self,
@@ -501,16 +519,6 @@ class FeatureCompiler:
     ) -> BatchEligibility:
         reason_codes: list[str] = []
         trigger_fields: set[str] = set()
-        advanced = self.features.transformations.get("advanced", {})
-        if isinstance(advanced, Mapping):
-            unsupported = tuple(
-                kind
-                for kind in ("percent_change", "time_since", "ewm")
-                if advanced.get(kind) is not None
-            )
-            if unsupported:
-                reason_codes.append("unsupported_advanced_transformation")
-                trigger_fields.update(f"advanced:{kind}" for kind in unsupported)
         for role, lag_mapping in (
             (ColumnRole.TARGET, self.features.target_lags),
             (ColumnRole.OBSERVED_PAST, self.features.observed_past_lags),
@@ -964,13 +972,9 @@ class FeatureCompiler:
         for item in items:
             columns = item["columns"]
             if "block_weather" in advanced:
-                previous_scope = self._compile_scope_frames, self._compile_scope_aux
-                self._prime_compile_scope(item["information_set"])
-                try:
+                with self._compilation_scope(frames=item["frames"]):
                     rows = [self._block_weather_values(identity, int(step), item["request"], item["information_set"])
                             for identity, step in zip(item["row_identities"], columns["horizon_step"])]
-                finally:
-                    self._compile_scope_frames, self._compile_scope_aux = previous_scope
                 for name in rows[0][0]:
                     columns[name] = np.asarray([values[name] for values, _ in rows])
                     self._add_batch_proof_column(item, name, "block_known_future", "known_future",
@@ -1020,7 +1024,7 @@ class FeatureCompiler:
                 histories = self._batch_master_histories(items, column)
                 for window in windows:
                     rolled_by_identity = {
-                        identity: self._batch_rolling_series(history, window, stats)
+                        identity: rolling_statistics(history, window, stats)
                         for identity, history in histories.items()
                     }
                     for stat in stats:
@@ -1052,7 +1056,7 @@ class FeatureCompiler:
                                 # pandas rolling 的增量算法与逐片 Series 统计可能有
                                 # 浮点末位差异；逐片复算只发生在 origin 粒度，用于
                                 # 保持 compile() 的逐值合同，不再按 horizon 重算。
-                                exact = self._statistic(
+                                exact = history_statistic(
                                     history.iloc[
                                         max(0, position - window + 1) : position + 1
                                     ],
@@ -1107,7 +1111,7 @@ class FeatureCompiler:
                         for stat in stats:
                             # 保留逐行 compile() 的 pandas 统计合同，但只在
                             # origin 粒度计算一次，再广播到该 origin 的 calls。
-                            values_by_stat[stat][row_slice] = self._statistic(
+                            values_by_stat[stat][row_slice] = history_statistic(
                                 visible,
                                 stat,
                             )
@@ -1157,6 +1161,8 @@ class FeatureCompiler:
                                 - history.iloc[position - period]
                             )
                         item["columns"][feature_name] = values
+
+        self._compile_batch_origin_statistics(items, advanced)
 
         fourier_spec = advanced.get("fourier")
         if fourier_spec is not None:
@@ -1285,6 +1291,37 @@ class FeatureCompiler:
                                 values[row_slice] = value
                         item["columns"].update(feature_values)
 
+    def _compile_batch_origin_statistics(
+        self,
+        items: Sequence[dict[str, Any]],
+        advanced: Mapping[str, Any],
+    ) -> None:
+        """按 (信息集, origin, identity) 计算一次，再广播至当前 horizon 行。
+
+        不借用其他原点的最长历史：EWM/事件距离依赖完整前缀，信息集可能
+        有不同起点或发布版本。复用 single 的统计规则，保持精确数值及异常。
+        """
+        selected = {
+            kind: advanced[kind]
+            for kind in ("percent_change", "time_since", "ewm")
+            if advanced.get(kind) is not None
+        }
+        if not selected:
+            return
+        for item in items:
+            step_count = len(item["selected_steps"])
+            with self._compilation_scope(frames=item["frames"]):
+                for index, identity in enumerate(item["identities"]):
+                    row: dict[str, Any] = {}
+                    self._compile_history_transformations(
+                        row, selected, identity, item["request"], item["information_set"],
+                    )
+                    row_slice = slice(index * step_count, (index + 1) * step_count)
+                    for name, value in row.items():
+                        if name not in item["columns"]:
+                            item["columns"][name] = np.empty(len(item["target_times"]), dtype=float)
+                        item["columns"][name][row_slice] = value
+
     def _batch_master_histories(
         self,
         items: Sequence[dict[str, Any]],
@@ -1355,32 +1392,6 @@ class FeatureCompiler:
             histories[identity] = values
         return histories
 
-    def _batch_rolling_series(
-        self,
-        history: pd.Series,
-        window: int,
-        stats: Sequence[str],
-    ) -> dict[str, pd.Series]:
-        results: dict[str, pd.Series] = {}
-        rolling = history.rolling(window, min_periods=1)
-        for stat in stats:
-            if stat == "entropy":
-                results[stat] = rolling.apply(signal_entropy, raw=True).fillna(0.0)
-                continue
-            if stat in {"max_diff", "min_diff"}:
-                if window < 2:
-                    results[stat] = pd.Series(0.0, index=history.index)
-                else:
-                    diffs = history.diff()
-                    method = "max" if stat == "max_diff" else "min"
-                    results[stat] = getattr(
-                        diffs.rolling(window - 1, min_periods=1), method
-                    )().fillna(0.0)
-                continue
-            if stat not in {"mean", "std", "min", "max", "median", "skew", "kurt"}:
-                raise ValueError(f"unsupported history statistic: {stat!r}")
-            results[stat] = getattr(rolling, stat)().fillna(0.0)
-        return results
 
 
     @staticmethod
@@ -1991,7 +2002,7 @@ class FeatureCompiler:
         width = self.resolved_strategy.steps_per_call
         start = ((horizon_step - 1) // width) * width
         # 同一信息集内按原点、序列和块复用；single 入口和每个 batch item 都重置作用域。
-        cache = self._compile_scope_aux.setdefault("block_weather", {})
+        cache = self._active_context().auxiliary.setdefault("block_weather", {})
         cache_key = (request.forecast_origin, identity, start)
         if cache_key in cache:
             return cache[cache_key]
@@ -2061,7 +2072,7 @@ class FeatureCompiler:
                     for window in windows:
                         values = history.iloc[-window:]
                         for stat in stats:
-                            row[f"{column}_rolling_{stat}_{window}"] = self._statistic(values, stat)
+                            row[f"{column}_rolling_{stat}_{window}"] = history_statistic(values, stat)
                 elif kind == "ewm":
                     # 指数加权统计（近期行为权重更高）：按半衰期计。
                     # ewm 半衰期以样本步数计；与 rolling 窗口一样只消费可见历史。
@@ -2089,7 +2100,7 @@ class FeatureCompiler:
                 elif kind == "expanding":
                     stats = self._validated_stats(spec.get("stats", ()), "expanding.stats", self.ROLLING_STATS)
                     for stat in stats:
-                        row[f"{column}_expanding_{stat}"] = self._statistic(history, stat)
+                        row[f"{column}_expanding_{stat}"] = history_statistic(history, stat)
                 elif kind == "difference":
                     for period in self._positive_int_sequence(spec.get("periods", ()), "difference.periods"):
                         if len(history) <= period:
@@ -2146,7 +2157,7 @@ class FeatureCompiler:
                 else:
                     events = self._string_sequence(spec.get("events", ()), "time_since.events")
                     for event in events:
-                        row[f"{column}_time_since_{event}"] = self._time_since(history, event)
+                        row[f"{column}_time_since_{event}"] = time_since_event(history, event)
 
     def _compile_cyclical(
         self, row: dict[str, Any], spec: Any, *, vectorized: bool = False,
@@ -2259,14 +2270,12 @@ class FeatureCompiler:
         frame = frames.get(source.name)
         if frame is None:
             raise ValueError(f"history source {source.name!r} was not materialized")
-        # 性能（2026-09-02 两级缓存）：
-        # L1（instance 级，跨 origin 共享）：解析后的时间 ns 数组 + 排序位置。
-        # 时间列解析与排序不依赖 forecast_origin，整个回测只需一次。
-        # L2（compile 作用域级）：按当前 origin 过滤后的可见序列。
-        cache_key = f"visible_history::{source.name}::{source.time_col}"
-        parsed = self._compile_scope_aux.get(f"{cache_key}::parsed")
-        order = self._compile_scope_aux.get(f"{cache_key}::order")
-        if parsed is None or order is None:
+        # 缓存只在本次 compile 有效；同源不同列可共享行定位，但不同序列
+        # 必须隔离。使用结构化身份键，避免将 identity 字符串化造成碰撞。
+        histories = self._active_context().auxiliary.setdefault("visible_history", {})
+        cache_key = (source.name, source.time_col, identity)
+        cached = histories.get(cache_key)
+        if cached is None:
             selected = self._filter_identity(source, frame, identity)
             if source.time_col is None:
                 raise ValueError(f"history source {source.name!r} has no time_col")
@@ -2275,10 +2284,9 @@ class FeatureCompiler:
             )
             order = np.argsort(parsed.asi8, kind="stable")
             parsed = parsed[order]
-            self._compile_scope_aux[f"{cache_key}::parsed"] = parsed
-            self._compile_scope_aux[f"{cache_key}::order"] = order
-            self._compile_scope_aux[f"{cache_key}::selected"] = selected
-        selected = self._compile_scope_aux[f"{cache_key}::selected"]
+            histories[cache_key] = (parsed, order, selected)
+        else:
+            parsed, order, selected = cached
         # searchsorted：origin 之前的可见前缀（排序后），替代全列布尔掩码
         cutoff_ns = pd.Timestamp(request.forecast_origin).value
         visible_count = int(np.searchsorted(parsed.asi8, cutoff_ns, side="right"))
@@ -2290,7 +2298,7 @@ class FeatureCompiler:
             raise ValueError(f"history column {column_name!r} must be finite")
         return numeric.reset_index(drop=True)
 
-    # 解析期 stats 白名单：rolling/expanding 共用 _statistic 的全集，
+    # 解析期 stats 白名单：rolling/expanding 共用 history_statistic 的全集，
     # ewm 只支持 mean/std。拼错统计名必须在 spec 解析期 RAISE，而不是
     # 编译中段（与 preflight「未知参数 RAISE」同精神）。
     ROLLING_STATS = frozenset(
@@ -2346,54 +2354,7 @@ class FeatureCompiler:
             normalized.append(float(item))
         return tuple(normalized)
 
-    @staticmethod
-    def _statistic(values: pd.Series, stat: str) -> float:
-        if stat == "entropy":
-            # 香农熵（p = |y|/sum|y|）；非常量窗内分布越均匀熵越高。
-            return signal_entropy(values.to_numpy())
-        if stat in {"max_diff", "min_diff"}:
-            # 爬坡统计：窗内相邻步最大/最小变化量。窗口 < 2 时无相邻对，
-            # 与其他统计的防御回退一致（minimum_history_rows 已保证
-            # window >= 2 才会启用 diff 类特征，此处为纵深防御）。
-            if len(values) < 2:
-                warnings.warn(
-                    f"{stat!r} requires at least 2 samples (got {len(values)}); "
-                    "falling back to 0.0",
-                    RuntimeWarning,
-                    stacklevel=3,
-                )
-                return 0.0
-            diffs = values.diff().dropna()
-            return float(diffs.max() if stat == "max_diff" else diffs.min())
-        supported = {"mean", "std", "min", "max", "median", "skew", "kurt"}
-        if stat not in supported:
-            raise ValueError(f"unsupported history statistic: {stat!r}")
-        result = getattr(values, stat)()
-        if pd.isna(result):
-            # 理论上 minimum_history_rows 门禁已保证窗口足够，此处只是防御
-            # 回退（窗口 < window 时 pandas 返回 NaN）；分层约束下本包不可
-            # 依赖 utils.log_util，用标准库 warnings 显式告警避免静默。
-            warnings.warn(
-                f"history statistic {stat!r} produced NaN "
-                f"(sample size {len(values)}); falling back to 0.0",
-                RuntimeWarning,
-                stacklevel=2,
-            )
-            result = 0.0
-        return float(result)
 
-    @staticmethod
-    def _time_since(values: pd.Series, event: str) -> float:
-        if event == "peak":
-            mask = (values.shift(1) < values) & (values > values.shift(-1))
-        elif event == "trough":
-            mask = (values.shift(1) > values) & (values < values.shift(-1))
-        else:
-            raise ValueError(f"unsupported time-since event: {event!r}")
-        indices = np.flatnonzero(mask.to_numpy())
-        position = len(values) - 1
-        prior = indices[indices < position]
-        return float(position - prior[-1] if len(prior) else position)
 
     def _source_for_column(
         self,

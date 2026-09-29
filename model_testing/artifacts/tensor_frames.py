@@ -12,6 +12,7 @@ import pandas as pd
 
 from forecasting_core.tensors import PointForecastTensor, require_matching_point_axes
 from forecasting_core.artifacts import MarginalForecastDistribution, QuantileGrid
+from forecasting_core.point_intervals import PointIntervalForecast, pi_column_names
 
 CANONICAL_KEY_COLUMNS = ["series_id", "time", "target"]
 BACKTEST_KEY_COLUMNS = [*CANONICAL_KEY_COLUMNS, "window"]
@@ -40,7 +41,15 @@ def point_tensor_to_long(tensor: PointForecastTensor) -> pd.DataFrame:
     return frame
 
 
-def distribution_to_long(distribution: MarginalForecastDistribution) -> pd.DataFrame:
+def distribution_to_long(distribution: MarginalForecastDistribution | PointIntervalForecast) -> pd.DataFrame:
+    if isinstance(distribution, PointIntervalForecast):
+        frame = point_tensor_to_long(distribution.point)
+        lower, upper = pi_column_names(distribution.target_coverage)
+        frame[lower] = distribution.lower.reshape(-1)
+        frame[upper] = distribution.upper.reshape(-1)
+        frame["pi_available"] = distribution.available.reshape(-1)
+        frame["pi_status"] = distribution.statuses
+        return frame
     if not isinstance(distribution, MarginalForecastDistribution):
         raise TypeError("distribution must be a MarginalForecastDistribution")
     frame = point_tensor_to_long(distribution.point)
@@ -70,11 +79,11 @@ def distribution_to_long(distribution: MarginalForecastDistribution) -> pd.DataF
 
 
 def _point_forecast(
-    value: PointForecastTensor | MarginalForecastDistribution,
+    value: PointForecastTensor | MarginalForecastDistribution | PointIntervalForecast,
 ) -> PointForecastTensor:
     if isinstance(value, PointForecastTensor):
         return value
-    if isinstance(value, MarginalForecastDistribution):
+    if isinstance(value, (MarginalForecastDistribution, PointIntervalForecast)):
         return value.point
     raise TypeError(
         "forecast must be PointForecastTensor or MarginalForecastDistribution"
@@ -83,7 +92,7 @@ def _point_forecast(
 
 def backtest_tensors_to_long(
     actual: PointForecastTensor,
-    prediction: PointForecastTensor | MarginalForecastDistribution,
+    prediction: PointForecastTensor | MarginalForecastDistribution | PointIntervalForecast,
     *,
     window: int,
     plot_valid: np.ndarray | None = None,
@@ -117,6 +126,10 @@ def backtest_tensors_to_long(
     if frame.duplicated(BACKTEST_KEY_COLUMNS).any():
         raise ValueError("canonical backtest result keys must be unique")
     quantile_columns = [column for column in frame if column.startswith("predict_q")]
+    interval_columns = (
+        [*pi_column_names(prediction.target_coverage), "pi_available", "pi_status"]
+        if isinstance(prediction, PointIntervalForecast) else []
+    )
     return frame[
         [
             "series_id",
@@ -125,6 +138,7 @@ def backtest_tensors_to_long(
             "actual_value",
             "predict_value",
             *quantile_columns,
+            *interval_columns,
             "window",
             "plot_valid",
         ]

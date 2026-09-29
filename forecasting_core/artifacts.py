@@ -6,6 +6,7 @@ from __future__ import annotations
 import json
 import math
 from dataclasses import asdict, dataclass, field
+from forecasting_core.point_intervals import ResidualCalibrationSpec, validate_residual_state
 from pathlib import Path
 from typing import Any
 
@@ -289,10 +290,16 @@ class ForecastModelBundle:
         self.target_order = tuple(str(target) for target in self.target_order)
         self.feature_lineage = tuple(dict(item) for item in self.feature_lineage)
         self.source_lineage = tuple(dict(item) for item in self.source_lineage)
+        if isinstance(self.probabilistic_spec.calibration, ResidualCalibrationSpec) and self.calibration_state is None:
+            raise ValueError("absolute_residual bundle requires calibration state")
         if self.calibration_state is not None:
             if not isinstance(self.calibration_state, dict):
                 raise TypeError("calibration_state must be a dict or None")
-            if self.calibration_state.get("status") == "applied" and not isinstance(
+            if isinstance(self.probabilistic_spec.calibration, ResidualCalibrationSpec):
+                validate_residual_state(self.calibration_state, series_ids=self.series_ids, targets=self.target_order,
+                                        shape=self.dimensions, coverage=self.probabilistic_spec.calibration.target_coverage,
+                                        freq=self.canonical_problem["freq"])
+            elif self.calibration_state.get("status") == "applied" and not isinstance(
                 self.calibration_state.get("correction"), (int, float)
             ):
                 raise ValueError(

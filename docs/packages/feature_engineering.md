@@ -3,6 +3,7 @@
 `feature_engineering/` 是 canonical 唯一特征编译层，含特征与目标变换三件套。
 
 - `compiler.py`：lag、known-future、static、datetime、advanced transformation、visibility proof 与 lineage。
+- `history_statistics.py`：单窗统计、rolling 序列和已确认峰谷距离的纯数值内核，供 single/batch 编译消费；保持 pandas 样本统计、熵定义和小样本告警，不负责配置、特征命名或 as-of。rolling 批路径仍保留逐 origin 精确复算，未放宽数值等价合同。
 - `seasonal.py`：同槽统计与近期状态的纯函数内核（按步长周期定位槽位、窗口统计），供 compiler 的 `advanced.same_slot`/`advanced.recent_state` 与残差基线（`transformations.seasonal_baseline`）共用；槽位越界或窗口不足由调用方 RAISE，不在内核静默截断。
 - `spectral.py`：FFT/小波/熵特征纯函数（trailing 窗），供 compiler 的 `advanced.fourier`/`advanced.wavelet` 与 rolling `entropy` 调用。
 - `selection.py`：每个训练窗独立拟合的监督特征选择。
@@ -18,6 +19,8 @@
 
 - `cache.py`：raw-design 内容寻址缓存、进程锁、元数据与载荷校验。源文件/生成器哈希由 `data_loading.sources.provenance` 提供，设计语义、依赖环境及编译链身份仍在本包组合；不等同于配置语义 fingerprint。递归编译链哈希覆盖数据层的日历计算文件，不能只以薄生成器适配函数代表完整实现。
 - `CanonicalFeatureSelector` 只在本训练窗拟合，保留的特征索引随训练 artifact 使用；不在全量数据上先选列再做回测。
+- 可见历史行定位缓存仅在单次 compile 内有效，按 `(source.name, source.time_col, identity)` 隔离；同源不同列可复用索引，不同序列不得复用。Global single/fallback 曾错误复用首个序列的历史，现已纠正；旧黄金样本仅修正受影响数值，schema/proof/lineage 不变。不自动重训或覆盖存量结果，受影响 Global 结果须经显式重跑才能取得修正值。
+- `CompilationContext` 集中持有帧和派生缓存，由 ContextVar + 作用域 token 隔离；single、batch 子步骤和块天气都在退出（含异常）时恢复外层上下文，不在编译器实例残留上次信息集。阶段耗时仍是最近一次调用的诊断值，不构成同实例并发计时合同。
 
 ## 输入输出与对齐
 
@@ -26,6 +29,10 @@
 single/batch 均先生成同槽、近期状态及块摘要，再计算 cyclical、interaction 和 polynomial，允许后者引用前者。块天气摘要只在当前信息集的编译作用域内按 `(forecast_origin, series identity, block start)` 复用；每次 single 调用及每个 batch item 都重新建立作用域，同原点实测/预报也不能混用。只编译块内部分 horizon 时仍聚合完整块。完整 H 步的块摘要取数总量为 O(H)，不按每行重复读取整块；每行保留自身的可见性证据。
 
 `FeatureCompiler.compile()` 消费物化信息集，返回 `CompiledFeatures`，包含设计值、`FeatureSchema`、lineage 和 `VisibilityProof`。`batch_eligibility()` 检查批编译能力，`compile_batch()` 提供受支持设计的批量编译。single 与 batch 保留不同执行路径，共用规则解析；不能把 provider 依赖设计强制改走 batch，也不能把同一实现自比较当成独立黄金值验证。
+
+EWM、percent_change、time_since 已支持按 `(information_set, origin, identity)` 一次计算并广播到所选 horizon 行，不再因这三类特征单独回退；保留 pandas EWM 的 `adjust=True`、样本步数半衰期、变化率零分母报错和峰谷须右侧观测确认的定义。这不是跨原点增量状态；不同原点/同原点不同历史起点不共享完整前缀，provider 依赖仍回退。黄金样本、非顺序多原点、稀疏 horizon、训练接线和 validate-only 均有回归覆盖。
+
+合成编译基准：`env -u PYTHONPATH .venv/bin/python tests/benchmark_feature_compiler.py --output <new-json-path>`（文件只新建）。先检查帧/schema/proof/lineage 精确一致，再交替计时 single/batch，记录各次结果、版本和物化耗时；输入已物化、无模型拟合或磁盘缓存，不测 RSS，不把该比值当作训练端到端收益或 MLForecast 对标。
 
 known-future 按目标时刻取值；Direct 历史 lag/rolling/diff 的锚点由 `features.transformations.direct.align_to_target` 决定。目标日对齐且 lag 足够深时消费原点前真实历史；越过原点的 observed-past 访问必须显式 provider，不能隐式填补。
 

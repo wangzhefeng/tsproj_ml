@@ -9,7 +9,9 @@
 - 目标变换：calendar normalization → decomposition → scaling，按 `(series_id,target)` 隔离并严格逆序恢复。
 - 引用式 Ensemble：averaging、weighted、linear blending、stacking；成员 OOF、内容寻址缓存、自包含 bundle。
 - 点评估：MAE/RMSE/MAPE/Accuracy、seasonal-naive、eval mask。
+- 自动调参：`tune.py`，独立搜索配方、参数/特征搜索、固定评分窗口、选优后独立 holdout、完整 canonical YAML 导出与 final 产物校验；当前限严格单模型 point/fixed-step，详见 [model_tuning](packages/model_tuning.md)。
 - 概率评估：pinball、coverage、width、Winkler、coverage gap。
+- 点模型残差区间：显式 `absolute_residual` 校准，按序列/目标/horizon 隔离，as-of、独立结果对象、bundle 与部署闭环；当前仅单模型 fixed-step，详见 [point-intervals](config/point-intervals.md)。
 
 不支持：联合轨迹样本生成、ensemble-of-ensemble。CQR runtime 已支持严格 as-of 校准，并可在回测与部署结果中输出 `predict_pi*`；未声明 `probabilistic.calibration` 的配置不启用。
 

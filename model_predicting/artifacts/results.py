@@ -13,6 +13,7 @@ matplotlib.use("Agg")
 
 from forecasting_core.tensors import PointForecastTensor
 from forecasting_core.artifacts import MarginalForecastDistribution
+from forecasting_core.point_intervals import PointIntervalForecast
 
 # 预测图复用回测侧的时间轴与文件名格式工具，不再导出未使用的绘图入口。
 from model_testing.artifacts.reporting import (
@@ -33,7 +34,7 @@ from model_testing.artifacts.tensor_frames import (
 
 def write_forecast_results(
     output_dir: str | Path,
-    forecast: PointForecastTensor | MarginalForecastDistribution,
+    forecast: PointForecastTensor | MarginalForecastDistribution | PointIntervalForecast,
     *,
     extra_columns: Mapping[str, np.ndarray] | None = None,
     history: PointForecastTensor | None = None,
@@ -138,7 +139,8 @@ def _plot_forecast_series(
         quantile_columns = [
             column for column in segment.columns if column.startswith("predict_q")
         ]
-        if len(quantile_columns) >= 2:
+        band_columns = quantile_columns or sorted(column for column in segment if column.startswith("predict_pi"))
+        if len(band_columns) >= 2:
             # PI 带：有历史时从历史末点起画（与 Preds 回接点对齐），否则只盖预测段
             if origin_time is not None and last_history_value is not None:
                 band_x = pd.concat(
@@ -147,26 +149,26 @@ def _plot_forecast_series(
                 band_low = np.concatenate(
                     [
                         [last_history_value],
-                        segment[quantile_columns[0]].astype(float).values,
+                        np.asarray(segment[band_columns[0]], dtype=float),
                     ]
                 )
                 band_high = np.concatenate(
                     [
                         [last_history_value],
-                        segment[quantile_columns[-1]].astype(float).values,
+                        np.asarray(segment[band_columns[-1]], dtype=float),
                     ]
                 )
             else:
                 band_x = segment["time"]
-                band_low = segment[quantile_columns[0]].astype(float).values
-                band_high = segment[quantile_columns[-1]].astype(float).values
+                band_low = np.asarray(segment[band_columns[0]], dtype=float)
+                band_high = np.asarray(segment[band_columns[-1]], dtype=float)
             axis.fill_between(
                 band_x,
                 band_low,
                 band_high,
                 color="tab:blue",
                 alpha=0.15,
-                label=f"PI [{quantile_columns[0]},{quantile_columns[-1]}]",
+                label=f"PI [{band_columns[0]},{band_columns[-1]}]",
             )
         if origin_time is not None:
             axis.axvline(

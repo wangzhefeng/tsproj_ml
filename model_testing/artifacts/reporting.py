@@ -49,15 +49,16 @@ def _plot_timeseries(
             for column in quantile_frame.columns
             if column.startswith("predict_q")
         ]
-        if len(quantile_columns) >= 2:
+        band_columns = quantile_columns or sorted(column for column in quantile_frame if column.startswith("predict_pi"))
+        if len(band_columns) >= 2:
             axis.fill_between(
                 x,
-                quantile_frame[quantile_columns[0]].astype(float).values,
-                quantile_frame[quantile_columns[-1]].astype(float).values,
+                quantile_frame[band_columns[0]].astype(float).values,
+                quantile_frame[band_columns[-1]].astype(float).values,
                 color="tab:blue",
                 alpha=0.15,
                 label=(
-                    f"PI [{quantile_columns[0]},{quantile_columns[-1]}]"
+                    f"PI [{band_columns[0]},{band_columns[-1]}]"
                 ),
             )
 

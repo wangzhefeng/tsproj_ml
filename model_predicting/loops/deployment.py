@@ -19,6 +19,8 @@ from forecasting_core.tensors import PointForecastTensor
 from model_predicting.contracts.protocols import FeatureProvider
 from model_predicting.loops.predictor import assemble_marginal_quantile_distribution
 from probabilistic.calibration import pi_column_names
+from probabilistic.residual import apply_residual_state
+from forecasting_core.point_intervals import PointIntervalForecast, ResidualCalibrationSpec
 from model_training.strategies import (
     CanonicalStrategyArtifact,
     get_standard_executor,
@@ -34,7 +36,7 @@ def predict_strategy_bundle(
     series_ids: tuple[Any, ...] | None = None,
     raw_feature_provider: FeatureProvider | None = None,
     purpose: str = 'production',
-) -> PointForecastTensor | MarginalForecastDistribution:
+) -> PointForecastTensor | MarginalForecastDistribution | PointIntervalForecast:
     """从单个 schema-2 策略 bundle 预测，不做 config 或缓存 IO。"""
     if not isinstance(bundle, ForecastModelBundle) or bundle.schema_version != 2:
         raise TypeError("bundle must be a schema-2 ForecastModelBundle")
@@ -89,6 +91,10 @@ def predict_strategy_bundle(
         restored = bundle.target_transform.restore_distribution(transformed)
     if isinstance(restored, MarginalForecastDistribution):
         _attach_bundle_prediction_intervals(bundle, restored)
+    elif isinstance(bundle.probabilistic_spec.calibration, ResidualCalibrationSpec):
+        if not isinstance(restored, PointForecastTensor) or bundle.calibration_state is None:
+            raise ValueError("absolute_residual deployment requires saved point calibration state")
+        return apply_residual_state(restored, bundle.calibration_state)
     return restored
 
 

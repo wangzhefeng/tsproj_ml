@@ -10,6 +10,7 @@ from unittest.mock import Mock, patch
 import pandas as pd
 
 from forecasting_core.specs import FixedStepBacktestSpec
+from forecasting_core.specs.probabilistic import ProbabilisticConfigSpec
 from pipeline.lifecycle import run_lifecycle
 from pipeline.runner import CanonicalBaseModelRunner
 from model_testing.contracts.protocols import BacktestRunner, FoldScoringRunner
@@ -64,6 +65,7 @@ class BacktestLifecycleSplitTest(unittest.TestCase):
                 method_metadata = {"strategy": "recursive", "method_label": "recursive"}
                 config = SimpleNamespace(
                     problem=SimpleNamespace(targets=("load",)), validation=validation,
+                    probabilistic=ProbabilisticConfigSpec.from_mapping({"mode": "point"}),
                     result_method=Mock(return_value=method_metadata),
                 )
                 windows = tuple(SimpleNamespace(

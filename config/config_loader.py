@@ -80,7 +80,8 @@ def is_model_yaml(path: str | Path) -> bool:
         or ENSEMBLE_GROUP_FIELDS.issubset(payload)
     )
 
-def _load_yaml_file(config_yaml: str | Path) -> Mapping[str, Any]:
+def load_yaml_document(config_yaml: str | Path) -> Mapping[str, Any]:
+    """加载独立 YAML 文档并拒绝重复键；模型仍须经 load_yaml_config 校验。"""
     if yaml is None:
         raise ImportError("PyYAML is required for YAML configs. Install dependency: pyyaml")
 
@@ -97,7 +98,7 @@ def _load_yaml_file(config_yaml: str | Path) -> Mapping[str, Any]:
     return loaded
 
 def load_yaml_config(config_yaml: str | Path):
-    loaded = _load_yaml_file(config_yaml)
+    loaded = load_yaml_document(config_yaml)
     # v4 §5.2: route by mutually exclusive field sets. An `ensemble` mapping
     # marks a reference-based ensemble config; anything else must be a
     # single-model base config. 严格 parser 对未知字段（含历史 schema_version）一律 RAISE。

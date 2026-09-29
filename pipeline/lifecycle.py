@@ -17,6 +17,7 @@ from forecasting_core.specs import (
     TargetAdapter,
 )
 from forecasting_core.tensors import PointForecastTensor
+from probabilistic.residual import ResidualCalibrationTracker, apply_residual_state
 from model_predicting.artifacts.evidence_assembly import (
     compiled_lineage,
     holdout_proof_summary,
@@ -207,7 +208,12 @@ def execute_lifecycle(
     # 列写入 prediction.csv；修正量由全部满足 as-of 的历史折池化计算。
     calibration_state = None
     forecast_extra_columns = None
-    if calibration_tracker is not None:
+    if isinstance(calibration_tracker, ResidualCalibrationTracker):
+        if not isinstance(forecast, PointForecastTensor):
+            raise TypeError("absolute_residual requires point forecast")
+        calibration_state = calibration_tracker.state(forecast, forecast_origin=origin)
+        forecast = apply_residual_state(forecast, calibration_state)
+    elif calibration_tracker is not None:
         final_correction, final_calibration_audit = (
             calibration_tracker.final_correction(origin)
         )

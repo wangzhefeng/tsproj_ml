@@ -4,6 +4,7 @@
 
 - `point.py`：MAE/RMSE/MAPE/Accuracy、seasonal-naive、aggregate weighting。
 - `marginal.py`：pinball、central interval coverage/width/Winkler/gap。
+- `point_intervals.py`：独立点评估区间的 coverage/width/Winkler/gap，按目标与 horizon 报告，只计算可用且通过点评估 mask 的样本；无可用区间时 n_points=0、指标 NaN，不制造 pinball。
 - `mask.py`：percentile/absolute/combined eval mask。
 - `metrics.py`：概率指标纯函数。
 

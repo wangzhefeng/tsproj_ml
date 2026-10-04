@@ -11,7 +11,7 @@
 - 固定2026-04-08 00:00:00至2026-09-16 23:55:00，共162天、46656点；两份负荷及配套天气时间轴一致。不做异常值处理，只在原始点位填缺失，再严格汇总；两设备版本共享点位使用相同估计。
 - 原baseline更名为`add_datetime_holiday`；新baseline只含目标历史及构造特征。天气、IT、分路组均以新baseline为对照，不再夹带时间戳或节假日。输入CSV含全部列，但只投影声明列。
 - 除`add_context`外，统一90天训练＋1天预测（91天滑窗）、stride=288，每配置72折，测试日期为2026-07-07至2026-09-16。`add_context`使用150天训练＋1天预测（151天滑窗）、12折，测试日期为2026-09-05至2026-09-16。
-- 仍为严格原始训练窗口的 **`--backtest-only` 配置**；没有未来天气、final fit或部署bundle，不把配置预检称为模型效果验证。
+- 除下述已迁移样例外，仍为严格原始训练窗口的 **`--backtest-only` 配置**；没有未来天气、final fit或部署bundle，不把配置预检称为模型效果验证。
 - IT仍有最长6729槽内部缺口。补值只用过去原观测，逐缺口用历史遮蔽评分选择；缺口长并不意味着估计可靠。首次补值的校准允许读取窗口前30天，导出/模型历史不扩窗。实测与估计的来源mask另存，现行评分不会自动排除估计点；整体不宣称严格在线或可实盘。
 
 ```bash
@@ -23,6 +23,12 @@ env -u PYTHONPATH .venv/bin/python config/aidc_hvac_load_5min/scripts/v3/forecas
 env -u PYTHONPATH .venv/bin/python config/aidc_hvac_load_5min/scripts/v3/forecast_data/build_model_configs.py --check
 env -u PYTHONPATH .venv/bin/python tests/run_suite.py integration --match test_hvac_a1_v3
 ```
+
+### 新时间窗口合同迁移样例
+
+仅`baseline/A1_all/hvac_all_devices/lgbm_direct-pointwise.yaml`迁移至`training_window: rolling/25920`、`forecast_window: next_day`、`origin_sampling.time_of_day: '23:55'`、`refit_every: 1`。保留5min粒度、H288、每日推进和72折声明；模型参数、特征、数据与输出根不变。新路径支持final fit及bundle，不再要求backtest-only；本次只修改配置，不重跑模型，也不删除旧结果。
+
+这是训练策略变更，适用新fingerprint。上一轮独立两折派生配置已验证链路，但不是该正式72折配置的全量验收。其他消融组仍密集训练；在统一采样和窗口合同之前，不得把它们与该迁移样例直接解释为只改变特征的单因素实验。生成脚本同步保留此单文件迁移，其他配置不自动切换。
 
 ### 六组矩阵与特征
 

@@ -29,6 +29,7 @@ GROUPS = ('baseline', 'add_datetime_holiday', 'add_weather', 'add_endogenous_it'
 TARGET_LAG_DAYS = (1, 2, 3, 4, 5, 6, 7, 14, 21, 28)
 ROLLING_DAYS = (1, 2, 4, 7, 14, 28)
 COVARIATE_LAG_DAYS = (1, 2, 7, 14, 28)
+TEMPORAL_BASELINE = Path('baseline/A1_all/hvac_all_devices/lgbm_direct-pointwise.yaml')
 
 
 def build_documents():
@@ -101,6 +102,15 @@ def build_documents():
                     'history_steps': train_window + folds * DAY,
                 })
                 payload['output']['scenario_subpath'] = 'aidc_hvac_load_5min/' + str(relative.parent)
+                # 仅迁移已验证的样例；不改变其他模型/消融组的训练语义。
+                if relative == TEMPORAL_BASELINE:
+                    payload['validation'].pop('train_history_steps')
+                    payload['validation'].pop('train_window_steps')
+                    payload['validation'].update({
+                        'training_window': {'kind': 'rolling', 'history_steps': train_days * DAY},
+                        'forecast_window': {'start': 'next_day'}, 'refit_every': 1,
+                        'training': {'origin_sampling': {'time_of_day': '23:55'}},
+                    })
                 config = parse_model_config(payload, source=relative)
                 FeatureCompiler(config)
                 config.strategy.resolve(DAY)
@@ -115,7 +125,10 @@ def build_documents():
                 documents[relative] = (
                     '# A1 双路合计 data_v3；IT 为固定204点子集，不是全楼IT总负荷。\n'
                     '# 无异常清洗；离线补值/天气可得性假设不构成实盘证据。\n'
-                    f'# {train_days}天训练、1天预测；仅支持 --backtest-only，未执行正式模型。\n'
+                    + ('# 90天固定训练窗、预测次日；23:55采样，每折重训；支持final/bundle。\n'
+                       '# 正式72折未重跑；两折派生验证不代表长期精度或实盘可用性。\n'
+                       if relative == TEMPORAL_BASELINE else
+                       f'# {train_days}天训练、1天预测；仅支持 --backtest-only，未执行正式模型。\n')
                     + yaml.safe_dump(payload, sort_keys=False, allow_unicode=True)
                 )
     return documents

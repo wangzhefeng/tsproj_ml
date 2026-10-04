@@ -1,6 +1,7 @@
 # A1 双路合计 data_v3；IT 为固定204点子集，不是全楼IT总负荷。
 # 无异常清洗；离线补值/天气可得性假设不构成实盘证据。
-# 90天训练、1天预测；仅支持 --backtest-only，未执行正式模型。
+# 90天固定训练窗、预测次日；23:55采样，每折重训；支持final/bundle。
+# 正式72折未重跑；两折派生验证不代表长期精度或实盘可用性。
 schema_version: 2
 problem:
   time_col: time
@@ -80,10 +81,17 @@ validation:
   schedule_mode: daily
   horizon_mode: fixed_steps
   history_steps: 38305
-  train_history_steps: 25920
-  train_window_steps: 17569
   fold_count: 72
   stride_steps: 288
+  training_window:
+    kind: rolling
+    history_steps: 25920
+  forecast_window:
+    start: next_day
+  refit_every: 1
+  training:
+    origin_sampling:
+      time_of_day: '23:55'
 output:
   scenario_subpath: aidc_hvac_load_5min/baseline/A1_all/hvac_all_devices
   results_root: results

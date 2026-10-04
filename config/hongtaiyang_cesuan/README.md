@@ -87,8 +87,8 @@ env -u PYTHONPATH .venv/bin/python config/hongtaiyang_cesuan/generate_configs.py
 
 ## 15min耗时评估（不运行模型）
 
-原始15min计时结果已按授权删除。`estimate_15min.py --daily-report <当前8份日频验收JSON>` 仅展示冻结历史报告中仍保留方法的旧估算，明确标记historical_only，不再读取已删除的recursive配置，也不重新估算当前优化配置的耗时。
+原始15min计时结果已按授权删除，冻结历史估算文件也已不在当前工作区。依赖该文件的历史估算展示脚本已清理，历史实现可从Git追溯；当前没有可用的15min耗时估算入口。
 
-历史估算保存在 `.hermes/plans/hongtaiyang-15min-estimate.json`，不能代替当前配置实测。本轮消融证据为 `hongtaiyang-opt-{cold,screen,combined}.json`，最终验收与对照为 `hongtaiyang-opt-final-{verification,comparison}.json`（均在 `.hermes/plans/`）。未启动新的15min业务模型测试。
+历史估算不能代替当前配置实测。既有消融记录使用 `hongtaiyang-opt-{cold,screen,combined}.json`，最终验收与对照记录使用 `hongtaiyang-opt-final-{verification,comparison}.json`（均为`.hermes/plans/`下的本地产物，是否可用以当前工作区为准）。此次清理未启动新的15min业务模型测试。
 
 `dataset/`、`results/`及`.hermes/plans/`遵循仓库忽略规则，不随代码提交发布；新克隆需另行取得数据与需要的本地报告，不能将Git推送视为数据或结果交付。

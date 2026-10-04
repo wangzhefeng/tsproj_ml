@@ -76,16 +76,22 @@ estimator:
 probabilistic:
   mode: point
 validation:
-  # 仅回测锚点；必须配合 --backtest-only。
   forecast_origin: '2026-08-31T23:55:00'
   schedule_mode: daily
   horizon_mode: fixed_steps
-  # 全月候选监督原点；各折先截取原始14天，再扣除特征预热和标签跨度。
   history_steps: 6625
-  train_history_steps: 4032
-  train_window_steps: 1729
   fold_count: 17
   stride_steps: 288
+  training_window:
+    kind: rolling
+    history_steps: 4032
+  forecast_window:
+    start: after_origin
+  refit_every: 1
+  training:
+    origin_sampling:
+      stride_steps: 288
+      anchor_time: '2026-08-31T23:55:00'
 output:
   scenario_subpath: aidc_electricity_computility/electricity/2026-08-31/liantong_IT/add_weather
   results_root: results

@@ -141,9 +141,14 @@ validation:
   schedule_mode: daily
   horizon_mode: fixed_steps
   history_steps: 6336
-  train_window_steps: 2784
   fold_count: 31
   stride_steps: 96
+  training_window:
+    kind: rolling
+    history_steps: 3552
+  forecast_window:
+    start: after_origin
+  refit_every: 1
   performance:
     window_parallel_workers: 1
     multi_output_n_jobs: 8

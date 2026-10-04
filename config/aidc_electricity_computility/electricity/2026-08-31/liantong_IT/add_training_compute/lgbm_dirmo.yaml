@@ -120,10 +120,15 @@ validation:
   schedule_mode: daily
   horizon_mode: fixed_steps
   history_steps: 6624
-  train_history_steps: 4032
-  train_window_steps: 1728
   fold_count: 17
   stride_steps: 288
+  training_window:
+    kind: rolling
+    history_steps: 4032
+  forecast_window:
+    start: after_origin
+  refit_every: 1
+
 output:
   scenario_subpath: aidc_electricity_computility/electricity/2026-08-31/liantong_IT/add_training_compute
   results_root: results

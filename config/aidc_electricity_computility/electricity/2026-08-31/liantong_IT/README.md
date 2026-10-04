@@ -1,5 +1,9 @@
 # 联通 IT 2026 年 8 月功率数据准备
 
+## 时间配置迁移状态
+
+add_weather、三个compute组与accuracy_ablation已采用新rolling原始窗（4032点），每折重新训练，支持final/bundle主路径。采样按模型布局区分：Direct独立模型、MIMO、DIRMO、DirRec、DirRecMO保留全部安全原点；共享horizon、Recursive、RecMO保留每日23:55锚点采样，accuracy_ablation仍为共享horizon组。不能把每日发报频率直接套给每个独立模型的训练行。baseline含ETS且兼作HVAC生成模板，baseline_opt/add_weather_opt含旧seasonal_baseline合同，暂保留。下文已有密集训练结果属于历史配置，不自动重跑；新旧组不能直接解释为仅天气/算力因素的消融。迁移审计记录归档于本地`.hermes/plans/TEMPORAL_MIGRATION.md`，不参与运行；配置回归另含真实数据首预测步的LightGBM诊断，不等于17折或完整288步模型效果验收。
+
 ## 算力离线处理合同
 
 `liantong_computility_process.py` 独立处理 `aidc_comp_liantong_5min/{training,inference}`，不修改目标、天气、模型 YAML 或原始 CSV。
@@ -44,7 +48,7 @@ env -u PYTHONPATH .venv/bin/python config/aidc_electricity_computility/electrici
 
 本目录按八组保存 72 份物理模型 YAML（原四组 37 份、三个算力组各 9 份、`accuracy_ablation` 8 份）；`liantong_power_process.py` 为独立离线处理入口，不修改模型配置。
 
-`accuracy_ablation/` 是以 baseline Direct pointwise 为基座的独立精度候选组：原样对照、近期状态、复杂度控制、L2/Huber 损失、特征筛选、Ridge 和 XGBoost。保持原数据与严格 14 天历史/17 折回测合同；不加入算力、测点或分解，不改原有六组。配置与实验边界见 [accuracy_ablation/README.md](accuracy_ablation/README.md)。仅配置验证不代表正式回测或精度提升。
+`accuracy_ablation/`是以baseline Direct pointwise的模型/特征为基座的独立精度候选组：组内对照、近期状态、复杂度控制、L2/Huber损失、特征筛选、Ridge和XGBoost。保持原数据与14天历史/17折几何，但已采用新窗口及共享horizon采样合同，control不再与父baseline同身份；不加入算力、测点或分解，不改变其他组的数据和特征。配置与实验边界见[accuracy_ablation/README.md](accuracy_ablation/README.md)。仅配置验证不代表正式回测或精度提升。
 
 ## 执行
 
@@ -111,17 +115,17 @@ env -u PYTHONPATH .venv/bin/python config/aidc_electricity_computility/electrici
 
 ## 九策略严格历史窗口
 
-`add_weather/lgbm_*.yaml` 为原有九配置的原样语义迁移，仅输出组路径改变。九策略分别覆盖 Direct pointwise（含 horizon 特征的独立变体）、Direct、Recursive、DirRec、DIRMO、RecMO、DirRecMO、MIMO，使用 lag、rolling/expanding、datetime、holiday 和 weather，不做目标分解。
+`add_weather/lgbm_*.yaml` 保留原有九策略的模型与特征，但已迁移显式训练窗口及按布局区分的采样合同，不再是仅改变输出路径的原样语义迁移。九策略分别覆盖 Direct pointwise（含 horizon 特征的独立变体）、Direct、Recursive、DirRec、DIRMO、RecMO、DirRecMO、MIMO，使用 lag、rolling/expanding、datetime、holiday 和 weather，不做目标分解。
 
-- `validation.train_history_steps: 4032`：每折先截取连续 14 天 5min 数据，再构造所有训练和预测特征；expanding 从该折起点重置。
+- 当前使用`validation.training_window: {kind: rolling, history_steps: 4032}`，预测窗口为`after_origin`：每折先截取连续14天5min数据，再构造训练和预测特征；expanding从该折起点重置。旧train_history_steps/train_window_steps不与新合同混写。
 - 预测长度 288 点，每日滚动；回测日期 8.15—8.31，共 17 折，包含正常计分的 8.19。
-- 特征预热和标签均位于窗口内。Direct/DIRMO/MIMO 的有效监督原点数为 1728，其余变体为 1729；这是 lag 锚点差异，不用扩大历史强行统一。
-- 配置只支持 `--backtest-only`，完整生命周期、final fit 和 bundle 导出显式拒绝。其他场景未启用 `train_history_steps` 时保持原行为。
+- 特征预热和标签均位于窗口内。Direct/DIRMO/MIMO的安全候选原点数为1728，其余变体为1729；这是lag锚点差异。Direct独立模型、MIMO、DIRMO、DirRec、DirRecMO使用全部候选；共享horizon、Recursive、RecMO再按每日23:55锚点采样，不能把候选数写成采样后的训练原点数。
+- 天气组不再强制`--backtest-only`，新合同支持final fit/bundle；完成正式预测仍须满足预测区间的外生资产覆盖与可得性要求。baseline、baseline_opt、add_weather_opt保留旧原始历史合同及backtest-only限制；框架支持不等于当前资产已具备实盘资格。
 - 验收包括九策略合成 LightGBM 回测及窗口外扰动不变性、真实数据首折/8.19/末折特征设计探针；不表示九份正式配置已经完成大规模拟合，也不提供部署资格或实测缺失日误差证明。
 
 ## 算力消融组
 
-`add_training_compute/`、`add_inference_compute/` 和 `add_training_inference_compute/` 各含 baseline 的九份 `lgbm_*.yaml` 对照。前两个单因素组仅添加独立算力 source、observed-past lag 和组输出路径，baseline 的目标、节假日、datetime、rolling/expanding、模型参数、策略与验证设置全部保留。ETS 不消费这些外生指标，仅保留原 baseline 对照，不生成名不副实的 ETS 加算力配置。
+`add_training_compute/`、`add_inference_compute/` 和 `add_training_inference_compute/` 各含与baseline同名的九份`lgbm_*.yaml`候选。前两组在特征侧仅添加独立算力source、observed-past lag和组输出路径，保留baseline的目标、节假日、datetime、rolling/expanding、模型参数与策略；验证设置已独立迁移为新窗口和按布局区分的采样规则，不再与父baseline逐字段相同。统一训练口径前，不能据此作严格单因素归因。ETS不消费这些外生指标，仅保留原baseline对照。
 
 | 组 | 明确入模的基础列 |
 | --- | --- |
@@ -129,15 +133,15 @@ env -u PYTHONPATH .venv/bin/python config/aidc_electricity_computility/electrici
 | `add_inference_compute` | `inference_gpu_memory_amount_sum_raw`、`inference_gpu_memory_util_sample_mean`、`inference_memory_amount_sum_raw`、`inference_memory_total_sample_mean_raw` |
 | `add_training_inference_compute` | 上述全部 7 列，另加目标 `value` 的 `recent_state`（原点前含原点 6/12/36 点 level/mean/std/diff/slope，与 baseline_opt 同口径） |
 
-`add_training_inference_compute` 是训练+推理算力与近期状态的组合候选：除两组算力 source、7 列 lag、`recent_state` 和组输出路径外，其余字段与 baseline 逐字段一致；不加 same_slot、seasonal_baseline 或参数调整，不能将组合效果归因于单一增量。`recent_state` 只作用于目标 `value`，不展开到算力列。
+`add_training_inference_compute`是训练+推理算力与近期状态的组合候选：除验证合同迁移、两组算力source、7列lag、recent_state和组输出路径外，其余字段与baseline一致；不加same_slot、seasonal_baseline或参数调整，不能将组合效果归因于单一增量。recent_state只作用于目标value，不展开到算力列。
 
 - 分别读取 `aidc_comp_liantong_5min/computility_training_5min_20260801_20260831.csv` 和 `computility_inference_5min_20260801_20260831.csv`，不读取带目标的分析拼接表或 Job 长表；未声明列不会入模。内存/显存保留原始单位，GPU 功率为 kW。
 - 每列 `observed_past_lags: [288, 576]`：单因素组分别增加 6/8 个、组合组增加 14 个算力 lag 列，不增加算力 rolling、算力近期状态或特征选择器。CPU 的 std 指同刻实例间离散度，不是沿时间的波动。
 - `availability: source_time` 为采集可得性假设，`provider: persistence` 满足 observed-past 显式 provider 合同；由于最小 lag 等于 horizon，当前设计只消费原点前真实历史，不使用 persistence 外推。不能据此证明实际采集零延迟。
 - 保留基线的历史锚点：普通 Direct、MIMO、DIRMO 的 `align_to_target: false` 将 lag 冻结在预测原点；Direct pointwise 两变体及递归家族以目标时刻回溯。不能把原点锚定的 288 步 lag 描述成预测时刻的昨日同槽。每个变体只与同名 baseline 配对，避免把策略锚点差异归因为算力。
-- 保留 5min、288 点 horizon、14 天原始历史、17 折和 backtest-only 边界。三组仅为待验证候选；全月关联分析不是独立泛化证据，不宣称预测改善，不自动运行正式回测或导出部署模型。
+- 保留5min、288点horizon、14天原始历史和17折；三组采用新training_window，已解除配置层backtest-only限制，采样策略见页首。它们仍是待验证候选；全月关联分析不是独立泛化证据，不宣称预测改善，不自动运行正式回测或导出部署模型。
 
-验收：全场景 `scripts/check_model_configs.py 'config/aidc_electricity_computility/electricity/2026-08-31/liantong_IT/**/*.yaml'` 为 72/72 通过；`tests/run_suite.py integration --match test_liantong_` 为 33 项通过。新增测试覆盖全部 27 份算力配置的真实训练设计、首折/补值标签日/末折预测第 1/144/288 步值及其 proof，并核对窗口外/未来算力扰动不变性；不代表正式回测、final fit 或部署验收。
+历史验收记录（密集训练配置阶段，非当前套件计数）：全场景 `scripts/check_model_configs.py 'config/aidc_electricity_computility/electricity/2026-08-31/liantong_IT/**/*.yaml'` 为 72/72 通过；`tests/run_suite.py integration --match test_liantong_` 为 33 项通过。当时新增测试覆盖全部27份算力配置的真实训练设计、首折/补值标签日/末折预测第1/144/288步值及其proof，并核对窗口外/未来算力扰动不变性；不代表正式回测、final fit或部署验收。当前测试范围见[tests说明](../../../../../tests/README.md)。
 
 ## 四组与原生 ETS
 
@@ -154,9 +158,9 @@ env -u PYTHONPATH .venv/bin/python config/aidc_electricity_computility/electrici
 
 ETS 直接从每折完整 4032 点、5min 规则历史估计；每日周期 288，独立预测未来 288 点。默认候选 ANA/AAA/AAdA、BIC 选择、heuristic 初始化、每候选最多 300 次迭代；记录候选收敛/失败证据，全失败 RAISE，不静默换模型。仅借鉴 M5 ES_bu 自动指数平滑思想，不宣称复现零售层级方法。
 
-四组保持同样 17 折日期、严格 14+1 天和评分规则，输出路径分别追加组名；旧结果完全保留，不自动迁移或清除。原始目标和 8.19 同槽填补逻辑未修改。所有 YAML 仍限定 `--backtest-only`，本次没有运行正式配置。
+四组保持同样17折日期、严格14+1天和评分规则，输出路径分别追加组名；旧结果完全保留，不自动迁移或清除。原始目标和8.19同槽填补逻辑未修改。初始四组均限定backtest-only；当前add_weather已迁移新窗口，其余三组仍保留旧限制，不能再概括为全部YAML均backtest-only。
 
-存量结果已另按用户明确授权完成分组：原 Direct、RecMO、MIMO 三个结果目录整体迁入 `results/results_test/aidc_electricity_computility/electricity/2026-08-31/liantong_IT/add_weather/`，fingerprint 与当前配置一致，72个原有文件逐文件 SHA-256 不变。`baseline/`、`baseline_opt/`、`add_weather_opt/` 目前只有空分组目录，没有正式结果；没有补跑模型。结果根目录的 `README.md` 保存本次整理汇总。
+历史结果分组记录：原Direct、RecMO、MIMO三个结果目录曾按用户授权整体迁入`results/results_test/aidc_electricity_computility/electricity/2026-08-31/liantong_IT/add_weather/`，fingerprint与分组当时的配置一致，72个原有文件逐文件SHA-256不变；不代表与当前窗口迁移后的配置同身份。整理时`baseline/`、`baseline_opt/`、`add_weather_opt/`只有空分组目录，没有正式结果，也未补跑模型。结果根目录的`README.md`保留当时整理记录，当前产物是否存在须另行核实。
 
 静态审计（项目根目录）：
 

@@ -226,9 +226,18 @@ validation:
   schedule_mode: intraday
   horizon_mode: fixed_steps
   history_steps: 5072
-  train_window_steps: 1424
   fold_count: 31
   stride_steps: 96
+  training_window:
+    kind: rolling
+    history_steps: 2112
+  forecast_window:
+    start: after_origin
+  refit_every: 1
+  training:
+    origin_sampling:
+      stride_steps: 96
+      anchor_time: '2026-07-31T14:00:00'
 output:
   scenario_subpath: aidc_load_15min_short/route_A/add_endogenous_state
   results_root: results

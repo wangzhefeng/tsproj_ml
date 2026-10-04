@@ -93,9 +93,14 @@ validation:
   schedule_mode: intraday
   horizon_mode: fixed_steps
   history_steps: 6336
-  train_window_steps: 2784
   fold_count: 31
   stride_steps: 96
+  training_window:
+    kind: rolling
+    history_steps: 3552
+  forecast_window:
+    start: after_origin
+  refit_every: 1
 output:
   scenario_subpath: aidc_load_15min_rolling/route_A/add_exogenous
   results_root: results

@@ -104,10 +104,18 @@ validation:
   schedule_mode: daily
   horizon_mode: fixed_steps
   history_steps: 6625
-  train_history_steps: 4032
-  train_window_steps: 1729
   fold_count: 17
   stride_steps: 288
+  training_window:
+    kind: rolling
+    history_steps: 4032
+  forecast_window:
+    start: after_origin
+  refit_every: 1
+  training:
+    origin_sampling:
+      stride_steps: 288
+      anchor_time: '2026-08-31T23:55:00'
 output:
   scenario_subpath: aidc_electricity_computility/electricity/2026-08-31/liantong_IT/accuracy_ablation/xgb
   results_root: results

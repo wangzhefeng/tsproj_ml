@@ -8,7 +8,32 @@ fixed-step 的 `validation.train_history_steps: W` 表示每折仅读取原点�
 
 `config/` 承载全部活动模型 YAML（`schema_version: 2` canonical）与数据工具 YAML。三个 AIDC 15min 负荷场景的 baseline 成员（ST/LightGBM/Ridge × Direct/Recursive/MIMO）由 `add_ensemble/` 的 Latin-square 组合直接引用，不维护重复 member。列族错配的历史配置已经批准移出活动集，内容由 Git 保留，不计入活动集。
 
+## 训练工作量控制（显式启用）
+
+- 周期采样可附 `origin_sampling.anchor_time`（ISO时间字符串，须与`stride_steps`配合，不能与`time_of_day`同时用）：按原始频率对齐到该锚点的周期网格，不随安全标签终点漂移。未声明时仍保留末端向前取样语义。
+
+- `validation.training.origin_sampling`：`stride_steps`（正整数，从当前训练候选窗末端向前等间隔取样）或 `time_of_day`（数据时间轴上的严格 `HH:MM`，秒/微秒必须为零）二选一；可加 `max_origins >= 2`，在筛选后保留最近的原点。缺省全取，筛选不足两个原点直接报错。时间表示最后已知点，例如 5min 日界预测选 `23:55`，不是次日 `00:00`。
+- 先确定原训练窗口和安全标签边界，再选原点；旧`history_steps/train_window_steps/train_history_steps`仍表示原几何，不随采样改写。原始五分钟数据、H、每折预测行数不变。fit/final使用同一选择器；ETS拒绝该项。旧路径完整编译后选行；显式training_window路径在编译前采样，资源规划相应按选中设计估算。
+- 当前三个15min场景及联通迁移组按模型布局区分采样：Direct独立模型、MIMO、DIRMO、DirRec、DirRecMO保留窗内全部安全原点，不声明origin_sampling；Direct共享horizon、Recursive、RecMO保留原锚点采样。规则对同组全部估计器一致，不靠调小叶节点样本限制让稀疏数据勉强拟合。单模型训练行数需按模型组的调用数展开，不能用预测H或总输出数冒充样本数；采样不是无损提速，跨策略比较须同时披露训练口径。
+- `validation.refit_every: k`（正整数，缺省1）：fixed-step 首折必拟合，此后每k折重新拟合，其余折复用模型、特征缩放和选列拟合态，但更新当前原点的信息集及原始历史下界。所有折仍预测评分；k>1按序执行，不声称窗口并行。当前仅 Local point、监督估计器、无目标变换；calendar-month、ETS、Ensemble顶层/成员拒绝间隔重训。Ensemble顶层也拒绝原点采样，成员可独立声明采样。
+- 两项均进入语义 fingerprint，不修改旧结果。`refit_every`是本次回测的模型更新策略，不是进程外的定时服务；单次final fit仍拟合当前模型，部署调用方需按同一周期管理模型版本。已有 raw-history backtest-only 限制不变。
+
 ## 唯一 schema
+
+### 显式预测区间与原始训练窗
+
+新合同以`validation.training_window`替代`train_history_steps/train_window_steps`（不可混写），缺省保持旧配置语义：
+
+- `training_window: {kind: rolling, history_steps: 25920}`：原点前含原点的固定原始点数，预热也在窗内；`kind: expanding, start_time: '2026-04-08T00:00:00'`：固定起点，终点随发报时刻前进。历史缺口、起点不在网格、预热后不足两个完整样本均RAISE。
+- `forecast_window: {start: after_origin}`：默认从原点下一点预测H步；可显式`gap_steps`跳过非目标点。`{start: next_day}`从原点所在日期的次日00:00开始，H必须为整天点数，可覆盖多天，禁止同时声明gap。该字段须与新training_window一起使用；不能靠挪动原点获得次日目标。
+- `forecast_origin`始终是可用数据截止点；调度网格以它为锚、`stride_steps`为发报间隔。H仍在`problem.horizon`；步长可小于H。`history_steps`在新合同中表示回测发报候选的原始时间网格回看点数，不截断扩展训练窗。
+- 新合同每折重新fit（要求`refit_every=1`），训练标签末端必须`<=本折origin`。先按训练窗及完整标签筛选，再按origin_sampling选择，才编译训练矩阵；预测窗口调度不受采样稀疏化影响。
+- 新合同支持fixed-step、Local point监督模型、无目标变换；支持final fit/forecast/bundle。ETS、Global、quantile、calendar-month及Ensemble顶层/成员目前明确拒绝，不静默绕过。next_day/gap暂拒绝递归依赖和seasonal_baseline；目标对齐lag须覆盖真实提前量，否则按可见性合同RAISE。新自然日合同不支持跨夏令时变长/变短日。
+- 旧train_history_steps的backtest-only限制保持不变；迁移至新training_window时需显式配置，不批量改旧YAML。当前时间轴不新增独立外部任务触发器；实际发报延迟需调用方保证数据截止点与可得版本正确。
+
+### canonical字段
+
+HVAC先行样例保留；后续已按配置组迁移三个15min场景及算力场景共2717份。短期场景明确保留每天14:00预测四小时。三个15min场景由生成器直接按实验组生成时间合同，不再依赖迁移注册表；联通配置直接保存显式窗口。融合引用、目标变换、概率、月频、专属年度调度、历史覆盖不足等阻塞组保持原配置；不同训练口径不得直接作为单因素对照。历史迁移记录归档在本地`.hermes/plans/TEMPORAL_MIGRATION.md`及`temporal_migration_status.json`，不属于运行依赖，不随Git发布。
 
 单模型顶层：
 
@@ -49,10 +74,10 @@ Fixed-step validation 使用 `history_steps/train_window_steps/fold_count/stride
 
 ## 时间边界
 
-- `now_time` 配置值 = 最后一个已知数据点；日志/文件名的时间戳按 `now_time` 原值。
-- **`schedule_mode`**（`RuntimeConfig`，默认 `daily`）：`daily` = 日界对齐（`floor("1D") + 1day` → 次日 00:00，预测下一完整自然日）；`intraday` = 保留调度时刻（从 `now_time` 起 `predict_steps` 步）。
-- **`predict_steps` 以 `freq` 为单位计步**：15min 下 1 天 = 96；5min 下 1 天 = 288；日频下 = 天数。`horizon = predict_steps`，不经 `n_per_day` 换算。
-- `pd.date_range` 使用 `inclusive="left"`，end 为排除边界——终日 23:55 是最后一个被包含的点。
+- `validation.forecast_origin`为最后已知数据点，不等于目标预测区间起点。
+- canonical使用`forecast_origin`而非旧RuntimeConfig/now_time。旧路径的`schedule_mode`不自动将下午原点改为次日零点；未声明forecast_window时，目标始终为origin之后第1至H步。intraday回测按正式原点相位调度。
+- `problem.horizon`以`freq`计输出点数，可覆盖小时、一天或多天；自然日对齐必须显式声明`forecast_window.start=next_day`。
+- 区间以输出时间网格为准：5min自然日最后一点23:55；预测起点与信息截止时刻分离，不能读取中间间隔内尚未知的数据。
 - OOF `ensemble.oof.gap_steps` 承担验证/训练标签隔离：验证折与训练折的目标标签按 gap 隔离，不以训练折内标签充当验证标签。
 
 ## 数据角色与外生来源

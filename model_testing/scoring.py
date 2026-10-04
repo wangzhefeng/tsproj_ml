@@ -14,6 +14,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from typing import Any, Mapping
+from time import perf_counter
 
 import pandas as pd
 
@@ -58,10 +59,13 @@ def score_holdout_fold(
     ``runner`` 需提供 forecast_designs/predict/actual/seasonal_naive/
     forecast_times/execution_evidence 公开能力（与 ensemble 成员同一协议面）。
     """
+    prediction_started = perf_counter()
     feature_scaler, target_transform, _X, _Y, artifact = fit_result
     designs, provider = runner.forecast_designs(origin, feature_scaler, target_transform)
     forecast_times = runner.forecast_times(origin)
     prediction = runner.predict(artifact, designs, provider, forecast_times, target_transform)
+    prediction_seconds = perf_counter() - prediction_started
+    scoring_started = perf_counter()
     actual = runner.actual(origin_index, forecast_times)
     seasonal_naive = runner.seasonal_naive(origin, forecast_times)
     point = (
@@ -105,5 +109,11 @@ def score_holdout_fold(
         point_scores=point_scores,
         probabilistic_scores=probabilistic_scores,
         calibration_audit=calibration_audit,
-        execution_evidence=runner.execution_evidence(artifact, target_transform),
+        execution_evidence={
+            **runner.execution_evidence(artifact, target_transform),
+            "stage_wall_seconds": {
+                "prediction": prediction_seconds,
+                "scoring": perf_counter() - scoring_started,
+            },
+        },
     )

@@ -12,7 +12,7 @@ import pandas as pd
 from config.config_loader import load_yaml_config
 from forecasting_core.specs import FixedStepBacktestSpec, ForecastConfigSpec
 from model_pipeline.supervised_design import minimum_history_rows
-from model_pipeline.supervised_design import SupervisedDesignBuilder, raw_history_backtest_windows
+from model_pipeline.supervised_design import SupervisedDesignBuilder, temporal_backtest_windows
 from data_loading import SourceRegistry
 from model_pipeline.runner import CanonicalBaseModelRunner, run_canonical_config
 from model_testing.geometry import TimeGeometry
@@ -138,8 +138,8 @@ class LiantongAugustConfigsTest(unittest.TestCase):
                 assert isinstance(config, ForecastConfigSpec)
                 spec = config.validation.backtest
                 assert isinstance(spec, FixedStepBacktestSpec)
-                self.assertEqual(spec.train_history_steps, 4032)
-                self.assertEqual(spec.train_window_steps, 4032 - minimum_history_rows(config) - 288 + 1)
+                self.assertEqual(dict(config.validation['training_window']), {'kind': 'rolling', 'history_steps': 4032})
+                self.assertIsNone(spec.train_window_steps)
                 self.assertEqual(spec.stride_steps, 288)
                 self.assertEqual(spec.fold_count, 17)
                 origin = pd.Timestamp(config.validation["forecast_origin"])
@@ -147,12 +147,14 @@ class LiantongAugustConfigsTest(unittest.TestCase):
 
                 geometry = TimeGeometry(pd.offsets.Minute(5), 288)
                 builder = SupervisedDesignBuilder(config, SourceRegistry(config.data, ROOT))
-                folds = raw_history_backtest_windows(builder, origin)
+                folds = temporal_backtest_windows(builder, origin)
                 self.assertEqual(len(folds), 17)
                 self.assertEqual(geometry.label_start(folds[0].origin), pd.Timestamp("2026-08-15"))
                 self.assertEqual(geometry.label_end(folds[-1].origin), times[-1])
                 for fold in folds:
-                    self.assertEqual(len(fold.train_indices), spec.train_window_steps)
+                    self.assertEqual(len(fold.train_indices), fold.metadata['training_sample_count'])
+                    self.assertEqual(fold.metadata['candidate_origins'], 4032 - minimum_history_rows(config) - 288 + 1)
+                    self.assertGreaterEqual(len(fold.train_indices), 2)
                     train_start = pd.Timestamp(fold.metadata["raw_history_start"])
                     train_end = pd.Timestamp(fold.metadata["raw_history_end"])
                     self.assertEqual(train_start, geometry.label_start(fold.origin) - pd.Timedelta(days=14))

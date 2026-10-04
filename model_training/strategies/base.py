@@ -1,7 +1,7 @@
 """Shared canonical strategy target planning and prediction execution."""
 
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from typing import Any, ClassVar
 
 import numpy as np
@@ -170,6 +170,7 @@ class CanonicalStrategyArtifact:
     H: int
     K: int
     schema_version: int = 2
+    training_workload: Mapping[str, Any] = field(default_factory=dict, compare=False)
 
     def __post_init__(self) -> None:
         if self.schema_version != 2:

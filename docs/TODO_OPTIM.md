@@ -1,5 +1,7 @@
 # 项目待优化问题
 
+> 缓存退役说明：下文涉及磁盘编译缓存的旧实施记录仅供历史追溯。当前已删除`feature_engineering/cache.py`、`block_store.py`及`compiled_cache_root`；原始设计身份迁至`feature_engineering/design_identity.py`，内存共享、模型checkpoint和融合OOF保留。旧缓存测试由身份与内存执行测试接替。
+
 本文档记录尚未解决的工程问题、技术债和配置体系优化事项。业务实验与场景研究事项继续记录在 [`docs/TODO_AIDC.md`](TODO_AIDC.md)。
 
 ## 维护约定

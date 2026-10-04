@@ -15,6 +15,8 @@ import numpy as np
 import pandas as pd
 
 from forecasting_core.artifacts import ForecastModelBundle, QuantileGrid
+from forecasting_core.specs.problem import ForecastProblemSpec
+from forecasting_core.specs.temporal import forecast_times
 from model_testing.geometry import TimeGeometry, scheduled_origin_indices
 from model_pipeline.run_state import require_completed_state
 
@@ -133,7 +135,7 @@ def validate_artifacts(task: Mapping[str, Any], *, require_digests: bool = True)
     if formal_origin is not None:
         formal_origin = pd.Timestamp(formal_origin)
         validate_time_grid(
-            forecast, pd.date_range(formal_origin + offset, periods=horizon, freq=offset),
+            forecast, forecast_times(ForecastProblemSpec(**resolved["problem"]), resolved["validation"], formal_origin),
             rows_per_time=n_series * n_targets,
         )
     for window in windows:

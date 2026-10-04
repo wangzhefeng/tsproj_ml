@@ -15,6 +15,7 @@ from sklearn.preprocessing import (
 )
 
 from feature_engineering.transform_specs import normalize_feature_scaling
+from forecasting_core.design import IndexedDesign
 
 
 class CanonicalFeatureScaler:
@@ -114,13 +115,19 @@ class CanonicalFeatureScaler:
             )
         return frame.loc[:, self.feature_names].copy()
 
-    def _numeric_passthrough(self, values: Any) -> np.ndarray | None:
+    def _numeric_passthrough(self, values: Any) -> np.ndarray | IndexedDesign | None:
         if (
             self.method != "none"
             or self.encode_categorical
             or self.categorical_names
         ):
             return None
+        if isinstance(values, IndexedDesign):
+            if values.shape[1] != len(self.feature_names):
+                raise ValueError("feature matrix width must match feature schema")
+            if not values.is_finite():
+                raise ValueError("canonical transformed features must be finite")
+            return values
         array = (
             values.to_numpy(dtype=float, copy=False)
             if isinstance(values, pd.DataFrame)

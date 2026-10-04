@@ -154,8 +154,9 @@ class RawHistoryWindowTest(unittest.TestCase):
     def test_batch_and_single_share_the_same_history_lower_bound(self):
         config = make_config(self.path, strategy="direct")
         runner = self.runner(config)
+        runner.prepare_training()
         origins = runner.supervised_origins[:3]
-        self.assertEqual(runner.training_compile["mode"], "batch")
+        self.assertEqual(runner.training_compile["mode"], "indexed")
         for index, origin in enumerate(origins):
             single, labels = runner.builder.training_row(origin)
             for call, design in enumerate(single):
@@ -167,15 +168,18 @@ class RawHistoryWindowTest(unittest.TestCase):
         for first, second in zip(runner.X_all, repeated.X_all):
             np.testing.assert_array_equal(first, second)
 
-    def test_cache_and_checkpoint_are_bound_to_window(self):
-        cache = self.root / "cache"
+    def test_shared_design_and_checkpoint_are_bound_to_window(self):
         checkpoint = self.root / "checkpoints"
-        first = self.runner(compiled_cache_root=cache, checkpoint_root=checkpoint)
-        second = self.runner(compiled_cache_root=cache, checkpoint_root=checkpoint)
-        earlier = self.runner(origin=self.times[45], compiled_cache_root=cache, checkpoint_root=checkpoint)
-        self.assertFalse(first.compiled_cache_hit)
-        self.assertTrue(second.compiled_cache_hit)
-        self.assertNotEqual(first.compiled_cache_fingerprint, earlier.compiled_cache_fingerprint)
+        first = self.runner(checkpoint_root=checkpoint)
+        second = self.runner(checkpoint_root=checkpoint)
+        earlier = self.runner(origin=self.times[45], checkpoint_root=checkpoint)
+        self.assertTrue(second.share_training_design(first))
+        self.assertFalse(earlier.share_training_design(first))
+        for runner in (first, second, earlier):
+            runner.prepare_training()
+        self.assertFalse(first.design_shared)
+        self.assertTrue(second.design_shared)
+        self.assertNotEqual(first.raw_design_fingerprint, earlier.raw_design_fingerprint)
         np.testing.assert_array_equal(first.X_all, second.X_all)
         indices = tuple(range(len(first.supervised_origins)))
         fit = first.fit(indices)

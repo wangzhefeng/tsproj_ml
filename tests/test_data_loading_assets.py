@@ -13,7 +13,7 @@ from scripts.audit_runtime_assets import audit_runtime_assets
 from config.config_loader import load_yaml_config
 from data_loading import BUILTIN_GENERATORS
 from forecasting_core.specs import ColumnSpec, DataSourceSpec, DataSpec, ForecastConfigSpec
-from feature_engineering import cache
+from feature_engineering import design_identity
 from unittest.mock import patch
 import test_ensemble_loader as fixtures
 
@@ -55,8 +55,8 @@ class DataLoadingAssetBehaviorTest(unittest.TestCase):
         assert isinstance(config, ForecastConfigSpec)
         expected = {'targets:history_path': hashlib.sha256(path.read_bytes()).hexdigest()}
         self.assertEqual(provenance.source_hashes(config.data, self.root), expected)
-        self.assertIs(cache.file_sha256, provenance.file_sha256)
-        payload = cache.raw_design_provenance(config, base_dir=self.root, origin='2026-01-03', generators={})
+        self.assertIs(design_identity.file_sha256, provenance.file_sha256)
+        payload = design_identity.raw_design_provenance(config, base_dir=self.root, origin='2026-01-03', generators={})
         self.assertEqual(payload['source_hashes'], expected)
         self.assertEqual(provenance.generator_hashes(config.data, {}), {})
         calendar = DataSourceSpec(name='calendar', source_type='generated', generator='chinese_holiday',
@@ -70,10 +70,10 @@ class DataLoadingAssetBehaviorTest(unittest.TestCase):
         self.assertEqual(len(hashes['calendar']), 64)
         calendar_path = 'data_loading/calendar_generator/calendar_features.py'
         self.assertIn(calendar_path, payload['compilation_implementation_hashes'])
-        original = cache.file_sha256
-        before = cache.compute_raw_design_fingerprint(config, base_dir=self.root, origin='2026-01-03', generators={})
-        with patch.object(cache, 'file_sha256', side_effect=lambda path: 'changed-calendar' if Path(path).name == 'calendar_features.py' else original(path)):
-            self.assertNotEqual(before, cache.compute_raw_design_fingerprint(config, base_dir=self.root, origin='2026-01-03', generators={}))
+        original = design_identity.file_sha256
+        before = design_identity.compute_raw_design_fingerprint(config, base_dir=self.root, origin='2026-01-03', generators={})
+        with patch.object(design_identity, 'file_sha256', side_effect=lambda path: 'changed-calendar' if Path(path).name == 'calendar_features.py' else original(path)):
+            self.assertNotEqual(before, design_identity.compute_raw_design_fingerprint(config, base_dir=self.root, origin='2026-01-03', generators={}))
 
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()

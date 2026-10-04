@@ -54,6 +54,9 @@ def seasonal_naive_tensor(
                 one_day_steps,
                 int(builder.config.problem.horizon),
             )
+            if builder.config.validation.get("forecast_window") is not None:
+                lead = int((forecast_times[-1] - origin) / step)
+                configured = max(configured, ((lead + one_day_steps - 1) // one_day_steps) * one_day_steps)
     lag = positive_validation_int(
         {"seasonal_naive_lag": configured},
         "seasonal_naive_lag",

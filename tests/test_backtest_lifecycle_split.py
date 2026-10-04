@@ -73,6 +73,7 @@ class BacktestLifecycleSplitTest(unittest.TestCase):
                 builder = SimpleNamespace(audit=(), reset_audit=Mock())
                 runner = Mock(spec=BacktestRunner,
                     config=config, builder=builder, execution_plan=SimpleNamespace(window_workers=workers),
+                    stage_wall_seconds={},
                     backtest_windows=lambda: windows,
                     backtest_target_histories=Mock(return_value=("history0", "history1")),
                     fit=Mock(side_effect=lambda indices, **kwargs: (indices, kwargs)),
@@ -105,6 +106,7 @@ class BacktestLifecycleSplitTest(unittest.TestCase):
                     self.assertEqual(item["fit_result"][1],
                                      {"target_history": f"history{i}", "force_serial": True} if workers > 1 else {})
                 self.assertEqual(runner.backtest_target_histories.call_count, int(workers > 1))
+                self.assertGreaterEqual(runner.stage_wall_seconds['backtest_result_write'], 0.0)
 
 
 if __name__ == "__main__":

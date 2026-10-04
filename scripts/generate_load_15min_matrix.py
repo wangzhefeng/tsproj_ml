@@ -20,6 +20,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from config.config_loader import load_yaml_config  # noqa: E402
+
 from forecasting_core.specs import ForecastConfigSpec  # noqa: E402
 from model_ensemble.specs import EnsembleConfigSpec  # noqa: E402
 
@@ -394,9 +395,9 @@ def _features(
     }
 
 
-def _validation(scenario: str) -> dict[str, Any]:
+def _validation(scenario: str, group: str, strategy_variant: str) -> dict[str, Any]:
     spec = SCENARIO_SPECS[scenario]
-    return {
+    validation = {
         "forecast_origin": spec["forecast_origin"],
         "schedule_mode": spec["schedule_mode"],
         "horizon_mode": "fixed_steps",
@@ -405,6 +406,25 @@ def _validation(scenario: str) -> dict[str, Any]:
         "fold_count": spec["fold_count"],
         "stride_steps": spec["stride_steps"],
     }
+    # 融合引用的基线及分解组保留原合同；其余已审核组直接生成显式窗口。
+    if group in {"add_exogenous", "add_endogenous_cross_route",
+                 "add_endogenous_state", "add_endogenous_joint"}:
+        validation.pop("train_window_steps")
+        validation.update({
+            "training_window": {
+                "kind": "rolling",
+                "history_steps": 2112 if scenario == "aidc_load_15min_short" else 3552,
+            },
+            "forecast_window": {"start": "after_origin"},
+            "refit_every": 1,
+        })
+        # 只有跨调用共享模型的布局才按日采样；独立模型保留密集原点。
+        if strategy_variant in {"direct-pointwise", "direct-pointwise-horizon", "recursive", "recmo"}:
+            validation["training"] = {"origin_sampling": {
+                "stride_steps": spec["stride_steps"],
+                "anchor_time": spec["forecast_origin"],
+            }}
+    return validation
 
 
 def _payload(
@@ -420,7 +440,7 @@ def _payload(
     decomposition: str | None = None,
 ) -> dict[str, Any]:
     strategy, _ = _strategy_spec(scenario, strategy_variant)
-    validation = _validation(scenario)
+    validation = _validation(scenario, group, strategy_variant)
     is_lgbm = model == "lgbm"
     is_profiled_baseline = group == "baseline" and is_lgbm
     source_names = {str(source.get("name", "")) for source in sources}

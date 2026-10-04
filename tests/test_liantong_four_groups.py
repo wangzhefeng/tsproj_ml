@@ -8,13 +8,15 @@ from config.config_loader import load_yaml_config
 from data_loading import SourceRegistry
 from feature_engineering.compiler import FeatureCompiler
 from forecasting_core.specs import ForecastConfigSpec
-from model_pipeline.supervised_design import minimum_history_rows, SupervisedDesignBuilder, raw_history_backtest_windows
+from model_pipeline.supervised_design import minimum_history_rows, SupervisedDesignBuilder, raw_history_backtest_windows, temporal_backtest_windows
+
 from models.factory import ModelFactory
 from scripts.check_model_configs import check_model_yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 DIRECTORY = ROOT / 'config/aidc_electricity_computility/electricity/2026-08-31/liantong_IT'
 VARIANTS = {'direct-pointwise', 'direct-pointwise-horizon', 'direct', 'recursive', 'dirrec', 'dirmo', 'recmo', 'dirrecmo', 'mimo'}
+DENSE_VARIANTS = {'direct', 'mimo', 'dirmo', 'dirrec', 'dirrecmo'}
 STANDARD_GROUPS = (
     'baseline', 'baseline_opt', 'add_weather', 'add_weather_opt',
     'add_training_compute', 'add_inference_compute',
@@ -52,15 +54,25 @@ class LiantongFourGroupsTest(unittest.TestCase):
                 FeatureCompiler(config)
                 ModelFactory().create_model(config.estimator.model_type, dict(config.estimator.params), log_params=False)
                 self.assertEqual((config.problem.freq, config.problem.horizon), ('5min', 288))
-                self.assertEqual(config.validation['train_history_steps'], 4032)
-                self.assertEqual(config.validation['train_window_steps'], 4032 - minimum_history_rows(config) - 288 + 1)
+                migrated = config.validation.get('training_window') is not None
+                if migrated:
+                    self.assertEqual(dict(config.validation['training_window']), {'kind': 'rolling', 'history_steps': 4032})
+                    if path.stem.removeprefix('lgbm_') in DENSE_VARIANTS:
+                        self.assertNotIn('origin_sampling', config.validation.get('training', {}))
+                    else:
+                        self.assertEqual(config.validation['training']['origin_sampling']['stride_steps'], 288)
+                    self.assertEqual(config.validation['refit_every'], 1)
+                else:
+                    self.assertEqual(config.validation['train_history_steps'], 4032)
+                    self.assertEqual(config.validation['train_window_steps'], 4032 - minimum_history_rows(config) - 288 + 1)
                 output_group = path.parent.name
                 if output_group == 'accuracy_ablation':
                     variant, model_type = ACCURACY_ABLATIONS[path.name]
                     output_group += '/' + variant
                     self.assertEqual(config.estimator.model_type, model_type)
                     self.assertEqual(config.result_method()['method_label'], 'direct-pointwise')
-                    self.assertEqual(config.validation['train_window_steps'], 1729)
+                    if not migrated:
+                        self.assertEqual(config.validation['train_window_steps'], 1729)
                     self.assertNotIn('seasonal_baseline', config.features.transformations)
                 self.assertTrue(config.output['scenario_subpath'].endswith('/' + output_group))
                 source_names = {s.name for s in config.data.sources}
@@ -69,7 +81,8 @@ class LiantongFourGroupsTest(unittest.TestCase):
                 if path.parent.name.endswith('_opt'):
                     self.assertEqual(config.features.transformations['seasonal_baseline']['days'], 7)
                     self.assertEqual(minimum_history_rows(config), 2016)
-                folds = raw_history_backtest_windows(SupervisedDesignBuilder(config, SourceRegistry(config.data, ROOT)),
+                window_builder = temporal_backtest_windows if migrated else raw_history_backtest_windows
+                folds = window_builder(SupervisedDesignBuilder(config, SourceRegistry(config.data, ROOT)),
                                                     pd.Timestamp(config.validation['forecast_origin']))
                 self.assertEqual(len(folds), 17)
                 self.assertEqual(folds[0].origin, pd.Timestamp('2026-08-14 23:55'))
@@ -83,6 +96,21 @@ class LiantongFourGroupsTest(unittest.TestCase):
             baseline = load_yaml_config(DIRECTORY / f'baseline/lgbm_{variant}.yaml').canonical_payload()
             weather = load_yaml_config(DIRECTORY / f'add_weather/lgbm_{variant}.yaml').canonical_payload()
             weather['data']['sources'] = [s for s in weather['data']['sources'] if s['name'] != 'weather']
+            # baseline兼作HVAC生成模板，保留旧合同；天气组显式迁移，单独核验该差异。
+            baseline_validation = baseline['validation']
+            assert isinstance(baseline_validation, dict)
+            expected_validation = dict(baseline_validation)
+            expected_validation.pop('train_history_steps')
+            expected_validation.pop('train_window_steps')
+            expected_validation.update({
+                'training_window': {'kind': 'rolling', 'history_steps': 4032},
+                'forecast_window': {'start': 'after_origin'}, 'refit_every': 1,
+            })
+            if variant not in DENSE_VARIANTS:
+                expected_validation['training'] = {'origin_sampling': {
+                    'stride_steps': 288, 'anchor_time': '2026-08-31T23:55:00'}}
+            self.assertEqual(weather['validation'], expected_validation)
+            weather['validation'] = baseline['validation']
             baseline.pop('output')
             weather.pop('output')
             self.assertEqual(baseline, weather)

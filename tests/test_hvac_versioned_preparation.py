@@ -60,14 +60,14 @@ class VersionedPathsTest(unittest.TestCase):
             impute_dataset(root, excluded_it_points={}, data_version='data_v1')
             export_windows(root, recent_start=index[0], data_version='data_v1')
             parent = build_cleaned_dataset(root, data_version='data_v1')
-            self.assertEqual(parent, root / 'outlier_remove_data/data_v1/isolated_v1')
+            self.assertEqual(parent.resolve(), (root / 'outlier_remove_data/data_v1/isolated_v1').resolve())
             export_windows(root, recent_start=index[0], data_version='data_v1', replace=True,
                            preparation_root='outlier_remove_data/data_v1/isolated_v1')
             old_recipe = json.loads(recipe.read_text())
             old_recipe.update(parent='outlier_remove_data/data_v1/isolated_v1', version='redbox_past_v2')
             recipe.write_text(json.dumps(old_recipe))
             destination = build(root, recipe, data_version='data_v1')
-            self.assertEqual(destination, root / 'outlier_remove_data/data_v1/redbox_past_v2')
+            self.assertEqual(destination.resolve(), (root / 'outlier_remove_data/data_v1/redbox_past_v2').resolve())
             export_windows(root, recent_start=index[0], data_version='data_v1', replace=True,
                            preparation_root='outlier_remove_data/data_v1/redbox_past_v2')
             self.assertEqual(marker.read_text(), 'not a usable input')

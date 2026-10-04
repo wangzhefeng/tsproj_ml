@@ -226,13 +226,17 @@ def run_ensemble_config(
     for member in config.members:
         member_raw = resolved[member.name]
         member_config = parse_model_config(member_raw, source=member.config_ref)
+        if member_config.validation.get("training_window") is not None or member_config.validation.get("forecast_window") is not None:
+            raise EnsembleSpecError("Ensemble members do not yet support explicit temporal windows")
+        if member_config.validation.get("refit_every", 1) > 1:
+            raise EnsembleSpecError("Ensemble members do not support refit_every > 1")
         if member_config.validation.get("train_history_steps") is not None:
             raise EnsembleSpecError("Ensemble members do not support train_history_steps")
         member_configs[member.name] = member_config
         member_fingerprints[member.name] = member_config.fingerprint()
         registry = SourceRegistry(member_config.data, source_root)
         registry_by_member[member.name] = registry
-        runner_kwargs = {"compiled_cache_root": cache_root}
+        runner_kwargs = {}
         if member_budget is not None:
             runner_kwargs["resource_budget"] = member_budget
         runners[member.name] = services.runner_factory(
@@ -241,6 +245,11 @@ def run_ensemble_config(
             resolve_origin(registry, config.validation.get("forecast_origin")),
             **runner_kwargs,
         )
+        share_design = getattr(runners[member.name], "share_training_design", None)
+        if callable(share_design):
+            for previous_name, previous_runner in runners.items():
+                if previous_name != member.name and share_design(previous_runner):
+                    break
         if parent_budget is not None and sum(
             runner.workload.design_bytes for runner in runners.values()
         ) > parent_budget.memory_limit_bytes:

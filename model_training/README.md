@@ -17,9 +17,15 @@ ETS 的 catalog 标记为 native_history，不进入本包监督回归 trainer/a
 
 `CanonicalTrainer` 接收 `ForecastConfigSpec`、显式 `estimator_factory`、`EstimatorCapabilities`、固定 `feature_schema` 和可选 `FitCheckpoint`。`train()` 消费按策略调用组织的二维设计序列 `X_by_call` 与标签 `Y`，返回 `CanonicalStrategyArtifact`，而不是最终部署 bundle。
 
+数值设计可使用 `IndexedDesign` 共享列块。无特征缩放时保持只读视图，到模型组边界一次分配估计器布局并按列填充；不先展开每个 horizon 再 concatenate。实际缩放/选列仍按原合同执行，拟合态不得跨折共享。共享块减少编译与缓存体积，不消除 LightGBM 等估计器的展开矩阵和内部训练内存。
+
 `strategies/base.py` 维护 target plan、坐标和模型组 artifact，七个策略模块复用这组合同。Direct 的 horizon-feature 属于 layout，不是新策略；Local/Global 属于 training scope。MO 分块合法性由 core spec 校验。
 
 `estimators/capabilities.py` 从模型 catalog 与原生能力探测建立支持矩阵；`estimators/multi_target.py` 提供 independent、regressor-chain、native adapter。能力不足直接报错，不以自动降级掩盖不支持的目标维度或线程策略。
+
+## 工作量证据
+
+point策略artifact的`training_workload`记录模型组数、最大组训练行数、矩阵物化与估计器拟合wall time；pipeline补充采样前后原点数及训练准备/fit总耗时。计时不进入配置身份，checkpoint命中时拟合计时包含读取而非实际重新训练，不据此统计底层训练调用。
 
 ## 恢复与边界
 

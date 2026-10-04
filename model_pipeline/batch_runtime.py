@@ -23,7 +23,7 @@ else:
 
 from config.config_loader import load_yaml_config
 from data_loading import BUILTIN_GENERATORS, SourceRegistry
-from feature_engineering.cache import compute_raw_design_fingerprint
+from feature_engineering.design_identity import compute_raw_design_fingerprint
 from forecasting_core.runtime_resources import RuntimeResourceBudget
 from forecasting_core.specs import ForecastConfigSpec
 
@@ -72,12 +72,10 @@ class _SharedBatchRunnerFactory:
     def __init__(
         self,
         *,
-        compiled_cache_root: Path,
         resource_budget: RuntimeResourceBudget,
         fold_transform_cache: FoldTransformCache,
         checkpoint_root: Path | None = None,
     ) -> None:
-        self._compiled_cache_root = compiled_cache_root
         self._resource_budget = resource_budget
         self._fold_transform_cache = fold_transform_cache
         self._checkpoint_root = checkpoint_root
@@ -110,7 +108,6 @@ class _SharedBatchRunnerFactory:
                 config,
                 registry,
                 origin,
-                compiled_cache_root=self._compiled_cache_root,
                 resource_budget=self._resource_budget,
                 fold_transform_cache=self._fold_transform_cache,
                 checkpoint_root=resolved_checkpoint_root,
@@ -121,15 +118,16 @@ class _SharedBatchRunnerFactory:
         payload = self._payloads.get_or_create(fingerprint, materialize)
         if created:
             return created[0]
-        return CanonicalBaseModelRunner(
+        runner = CanonicalBaseModelRunner(
             config, registry, origin,
-            compiled_cache_root=self._compiled_cache_root,
             resource_budget=self._resource_budget,
             precompiled_payload=payload,
             precompiled_fingerprint=fingerprint,
             fold_transform_cache=self._fold_transform_cache,
             checkpoint_root=resolved_checkpoint_root,
         )
+        runner.prepare_training()
+        return runner
 
 
 def _task_id(path: Path) -> str:
@@ -189,13 +187,8 @@ def _batch_id(paths: tuple[Path, ...], output_root: Path) -> str:
     ).hexdigest()[:16]
 
 
-def _preflight_groups(groups, state, root, budget, config_workers):
-    """Validate every group before any fit; retain only metadata between groups.
-
-    Compilation uses the durable RawDesign cache. Execution reloads one group at
-    a time rather than holding all preflight designs in memory. A compile failure
-    remains a failed config task, not an excuse to skip planning other groups.
-    """
+def _preflight_groups(groups, state, *, budget, config_workers):
+    """Plan all groups without full matrices; numerical validation occurs on execution."""
     summaries = {}
     for group_key, group_tasks in groups.items():
         pending = [task for task in group_tasks if not (
@@ -206,21 +199,12 @@ def _preflight_groups(groups, state, root, budget, config_workers):
             continue
         workers = min(config_workers, len(pending))
         budget.for_children(workers)
-        raw_payload = None
         runners = []
         for task in pending:
-            try:
-                runner = CanonicalBaseModelRunner(
-                    task.config, task.registry, task.origin,
-                    compiled_cache_root=root, resource_budget=budget,
-                    precompiled_payload=raw_payload,
-                    precompiled_fingerprint=group_key if raw_payload is not None else None,
-                )
-            except RuntimeError:
-                # The execution construction path records config compile failures.
-                continue
-            if raw_payload is None:
-                raw_payload = runner.raw_design_payload()
+            runner = CanonicalBaseModelRunner(
+                task.config, task.registry, task.origin,
+                resource_budget=budget,
+            )
             runners.append((task, runner))
         if workers > 1:
             _validate_explicit_plans_within_child_budgets(runners, config_workers=workers)
@@ -254,7 +238,6 @@ def _preflight_groups(groups, state, root, budget, config_workers):
         }
         # No raw data references escape a preflight group.
         runners.clear()
-        raw_payload = None
         runner = None
     return summaries
 
@@ -474,7 +457,9 @@ def _run_canonical_batch_locked(
         groups.setdefault(task.raw_fingerprint, []).append(task)
 
     try:
-        state["preflight"] = _preflight_groups(groups, state, root, budget, config_workers)
+        state["preflight"] = _preflight_groups(
+            groups, state, budget=budget, config_workers=config_workers,
+        )
     except Exception as exc:
         for task in tasks:
             task_state = state["tasks"][task.task_id]
@@ -514,7 +499,6 @@ def _run_canonical_batch_locked(
         effective_workers = min(config_workers, len(pending))
         child_budget = budget.for_children(effective_workers)
         dynamic_runner_factory = _SharedBatchRunnerFactory(
-            compiled_cache_root=root,
             resource_budget=child_budget,
             fold_transform_cache=transform_cache,
             checkpoint_root=checkpoint_root,
@@ -537,7 +521,6 @@ def _run_canonical_batch_locked(
                         task.config,
                         task.registry,
                         task.origin,
-                        compiled_cache_root=root,
                         resource_budget=budget,
                         fold_transform_cache=transform_cache,
                         checkpoint_root=checkpoint_root,
@@ -549,13 +532,13 @@ def _run_canonical_batch_locked(
                         task.config,
                         task.registry,
                         task.origin,
-                        compiled_cache_root=root,
                         resource_budget=budget,
                         precompiled_payload=raw_payload,
                         precompiled_fingerprint=group_key,
                         fold_transform_cache=transform_cache,
                         checkpoint_root=checkpoint_root,
                     )
+                runner.prepare_training()
                 group_peak_rss = max(group_peak_rss, process.memory_info().rss)
                 runnable.append((task, runner))
                 group_runnable.append((task, runner))
@@ -682,6 +665,8 @@ def _run_canonical_batch_locked(
         runner = None
         _runner = None
         result = None
+        dynamic_runner_factory = None
+        transform_cache = None
 
     statuses = [value.get("status") for value in state["tasks"].values()]
     state["summary"] = {

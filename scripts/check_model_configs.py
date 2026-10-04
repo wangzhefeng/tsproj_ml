@@ -119,6 +119,9 @@ _CANONICAL_NESTED_FIELDS = {
     },
     "features.transformations.target.scaling": {"method", "inverse"},
     "validation": {
+        "training_window",
+        "forecast_window",
+        "refit_every",
         "forecast_origin",
         "schedule_mode",
         "horizon_mode",
@@ -142,6 +145,7 @@ _CANONICAL_NESTED_FIELDS = {
         "unknown_series_policy",
     },
     "validation.training": {
+        "origin_sampling",
         "early_stopping_patience",
         "sample_weight",
         "tuning",
@@ -153,6 +157,9 @@ _CANONICAL_NESTED_FIELDS = {
         "estimator_ensemble",
     },
     "validation.training.sample_weight": {"method", "halflife_days"},
+    "validation.training_window": {"kind", "history_steps", "start_time"},
+    "validation.forecast_window": {"start", "gap_steps"},
+    "validation.training.origin_sampling": {"stride_steps", "anchor_time", "time_of_day", "max_origins"},
     "validation.training.tuning": {"method", "metric", "n_splits"},
     "validation.training.augmentation": {
         "method",

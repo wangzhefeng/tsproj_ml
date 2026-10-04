@@ -438,7 +438,6 @@ class CanonicalBatchRuntimeTest(unittest.TestCase):
         )
         transform_cache = FoldTransformCache()
         factory = _SharedBatchRunnerFactory(
-            compiled_cache_root=self.root / "dynamic-cache",
             resource_budget=budget,
             fold_transform_cache=transform_cache,
         )
@@ -460,8 +459,8 @@ class CanonicalBatchRuntimeTest(unittest.TestCase):
 
         self.assertEqual(compile_calls, 1)
         self.assertIsNot(first, second)
-        self.assertFalse(first.compiled_cache_hit)
-        self.assertTrue(second.compiled_cache_hit)
+        self.assertFalse(first.design_shared)
+        self.assertTrue(second.design_shared)
         self.assertIs(first.fold_transform_cache, transform_cache)
         self.assertIs(second.fold_transform_cache, transform_cache)
         self.assertEqual(first.resource_budget.parent_concurrency, 2)

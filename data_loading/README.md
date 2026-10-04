@@ -3,7 +3,7 @@
 `data_loading/` 是 canonical 唯一数据读取与信息集构造层。
 
 - `registry.py`：`SourceRegistry` 统一编排来源加载、角色分区和信息集交付，保留 path-version lineage。
-- `sources/source_io.py`：文件读取、原始帧及验证帧缓存；缓存属于单个 registry，不保证外部文件热更新。
+- `sources/source_io.py`：文件读取、原始帧及验证帧缓存；local/source-time 数值列提供 registry 生命周期内共享只读快照，消费者必须先按物化信息集切片；文件 inode/大小/修改时间等版本事实发生变化时 RAISE，不热更新、不混用运行中修订的数据。
 - `processing/validation.py`：列投影、时间、有限值与主键校验；`processing/visibility.py`：as-of vintage 选择及历史/标签时间边界。
 - `processing/alignment.py`：identity 选择、序列顺序、角色投影及 known-future 覆盖检查。
 - `information/information_set.py`：请求、物化信息集与 lineage 合同；`information/indexing.py`：角色限定的行位置索引实现，缓存状态仍由信息集持有。

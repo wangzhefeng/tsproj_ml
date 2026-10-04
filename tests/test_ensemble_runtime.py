@@ -23,7 +23,6 @@ import pandas as pd
 import yaml
 
 import model_ensemble.runtime as runtime_module
-from feature_engineering.cache import COMPILED_CACHE_DIR_NAME
 from model_ensemble.contracts import EnsembleRuntimeServices
 from model_ensemble.loader import load_ensemble_config
 from model_ensemble.runtime import run_ensemble_config
@@ -32,7 +31,6 @@ from model_pipeline.runner import CanonicalBaseModelRunner, persist_model_bundle
 from model_performance.resource_planner import plan_ensemble_resources
 
 from fixtures.legacy_nnls import fit_nonnegative_stacking_weights
-from forecasting_core.specs.config import parse_model_config
 from forecasting_core.runtime_resources import RuntimeResourceBudget
 from model_performance.resource_planner import runtime_budget_for_config
 
@@ -108,7 +106,6 @@ def _ensemble_doc(method: str, mode: str = "point") -> dict:
             "point_quantile": 0.5,
         }
     )
-    estimator_b = "qr" if mode == "quantile" else "ridge"
     return {
         "schema_version": 2,
         "problem": _member_doc("direct", "ridge", "x")["problem"],
@@ -223,7 +220,6 @@ class EnsembleRuntimeMatrixTest(EnsembleRuntimeTestBase):
             registry,
             origin,
             *,
-            compiled_cache_root,
             resource_budget=None,
         ):
             received.append(resource_budget)
@@ -231,7 +227,6 @@ class EnsembleRuntimeMatrixTest(EnsembleRuntimeTestBase):
                 config,
                 registry,
                 origin,
-                compiled_cache_root=compiled_cache_root,
                 resource_budget=resource_budget,
             )
             return runner
@@ -270,10 +265,10 @@ class EnsembleRuntimeMatrixTest(EnsembleRuntimeTestBase):
         member_resources = resolved["runtime"]["resources"]["member_resources"]
         self.assertEqual(tuple(member_resources), ("m_direct", "m_recursive"))
         for resources in member_resources.values():
-            self.assertIn(resources["training_compile"]["mode"], {"batch", "row"})
+            self.assertIn(resources["training_compile"]["mode"], {"indexed", "batch", "row"})
             self.assertEqual(
-                set(resources["cache"]["stage_wall_seconds"]),
-                {"load", "compile", "write"},
+                set(resources["design_preparation"]["stage_wall_seconds"]),
+                {"compile", "share"},
             )
         self.assertEqual(
             set(resolved["runtime"]["resources"]["stage_wall_seconds"]),
@@ -347,19 +342,18 @@ class EnsembleRuntimeMatrixTest(EnsembleRuntimeTestBase):
             first["bundle"].config_fingerprint,
         )
 
-    def test_members_with_same_design_share_compiled_cache(self):
+    def test_members_with_same_design_share_memory_without_disk_cache(self):
         (self.root / "member_recursive.yaml").write_text(
             yaml.safe_dump(_member_doc("direct", "lasso", "recursive")),
             encoding="utf-8",
         )
         runners = []
 
-        def runner_factory(config, registry, origin, *, compiled_cache_root):
+        def runner_factory(config, registry, origin):
             runner = CanonicalBaseModelRunner(
                 config,
                 registry,
                 origin,
-                compiled_cache_root=compiled_cache_root,
             )
             runners.append(runner)
             return runner
@@ -372,14 +366,15 @@ class EnsembleRuntimeMatrixTest(EnsembleRuntimeTestBase):
         self._run("averaging", services=services)
 
         self.assertEqual(len(runners), 2)
-        self.assertFalse(runners[0].compiled_cache_hit)
-        self.assertTrue(runners[1].compiled_cache_hit)
+        self.assertFalse(runners[0].design_shared)
+        self.assertTrue(runners[1].design_shared)
         self.assertEqual(
-            runners[0].compiled_cache_fingerprint,
-            runners[1].compiled_cache_fingerprint,
+            runners[0].raw_design_fingerprint,
+            runners[1].raw_design_fingerprint,
         )
-        cache_parent = self.root / COMPILED_CACHE_DIR_NAME
-        self.assertEqual(len(tuple(cache_parent.iterdir())), 1)
+        cache_parent = self.root / "_compiled_features"
+        self.assertFalse(cache_parent.exists())
+        self.assertTrue(np.shares_memory(runners[0].Y_all, runners[1].Y_all))
 
     def test_concurrent_fusion_methods_generate_oof_once(self):
         fit_calls = 0

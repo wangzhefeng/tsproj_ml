@@ -181,10 +181,10 @@ class RuntimeWindowParallelismTest(unittest.TestCase):
         )
         resources = resolved["runtime"]["resources"]
         self.assertEqual(resources["execution_plan"]["selected_axis"], "window")
-        self.assertIn(resources["cache"]["status"], {"disabled", "hit", "miss"})
+        self.assertIn(resources["design_preparation"]["status"], {"not_prepared", "compiled", "memory_hit"})
         self.assertEqual(
             set(resources["stage_wall_seconds"]),
-            {"raw_design", "backtest", "final_fit", "forecast_persist", "total"},
+            {"raw_design", "backtest", "backtest_result_write", "final_fit", "forecast_persist", "total"},
         )
         self.assertTrue(
             all(value >= 0.0 for value in resources["stage_wall_seconds"].values())

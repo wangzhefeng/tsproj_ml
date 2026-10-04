@@ -1049,17 +1049,7 @@ class FeatureCompiler:
                                 value = float(
                                     rolled_by_identity[identity][stat].iloc[position]
                                 )
-                                # pandas rolling 的增量算法与逐片 Series 统计可能有
-                                # 浮点末位差异；逐片复算只发生在 origin 粒度，用于
-                                # 保持 compile() 的逐值合同，不再按 horizon 重算。
-                                exact = self._statistic(
-                                    history.iloc[
-                                        max(0, position - window + 1) : position + 1
-                                    ],
-                                    stat,
-                                )
-                                if value != exact:
-                                    value = exact
+
                                 row_slice = slice(
                                     identity_index * step_count,
                                     (identity_index + 1) * step_count,
@@ -1079,6 +1069,10 @@ class FeatureCompiler:
             )
             for column in columns:
                 histories = self._batch_master_histories(items, column)
+                expanded_by_identity = {
+                    identity: self._batch_expanding_series(history, stats)
+                    for identity, history in histories.items()
+                }
                 for item in items:
                     values_by_stat = {
                         stat: np.empty(len(item["target_times"]), dtype=float)
@@ -1099,18 +1093,12 @@ class FeatureCompiler:
                             raise ValueError(
                                 f"history column {column!r} has no visible values"
                             )
-                        visible = history.iloc[: position + 1]
                         row_slice = slice(
                             identity_index * step_count,
                             (identity_index + 1) * step_count,
                         )
                         for stat in stats:
-                            # 保留逐行 compile() 的 pandas 统计合同，但只在
-                            # origin 粒度计算一次，再广播到该 origin 的 calls。
-                            values_by_stat[stat][row_slice] = self._statistic(
-                                visible,
-                                stat,
-                            )
+                            values_by_stat[stat][row_slice] = expanded_by_identity[identity][stat].iloc[position]
                     for stat, values in values_by_stat.items():
                         item["columns"][
                             f"{column}_expanding_{stat}"
@@ -1364,6 +1352,10 @@ class FeatureCompiler:
         results: dict[str, pd.Series] = {}
         rolling = history.rolling(window, min_periods=1)
         for stat in stats:
+            if stat == "std":
+                # 平移后计算避免大直流分量、小波动导致增量方差消减。
+                results[stat] = (history - history.iloc[0]).rolling(window, min_periods=1).std().fillna(0.0)
+                continue
             if stat == "entropy":
                 results[stat] = rolling.apply(signal_entropy, raw=True).fillna(0.0)
                 continue
@@ -1380,6 +1372,32 @@ class FeatureCompiler:
             if stat not in {"mean", "std", "min", "max", "median", "skew", "kurt"}:
                 raise ValueError(f"unsupported history statistic: {stat!r}")
             results[stat] = getattr(rolling, stat)().fillna(0.0)
+            if stat == "kurt":
+                # pandas窗口峰度对恒定窗返回-3；保持单窗Series.kurt的0语义。
+                results[stat] = results[stat].mask(rolling.max().eq(rolling.min()), 0.0)
+        return results
+
+    @staticmethod
+    def _batch_expanding_series(
+        history: pd.Series, stats: Sequence[str],
+    ) -> dict[str, pd.Series]:
+        """按当前历史下界一次计算全部前缀，不逐原点重扫历史。"""
+        results = {}
+        for stat in stats:
+            if stat == "std":
+                values = (history - history.iloc[0]).expanding().std()
+            elif stat in {"max_diff", "min_diff"}:
+                method = "max" if stat == "max_diff" else "min"
+                values = getattr(history.diff().expanding(), method)()
+            elif stat == "entropy":
+                values = history.expanding().apply(signal_entropy, raw=True)
+            elif stat in {"mean", "min", "max", "median", "skew", "kurt"}:
+                values = getattr(history.expanding(), stat)()
+            else:
+                raise ValueError(f"unsupported history statistic: {stat!r}")
+            results[stat] = values.fillna(0.0)
+            if stat == "kurt":
+                results[stat] = results[stat].mask(history.cummax().eq(history.cummin()), 0.0)
         return results
 
 

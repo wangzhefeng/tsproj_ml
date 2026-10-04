@@ -301,6 +301,13 @@ def write_backtest_results(
     )
     for window in window_numbers:
         _plot_window(cv_plot_df, window, targets, windows_dir)
+    # 显式窗口合同允许多天滚动预测：保留所有窗口，不拼接重复目标时间。
+    if (payload.get("allow_overlapping_windows")
+            and cv_plot_df.duplicated(["series_id", "target", "time"]).any()):
+        payload["overview_policy"] = "per_window_only_due_to_overlap"
+        (output_path / "result_metadata.json").write_text(
+            json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+        return cv_path, scores_path
     if len(targets) == 1:
         _plot_backtest(cv_plot_df, output_path / "test_prediction.png", targets[0])
     else:

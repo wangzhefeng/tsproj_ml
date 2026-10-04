@@ -14,6 +14,7 @@ from forecasting_core.specs.output import OutputSpec
 from forecasting_core.specs.problem import ForecastProblemSpec
 from forecasting_core.specs.probabilistic import ProbabilisticConfigSpec
 from forecasting_core.specs.strategy import ForecastStrategySpec
+from forecasting_core.specs.temporal import validate_temporal_contract
 from forecasting_core.specs.validation import (
     CalendarMonthBacktestSpec,
     RuntimeValidationSpec,
@@ -200,6 +201,17 @@ class ForecastConfigSpec:
             raise TypeError("strategy must be ForecastStrategySpec")
         probabilistic_spec = ProbabilisticConfigSpec.from_mapping(probabilistic)
         validation_spec = RuntimeValidationSpec.from_mapping(validation)
+        validate_temporal_contract(problem, validation_spec)
+        forecast_window = validation_spec.get("forecast_window")
+        if forecast_window is not None and validation_spec.get("training_window") is None:
+            raise ValueError("forecast_window requires explicit training_window")
+        if validation_spec.get("training_window") is not None:
+            if (problem.is_global or probabilistic_spec.get("mode", "point") != "point"
+                    or features.transformations.get("target") or estimator.model_type.lower() == "ets"):
+                raise ValueError("training_window currently requires Local point, no target transforms, supervised estimator")
+        if forecast_window and (forecast_window.get("start") == "next_day" or forecast_window.get("gap_steps", 0)):
+            if strategy.resolve(problem.horizon).consumes_previous or features.transformations.get("seasonal_baseline"):
+                raise ValueError("shifted forecast_window requires non-recursive strategy without seasonal_baseline")
         output_spec = OutputSpec.from_mapping(output)
 
         if problem.targets != data.target_columns:
@@ -216,6 +228,13 @@ class ForecastConfigSpec:
                     or features.transformations or features.selection
                     or len(data.sources) != 1):
                 raise ValueError("ETS requires Local single-target native-history point backtest: mimo geometry, no features or external sources")
+        sampling = validation_spec.get("training", {}).get("origin_sampling")
+        if sampling is not None and estimator.model_type.lower() == "ets":
+            raise ValueError("origin_sampling requires a supervised estimator, not ETS")
+        if validation_spec.get("refit_every", 1) > 1:
+            if (problem.is_global or probabilistic_spec.get("mode", "point") != "point"
+                    or features.transformations.get("target") or estimator.model_type.lower() == "ets"):
+                raise ValueError("refit_every > 1 requires Local point without target transforms and a supervised estimator")
         data.validate_weather_frequency(problem.freq)
         _validate_global_source_keys(problem, data)
         _validate_feature_columns(data, features)

@@ -133,6 +133,12 @@ class SourceRegistry:
     def base_dir(self) -> Path:
         return self._base_dir
 
+    def numeric_history(self, source: DataSourceSpec, column: str):
+        """Read-only source-time snapshot; callers must enforce as-of slice bounds."""
+        if source not in self._data_spec.sources:
+            raise ValueError("source is not registered")
+        return self._frames.numeric_history(source, column)
+
     @property
     def generators(self) -> dict[str, SourceGenerator]:
         """返回注册表副本，外部修改不影响本次运行。"""

@@ -5,7 +5,6 @@ import json
 import pickle
 import tempfile
 import threading
-import time
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
@@ -31,10 +30,12 @@ class _CountingRunner(CanonicalBaseModelRunner):
     lock = threading.Lock()
     active = 0
     max_active = 0
+    fit_barrier = threading.Barrier(2)
 
     @classmethod
     def reset(cls) -> None:
         cls.created_horizons = []
+        cls.fit_barrier = threading.Barrier(2)
         with cls.lock:
             cls.active = 0
             cls.max_active = 0
@@ -48,7 +49,9 @@ class _CountingRunner(CanonicalBaseModelRunner):
             type(self).active += 1
             type(self).max_active = max(type(self).max_active, type(self).active)
         try:
-            time.sleep(0.03)
+            # 编译已进入工作任务；用屏障验证并行，不依赖两次编译恰好同时结束。
+            if kwargs.get("force_serial"):
+                type(self).fit_barrier.wait(timeout=60)
             return super().fit(train_indices, **kwargs)
         finally:
             with type(self).lock:
@@ -155,10 +158,8 @@ class CalendarMonthRuntimeGeometryTest(unittest.TestCase):
                     config,
                     output_root=root / "results",
                 )
-            self.assertEqual(
-                _CountingRunner.created_horizons,
-                [31, 28, 31, 30],
-            )
+            self.assertEqual(_CountingRunner.created_horizons[0], 31)
+            self.assertCountEqual(_CountingRunner.created_horizons[1:], [28, 31, 30, 31, 30, 31])
             self.assertGreaterEqual(_CountingRunner.max_active, 2)
             cv = pd.read_csv(result.test_dir / "cv_plot_df.csv")
             horizons = cv.groupby("window")["time"].nunique().tolist()

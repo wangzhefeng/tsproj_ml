@@ -74,7 +74,7 @@ class OptimizationCompilerTest(unittest.TestCase):
                 np.testing.assert_allclose(single.frame[f'{column}_cos'], np.cos(2 * np.pi * values / 24))
 
     def test_cache_identity_causal_parameters_and_implementation(self):
-        from feature_engineering.cache import compute_raw_design_fingerprint, raw_design_provenance
+        from feature_engineering.design_identity import compute_raw_design_fingerprint, raw_design_provenance
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             config, times = synthetic_config(root)

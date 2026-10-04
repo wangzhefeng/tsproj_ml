@@ -14,7 +14,7 @@ from forecasting_core.specs import ForecastConfigSpec
 from config.aidc_hvac_load_5min.scripts.v3.forecast_data.build_model_configs import build_documents
 from config.aidc_hvac_load_5min.scripts.forecast_data.build_model_configs import publish
 from tests.test_hvac_model_configs import builder_for, expected_paths as legacy_paths
-from model_pipeline.supervised_design import minimum_history_rows, raw_history_backtest_windows
+from model_pipeline.supervised_design import minimum_history_rows, raw_history_backtest_windows, temporal_backtest_windows
 
 ROOT = Path(__file__).resolve().parents[1]
 DIRECTORY = ROOT / 'config/aidc_hvac_load_5min'
@@ -23,6 +23,7 @@ GROUPS = ('baseline', 'add_datetime_holiday', 'add_weather', 'add_endogenous_it'
 DEVICES = ('hvac_all_devices', 'hvac_remove_devices')
 METHODS = ('direct', 'direct-pointwise', 'direct-pointwise-horizon', 'recursive',
            'mimo', 'recmo', 'dirrec', 'dirmo', 'dirrecmo')
+MIGRATED_BASELINE = Path('baseline/A1_all/hvac_all_devices/lgbm_direct-pointwise.yaml')
 
 
 def expected_paths():
@@ -38,6 +39,16 @@ def expected_paths():
 
 
 class A1V3ConfigsTest(unittest.TestCase):
+    def test_temporal_baseline_schema_only(self):
+        config = load_yaml_config(DIRECTORY / MIGRATED_BASELINE)
+        self.assertEqual(dict(config.validation['training_window']), {'kind': 'rolling', 'history_steps': 25920})
+        self.assertEqual(dict(config.validation['forecast_window']), {'start': 'next_day'})
+        self.assertEqual(dict(config.validation['training']['origin_sampling']), {'time_of_day': '23:55'})
+        self.assertEqual(config.validation['refit_every'], 1)
+        self.assertEqual(config.validation['fold_count'], 72)
+        self.assertNotIn('train_window_steps', config.validation)
+        self.assertNotIn('train_history_steps', config.validation)
+
     def test_generator_matrix_and_version_scoped_publication(self):
         documents = build_documents()
         self.assertEqual(set(documents), expected_paths())
@@ -75,6 +86,13 @@ class A1V3ConfigsTest(unittest.TestCase):
             candidate['data']['sources'] = candidate['data']['sources'][:1]
             candidate['features']['datetime_features'] = []
             candidate['features']['observed_past_lags'] = {}
+            if Path('baseline', *relative.parts[1:]) == MIGRATED_BASELINE and relative != MIGRATED_BASELINE:
+                # 该基线已显式迁移，其他消融组仍保留原密集训练合同；差异逐键核验。
+                legacy_validation = {k: v for k, v in baseline['validation'].items()
+                                     if k not in {'training_window', 'forecast_window', 'refit_every', 'training'}}
+                legacy_validation.update(train_history_steps=25920, train_window_steps=17569)
+                self.assertEqual(candidate['validation'], legacy_validation)
+                candidate['validation'] = baseline['validation']
             self.assertEqual(candidate, baseline, str(relative))
 
     def test_real_matrix_and_production_designs(self):
@@ -89,10 +107,15 @@ class A1V3ConfigsTest(unittest.TestCase):
                 self.assertEqual(config.problem.targets, ('hvac_total_load_AB',))
                 self.assertEqual((config.problem.freq, config.problem.horizon), ('5min', 288))
                 train_days, fold_count = (150, 12) if group == 'add_context' else (90, 72)
-                self.assertEqual(config.validation['train_history_steps'], train_days * 288)
+                migrated = relative == MIGRATED_BASELINE
+                if migrated:
+                    self.assertEqual(config.validation['training_window']['history_steps'], train_days * 288)
+                else:
+                    self.assertEqual(config.validation['train_history_steps'], train_days * 288)
                 self.assertEqual(config.validation['fold_count'], fold_count)
-                self.assertEqual(config.validation['train_window_steps'],
-                                 train_days * 288 - minimum_history_rows(config) - 288 + 1)
+                if not migrated:
+                    self.assertEqual(config.validation['train_window_steps'],
+                                     train_days * 288 - minimum_history_rows(config) - 288 + 1)
                 self.assertEqual(config.output['scenario_subpath'],
                                  'aidc_hvac_load_5min/' + str(relative.parent))
                 self.assertEqual(bool(config.features.datetime_features), group == 'add_datetime_holiday')
@@ -129,7 +152,8 @@ class A1V3ConfigsTest(unittest.TestCase):
                     self.assertTrue(np.isfinite(frame[[c.name for c in source.columns]].to_numpy(dtype=float)).all())
                     times = pd.DatetimeIndex(pd.to_datetime(frame[source.time_col]))
                     self.assertTrue(times.equals(pd.date_range('2026-04-08', '2026-09-16 23:55', freq='5min')))
-                folds = raw_history_backtest_windows(builder_for(config, None), pd.Timestamp('2026-09-16 23:55'))
+                window_builder = temporal_backtest_windows if migrated else raw_history_backtest_windows
+                folds = window_builder(builder_for(config, None), pd.Timestamp('2026-09-16 23:55'))
                 self.assertEqual(len(folds), fold_count)
                 self.assertEqual(folds[0].origin, pd.Timestamp('2026-09-04 23:55')
                                  if group == 'add_context' else pd.Timestamp('2026-07-06 23:55'))

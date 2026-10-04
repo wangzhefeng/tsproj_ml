@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-
-from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 from pathlib import Path
 from time import perf_counter
@@ -21,6 +19,7 @@ from model_testing.reporting import write_backtest_results
 
 from model_testing import geometry as validation
 from model_testing.scoring import score_holdout_fold
+from model_testing.execution import ordered_bounded_map
 from model_testing.contracts import BacktestRunner, BacktestRunnerFactory
 from pandas.tseries.frequencies import to_offset
 from probabilistic.calibration import ConformalCalibrationTracker
@@ -76,11 +75,10 @@ def run_calendar_month_backtest(
                 freq_offset=to_offset(str(config.problem.freq)),
             )
     calibration_audits: list[dict[str, Any]] = []
-    runners_by_horizon: dict[int, BacktestRunner] = {}
-    fold_contexts = []
     raw_history_times = final_runner.builder.target_history_times(final_runner.origin)
     dynamic_history_steps = len(final_runner.supervised_origins)
-    for fold in folds:
+
+    def build_context(fold):
         dynamic_problem = replace(config.problem, horizon=fold.horizon)
         dynamic_validation = {
             key: value
@@ -105,16 +103,13 @@ def run_calendar_month_backtest(
             problem=dynamic_problem,
             validation=dynamic_validation,
         )
-        runner = runners_by_horizon.get(fold.horizon)
-        if runner is None:
-            checkpoint_root = getattr(final_runner, "checkpoint_root", None)
-            runner = runner_factory(
-                dynamic_config,
-                registry,
-                final_runner.origin,
-                **({"checkpoint_root": checkpoint_root} if checkpoint_root is not None else {}),
-            )
-            runners_by_horizon[fold.horizon] = runner
+        checkpoint_root = getattr(final_runner, "checkpoint_root", None)
+        runner = runner_factory(
+            dynamic_config,
+            registry,
+            final_runner.origin,
+            **({"checkpoint_root": checkpoint_root} if checkpoint_root is not None else {}),
+        )
         try:
             origin_index = runner.supervised_origins.index(fold.origin)
         except ValueError as exc:
@@ -138,37 +133,32 @@ def run_calendar_month_backtest(
             runner.geometry.label_end(runner.supervised_origins[index])
             for index in train_indices
         )
-        fold_contexts.append(
-            (
+        return (
                 fold,
                 runner,
                 origin_index,
                 train_indices,
                 training_label_end_max,
                 runner.builder.target_history(training_label_end_max),
-            )
         )
 
     window_workers = min(
         final_runner.execution_plan.window_workers,
-        len(fold_contexts),
+        len(folds),
     )
 
-    def fit_context(context):
-        return context[1].fit(
+    def fit_context(fold):
+        context = build_context(fold)
+        return context, context[1].fit(
             context[3],
             target_history=context[5],
             force_serial=window_workers > 1,
         )
 
-    if window_workers > 1:
-        with ThreadPoolExecutor(max_workers=window_workers) as executor:
-            fold_fits = tuple(executor.map(fit_context, fold_contexts))
-    else:
-        fold_fits = tuple(fit_context(context) for context in fold_contexts)
+    fold_fits = ordered_bounded_map(fit_context, folds, workers=window_workers)
 
-    for context, fit_result in zip(fold_contexts, fold_fits):
-        fold_ctx, runner, origin_index, train_indices, training_label_end_max, _ = context
+    for context, fit_result in fold_fits:
+        fold_ctx, runner, origin_index, train_indices, training_label_end_max, target_history = context
         fold = score_holdout_fold(
             runner=runner,
             fit_result=fit_result,
@@ -192,6 +182,8 @@ def run_calendar_month_backtest(
                 "execution_evidence": fold.execution_evidence,
             }
         )
+
+        del context, fit_result, runner, target_history
 
     metadata = {
         "mode": "calendar_month",

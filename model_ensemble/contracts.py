@@ -95,7 +95,7 @@ class BaseModelRunner(OriginTimeline, Protocol):
 
 
 class BaseModelRunnerFactory(Protocol):
-    """Construct a member runner with the shared compiled-design cache root."""
+    """Construct a member runner with an explicit resource budget."""
 
     def __call__(
         self,
@@ -103,7 +103,6 @@ class BaseModelRunnerFactory(Protocol):
         registry: Any,
         origin: pd.Timestamp,
         *,
-        compiled_cache_root: str | Path,
         resource_budget: Any | None = None,
     ) -> BaseModelRunner:
         ...

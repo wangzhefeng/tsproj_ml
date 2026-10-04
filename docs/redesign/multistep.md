@@ -1,5 +1,7 @@
 # 多步预测 Canonical 架构与实施记录
 
+> 历史验证命令中的`test_compiled_feature_cache`已随磁盘编译缓存退役；当前身份校验由`test_design_identity`承担，内存执行由`test_in_memory_design_execution`覆盖。以下旧命令保留为当时的执行记录，不作为当前测试入口。
+
 > 文档状态：**当前唯一权威设计／C0–C7 全部完成并关闭（2026-08-31）**
 > 当前实现以代码、活动 schema-2 YAML 和本次 fresh 验证为准；历史方案见 Git 及文末溯源，不再作为现状事实源。
 > 七类运行、全量门禁、source header 合同和活动文档均有 fresh 证据；Global N2K2 fixture 已获批作为能力验收，`AGENTS.md` 当前合同已同步。

@@ -9,7 +9,7 @@ from typing import Any, Mapping, cast
 
 from data_loading.information.information_set import WeatherSourceLineage
 from feature_engineering import CompiledFeatures
-from feature_engineering import cache as compiled_cache
+from feature_engineering import design_identity
 from forecasting_core.artifacts import ForecastModelBundle, MarginalForecastDistribution
 from forecasting_core.specs import ForecastConfigSpec, TargetAdapter
 from forecasting_core.tensors import PointForecastTensor
@@ -479,7 +479,7 @@ def execute_lifecycle(
     runner.stage_wall_seconds["total"] = perf_counter() - runner.lifecycle_started
     run_evidence = {
         **runner.execution_evidence(final_artifact, final_target_transform),
-        "raw_design_provenance": compiled_cache.raw_design_provenance(
+        "raw_design_provenance": design_identity.raw_design_provenance(
             config, base_dir=runner.registry.base_dir, origin=origin,
             generators=runner.registry.generators,
         ),

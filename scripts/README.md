@@ -23,6 +23,8 @@ env -u PYTHONPATH .venv/bin/python scripts/audit_ensemble_configs.py
 
 迁移期一次性脚本不驻留本目录，历史通过 Git 追溯。
 
+`generate_load_15min_matrix.py`直接按实验组生成时间合同：外生、跨路、状态、联合组采用rolling原始窗（daily/rolling为3552点，short为2112点）并逐折重训。Direct独立模型、MIMO、DIRMO、DirRec、DirRecMO保留全部安全原点；Direct共享horizon、Recursive、RecMO才按发报周期采样，防止独立模型仅剩少量训练行、树无法分裂。模型参数不降低，同组不同估计器使用相同采样口径。融合引用的baseline及分解组保留原合同。不依赖迁移注册表或本地归档。`validate_matrix()`比较生成内容、路径数量和typed解析，不拟合模型。
+
 ## 天气资产准备
 
 ### 公共处理与场景适配边界

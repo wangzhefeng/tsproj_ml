@@ -8,6 +8,7 @@ import numpy as np
 import pandas as pd
 
 from config.config_loader import load_yaml_config
+
 from data_loading import BUILTIN_GENERATORS, SourceRegistry
 from model_pipeline.supervised_design import SupervisedDesignBuilder
 
@@ -58,6 +59,19 @@ class LiantongComputeConfigsTest(unittest.TestCase):
                 # 组合组额外带 baseline_opt 同口径的 recent_state；剥离后须与 baseline 逐字段一致。
                 payload["features"]["transformations"]["advanced"].pop("recent_state", None)
                 payload["output"] = baseline.canonical_payload()["output"]
+                # 独立核验显式训练迁移，不把新旧采样差异误当算力特征收益。
+                expected_validation = baseline.validation.canonical_payload()
+                expected_validation.pop('train_history_steps')
+                expected_validation.pop('train_window_steps')
+                expected_validation.update({
+                    'training_window': {'kind': 'rolling', 'history_steps': 4032},
+                    'forecast_window': {'start': 'after_origin'}, 'refit_every': 1,
+                })
+                if path.stem not in {'lgbm_direct', 'lgbm_mimo', 'lgbm_dirmo', 'lgbm_dirrec', 'lgbm_dirrecmo'}:
+                    expected_validation['training'] = {'origin_sampling': {
+                        'stride_steps': 288, 'anchor_time': '2026-08-31T23:55:00'}}
+                self.assertEqual(payload['validation'], expected_validation)
+                payload['validation'] = baseline.canonical_payload()['validation']
                 self.assertEqual(payload, baseline.canonical_payload())
                 self.assertTrue(config.output["scenario_subpath"].endswith("/" + path.parent.name))
 

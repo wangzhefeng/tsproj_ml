@@ -9,7 +9,7 @@ import pandas as pd
 
 from data_loading import SourceRegistry
 from forecasting_core.specs import ColumnSpec, DataSourceSpec
-from feature_engineering.cache import compute_raw_design_fingerprint
+from feature_engineering.design_identity import compute_raw_design_fingerprint
 from model_pipeline.runner import run_canonical_config
 from model_pipeline.supervised_design import SupervisedDesignBuilder
 from tests import test_canonical_runtime_smoke as smoke

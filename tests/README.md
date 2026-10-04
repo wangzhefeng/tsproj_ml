@@ -18,7 +18,19 @@
 
 双路合同回归仍在上述两模块：不对称A/B数值与缺失掩码、AB严格和、路线显式目标、跨路线目录相同输入、逐字段资格时间、授权覆盖/失败回滚/源目录范围拒绝。`test_weather_hvac_windows` 对32份真实资产使用新的目标列，并校验天气metadata绑定的新target SHA；字段迁移不改变天气值。
 
+`test_training_workload` 默认 integration：严格采样配置、固定时刻/末端锚定间隔/最近上限、非连续索引、默认预测等价、fit/final一致与完整小数据bundle、未来标签扰动、间隔重训复用artifact但更新上下文、逐折计时和工作量证据。业务模型只跑两折派生配置，不改变正式baseline。
+
+`test_training_sampling_configs`默认integration：遍历三个15min场景及联通物理模型配置，按真实模型组调用布局断言独立模型密集训练、共享模型保留采样；真实联通天气Direct只编译/拟合第一个预测步，保持默认叶节点参数并验证树实际分裂及非恒定预测。不写正式结果，不代替完整288步或17折回测。`test_compiler_array_kernels`对全部统计量核对single/batch/indexed与独立窗口参照，覆盖恒定峰度0、全零、近恒定、短窗、状态切换，保留禁止逐原点标量重算门禁。
+
 ## 执行集合
+
+`test_in_memory_design_execution`默认integration，验证runner计划不物化完整矩阵、并发准备仅一次、批量同组仅编译一次、后组失败不回滚前组及组间释放、单模型生命周期不读写磁盘编译缓存并对照预测数值。融合内存共享在`test_ensemble_runtime`验证；原磁盘缓存专属测试已退役；`test_design_identity`保留数据/代码/生成器身份隔离断言，旧缓存参数必须报错。内部批量预检也不接收缓存root；旧关键字和旧位置参数形态均拒绝，避免删除参数后发生位置错绑。
+
+迁移注册表及其专属测试已退役，生成配置一致性由`generate_load_15min_matrix.validate_matrix()`校验；联通静态测试直接断言显式窗口及采样合同，不依赖迁移材料。用户禁止模型测试时只执行选定静态方法，不运行设计编译或合成拟合方法。历史验证产物归档在本地`.hermes/plans/verification/`，不是测试运行依赖。
+
+`test_forecast_schedule_windows`默认integration，用小数据覆盖次日多天/延迟目标、rolling/expanding、逐折重训、重叠窗口、回测与独立final预测一致、未来扰动隔离、采样前置与缓存身份。快速验收按用户指定只跑定向及一个物理派生配置，不自动触发全仓配置矩阵。
+
+回测特征执行重构的新增测试默认 integration：`test_compiler_array_kernels`（统计稳定性/历史下界）、`test_indexed_design` 与 `test_indexed_training`（紧凑视图/模型边界展开/前置预算/ETS/预测批编译）、`test_numeric_snapshot`（共享只读与源变化拒绝）、`test_bounded_execution` 与 `test_calendar_bounded_execution`（有界在途/按序消费）。原 `test_raw_history_window`、`test_design_identity`、`test_compiler_batch_equivalence` 和自然月/Ensemble 测试继续覆盖接线；不修改发现规则。业务验收按本轮授权仅跑 baseline 的两折冷/热派生配置，不等同于原72折效果验收，也不替代代码套件 `all`。
 
 `test_hvac_a1_v3*` 默认integration：固定IT子集漂移拒绝、只补NaN、过去日长段不越界、逐缺口未来扰动不变、稀疏原观测遮蔽评分、校准不足拒绝、两口径共享点一致、覆盖保护；独立核对5份真实点位表原值保真、全部补值重建、来源mask、固定窗口和天气SHA绑定。配置测试覆盖A1_all六组160份完整矩阵（配置路径不含v3，数据仍用data_v3）、组间字段正交性、90/150天训练及72/12折时间几何、每份首末折真实训练origin及预测首/中/末步编译、ETS无特征合同，并与旧576份配置做联合路径集核对；发布保护拒绝旧嵌套层级、越界及清单外文件。不拟合正式模型。定向：`integration --match test_hvac_a1_v3`。天气v3无路线目录适配并入`test_weather_hvac_windows`。
 
@@ -105,7 +117,7 @@ env -u PYTHONPATH .venv/bin/python -m unittest discover -s tests -p "test_*.py"
 - 数据层实现归入 `sources/processing/information`；根信息集/provider 兼容文件及 registry 旧 provider 别名已删除。冻结 provider fixture 不重生成，改为验证旧路径拒绝加载；新路径类往返、实际 provider 值及可得性往返仍有回归覆盖。
 
 - `test_data_loading_boundaries` 对照迁移前独立冻结的 `fixtures/data_loading_materialization.json`，覆盖 local/global、vintage、标签访问、provider、日历及既有异常；不得用改后实现重生成参照。另验证读取缓存/拷贝、覆盖发现、角色限定索引、旧 provider pickle，以及包含赋值别名和属性链的生产 registry 私有访问 AST 门禁。信息集原本不能 pickle 往返的失败行为保留，不误记为支持。
-- `test_data_loading_assets` 验证真实单模型/融合配置分派、缺资产/缺列/空文件、typed 表头预检查及来源哈希；`test_runtime_asset_audit` 仍在 audit 集合。生成器计算文件的实现指纹保护和源码变化失效由资产边界测试及 `test_compiled_feature_cache` 共同覆盖。
+- `test_data_loading_assets` 验证真实单模型/融合配置分派、缺资产/缺列/空文件、typed 表头预检查及来源哈希；`test_runtime_asset_audit` 仍在 audit 集合。生成器计算文件的实现指纹保护和源码变化失效由资产边界测试及 `test_design_identity` 共同覆盖。
 
 - 编译器保留 single/batch 双执行路径，共用规则解析。`test_compiler_batch_equivalence` 继续覆盖受支持路径等价；`test_compiler_shared_rules` 对照迁移前冻结的 `fixtures/compiler_shared_rules.json`，独立钉住 frame、schema、lineage、visibility 和错误行为。黄金值不得改为委托现实现生成。
 - 目标/特征变换测试直接导入 `feature_engineering.transforms`；quantile 训练测试直接导入 `model_training.quantile`。回测评分、pipeline runner 与预测器的静态点名检查跟随新职责位置。

@@ -19,6 +19,12 @@ from forecasting_core.specs import (
 )
 from model_testing.contracts import geometry as backtest_geometry
 from model_testing.contracts.geometry import RollingOriginFold
+from forecasting_core.specs.temporal import (
+    forecast_ends,
+    forecast_times,
+    history_start,
+    select_training_origins,
+)
 
 RollingBacktestSpec = (
     FixedStepBacktestSpec | SlidingWindowBacktestSpec | ExpandingWindowBacktestSpec
@@ -115,4 +121,74 @@ def raw_history_backtest_windows(
     return tuple(result)
 
 
-__all__ = ["raw_history_backtest_windows", "rolling_backtest_windows"]
+def temporal_backtest_windows(
+    *,
+    config: ForecastConfigSpec,
+    registry: SourceRegistry,
+    offset: pd.tseries.frequencies.BaseOffset,
+    origin: pd.Timestamp,
+    minimum_history: int,
+) -> tuple[RollingOriginFold, ...]:
+    """显式 training_window/forecast_window 的 fixed-step 折；按原始时钟调度。
+
+    与 raw_history_backtest_windows 的差异：训练历史边界由 training_window
+    （rolling history_steps 或 expanding start_time）给出，标签区间由
+    forecast_window（after_origin/next_day/gap_steps）给出；origin_sampling
+    在折内候选上应用，train_indices 为折内采样后局部索引。
+    """
+    spec = config.validation.backtest
+    if not isinstance(spec, FixedStepBacktestSpec) or not spec.explicit_training_window:
+        raise ValueError("temporal windows require fixed-step geometry with explicit training_window")
+    coverage = registry.target_history_coverage()
+    times = coverage[0].times
+    if any(not item.times.equals(times) for item in coverage[1:]):
+        raise ValueError("target sources must share the same history grid")
+    times = times[times <= origin]
+    if times.empty or not times.equals(pd.date_range(times[0], origin, freq=config.problem.freq)):
+        raise ValueError("training_window requires a complete regular history grid")
+    current = origin
+    earliest = max(times[0], origin - (spec.history_steps - 1) * offset)
+    candidates = []
+    while current >= earliest and len(candidates) < spec.fold_count:
+        if forecast_times(config.problem, config.validation, current)[-1] <= origin:
+            candidates.append(current)
+        current -= spec.stride_steps * offset
+    if len(candidates) != spec.fold_count:
+        raise ValueError("training_window cannot provide requested fold_count")
+    result = []
+    for number, current in enumerate(reversed(candidates), 1):
+        start = history_start(config.validation, current, offset)
+        if start is None or start < times[0] or start not in times:
+            raise ValueError("training_window has insufficient history at requested start")
+        raw = times[(times >= start) & (times <= current)]
+        origins = raw[minimum_history - 1:]
+        origins = tuple(
+            origins[forecast_ends(config.problem, config.validation, origins) <= current]
+        )
+        selected = select_training_origins(
+            origins, tuple(range(len(origins))),
+            config.validation.get("training", {}).get("origin_sampling"),
+            freq=config.problem.freq,
+        )
+        if len(selected) < 2:
+            raise ValueError("training_window requires at least two complete origins per fold")
+        labels = forecast_times(config.problem, config.validation, current)
+        result.append(RollingOriginFold(
+            window=number, origin_index=int(times.get_loc(current)), origin=current,
+            train_indices=tuple(range(len(selected))),
+            metadata={
+                "window": number, "origin": current.isoformat(),
+                "label_start": labels[0].isoformat(), "label_end": labels[-1].isoformat(),
+                "raw_history_start": start.isoformat(), "raw_history_end": current.isoformat(),
+                "train_history_steps": len(raw),
+                "training_window_kind": config.validation["training_window"]["kind"],
+                "candidate_origins": len(origins), "training_sample_count": len(selected),
+                "training_label_end_max": forecast_times(
+                    config.problem, config.validation, origins[selected[-1]]
+                )[-1].isoformat(),
+            },
+        ))
+    return tuple(result)
+
+
+__all__ = ["raw_history_backtest_windows", "rolling_backtest_windows", "temporal_backtest_windows"]

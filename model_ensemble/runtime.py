@@ -231,6 +231,9 @@ def run_ensemble_config(
             raise EnsembleSpecError("Ensemble members do not support train_history_steps")
         if member_config.validation.get("refit_every", 1) != 1:
             raise EnsembleSpecError("Ensemble members do not support non-default refit_every")
+        if (member_config.validation.get("training_window") is not None
+                or member_config.validation.get("forecast_window") is not None):
+            raise EnsembleSpecError("Ensemble members do not yet support explicit temporal windows")
         calibration = member_config.probabilistic.get("calibration", {})
         if isinstance(calibration, Mapping) and calibration.get("method") == "absolute_residual":
             raise EnsembleSpecError("Ensemble members do not support absolute_residual calibration")
@@ -238,7 +241,7 @@ def run_ensemble_config(
         member_fingerprints[member.name] = member_config.fingerprint()
         registry = SourceRegistry(member_config.data, source_root)
         registry_by_member[member.name] = registry
-        runner_kwargs = {"compiled_cache_root": cache_root}
+        runner_kwargs: dict[str, Any] = {}
         if member_budget is not None:
             runner_kwargs["resource_budget"] = member_budget
         runners[member.name] = services.runner_factory(
@@ -247,6 +250,11 @@ def run_ensemble_config(
             resolve_origin(registry, config.validation.get("forecast_origin")),
             **runner_kwargs,
         )
+        share_design = getattr(runners[member.name], "share_training_design", None)
+        if callable(share_design):
+            for previous_name, previous_runner in runners.items():
+                if previous_name != member.name and share_design(previous_runner):
+                    break
         if parent_budget is not None and sum(
             runner.workload.design_bytes for runner in runners.values()
         ) > parent_budget.memory_limit_bytes:

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
+import re
 from typing import Any
 
 from forecasting_core.specs._mapping import (
@@ -19,22 +20,30 @@ class FixedStepBacktestSpec:
     """Rolling-origin geometry measured only in supervised origin steps."""
 
     history_steps: int
-    train_window_steps: int
+    train_window_steps: int | None
     fold_count: int
     stride_steps: int
     train_history_steps: int | None = None
+    explicit_training_window: bool = False
 
     def __post_init__(self) -> None:
         for field_name in (
             "history_steps",
-            "train_window_steps",
             "fold_count",
             "stride_steps",
         ):
             value = getattr(self, field_name)
             if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
                 raise ValueError(f"validation.{field_name} must be a positive integer")
-        if self.train_window_steps >= self.history_steps:
+        if self.train_window_steps is None and not self.explicit_training_window:
+            raise ValueError("validation.train_window_steps must be a positive integer")
+        if self.train_window_steps is not None and (
+            isinstance(self.train_window_steps, bool)
+            or not isinstance(self.train_window_steps, int)
+            or self.train_window_steps <= 0
+        ):
+            raise ValueError("validation.train_window_steps must be a positive integer")
+        if self.train_window_steps is not None and self.train_window_steps >= self.history_steps:
             raise ValueError(
                 "validation.train_window_steps must be smaller than history_steps"
             )
@@ -203,6 +212,8 @@ VALIDATION_FIELDS = frozenset(
         "seasonal_naive_lag",
         "train_history_steps",
         "refit_every",
+        "forecast_window",
+        "training_window",
     }
 )
 
@@ -210,8 +221,11 @@ _VALIDATION_NESTED_FIELDS: dict[str, frozenset[str]] = {
     "validation.training_scope": frozenset(
         {"incomplete_series_policy", "unknown_series_policy", "series_order"}
     ),
+    "validation.forecast_window": frozenset({"start", "gap_steps"}),
+    "validation.training_window": frozenset({"kind", "history_steps", "start_time"}),
     "validation.training": frozenset(
         {
+            "origin_sampling",
             "early_stopping_patience",
             "sample_weight",
             "tuning",
@@ -224,6 +238,9 @@ _VALIDATION_NESTED_FIELDS: dict[str, frozenset[str]] = {
         }
     ),
     "validation.training.sample_weight": frozenset({"method", "halflife_days"}),
+    "validation.training.origin_sampling": frozenset(
+        {"stride_steps", "time_of_day", "max_origins", "anchor_time"}
+    ),
     "validation.training.tuning": frozenset({"method", "metric", "n_splits"}),
     "validation.training.augmentation": frozenset(
         {"method", "ratio", "feature_noise_std", "target_noise_std", "random_state"}
@@ -309,6 +326,25 @@ class RuntimeValidationSpec(FrozenMappingSpec):
                 "validation.horizon_mode must be fixed_steps, sliding_window, "
                 "expanding_window or calendar_month"
             )
+        if horizon_mode != "fixed_steps" and (
+            "training_window" in payload or "forecast_window" in payload
+        ):
+            raise ValueError(
+                "forecast_window/training_window require fixed_steps horizon_mode"
+            )
+        sampling = payload.get("training", {}).get("origin_sampling")
+        if sampling is not None:
+            for field, minimum in (("stride_steps", 1), ("max_origins", 2)):
+                if field in sampling:
+                    number = sampling[field]
+                    if isinstance(number, bool) or not isinstance(number, int) or number < minimum:
+                        raise ValueError(f"origin_sampling.{field} must be an integer >= {minimum}")
+            if "time_of_day" in sampling:
+                clock = sampling["time_of_day"]
+                if not isinstance(clock, str) or re.fullmatch(r"(?:[01][0-9]|2[0-3]):[0-5][0-9]", clock) is None:
+                    raise ValueError("origin_sampling.time_of_day must be HH:MM")
+                if "stride_steps" in sampling:
+                    raise ValueError("origin_sampling time_of_day and stride_steps are mutually exclusive")
         backtest = _parse_backtest_geometry(
             payload,
             horizon_mode=horizon_mode,
@@ -356,6 +392,12 @@ def _parse_backtest_geometry(
             raise ValueError(
                 f"{horizon_mode} validation forbids calendar fields in {source}: {forbidden}"
             )
+        if horizon_mode == "fixed_steps" and "training_window" in payload:
+            if payload["training_window"] is None:
+                raise ValueError("training_window must be a mapping")
+            if keys & {"train_history_steps", "train_window_steps"}:
+                raise ValueError("training_window replaces train_history_steps/train_window_steps")
+            fixed_fields = fixed_fields - {"train_window_steps"}
         if horizon_mode == "expanding_window":
             forbidden = sorted(keys & {"train_window_steps", "train_history_steps"})
             if forbidden:
@@ -394,10 +436,11 @@ def _parse_backtest_geometry(
             )
         return FixedStepBacktestSpec(
             history_steps=payload["history_steps"],
-            train_window_steps=payload["train_window_steps"],
+            train_window_steps=payload.get("train_window_steps"),
             fold_count=payload["fold_count"],
             stride_steps=payload["stride_steps"],
             train_history_steps=payload.get("train_history_steps"),
+            explicit_training_window="training_window" in payload,
         )
 
     forbidden = sorted(keys & {"history_steps", "train_window_steps", "stride_steps", "train_history_steps"})

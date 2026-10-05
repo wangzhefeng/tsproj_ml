@@ -18,6 +18,12 @@ from data_loading import (
     TargetAccess,
 )
 from feature_engineering import CompiledFeatures, FeatureCompiler
+from feature_engineering.indexed import compile_indexed_history, indexed_history_eligible
+from forecasting_core.specs.temporal import (
+    forecast_ends,
+    forecast_times as temporal_forecast_times,
+    select_training_origins,
+)
 from feature_engineering.seasonal import normalize_seasonal_baseline_spec, seasonal_baseline_values
 from forecasting_core.specs import (
     AvailabilityPolicy,
@@ -168,6 +174,7 @@ class SupervisedDesignBuilder:
         self._audit: list[CompiledFeatures] = []
         self.series_ids = self._resolve_series_ids()
         self._training_compile_stats: dict[str, Any] = {
+            "indexed_batches": 0,
             "batch_batches": 0,
             "row_batches": 0,
             "origin_count": 0,
@@ -207,7 +214,9 @@ class SupervisedDesignBuilder:
     def training_compile_summary(self) -> dict[str, Any]:
         batch_batches = int(self._training_compile_stats["batch_batches"])
         row_batches = int(self._training_compile_stats["row_batches"])
-        if batch_batches and row_batches:
+        if self._training_compile_stats["indexed_batches"]:
+            mode = "indexed"
+        elif batch_batches and row_batches:
             mode = "mixed"
         elif batch_batches:
             mode = "batch"
@@ -338,11 +347,9 @@ class SupervisedDesignBuilder:
     ) -> InformationSetRequest:
         return InformationSetRequest(
             forecast_origin=origin,
-            forecast_times=pd.date_range(
-                origin,
-                periods=self.config.problem.horizon + 1,
-                freq=self.config.problem.freq,
-            )[1:],
+            forecast_times=temporal_forecast_times(
+                self.config.problem, self.config.validation, origin
+            ),
             series_ids=self.series_ids if self.is_global else (),
             target_access=target_access,
             history_start=self.history_start,
@@ -721,6 +728,21 @@ class SupervisedDesignBuilder:
         data_phase: str = "historical",
     ):
         information_set = self.registry.materialize(self.request(origin, data_phase=data_phase))
+        call_steps = tuple(
+            coordinates[0].horizon_step for coordinates in self.plan.call_coordinates
+        )
+        request = self.request(origin, data_phase=data_phase)
+        if (not self.compiler.resolved_strategy.consumes_previous
+                and self.compiler.batch_eligibility((request,), horizon_steps=call_steps).eligible):
+            compiled = self.compiler.compile_batch((information_set,), (request,), horizon_steps=call_steps)[0]
+            schema = self._update_feature_schema(compiled)
+            self._audit.append(compiled)
+            designs = _split_batch_designs(compiled.frame, schema=schema, call_steps=call_steps, n_series=self.n_series)
+
+            def batch_provider(call_index, _coordinates, _dependencies, _predicted):
+                return designs[call_index]
+
+            return (designs[0],), batch_provider
         base_design = self._compile_call(
             origin,
             0,
@@ -826,6 +848,59 @@ def minimum_history_rows(config: ForecastConfigSpec) -> int:
     return required
 
 
+def supervised_candidate_origins(
+    builder: SupervisedDesignBuilder,
+    origin: pd.Timestamp,
+) -> tuple[pd.Timestamp, ...]:
+    """训练监督候选原点；training_window 路径在候选期应用 origin_sampling。"""
+    config = builder.config
+    minimum_history = minimum_history_rows(config)
+    timestamps = builder.target_history_times(origin)
+    origin_position = timestamps.get_loc(origin)
+    if not isinstance(origin_position, (int, np.integer)):
+        raise ValueError("forecast_origin must resolve to one unique row")
+    if config.validation.get("training_window") is not None:
+        expected = pd.date_range(builder.history_start, origin, freq=config.problem.freq)
+        if not timestamps.equals(expected):
+            raise ValueError("training_window requires complete regular history including its start")
+        candidates = timestamps[minimum_history - 1:]
+        available = tuple(
+            candidates[forecast_ends(config.problem, config.validation, candidates) <= origin]
+        )
+        indices = select_training_origins(
+            available, tuple(range(len(available))),
+            config.validation.get("training", {}).get("origin_sampling"),
+            freq=config.problem.freq,
+        )
+        if len(indices) < 2:
+            raise ValueError("training_window requires at least two complete supervised origins")
+        return tuple(available[i] for i in indices)
+    available_origins = tuple(
+        pd.Timestamp(value)
+        for value in timestamps[
+            minimum_history - 1 : origin_position - config.problem.horizon + 1
+        ]
+    )
+    backtest = config.validation.backtest
+    if isinstance(backtest, FixedStepBacktestSpec):
+        if backtest.train_history_steps is not None:
+            expected = pd.date_range(end=origin, periods=backtest.train_history_steps, freq=config.problem.freq)
+            if not timestamps.equals(expected):
+                raise ValueError("train_history_steps requires a complete regular history grid")
+            expected_samples = backtest.train_history_steps - minimum_history - config.problem.horizon + 1
+            if expected_samples < 2 or backtest.train_window_steps != expected_samples:
+                raise ValueError(
+                    "train_window_steps must equal train_history_steps - minimum_history_rows - horizon + 1 "
+                    f"and provide at least two samples (expected {expected_samples})"
+                )
+        candidate_origins = available_origins[-backtest.history_steps:]
+    else:
+        candidate_origins = available_origins
+    if len(candidate_origins) < 2:
+        raise ValueError("canonical runtime requires at least two complete supervised samples")
+    return candidate_origins
+
+
 def _supervised_arrays(
     builder: SupervisedDesignBuilder,
     origin: pd.Timestamp,
@@ -836,32 +911,43 @@ def _supervised_arrays(
     tuple[pd.Timestamp, ...],
     tuple[Any, ...],
 ]:
-    minimum_history = minimum_history_rows(builder.config)
-    timestamps = builder.target_history_times(origin)
-    origin_position = timestamps.get_loc(origin)
-    if not isinstance(origin_position, (int, np.integer)):
-        raise ValueError("forecast_origin must resolve to one unique row")
-    available_origins = tuple(
-        pd.Timestamp(value)
-        for value in timestamps[
-            minimum_history - 1 : origin_position - builder.config.problem.horizon + 1
-        ]
-    )
-    backtest = builder.config.validation.backtest
-    if isinstance(backtest, FixedStepBacktestSpec):
-        if backtest.train_history_steps is not None:
-            expected = pd.date_range(end=origin, periods=backtest.train_history_steps, freq=builder.config.problem.freq)
-            if not timestamps.equals(expected):
-                raise ValueError("train_history_steps requires a complete regular history grid")
-            expected_samples = backtest.train_history_steps - minimum_history - builder.config.problem.horizon + 1
-            if expected_samples < 2 or backtest.train_window_steps != expected_samples:
-                raise ValueError(
-                    "train_window_steps must equal train_history_steps - minimum_history_rows - horizon + 1 "
-                    f"and provide at least two samples (expected {expected_samples})"
+    candidate_origins = supervised_candidate_origins(builder, origin)
+    if len(candidate_origins) >= 2:
+        call_steps = tuple(
+            coordinates[0].horizon_step
+            for coordinates in builder.plan.call_coordinates
+        )
+        if indexed_history_eligible(builder.compiler, call_steps):
+            started = perf_counter()
+            information = builder.registry.materialize(builder.request(origin))
+            builder._add_training_compile_wall("materialize", perf_counter() - started)
+            started = perf_counter()
+            indexed = compile_indexed_history(
+                builder.compiler,
+                information,
+                pd.DatetimeIndex(candidate_origins),
+                call_steps,
+                registry=builder.registry,
+            )
+            builder._add_training_compile_wall("compile_batch", perf_counter() - started)
+            if indexed is not None:
+                designs, targets, schema = indexed
+                if schema is None:
+                    raise ValueError("indexed history compile must return a feature schema")
+                builder.feature_schema = schema
+                builder.categorical_schema = ()
+                builder._training_compile_stats["indexed_batches"] += 1
+                builder._training_compile_stats["origin_count"] += len(candidate_origins)
+                builder._training_compile_stats["estimated_origin_call_count"] += (
+                    len(candidate_origins) * len(call_steps)
                 )
-        candidate_origins = available_origins[-backtest.history_steps:]
-    else:
-        candidate_origins = available_origins
+                return (
+                    designs,
+                    targets,
+                    candidate_origins,
+                    candidate_origins,
+                    (builder.series_ids[0],) * len(candidate_origins),
+                )
     rows = []
     for start in range(0, len(candidate_origins), TRAINING_COMPILE_BATCH_SIZE):
         rows.extend(
@@ -912,6 +998,8 @@ def _label_end(
     builder: SupervisedDesignBuilder,
     origin: pd.Timestamp,
 ) -> pd.Timestamp:
+    if builder.config.validation.get("forecast_window") is not None:
+        return pd.Timestamp(temporal_forecast_times(builder.config.problem, builder.config.validation, origin)[-1])
     return backtest_geometry.label_end(origin, builder.offset, builder.config.problem.horizon)
 
 

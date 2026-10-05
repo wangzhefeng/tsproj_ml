@@ -3,11 +3,13 @@ from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from time import perf_counter
 from typing import Any, Iterator, Mapping
 
 import pandas as pd
 from pandas.tseries.frequencies import to_offset
 from forecasting_core.probabilistic_spec import probabilistic_spec_from_mapping
+from forecasting_core.specs.temporal import has_bounded_history
 from forecasting_core.specs import (
     ExpandingWindowBacktestSpec,
     FixedStepBacktestSpec,
@@ -16,6 +18,7 @@ from forecasting_core.specs import (
 from model_evaluation.point import resolve_aggregate_weighting
 from model_testing.contracts.protocols import BacktestRunner, BacktestWindow, FitResult
 from model_testing.artifacts.reporting import write_backtest_results
+from model_testing.loops.execution import ordered_bounded_map
 from model_testing.loops.scoring import score_holdout_fold
 from probabilistic.calibration import ConformalCalibrationTracker
 from probabilistic.residual import ResidualCalibrationTracker
@@ -69,23 +72,12 @@ def _log_provider_usage(audits: Any) -> None:
 def _fit_raw_history_windows(
     runner: BacktestRunner, windows: tuple[BacktestWindow, ...], workers: int,
 ) -> Iterator[tuple[BacktestRunner, FitResult]]:
-    """有界批次：不一次保留所有折的独立设计矩阵。"""
-    for start in range(0, len(windows), workers):
-        batch = windows[start:start + workers]
-        contexts = tuple(runner.for_backtest_window(window) for window in batch)
+    """编译与拟合同属有界任务，消费方按序评分后释放。"""
+    def fit(window):
+        context = runner.for_backtest_window(window)
+        return context, context.fit(window.train_indices, force_serial=workers > 1)
 
-        def fit(item):
-            context, window = item
-            return context.fit(window.train_indices, force_serial=workers > 1)
-
-        if workers > 1:
-            with ThreadPoolExecutor(max_workers=workers) as executor:
-                results = tuple(executor.map(fit, zip(contexts, batch)))
-        else:
-            results = (fit((contexts[0], batch[0])),)
-        yield from zip(contexts, results)
-        # 先释放上一批，再创建下一批；避免同时驻留两批大矩阵。
-        del contexts, results
+    yield from ordered_bounded_map(fit, windows, workers=workers)
 
 
 def run_rolling_backtest(
@@ -129,7 +121,7 @@ def run_rolling_backtest(
             )
     calibration_audits: list[dict[str, Any]] = []
     backtest_windows = runner.backtest_windows()
-    strict_history = config.validation.get("train_history_steps") is not None
+    strict_history = has_bounded_history(config.validation)
     refit_every = config.validation.get("refit_every", 1)
     fit_indices = tuple(index for index in range(len(backtest_windows))
                         if index == 0 or (refit_every > 0 and index % refit_every == 0))
@@ -140,7 +132,8 @@ def run_rolling_backtest(
         max(1, len(fit_windows)),
     )
     parallel_fits = None
-    strict_fits = _fit_raw_history_windows(runner, backtest_windows, window_workers) if strict_history else None
+    strict_fits = (_fit_raw_history_windows(runner, backtest_windows, window_workers)
+                   if strict_history and refit_every == 1 else None)
     if not strict_history and window_workers > 1 and backtest_windows:
         target_histories = runner.backtest_target_histories(fit_windows)
 
@@ -152,13 +145,11 @@ def run_rolling_backtest(
                 force_serial=True,
             )
 
-        with ThreadPoolExecutor(max_workers=window_workers) as executor:
-            parallel_fits = dict(zip(fit_indices,
-                executor.map(
-                    fit_window,
-                    zip(fit_windows, target_histories),
-                ),
-            ))
+        parallel_fits = zip(fit_indices, ordered_bounded_map(
+            fit_window,
+            zip(fit_windows, target_histories),
+            workers=window_workers,
+        ))
 
     fit_result = None
     fitted_window = None
@@ -166,11 +157,16 @@ def run_rolling_backtest(
         refitted = window_index in fit_indices
         if strict_fits is not None:
             fold_runner, fit_result = next(strict_fits)
+        elif strict_history:
+            # 有界历史 + 间隔重训：每个预测原点更新只读信息集，不沿用旧历史下界。
+            fold_runner = runner.for_backtest_window(backtest_window)
+            if refitted:
+                fit_result = fold_runner.fit(backtest_window.train_indices)
         else:
             fold_runner = runner
             if refitted:
                 fit_result = (
-                    parallel_fits[window_index]
+                    next(parallel_fits)[1]
                     if parallel_fits is not None
                     else runner.fit(backtest_window.train_indices)
                 )
@@ -190,6 +186,14 @@ def run_rolling_backtest(
             aggregate_weights=aggregate_weights,
             eval_mask_config=eval_mask_config,
         )
+        if config.validation.get("training_window") is not None:
+            fold.frame["forecast_origin"] = backtest_window.origin.isoformat()
+            fold.frame["lead_steps"] = ((pd.to_datetime(fold.frame["time"]) - backtest_window.origin)
+                                        / pd.Timedelta(to_offset(config.problem.freq))).astype(int)
+            first_lead = int(fold.frame["lead_steps"].min())
+            fold.point_scores["forecast_origin"] = backtest_window.origin.isoformat()
+            if "horizon" in fold.point_scores:
+                fold.point_scores["lead_steps"] = fold.point_scores["horizon"] + first_lead - 1
         cv_frames.append(fold.frame)
         if fold.calibration_audit is not None:
             calibration_audits.append(
@@ -209,7 +213,8 @@ def run_rolling_backtest(
         })
         if strict_history:
             del fold_runner, builder
-            fit_result = None
+            if refit_every == 1:
+                fit_result = None
     holdout_audit = tuple(holdout_audits)
     _log_provider_usage(holdout_audit)
     if cv_frames:
@@ -236,6 +241,7 @@ def run_rolling_backtest(
             holdout_metadata["train_window_steps"] = backtest.train_window_steps
         if calibration_audits:
             holdout_metadata["calibration"] = calibration_audits
+        write_started = perf_counter()
         write_backtest_results(
             test_dir,
             pd.concat(cv_frames, ignore_index=True),
@@ -245,6 +251,7 @@ def run_rolling_backtest(
                 "result_method": config.result_method(),
                 "backtest": holdout_metadata,
                 "runtime_resources": runner.runtime_resources_payload(),
+                "allow_overlapping_windows": config.validation.get("training_window") is not None,
             },
             probabilistic_scores_df=(
                 pd.concat(prob_score_frames, ignore_index=True)
@@ -253,6 +260,7 @@ def run_rolling_backtest(
             ),
             stitch_overview=stitch_overview,
         )
+        runner.stage_wall_seconds["backtest_result_write"] = perf_counter() - write_started
     else:
         holdout_metadata = None
     return holdout_metadata, calibration_tracker, holdout_audit

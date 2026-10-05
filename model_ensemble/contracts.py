@@ -103,7 +103,6 @@ class BaseModelRunnerFactory(Protocol):
         registry: Any,
         origin: pd.Timestamp,
         *,
-        compiled_cache_root: str | Path,
         resource_budget: Any | None = None,
     ) -> BaseModelRunner:
         ...

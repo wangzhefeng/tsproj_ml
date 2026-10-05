@@ -229,8 +229,14 @@ def write_backtest_results(
     missing = required - set(cv_plot_df)
     if missing:
         raise ValueError(f"canonical backtest is missing columns: {sorted(missing)}")
-    if cv_plot_df.duplicated(BACKTEST_KEY_COLUMNS).any():
+    # 显式窗口合同允许多天滚动预测：metadata 声明 allow_overlapping_windows 时
+    # 保留所有窗口、不拼接重复目标时间；否则维持键唯一 RAISE。
+    allow_overlap = bool(dict(metadata or {}).get("allow_overlapping_windows"))
+    overlapping = cv_plot_df.duplicated(BACKTEST_KEY_COLUMNS).any()
+    if overlapping and not allow_overlap:
         raise ValueError("canonical backtest result keys must be unique")
+    if allow_overlap:
+        stitch_overview = False
     cv_path = output_path / "cv_plot_df.csv"
     scores_path = output_path / "test_scores_df.csv"
     cv_plot_df.to_csv(cv_path, index=False, encoding="utf_8_sig")
@@ -290,6 +296,8 @@ def write_backtest_results(
         },
         **dict(metadata or {}),
     }
+    if overlapping or allow_overlap:
+        payload["overview_policy"] = "per_window_only_due_to_overlap"
     (output_path / "result_metadata.json").write_text(
         json.dumps(payload, ensure_ascii=False, indent=2),
         encoding="utf-8",

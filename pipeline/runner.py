@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from functools import cached_property
 from pathlib import Path
+from threading import RLock
 from time import perf_counter
 from typing import Any, Mapping, cast
 
@@ -23,7 +25,7 @@ from model_training.weights import (
 )
 from model_building.adapters.native_registry import native_history_cls as _native_history_cls
 from model_building.catalog import MODEL_CATALOG
-from feature_engineering import cache as compiled_cache
+from feature_engineering import design_identity
 from feature_engineering.selection import (
     CanonicalFeatureSelector,
     normalize_feature_selection,
@@ -44,6 +46,14 @@ from model_predicting.artifacts.persistence import (
     persist_model_bundle,
 )
 from model_training.strategies import CanonicalStrategyArtifact
+from forecasting_core.design import IndexedDesign, retained_array_bytes
+from forecasting_core.specs.temporal import (
+    forecast_times as _temporal_forecast_times,
+    forecast_ends as _temporal_forecast_ends,
+    has_bounded_history,
+    history_start as _temporal_history_start,
+    select_training_origins,
+)
 from forecasting_core.tensors import PointForecastTensor
 from feature_engineering.transforms import CanonicalFeatureScaler, CanonicalTargetTransform
 from model_performance.checkpoints import (
@@ -63,7 +73,11 @@ from forecasting_core.runtime_resources import (
 from model_predicting.artifacts.evidence_collect import collect_model_evidence, dependency_versions, json_evidence
 from pipeline.lifecycle import BacktestRuntimeResult, CanonicalRuntimeResult, run_lifecycle
 from model_testing.contracts.protocols import BacktestWindow
-from model_testing.contracts.windows import raw_history_backtest_windows, rolling_backtest_windows
+from model_testing.contracts.windows import (
+    raw_history_backtest_windows,
+    rolling_backtest_windows,
+    temporal_backtest_windows,
+)
 from pipeline.supervised_design import (
     SupervisedDesignBuilder,
     _actual_at_origin,
@@ -71,6 +85,7 @@ from pipeline.supervised_design import (
     _sample_indices,
     _supervised_arrays,
     minimum_history_rows,
+    supervised_candidate_origins,
 )
 from pipeline.fold_fit import (
     _fit_point,
@@ -100,14 +115,14 @@ def _sample_selector(
     origin_indices: tuple[int, ...],
     *,
     n_series: int,
-) -> slice | tuple[int, ...]:
+) -> slice | np.ndarray:
     """Use a zero-copy slice when origin-major sample rows are contiguous."""
     indices = _sample_indices(origin_indices, n_series)
     if not indices:
-        return ()
+        return np.array([], dtype=int)
     if indices == tuple(range(indices[0], indices[-1] + 1)):
         return slice(indices[0], indices[-1] + 1)
-    return indices
+    return np.asarray(indices, dtype=int)
 
 
 class CanonicalBaseModelRunner:
@@ -124,7 +139,6 @@ class CanonicalBaseModelRunner:
         registry: SourceRegistry,
         origin: pd.Timestamp,
         *,
-        compiled_cache_root: str | Path | None = None,
         resource_budget: RuntimeResourceBudget | None = None,
         precompiled_payload: Mapping[str, Any] | None = None,
         precompiled_fingerprint: str | None = None,
@@ -136,8 +150,8 @@ class CanonicalBaseModelRunner:
         if config.strategy is None:
             raise ValueError("CanonicalBaseModelRunner requires a strategy")
         self.config = config
-        native_cls = _native_history_cls(config.estimator.model_type)
-        if native_cls is not None:
+        self._native_cls = _native_history_cls(config.estimator.model_type)
+        if self._native_cls is not None:
             # 构造期即校验参数（未知参数 RAISE），与 ETS 原行为一致
             if str(config.probabilistic.get("mode", "point")) != "point":
                 # 能力前置校验：native 历史模型不支持 scalar quantile，
@@ -146,128 +160,75 @@ class CanonicalBaseModelRunner:
                     f"model_type {config.estimator.model_type!r} (native history) "
                     "does not support probabilistic.mode=quantile"
                 )
-            native_cls(dict(config.estimator.params))
+            self._native_cls(dict(config.estimator.params))
         self.calendar_runner_factory: Any = CanonicalBaseModelRunner
         self.registry = registry
         self.origin = origin
-        history_steps = config.validation.get("train_history_steps")
-        history_start = (
-            origin - (history_steps - 1) * pd.tseries.frequencies.to_offset(config.problem.freq)
-            if history_steps is not None else None
+        self.resource_budget = runtime_budget_for_config(config, parent_budget=resource_budget)
+        offset = pd.tseries.frequencies.to_offset(config.problem.freq)
+        self.builder = SupervisedDesignBuilder(
+            config, registry,
+            history_start=_temporal_history_start(config.validation, origin, offset),
         )
-        self.builder = SupervisedDesignBuilder(config, registry, history_start=history_start)
-        self.compiled_cache_root = compiled_cache_root
         self.checkpoint_root = checkpoint_root
         self.checkpoint: FileFitCheckpoint | None = None
         if checkpoint_root is not None:
             self.checkpoint = FileFitCheckpoint(checkpoint_root, {
                 "config": config.fingerprint(),
-                "raw_design": compiled_cache.compute_raw_design_fingerprint(
+                "raw_design": design_identity.compute_raw_design_fingerprint(
                     config, base_dir=registry.base_dir, origin=origin,
                     generators=registry.generators),
                 "implementation": implementation_fingerprint(),
             })
         self.fold_transform_cache = fold_transform_cache
-        self.compiled_cache_hit = False
-        self.compiled_cache_fingerprint: str | None = None
-        self.X_all: tuple[np.ndarray, ...]
-        self.Y_all: np.ndarray
+        self.design_shared = False
+        self.raw_design_fingerprint: str | None = None
         self.supervised_origins: tuple[pd.Timestamp, ...]
         self.supervised_sample_origins: tuple[pd.Timestamp, ...]
         self.supervised_sample_series_ids: tuple[Any, ...]
-        design_started = perf_counter()
-        cache_status = "disabled"
-        self.cache_stage_wall_seconds = {
-            "load": 0.0,
-            "compile": 0.0,
-            "write": 0.0,
-        }
+        self._precompiled_payload = precompiled_payload
+        self._precompiled_fingerprint = precompiled_fingerprint
+        self._shared_design_source: CanonicalBaseModelRunner | None = None
+        self._preparation_lock = RLock()
+        self._prepared = False
+        self._X_all: tuple[np.ndarray | IndexedDesign, ...] | None = None
+        self._Y_all: np.ndarray | None = None
+        self.lifecycle_started = perf_counter()
+        self.stage_wall_seconds: dict[str, float] = {"raw_design": 0.0}
+        self._final_training_workload: dict[str, Any] | None = None
+        self.design_status = "not_prepared"
+        self.design_stage_wall_seconds = {"compile": 0.0, "share": 0.0}
+        # 规划只探测一个原点的真实 schema；不构造全训练设计，不做数组持久化。
+        self.supervised_origins = supervised_candidate_origins(self.builder, self.origin)
         if precompiled_payload is not None:
             if not precompiled_fingerprint:
                 raise ValueError(
                     "precompiled_fingerprint is required with precompiled_payload"
                 )
-            expected_fingerprint = compiled_cache.compute_raw_design_fingerprint(
-                config,
-                base_dir=registry.base_dir,
-                origin=origin,
-                generators=registry.generators,
-            )
-            if precompiled_fingerprint != expected_fingerprint:
+            expected = design_identity.compute_raw_design_fingerprint(
+                config, base_dir=registry.base_dir, origin=origin,
+                generators=registry.generators)
+            if precompiled_fingerprint != expected:
                 raise ValueError(
                     "precompiled fingerprint mismatch: "
-                    f"got {precompiled_fingerprint}, expected {expected_fingerprint}"
+                    f"got {precompiled_fingerprint}, expected {expected}"
                 )
-            self._restore_compiled_cache(precompiled_payload)
-            self.compiled_cache_hit = True
-            self.compiled_cache_fingerprint = precompiled_fingerprint
-            cache_status = "memory_hit"
-        elif compiled_cache_root is None:
-            compile_started = perf_counter()
-            self._compile_supervised_arrays()
-            self.cache_stage_wall_seconds["compile"] = (
-                perf_counter() - compile_started
-            )
+        if self._native_cls is not None:
+            row_bytes = config.problem.horizon * self.builder.n_series * len(config.problem.targets) * 8
         else:
-            cache_root = Path(compiled_cache_root)
-            fingerprint = compiled_cache.compute_raw_design_fingerprint(
-                config,
-                base_dir=registry.base_dir,
-                origin=origin,
-                generators=registry.generators,
+            planning_builder = SupervisedDesignBuilder(
+                config, registry, history_start=self.builder.history_start,
             )
-            self.compiled_cache_fingerprint = fingerprint
-            started = perf_counter()
-            with compiled_cache.raw_design_cache_lock(cache_root, fingerprint):
-                load_started = perf_counter()
-                try:
-                    payload = compiled_cache.load_compiled_cache(cache_root, fingerprint)
-                except FileNotFoundError:
-                    self.cache_stage_wall_seconds["load"] = (
-                        perf_counter() - load_started
-                    )
-                    compile_started = perf_counter()
-                    self._compile_supervised_arrays()
-                    self.cache_stage_wall_seconds["compile"] = (
-                        perf_counter() - compile_started
-                    )
-                    cache_status = "miss"
-                    write_started = perf_counter()
-                    compiled_cache.save_compiled_cache(
-                        cache_root,
-                        fingerprint,
-                        self._compiled_cache_payload(),
-                    )
-                    self.cache_stage_wall_seconds["write"] = (
-                        perf_counter() - write_started
-                    )
-                    logger.info(
-                        "[CompiledFeaturesCache] miss key=%s compile_seconds=%.3f",
-                        fingerprint[:12],
-                        perf_counter() - started,
-                    )
-                else:
-                    self.cache_stage_wall_seconds["load"] = (
-                        perf_counter() - load_started
-                    )
-                    self._restore_compiled_cache(payload)
-                    self.compiled_cache_hit = True
-                    cache_status = "hit"
-                    logger.info(
-                        "[CompiledFeaturesCache] hit key=%s load_seconds=%.3f",
-                        fingerprint[:12],
-                        perf_counter() - started,
-                    )
+            designs, labels = planning_builder.training_row(self.supervised_origins[0])
+            self.builder.feature_schema = planning_builder.feature_schema
+            self.builder.categorical_schema = planning_builder.categorical_schema
+            row_bytes = sum(d.nbytes for d in designs) + labels.nbytes
         self.workload = build_runtime_workload(
             config,
-            training_rows=len(self.Y_all),
+            training_rows=len(self.supervised_origins) * self.builder.n_series,
             feature_count=len(self.builder.feature_schema),
-            design_bytes=sum(design.nbytes for design in self.X_all) + self.Y_all.nbytes,
+            design_bytes=len(self.supervised_origins) * row_bytes,
             series_count=self.builder.n_series,
-        )
-        self.resource_budget = runtime_budget_for_config(
-            config,
-            parent_budget=resource_budget,
         )
         self.execution_plan = plan_runtime_execution(
             config,
@@ -276,10 +237,119 @@ class CanonicalBaseModelRunner:
             base_dir=registry.base_dir,
             feature_schema=self.builder.feature_schema,
         )
-        self.cache_status = cache_status
         self.training_compile = self.builder.training_compile_summary()
-        if self.compiled_cache_hit:
-            self.training_compile["mode"] = "cache_hit"
+        self.training_compile["mode"] = "planned"
+        if fold_transform_cache is not None:
+            self.raw_design_fingerprint = design_identity.compute_raw_design_fingerprint(
+                config, base_dir=registry.base_dir, origin=origin,
+                generators=registry.generators)
+
+    def prepare_training(self) -> None:
+        """按需物化一份训练设计；并发折共享同一次准备。"""
+        with self._preparation_lock:
+            if not self._prepared:
+                try:
+                    self._prepare_training()
+                except Exception:
+                    self._X_all = self._Y_all = None
+                    raise
+                self._prepared = True
+                self._precompiled_payload = None
+                self._shared_design_source = None
+
+    @property
+    def X_all(self) -> tuple[np.ndarray | IndexedDesign, ...]:
+        if self._X_all is None:
+            self.prepare_training()
+        assert self._X_all is not None
+        return self._X_all
+
+    @X_all.setter
+    def X_all(self, value):
+        self._X_all = value
+
+    @property
+    def Y_all(self) -> np.ndarray:
+        if self._Y_all is None:
+            self.prepare_training()
+        assert self._Y_all is not None
+        return self._Y_all
+
+    @Y_all.setter
+    def Y_all(self, value):
+        self._Y_all = value
+
+    def share_training_design(self, source: CanonicalBaseModelRunner) -> bool:
+        """共享同指纹的不可变设计；绝不共享对方的拟合状态。"""
+        if source is self or self._prepared:
+            raise ValueError("design sharing must precede preparation")
+
+        def identity(runner: CanonicalBaseModelRunner) -> str:
+            return design_identity.compute_raw_design_fingerprint(
+                runner.config, base_dir=runner.registry.base_dir, origin=runner.origin,
+                generators=runner.registry.generators)
+
+        fingerprint = identity(self)
+        if fingerprint != identity(source):
+            return False
+        source.raw_design_fingerprint = fingerprint
+        self._shared_design_source = source
+        self._precompiled_fingerprint = fingerprint
+        return True
+
+    def training_candidate_count(self) -> int:
+        if self.config.validation.get("training_window") is None:
+            return len(self.supervised_origins)
+        times = pd.date_range(self.builder.history_start, self.origin, freq=self.config.problem.freq)
+        candidates = times[minimum_history_rows(self.config) - 1:]
+        return int((_temporal_forecast_ends(self.config.problem, self.config.validation, candidates) <= self.origin).sum())
+
+    def _prepare_training(self) -> None:
+        config, registry, origin = self.config, self.registry, self.origin
+        precompiled_payload = (
+            self._shared_design_source.raw_design_payload()
+            if self._shared_design_source is not None else self._precompiled_payload
+        )
+        precompiled_fingerprint = self._precompiled_fingerprint
+        design_started = perf_counter()
+        design_status = "compiled"
+        self.design_stage_wall_seconds = {"compile": 0.0, "share": 0.0}
+        if precompiled_payload is not None:
+            if not precompiled_fingerprint:
+                raise ValueError(
+                    "precompiled_fingerprint is required with precompiled_payload"
+                )
+            self._restore_raw_design(precompiled_payload)
+            self.design_stage_wall_seconds["share"] = perf_counter() - design_started
+            self.design_shared = True
+            self.raw_design_fingerprint = precompiled_fingerprint
+            design_status = "memory_hit"
+        else:
+            compile_started = perf_counter()
+            self._compile_supervised_arrays()
+            self.design_stage_wall_seconds["compile"] = perf_counter() - compile_started
+        self.workload = build_runtime_workload(
+            config,
+            training_rows=len(self._Y_all),
+            feature_count=len(self.builder.feature_schema),
+            design_bytes=(
+                sum(design.retained_bytes if isinstance(design, IndexedDesign) else design.nbytes
+                    for design in self._X_all)
+                + self._Y_all.nbytes
+            ),
+            series_count=self.builder.n_series,
+        )
+        # 保留父调度器已授予的线程份额；实际设计仍接受同预算资源校验。
+        plan_runtime_execution(
+            config, self.workload, budget=self.resource_budget,
+            base_dir=registry.base_dir, feature_schema=self.builder.feature_schema,
+        )
+        self.design_status = design_status
+        self.training_compile = self.builder.training_compile_summary()
+        if self._native_cls is not None:
+            self.training_compile.update(mode="native_history", origin_count=len(self.supervised_origins))
+        if self.design_shared:
+            self.training_compile["mode"] = "memory_shared"
         logger.info(
             "[TrainingCompile] mode=%s origins=%s calls=%s reasons=%s wall=%s",
             self.training_compile["mode"],
@@ -288,12 +358,26 @@ class CanonicalBaseModelRunner:
             self.training_compile["reason_codes"],
             self.training_compile["stage_wall_seconds"],
         )
-        self.lifecycle_started = design_started
-        self.stage_wall_seconds: dict[str, float] = {
-            "raw_design": perf_counter() - design_started,
-        }
+        self.stage_wall_seconds["raw_design"] = perf_counter() - design_started
 
     def _compile_supervised_arrays(self) -> None:
+        if self._native_cls is not None:
+            # 原生历史模型不编译监督特征；标签窗直接由原始历史切出。
+            origins = self.supervised_origins
+            history = self.builder.target_history(self.origin)
+            positions = history.forecast_times.get_indexer(origins)
+            windows = np.lib.stride_tricks.sliding_window_view(
+                history.values[0, :, 0], self.config.problem.horizon,
+            )
+            self.Y_all = windows[positions + 1, :, None]
+            self.X_all = tuple(
+                np.empty((len(origins), 0)) for _ in self.builder.plan.call_coordinates
+            )
+            self.supervised_sample_origins = origins
+            self.supervised_sample_series_ids = (self.builder.series_ids[0],) * len(origins)
+            self.builder.feature_schema = self.builder.categorical_schema = ()
+            return
+        # 构造阶段已完成 schema 探测和资源准入，此处仅执行实际设计。
         (
             self.X_all,
             self.Y_all,
@@ -302,7 +386,7 @@ class CanonicalBaseModelRunner:
             self.supervised_sample_series_ids,
         ) = _supervised_arrays(self.builder, self.origin)
 
-    def _compiled_cache_payload(self) -> dict[str, Any]:
+    def _raw_design_payload(self) -> dict[str, Any]:
         return {
             "X_all": self.X_all,
             "Y_all": self.Y_all,
@@ -315,9 +399,10 @@ class CanonicalBaseModelRunner:
 
     def raw_design_payload(self) -> dict[str, Any]:
         """Expose one group's raw arrays for in-memory batch reuse."""
-        return self._compiled_cache_payload()
+        self.prepare_training()
+        return self._raw_design_payload()
 
-    def _restore_compiled_cache(self, payload: Mapping[str, Any]) -> None:
+    def _restore_raw_design(self, payload: Mapping[str, Any]) -> None:
         required = {
             "X_all",
             "Y_all",
@@ -330,18 +415,21 @@ class CanonicalBaseModelRunner:
         missing = sorted(required - set(payload))
         if missing:
             raise ValueError(
-                f"compiled feature cache payload is missing fields: {missing}"
+                f"shared raw design payload is missing fields: {missing}"
             )
-        X_all = tuple(np.asarray(design) for design in payload["X_all"])
+        X_all = tuple(
+            design if isinstance(design, IndexedDesign) else np.asarray(design)
+            for design in payload["X_all"]
+        )
         Y_all = np.asarray(payload["Y_all"])
         sample_origins = tuple(
             cast(pd.Timestamp, pd.Timestamp(value))
             for value in payload["supervised_sample_origins"]
         )
         if any(len(design) != len(Y_all) for design in X_all):
-            raise ValueError("compiled feature cache X/Y sample counts differ")
+            raise ValueError("shared raw design X/Y sample counts differ")
         if len(sample_origins) != len(Y_all):
-            raise ValueError("compiled feature cache origin/Y sample counts differ")
+            raise ValueError("shared raw design origin/Y sample counts differ")
         self.X_all = X_all
         self.Y_all = Y_all
         self.supervised_origins = tuple(
@@ -371,7 +459,23 @@ class CanonicalBaseModelRunner:
         return self.builder.feature_schema
 
     def runtime_resources_payload(self) -> dict[str, Any]:
+        arrays = [self._Y_all] if self._Y_all is not None else []
+        for design in self._X_all or ():
+            if isinstance(design, IndexedDesign):
+                arrays.extend(values for values, _ in design.columns)
+                if design.rows is not None:
+                    arrays.append(design.rows)
+            else:
+                arrays.append(design)
+        model_indices = self.builder.plan.model_indices
         return {
+            "design_storage": {
+                "logical_design_bytes": self.workload.design_bytes,
+                "retained_array_bytes": retained_array_bytes(arrays),
+                "largest_model_rows": self.workload.training_rows * max(
+                    model_indices.count(i) for i in set(model_indices)
+                ),
+            },
             "performance_profile": resolve_performance_profile(
                 self.config, self.workload, budget=self.resource_budget,
                 base_dir=self.registry.base_dir, feature_schema=self.feature_schema,
@@ -380,10 +484,10 @@ class CanonicalBaseModelRunner:
             "workload": self.workload.payload(),
             "budget": self.resource_budget.payload(),
             "execution_plan": self.execution_plan.payload(),
-            "cache": {
-                "status": self.cache_status,
-                "fingerprint": self.compiled_cache_fingerprint,
-                "stage_wall_seconds": dict(self.cache_stage_wall_seconds),
+            "design_preparation": {
+                "status": self.design_status,
+                "fingerprint": self.raw_design_fingerprint,
+                "stage_wall_seconds": dict(self.design_stage_wall_seconds),
             },
             "training_compile": dict(self.training_compile),
             "stage_wall_seconds": dict(self.stage_wall_seconds),
@@ -397,6 +501,14 @@ class CanonicalBaseModelRunner:
         )
 
     def backtest_windows(self) -> tuple[backtest_geometry.RollingOriginFold, ...]:
+        if self.config.validation.get("training_window") is not None:
+            return temporal_backtest_windows(
+                config=self.config,
+                registry=self.builder.registry,
+                offset=self.builder.offset,
+                origin=self.origin,
+                minimum_history=minimum_history_rows(self.config),
+            )
         if self.config.validation.get("train_history_steps") is not None:
             return raw_history_backtest_windows(
                 config=self.config,
@@ -416,12 +528,11 @@ class CanonicalBaseModelRunner:
         )
 
     def for_backtest_window(self, window: BacktestWindow) -> CanonicalBaseModelRunner:
-        """每折独立设计与审计状态；原点和 W 同时进入缓存/checkpoint 身份。"""
-        if self.config.validation.get("train_history_steps") is None:
+        """每折独立设计与审计状态；原点和 W 同时进入设计/checkpoint 身份。"""
+        if not has_bounded_history(self.config.validation):
             return self
         runner = CanonicalBaseModelRunner(
             self.config, self.registry, window.origin,
-            compiled_cache_root=self.compiled_cache_root,
             resource_budget=self.resource_budget,
             checkpoint_root=self.checkpoint_root,
         )
@@ -459,13 +570,13 @@ class CanonicalBaseModelRunner:
 
         if self.fold_transform_cache is None or target_history is not None:
             return factory()
-        if self.compiled_cache_fingerprint is None:
+        if self.raw_design_fingerprint is None:
             raise ValueError(
                 "fold transform cache requires a raw design fingerprint"
             )
         key = fold_transform_fingerprint(
             self.config,
-            raw_design_fingerprint=self.compiled_cache_fingerprint,
+            raw_design_fingerprint=self.raw_design_fingerprint,
             origin_indices=origin_indices,
         )
         return self.fold_transform_cache.get_or_create(key, factory)
@@ -492,6 +603,17 @@ class CanonicalBaseModelRunner:
         `CanonicalMarginalQuantileArtifact` depending on the config mode.
         """
         mode = self._mode()
+        fit_started = perf_counter()
+        self.prepare_training()
+        candidate_count = len(train_indices)
+        if self.config.validation.get("training_window") is not None:
+            candidate_count = self.training_candidate_count()
+        if self.config.validation.get("training_window") is None:
+            train_indices = select_training_origins(
+                self.supervised_origins, train_indices,
+                self.config.validation.get("training", {}).get("origin_sampling"),
+                freq=self.config.problem.freq,
+            )
         train_sample_indices = _sample_indices(
             train_indices,
             self.builder.n_series,
@@ -560,6 +682,7 @@ class CanonicalBaseModelRunner:
         X_train_transformed, feature_schema = self._apply_feature_selection(
             X_train_transformed, Y_train_transformed
         )
+        preparation_seconds = perf_counter() - fit_started
         if mode == "point":
             _, artifact = _fit_point(
                 self.config,
@@ -586,6 +709,19 @@ class CanonicalBaseModelRunner:
                             if self.checkpoint is not None else None),
                 sample_weight=train_sample_weight,
             )
+        if isinstance(artifact, CanonicalStrategyArtifact):
+            artifact = replace(artifact, training_workload={
+                **artifact.training_workload,
+                "candidate_origins": candidate_count,
+                "selected_origins": len(train_indices),
+                "first_training_origin": self.supervised_origins[train_indices[0]].isoformat(),
+                "last_training_origin": self.supervised_origins[train_indices[-1]].isoformat(),
+                "stage_wall_seconds": {
+                    **artifact.training_workload["stage_wall_seconds"],
+                    "training_preparation": preparation_seconds,
+                    "fit_total": perf_counter() - fit_started,
+                },
+            })
         return (
             feature_scaler,
             target_transform,
@@ -674,8 +810,8 @@ class CanonicalBaseModelRunner:
         origin_index: int,
         forecast_times: pd.DatetimeIndex,
     ) -> PointForecastTensor:
-        if self.config.validation.get("train_history_steps") is not None:
-            request = self.builder.request(forecast_times[0] - self.builder.offset, target_access="supervised_labels")
+        if has_bounded_history(self.config.validation):
+            request = self.builder.request(self.origin, target_access="supervised_labels")
             information = self.registry.materialize(request, source_names=self.builder.target_source_names)
             values, _ = self.builder.labels_from_information_set(request, information)
             return PointForecastTensor(values, self.series_ids, forecast_times, self.config.problem.targets)
@@ -702,11 +838,7 @@ class CanonicalBaseModelRunner:
         self,
         origin: pd.Timestamp,
     ) -> pd.DatetimeIndex:
-        return pd.date_range(
-            origin,
-            periods=self.config.problem.horizon + 1,
-            freq=self.config.problem.freq,
-        )[1:]
+        return _temporal_forecast_times(self.config.problem, self.config.validation, origin)
 
     def target_history(self, origin: pd.Timestamp) -> PointForecastTensor:
         """origin 的 as-of 完整目标历史（预测图参照段；ensemble 协议面）。"""
@@ -724,10 +856,15 @@ class CanonicalBaseModelRunner:
         ``fit_final`` 内按同一窗口的 origins/cutoff 重算（与折路径同一
         接线函数），保证 final fit 与回测共享加权语义。
         """
+        preparation_started = perf_counter()
+        self.prepare_training()
+        self._final_training_workload = None
         if self.config.validation.get("train_history_steps") is not None:
             raise ValueError("train_history_steps currently requires backtest-only; final fit/bundle unsupported")
         backtest = self.config.validation.backtest
-        if isinstance(backtest, (FixedStepBacktestSpec, SlidingWindowBacktestSpec)):
+        if self.config.validation.get("training_window") is not None:
+            origin_indices = tuple(range(len(self.supervised_origins)))
+        elif isinstance(backtest, (FixedStepBacktestSpec, SlidingWindowBacktestSpec)):
             # sliding 与 fixed 同为固定长度训练窗口，final fit 语义一致
             first_origin_index = max(
                 0,
@@ -761,6 +898,15 @@ class CanonicalBaseModelRunner:
             raise TypeError("canonical final fit requires typed backtest geometry")
         if not origin_indices:
             raise ValueError("canonical final fit has no safe supervised samples")
+        candidate_count = len(origin_indices)
+        if self.config.validation.get("training_window") is not None:
+            candidate_count = self.training_candidate_count()
+        if self.config.validation.get("training_window") is None:
+            origin_indices = select_training_origins(
+                self.supervised_origins, origin_indices,
+                self.config.validation.get("training", {}).get("origin_sampling"),
+                freq=self.config.problem.freq,
+            )
         sample_indices = _sample_indices(origin_indices, self.builder.n_series)
         sample_selector = _sample_selector(
             origin_indices,
@@ -799,6 +945,13 @@ class CanonicalBaseModelRunner:
                 self.config.estimator.model_type
             ].sample_weight,
         )
+        self._final_training_workload = {
+            "candidate_origins": candidate_count,
+            "selected_origins": len(origin_indices),
+            "first_training_origin": self.supervised_origins[origin_indices[0]].isoformat(),
+            "last_training_origin": self.supervised_origins[origin_indices[-1]].isoformat(),
+            "stage_wall_seconds": {"training_preparation": perf_counter() - preparation_started},
+        }
         return feature_scaler, target_transform, X_all_transformed, Y_all_transformed
 
     @runtime_checkpoint_errors
@@ -816,6 +969,7 @@ class CanonicalBaseModelRunner:
         if self.config.validation.get("train_history_steps") is not None:
             raise ValueError("train_history_steps currently requires backtest-only; final fit unsupported")
         mode = self._mode()
+        fit_started = perf_counter()
         final_sample_weight = getattr(self, "_final_sample_weight", None)
         if (final_sample_weight is None
                 and training_sample_weight_spec(self.config) is not None):
@@ -852,6 +1006,17 @@ class CanonicalBaseModelRunner:
                             if self.checkpoint is not None else None),
                 sample_weight=final_sample_weight,
             )
+        if isinstance(artifact, CanonicalStrategyArtifact) and self._final_training_workload is not None:
+            final_workload = self._final_training_workload
+            artifact = replace(artifact, training_workload={
+                **artifact.training_workload,
+                **final_workload,
+                "stage_wall_seconds": {
+                    **artifact.training_workload["stage_wall_seconds"],
+                    **final_workload["stage_wall_seconds"],
+                    "fit_total": perf_counter() - fit_started + final_workload["stage_wall_seconds"]["training_preparation"],
+                },
+            })
         return trainer, artifact, capabilities
 
     def build_final_bundle(
@@ -995,6 +1160,7 @@ class CanonicalBaseModelRunner:
             **self._execution_evidence_context,
             "target_transform_window": target_transform.fit_window_metadata,
             "fitted_models": models,
+            "training_workload": getattr(artifact, "training_workload", {}),
         })
 
     def backtest_target_histories(
@@ -1046,16 +1212,10 @@ def run_canonical_config(
     merged_generators: dict[str, Any] = {**BUILTIN_GENERATORS, **(generators or {})}
     registry = SourceRegistry(config.data, Path.cwd(), generators=merged_generators)
     origin = resolve_origin(registry, config.validation.get("forecast_origin"))
-    compiled_cache_root = (
-        Path(output_root)
-        if output_root is not None
-        else Path(str(config.output.get("results_root", "results")))
-    )
     runner = CanonicalBaseModelRunner(
         config,
         registry,
         origin,
-        compiled_cache_root=compiled_cache_root,
         checkpoint_root=checkpoint_root,
     )
     if backtest_only:

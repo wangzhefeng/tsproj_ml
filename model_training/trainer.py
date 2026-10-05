@@ -10,6 +10,7 @@ IO 与部署 bundle，两者由上层编排负责）。
 # python libraries
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
+from time import perf_counter
 from typing import NamedTuple, Sequence
 
 import numpy as np
@@ -22,6 +23,7 @@ from model_training.estimators import (
     fit_independent_adapters,
 )
 from forecasting_core.checkpoints import FitCheckpoint
+from forecasting_core.design import IndexedDesign
 from forecasting_core.specs import ForecastConfigSpec, TargetAdapter
 from forecasting_core.tensors import unflatten_time_major
 from model_training.strategies import (
@@ -96,12 +98,18 @@ class CanonicalTrainer:
             raise TypeError(
                 "X_by_call must be a sequence of two-dimensional designs"
             )
-        designs = tuple(np.asarray(design, dtype=float) for design in X_by_call)
+        designs = tuple(
+            design if isinstance(design, IndexedDesign) else np.asarray(design, dtype=float)
+            for design in X_by_call
+        )
         if len(designs) != len(self.target_plan.call_coordinates):
             raise ValueError(
                 f"X_by_call must contain {len(self.target_plan.call_coordinates)} designs"
             )
-        if any(design.ndim != 2 for design in designs):
+        if any(
+            (len(design.shape) != 2 if isinstance(design, IndexedDesign) else design.ndim != 2)
+            for design in designs
+        ):
             raise ValueError("every X_by_call design must be two-dimensional")
         n_rows = designs[0].shape[0]
         expected_width = len(self.feature_schema)
@@ -122,7 +130,8 @@ class CanonicalTrainer:
                 f"Y shape {targets.shape} does not match {expected_target_shape}"
             )
         if not np.isfinite(targets).all() or any(
-            not np.isfinite(design).all() for design in designs
+            not (design.is_finite() if isinstance(design, IndexedDesign) else np.isfinite(design).all())
+            for design in designs
         ):
             raise ValueError("canonical training arrays must contain only finite values")
         if (
@@ -175,10 +184,15 @@ class CanonicalTrainer:
                     "shared strategy model calls must have one stable output schema"
                 )
 
-            group_design = np.concatenate(
-                [designs[index] for index in call_indices],
-                axis=0,
-            )
+            # 直接按估计器布局填充一次，不先物化每个 horizon 的矩阵。
+            group_design = np.empty((n_rows * len(call_indices), expected_width), dtype=float)
+            for position, index in enumerate(call_indices):
+                output = group_design[position * n_rows:(position + 1) * n_rows]
+                design = designs[index]
+                if isinstance(design, IndexedDesign):
+                    design.copy_into(output)
+                else:
+                    output[:] = design
             group_targets = np.concatenate(
                 [self._target_block(targets, group) for group in coordinate_groups],
                 axis=0,
@@ -202,9 +216,13 @@ class CanonicalTrainer:
             )
 
         model_indices = tuple(range(self.target_plan.model_count))
+        materialization_started = perf_counter()
         prepared_groups = tuple(
             prepare_model_group(model_index) for model_index in model_indices
         )
+        materialization_seconds = perf_counter() - materialization_started
+        fit_started = perf_counter()
+
         def group_checkpoint(model_index):
             if self.checkpoint is None:
                 return None
@@ -283,6 +301,15 @@ class CanonicalTrainer:
             N=n_series,
             H=self.config.problem.horizon,
             K=len(self.config.problem.targets),
+            training_workload={
+                "training_rows": n_rows,
+                "largest_model_rows": max(group[1].shape[0] for group in prepared_groups),
+                "model_groups": len(prepared_groups),
+                "stage_wall_seconds": {
+                    "matrix_materialization": materialization_seconds,
+                    "estimator_fit": perf_counter() - fit_started,
+                },
+            },
         )
 
     def _target_block(

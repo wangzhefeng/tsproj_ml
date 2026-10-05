@@ -165,6 +165,12 @@ class EnsembleConfigSpec:
                 "problem.targets must exactly match data.target_columns in the same order"
             )
         self.data.validate_weather_frequency(self.problem.freq)
+        if (self.validation.get("training_window") is not None
+                or self.validation.get("forecast_window") is not None):
+            raise EnsembleSpecError("Ensemble does not yet support explicit training_window/forecast_window")
+        if (self.validation.get("refit_every", 1) > 1
+                or self.validation.get("training", {}).get("origin_sampling") is not None):
+            raise EnsembleSpecError("Ensemble top-level does not support refit_every/origin_sampling")
         if self.validation.get("train_history_steps") is not None:
             raise EnsembleSpecError("Ensemble does not support train_history_steps")
         if not isinstance(self.members, tuple) or len(self.members) < 2:

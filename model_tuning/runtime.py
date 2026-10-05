@@ -91,7 +91,7 @@ def _window_signature(config: ForecastConfigSpec) -> tuple[str, ...]:
 def _runner(config: ForecastConfigSpec, root: Path, signature: tuple[str, ...]) -> CanonicalBaseModelRunner:
     registry = SourceRegistry(config.data, Path.cwd(), generators=BUILTIN_GENERATORS)
     runner = CanonicalBaseModelRunner(
-        config, registry, cast(pd.Timestamp, pd.Timestamp(config.validation["forecast_origin"])), compiled_cache_root=root,
+        config, registry, cast(pd.Timestamp, pd.Timestamp(config.validation["forecast_origin"])),
     )
     windows = runner.backtest_windows()
     if tuple(window.origin.isoformat() for window in windows) != signature:

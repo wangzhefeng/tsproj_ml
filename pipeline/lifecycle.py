@@ -7,7 +7,7 @@ from pathlib import Path
 from time import perf_counter
 from typing import Any, Mapping
 
-from feature_engineering import cache as compiled_cache
+from feature_engineering import design_identity
 from forecasting_core.artifacts import ForecastModelBundle, MarginalForecastDistribution
 from forecasting_core.specs import (
     CalendarMonthBacktestSpec,
@@ -306,7 +306,7 @@ def execute_lifecycle(
     runner.stage_wall_seconds["total"] = perf_counter() - runner.lifecycle_started
     run_evidence = {
         **runner.execution_evidence(final_artifact, final_target_transform),
-        "raw_design_provenance": compiled_cache.raw_design_provenance(
+        "raw_design_provenance": design_identity.raw_design_provenance(
             config, base_dir=runner.registry.base_dir, origin=origin,
             generators=runner.registry.generators,
         ),

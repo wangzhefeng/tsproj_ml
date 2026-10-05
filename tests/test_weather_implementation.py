@@ -21,7 +21,7 @@ sys.path.extend([sys.argv[1]+'/tests', sys.argv[1]])
 from test_weather_compiler import config_fixture
 from data_loading import SourceRegistry
 from data_loading.weather_generator.generator import weather_implementation_hash
-from feature_engineering.cache import compute_raw_design_fingerprint, cache_dir
+from feature_engineering.design_identity import compute_raw_design_fingerprint
 from model_ensemble.cache import member_source_hashes
 root = Path.cwd()
 data = root/'assets'
@@ -39,7 +39,6 @@ after = identity()
 assert before['implementation'] != after['implementation']
 assert before['design'] != after['design']
 assert before['oof'] != after['oof']
-assert cache_dir(root, before['design']) != cache_dir(root, after['design'])
 assert after == identity()
 print(json.dumps({'changed': True, 'stable_repeat': True}))
 '''

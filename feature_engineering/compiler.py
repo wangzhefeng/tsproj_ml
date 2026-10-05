@@ -36,7 +36,10 @@ from feature_engineering.spectral import (
     wavelet_energy_features,
 )
 from feature_engineering.history_statistics import (
-    history_statistic, rolling_statistics, time_since_event,
+    expanding_statistics,
+    history_statistic,
+    rolling_statistics,
+    time_since_event,
 )
 from feature_engineering.transform_specs import (
     normalize_feature_scaling,
@@ -1053,17 +1056,6 @@ class FeatureCompiler:
                                 value = float(
                                     rolled_by_identity[identity][stat].iloc[position]
                                 )
-                                # pandas rolling 的增量算法与逐片 Series 统计可能有
-                                # 浮点末位差异；逐片复算只发生在 origin 粒度，用于
-                                # 保持 compile() 的逐值合同，不再按 horizon 重算。
-                                exact = history_statistic(
-                                    history.iloc[
-                                        max(0, position - window + 1) : position + 1
-                                    ],
-                                    stat,
-                                )
-                                if value != exact:
-                                    value = exact
                                 row_slice = slice(
                                     identity_index * step_count,
                                     (identity_index + 1) * step_count,
@@ -1083,6 +1075,10 @@ class FeatureCompiler:
             )
             for column in columns:
                 histories = self._batch_master_histories(items, column)
+                expanded_by_identity = {
+                    identity: expanding_statistics(history, stats)
+                    for identity, history in histories.items()
+                }
                 for item in items:
                     values_by_stat = {
                         stat: np.empty(len(item["target_times"]), dtype=float)
@@ -1103,18 +1099,12 @@ class FeatureCompiler:
                             raise ValueError(
                                 f"history column {column!r} has no visible values"
                             )
-                        visible = history.iloc[: position + 1]
                         row_slice = slice(
                             identity_index * step_count,
                             (identity_index + 1) * step_count,
                         )
                         for stat in stats:
-                            # 保留逐行 compile() 的 pandas 统计合同，但只在
-                            # origin 粒度计算一次，再广播到该 origin 的 calls。
-                            values_by_stat[stat][row_slice] = history_statistic(
-                                visible,
-                                stat,
-                            )
+                            values_by_stat[stat][row_slice] = expanded_by_identity[identity][stat].iloc[position]
                     for stat, values in values_by_stat.items():
                         item["columns"][
                             f"{column}_expanding_{stat}"

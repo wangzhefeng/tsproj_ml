@@ -27,13 +27,24 @@ class SampleSelectorTest(unittest.TestCase):
         )
 
     def test_noncontiguous_origins_keep_explicit_sample_indices(self) -> None:
-        self.assertEqual(
-            _sample_selector((1, 3), n_series=2),
-            (2, 3, 6, 7),
-        )
+        indices = _sample_selector((1, 3), n_series=2)
+        self.assertIsInstance(indices, np.ndarray)
+        assert isinstance(indices, np.ndarray)
+        self.assertEqual(indices.ndim, 1)
+        self.assertTrue(np.issubdtype(indices.dtype, np.integer))
+        np.testing.assert_array_equal(indices, [2, 3, 6, 7])
+        # 必须作为行选择器使用，不能把tuple解释成NumPy多轴索引。
+        values = np.arange(20).reshape(10, 2)
+        np.testing.assert_array_equal(values[indices], values[[2, 3, 6, 7]])
 
     def test_empty_origins_return_empty_indices(self) -> None:
-        self.assertEqual(_sample_selector((), n_series=3), ())
+        indices = _sample_selector((), n_series=3)
+        self.assertIsInstance(indices, np.ndarray)
+        assert isinstance(indices, np.ndarray)
+        self.assertEqual(indices.shape, (0,))
+        self.assertTrue(np.issubdtype(indices.dtype, np.integer))
+        values = np.arange(12).reshape(6, 2)
+        np.testing.assert_array_equal(values[indices], values[:0])
 
 
 class HoldoutProofSummaryTest(unittest.TestCase):

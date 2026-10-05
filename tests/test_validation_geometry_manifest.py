@@ -11,6 +11,11 @@ import yaml
 
 from config.config_loader import is_model_yaml, load_yaml_config
 from forecasting_core.specs import FixedStepBacktestSpec, ForecastConfigSpec
+from forecasting_core.specs.temporal import (
+    forecast_ends as temporal_forecast_ends,
+    history_start as temporal_history_start,
+    select_training_origins,
+)
 from pipeline.supervised_design import minimum_history_rows
 
 
@@ -65,11 +70,11 @@ class ValidationGeometryManifestTest(unittest.TestCase):
             assert isinstance(geometry, FixedStepBacktestSpec)
             actual = self._actual_final_training_count(config, timeline_cache)
 
-            self.assertEqual(
-                actual,
-                geometry.train_window_steps,
-                relative,
-            )
+            if config.validation.get("training_window") is not None:
+                self.assertGreaterEqual(actual, 2, relative)
+                self.assertIsNone(geometry.train_window_steps, relative)
+            else:
+                self.assertEqual(actual, geometry.train_window_steps, relative)
         self.assertGreater(checked_subday, 0)
 
     @staticmethod
@@ -102,6 +107,21 @@ class ValidationGeometryManifestTest(unittest.TestCase):
         positions = timeline.get_indexer([origin])
         if positions[0] < 0:
             raise AssertionError(f"forecast origin is absent: {origin}")
+        if config.validation.get("training_window") is not None:
+            offset = pd.tseries.frequencies.to_offset(config.problem.freq)
+            start = temporal_history_start(config.validation, origin, offset)
+            timeline = timeline[timeline >= start]
+            if not timeline.equals(pd.date_range(start, origin, freq=offset)):
+                raise AssertionError("explicit training window has incomplete source coverage")
+            origins = timeline[minimum_history_rows(config) - 1:]
+            origins = tuple(
+                origins[temporal_forecast_ends(config.problem, config.validation, origins) <= origin]
+            )
+            return len(select_training_origins(
+                origins, tuple(range(len(origins))),
+                config.validation.get("training", {}).get("origin_sampling"),
+                freq=config.problem.freq,
+            ))
         available = max(
             0,
             (

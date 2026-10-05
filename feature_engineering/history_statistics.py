@@ -22,6 +22,12 @@ def rolling_statistics(
     results: dict[str, pd.Series] = {}
     rolling = history.rolling(window, min_periods=1)
     for stat in stats:
+        if stat == "std":
+            # 平移后计算避免大直流分量、小波动导致增量方差消减。
+            results[stat] = (
+                (history - history.iloc[0]).rolling(window, min_periods=1).std().fillna(0.0)
+            )
+            continue
         if stat == "entropy":
             # pandas 的返回标注包含 DataFrame；此处输入明确为 Series。
             results[stat] = cast(pd.Series, rolling.apply(signal_entropy, raw=True)).fillna(0.0)
@@ -39,6 +45,33 @@ def rolling_statistics(
         if stat not in {"mean", "std", "min", "max", "median", "skew", "kurt"}:
             raise ValueError(f"unsupported history statistic: {stat!r}")
         results[stat] = getattr(rolling, stat)().fillna(0.0)
+        if stat == "kurt":
+            # pandas窗口峰度对恒定窗返回-3；保持单窗Series.kurt的0语义。
+            results[stat] = results[stat].mask(rolling.max().eq(rolling.min()), 0.0)
+    return results
+
+
+def expanding_statistics(
+    history: pd.Series,
+    stats: Sequence[str],
+) -> dict[str, pd.Series]:
+    """按当前历史下界一次计算全部前缀，不逐原点重扫历史。"""
+    results: dict[str, pd.Series] = {}
+    for stat in stats:
+        if stat == "std":
+            values = (history - history.iloc[0]).expanding().std()
+        elif stat in {"max_diff", "min_diff"}:
+            method = "max" if stat == "max_diff" else "min"
+            values = getattr(history.diff().expanding(), method)()
+        elif stat == "entropy":
+            values = cast(pd.Series, history.expanding().apply(signal_entropy, raw=True))
+        elif stat in {"mean", "min", "max", "median", "skew", "kurt"}:
+            values = getattr(history.expanding(), stat)()
+        else:
+            raise ValueError(f"unsupported history statistic: {stat!r}")
+        results[stat] = values.fillna(0.0)
+        if stat == "kurt":
+            results[stat] = results[stat].mask(history.cummax().eq(history.cummin()), 0.0)
     return results
 
 

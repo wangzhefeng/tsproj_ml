@@ -49,13 +49,14 @@
 
 ### OPT-029 model_evaluation 走读遗留：池化一致性、scope 集对齐与掩码全排除护栏
 
-- **状态**：待处理
+- **状态**：进行中（①② 已完成，③ 待处理）
 - **登记日期**：2026-10-05
-- **当前事实**：2026-10-05 model_evaluation 模块走读（§一/§二 已同批处理：过期 docstring 引用修正、`point_intervals.py` 补 docstring/`__all__`/门面导出、`normalized_width` 死输出删除、`crossing.report_raw` 断链激活至回测逐窗 execution_evidence、`eval_mask.mode` 解析期白名单前置）。遗留三项未动：① `marginal.py:247-287` 的 per-horizon aggregate 池化段把 `_emit` 内部的 valid 计算重写了第二遍（两处掩码合成逻辑手工保持一致，无合同测试钉住）；② `point_intervals.py` 只输出 target/horizon scope，`marginal.py` 输出 target/horizon/aggregate/aggregate_horizon——概率评分帧的 scope 集不统一，下游按统一 scope 集消费会静默少行（已在 `docs/packages/model_evaluation.md` 入档差异）；③ 掩码全排除时 `excluded_ratio=1.0` 不 RAISE，评分全 NaN 正常落盘——「掩码配置错误」与「数据真异常」产物不可区分。能力面缺口（MASE/RMSSE/SMAPE/CRPS）按活动配置（point-only、零 quantile、零 eval_mask）裁决为休眠，等场景立项。
-- **影响**：① 两处逻辑漂移时 per-horizon aggregate 与 target 行口径静默不一致；② 跨评分帧统一消费方（如未来的对比报表）可能漏行；③ 掩码误配的失败信号被推迟到人工读结果阶段。
-- **建议方向**：① 抽取「isfinite ∧ 掩码」合成为 marginal.py 内单一实现（或加池化一致性的合同测试：同一输入下池化段与 `_emit` 的 valid 计数逐 target 相等）；② 裁决：point_intervals 补 aggregate 行（与 marginal 对齐 proper-score 池化语义）或维持差异并在消费方文档显式声明；③ 在评分接缝处加护栏：`excluded_ratio == 1.0` 时 RAISE 或至少在评分帧 attrs / 回测 evidence 中记录告警字段。三项均语义敏感，实施前单独确认。
-- **风险**：① 重构触及概率评分主路径，需逐值对照验证；③ 护栏 RAISE 会改变「掩码全排除」场景的失败面（从静默 NaN 变显式失败），存量研究配置若有依赖该行为的会被打断。
-- **验收标准**：触发实施时——fast 套件与定向测试（test_eval_mask_rewire / test_eval_bias_horizon / test_probabilistic_metrics / test_residual_calibration / test_multitarget_probabilistic）全过；评分 CSV 逐值对照零差异（①②）或差异逐行解释（③）；`docs/packages/model_evaluation.md` 同步。
+- **实施记录（2026-10-05，用户点名 §三 6/7/8 后执行）**：① 已完成——`marginal.py` aggregate_horizon 池化段改为复用 target 行 `_emit` 返回的 valid（同一掩码只算一遍），旧/新程序化对照（git HEAD 版 vs 现版，含/不含掩码各 150 行）逐值一致；② 已完成——`point_intervals.py` 补齐 aggregate/aggregate_horizon 池化行（proper-score 口径与 marginal 对齐），旧 scope 行逐值一致（含/不含掩码各 40 行），新增 20 行/场景；同批完成指标补充（原 §三.6）：point 增 SMAPE/MASE/RMSSE（MASE/RMSSE 以 `FoldScoringRunner.target_history` 的 in-sample 季节差分为缩放，lag 经 `primitives.resolve_seasonal_naive_lag` 与 naive 基线同口径，未提供时 NaN 不伪造；aggregate_horizon 行 MASE/RMSSE 恒 NaN），marginal 增 CRPS 分位梯形积分近似行（单 level 记 NaN）。验证：定向 71 tests OK；fast 300 passed（298+2）；layering 23 OK；`git diff --check` 干净；marginal/point_intervals 旧/新对照脚本逐值一致（见上）。③ 待处理（语义敏感，实施前单独确认）。
+- **当前事实**：2026-10-05 model_evaluation 模块走读（§一/§二 已同批处理：过期 docstring 引用修正、`point_intervals.py` 补 docstring/`__all__`/门面导出、`normalized_width` 死输出删除、`crossing.report_raw` 断链激活至回测逐窗 execution_evidence、`eval_mask.mode` 解析期白名单前置）。遗留项③：掩码全排除时 `excluded_ratio=1.0` 不 RAISE，评分全 NaN 正常落盘——「掩码配置错误」与「数据真异常」产物不可区分。
+- **影响**：③ 掩码误配的失败信号被推迟到人工读结果阶段。
+- **建议方向**：③ 在评分接缝处加护栏：`excluded_ratio == 1.0` 时 RAISE 或至少在评分帧 attrs / 回测 evidence 中记录告警字段。语义敏感，实施前单独确认。
+- **风险**：③ 护栏 RAISE 会改变「掩码全排除」场景的失败面（从静默 NaN 变显式失败），存量研究配置若有依赖该行为的会被打断。
+- **验收标准**：①② 已达成（验证命令与结果见实施记录）；③ 触发实施时——fast 套件与定向测试全过，差异逐行解释，`docs/packages/model_evaluation.md` 同步。
 
 ## 已完成
 

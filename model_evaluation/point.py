@@ -14,6 +14,7 @@ import numpy as np
 import pandas as pd
 
 from model_evaluation.mask import build_eval_mask
+from model_evaluation.metrics import seasonal_insample_scales
 from forecasting_core.tensors import PointForecastTensor, require_matching_point_axes
 
 
@@ -23,6 +24,14 @@ EVALUATION_AGGREGATION = {
     "marginal.aggregate": "pool_valid_points_across_targets",
     "mask": "configured_eval_mask_only; training_data_unchanged",
 }
+
+# 点评分列指标全集（target/aggregate/horizon 行与 naive 对照共用；2026-10-05
+# 增加 SMAPE 与 MASE/RMSSE，顺带收口此前三处重复的键元组与占位字典）。
+_POINT_METRIC_KEYS = ("MAE", "RMSE", "Bias", "MAPE", "Accuracy", "SMAPE", "MASE", "RMSSE")
+
+
+def _nan_metric_values() -> dict[str, float | int]:
+    return {**{key: float("nan") for key in _POINT_METRIC_KEYS}, "Valid Points": 0, "n_points": 0}
 
 
 def resolve_aggregate_weighting(
@@ -49,6 +58,8 @@ def _metric_values(
     actual: np.ndarray,
     prediction: np.ndarray,
     eval_mask: dict | None = None,
+    *,
+    scales: tuple[float, float] | None = None,
 ) -> dict[str, float | int]:
     valid = np.isfinite(actual) & np.isfinite(prediction)
     if eval_mask is not None:
@@ -76,12 +87,36 @@ def _metric_values(
             )
         )
         accuracy = 1.0 - mape
+    # SMAPE（2026-10-05）：2|a−p|/(|a|+|p|)，分母为零的点不计入口径。
+    smape_valid = valid & ((np.abs(actual) + np.abs(prediction)) > 0.0)
+    if not smape_valid.any():
+        smape = float("nan")
+    else:
+        smape = float(
+            np.mean(
+                2.0
+                * np.abs(actual[smape_valid] - prediction[smape_valid])
+                / (np.abs(actual[smape_valid]) + np.abs(prediction[smape_valid]))
+            )
+        )
+    # MASE/RMSSE（2026-10-05）：以 in-sample 季节差分尺度为分母；尺度缺失或
+    # 近似零（常数历史）时 NaN，不伪造数值。
+    mase = rmsse = float("nan")
+    if scales is not None:
+        mae_scale, rmse_scale = scales
+        if np.isfinite(mae) and np.isfinite(mae_scale):
+            mase = mae / mae_scale
+        if np.isfinite(rmse) and np.isfinite(rmse_scale):
+            rmsse = rmse / rmse_scale
     return {
         "MAE": mae,
         "RMSE": rmse,
         "Bias": bias,
         "MAPE": mape,
         "Accuracy": accuracy,
+        "SMAPE": smape,
+        "MASE": mase,
+        "RMSSE": rmsse,
         "Valid Points": int(mape_valid.sum()),
         "n_points": int(valid.sum()),
     }
@@ -122,7 +157,16 @@ def evaluate_point_forecasts(
     window: int = 1,
     eval_mask: Mapping[str, Any] | None = None,
     actual_full: PointForecastTensor | None = None,
+    insample_history: PointForecastTensor | None = None,
+    naive_lag: int | None = None,
 ) -> pd.DataFrame:
+    """点预测评分帧（scope ∈ {target, aggregate, horizon, aggregate_horizon}）。
+
+    ``insample_history`` + ``naive_lag``（必须同给或同不给，2026-10-05）启用
+    MASE/RMSSE：缩放因子为逐 target 的 in-sample 季节差分尺度（原始域、与
+    seasonal-naive 同一 lag）；未提供时 MASE/RMSSE 列为 NaN。aggregate_horizon
+    行的 MASE/RMSSE 为 NaN（跨 target 池化无单一尺度，不伪造）。
+    """
     if not isinstance(actual, PointForecastTensor) or not isinstance(
         prediction, PointForecastTensor
     ):
@@ -132,6 +176,21 @@ def evaluate_point_forecasts(
         require_matching_point_axes(actual, seasonal_naive)
     if actual_full is not None:
         require_matching_point_axes(actual, actual_full)
+    if (insample_history is None) != (naive_lag is None):
+        raise ValueError("insample_history and naive_lag must be provided together")
+    insample_scales: dict[str, tuple[float, float]] | None = None
+    if insample_history is not None:
+        if not isinstance(insample_history, PointForecastTensor):
+            raise TypeError("insample_history must be a PointForecastTensor")
+        if tuple(insample_history.targets) != tuple(actual.targets):
+            raise ValueError("insample_history targets must match actual targets")
+        assert naive_lag is not None  # 上面已校验两者同给
+        insample_scales = {
+            target: seasonal_insample_scales(
+                insample_history.values[:, :, target_index], naive_lag
+            )
+            for target_index, target in enumerate(actual.targets)
+        }
     weights = resolve_aggregate_weighting(actual.targets, aggregate_weighting)
 
     # D13 rewire：validation.eval_mask 配置时构造掩码（作用于 actual 值）；
@@ -142,27 +201,22 @@ def evaluate_point_forecasts(
     target_metrics: dict[str, dict[str, float | int]] = {}
     target_naive_metrics: dict[str, dict[str, float | int]] = {}
     for target_index, target in enumerate(actual.targets):
+        scales = insample_scales[target] if insample_scales is not None else None
         metrics = _metric_values(
             actual.values[:, :, target_index].reshape(-1),
             prediction.values[:, :, target_index].reshape(-1),
             mask_payload[target] if mask_payload is not None else None,
+            scales=scales,
         )
         naive_metrics = (
             _metric_values(
                 actual.values[:, :, target_index].reshape(-1),
                 seasonal_naive.values[:, :, target_index].reshape(-1),
                 mask_payload[target] if mask_payload is not None else None,
+                scales=scales,
             )
             if seasonal_naive is not None
-            else {
-                "MAE": float("nan"),
-                "RMSE": float("nan"),
-                "Bias": float("nan"),
-                "MAPE": float("nan"),
-                "Accuracy": float("nan"),
-                "Valid Points": 0,
-                "n_points": 0,
-            }
+            else _nan_metric_values()
         )
         target_metrics[target] = metrics
         target_naive_metrics[target] = naive_metrics
@@ -180,7 +234,7 @@ def evaluate_point_forecasts(
         key: float(
             sum(float(target_metrics[target][key]) * weights[target] for target in actual.targets)
         )
-        for key in ("MAE", "RMSE", "Bias", "MAPE", "Accuracy")
+        for key in _POINT_METRIC_KEYS
     }
     aggregate["Valid Points"] = int(
         sum(int(target_metrics[target]["Valid Points"]) for target in actual.targets)
@@ -195,7 +249,7 @@ def evaluate_point_forecasts(
                 for target in actual.targets
             )
         )
-        for key in ("MAE", "RMSE", "Bias", "MAPE", "Accuracy")
+        for key in _POINT_METRIC_KEYS
     }
     aggregate_naive["Valid Points"] = int(
         sum(
@@ -222,21 +276,10 @@ def evaluate_point_forecasts(
     # per-horizon 诊断（2026-09-02）：逐 horizon 步的指标衰减曲线。
     # - ``scope="horizon"``：per-target，掩码切片到同一 horizon（与 target 行同口径）；
     # - ``scope="aggregate_horizon"``：跨 target 按有效点池化（proper score 语义，
-    #   与 target 加权 aggregate 语义不同，勿混用）；
+    #   与 target 加权 aggregate 语义不同，勿混用），MASE/RMSSE 因无单一尺度记 NaN；
     # - ``horizon`` 列 1-based（h=1 即第一个预测步）。
-    horizon_keys = ("MAE", "RMSE", "Bias", "MAPE", "Accuracy")
+    horizon_keys = _POINT_METRIC_KEYS
     n_series, n_horizons, _ = prediction.values.shape
-
-    def _naive_placeholder() -> dict[str, float | int]:
-        return {
-            "MAE": float("nan"),
-            "RMSE": float("nan"),
-            "Bias": float("nan"),
-            "MAPE": float("nan"),
-            "Accuracy": float("nan"),
-            "Valid Points": 0,
-            "n_points": 0,
-        }
 
     def _horizon_row(scope: str, label: str, h: int, values: dict, naive: dict) -> dict:
         return {
@@ -266,6 +309,7 @@ def evaluate_point_forecasts(
                 if seasonal_naive is not None
                 else None
             )
+            scales = insample_scales[target] if insample_scales is not None else None
             h_mask = (
                 {
                     "valid_mask": mask_payload[target]["valid_mask"].reshape(
@@ -280,11 +324,11 @@ def evaluate_point_forecasts(
                     "horizon",
                     str(target),
                     h,
-                    _metric_values(actual_h, prediction_h, h_mask),
+                    _metric_values(actual_h, prediction_h, h_mask, scales=scales),
                     (
-                        _metric_values(actual_h, naive_h, h_mask)
+                        _metric_values(actual_h, naive_h, h_mask, scales=scales)
                         if naive_h is not None
-                        else _naive_placeholder()
+                        else _nan_metric_values()
                     ),
                 )
             )
@@ -307,7 +351,7 @@ def evaluate_point_forecasts(
                 np.concatenate(pooled_actual), np.concatenate(pooled_naive)
             )
             if seasonal_naive is not None
-            else _naive_placeholder()
+            else _nan_metric_values()
         )
         rows.append(
             _horizon_row(

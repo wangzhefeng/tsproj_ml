@@ -109,6 +109,58 @@ def interval_metrics(
     }
 
 
+def seasonal_insample_scales(history: np.ndarray, lag: int) -> Tuple[float, float]:
+    """MAE/RMSE 的 in-sample 季节差分缩放因子（MASE/RMSSE 分母）。
+
+    ``history``: ``(N, T)`` 原始域历史（逐 series 沿时间轴差分，不跨 series 边界）；
+    ``lag``: 季节滞后阶数（与 seasonal-naive 基线同一 lag）。差分有效点为零或
+    尺度近似零时返回 ``(nan, nan)``，由调用方按 NaN 传播；历史长度 <= lag
+    属于显式误用，RAISE。
+    """
+    values = np.asarray(history, dtype=float)
+    if values.ndim != 2:
+        raise ValueError(f"insample history must be 2D (N, T), got shape {values.shape}")
+    lag = int(lag)
+    if lag <= 0:
+        raise ValueError(f"seasonal lag must be a positive integer, got {lag}")
+    if values.shape[1] <= lag:
+        raise ValueError(
+            f"insample history length {values.shape[1]} must exceed seasonal lag {lag}"
+        )
+    diffs = values[:, lag:] - values[:, :-lag]
+    finite = diffs[np.isfinite(diffs)]
+    if finite.size == 0:
+        return float("nan"), float("nan")
+    mae_scale = float(np.mean(np.abs(finite)))
+    rmse_scale = float(np.sqrt(np.mean(np.square(finite))))
+    eps = np.finfo(float).eps
+    return (
+        mae_scale if mae_scale > eps else float("nan"),
+        rmse_scale if rmse_scale > eps else float("nan"),
+    )
+
+
+def crps_from_pinball(
+    quantile_levels: Tuple[float, ...],
+    pinball_means: Tuple[float, ...],
+) -> float:
+    """CRPS 的分位梯形积分近似：``2 ∫ pinball_q dq``。
+
+    离散分位网格上的标准近似（levels 升序、至少 2 个）；网格越密越接近真 CRPS。
+    """
+    levels = tuple(float(level) for level in quantile_levels)
+    pinballs = tuple(float(value) for value in pinball_means)
+    if len(levels) != len(pinballs):
+        raise ValueError("quantile_levels and pinball_means must have equal length")
+    if len(levels) < 2:
+        raise ValueError("CRPS trapezoid requires at least two quantile levels")
+    if any(left >= right for left, right in zip(levels, levels[1:])):
+        raise ValueError("quantile_levels must be strictly increasing")
+    if any(not math.isfinite(value) for value in pinballs):
+        raise ValueError("pinball_means must be finite")
+    return float(2.0 * np.trapezoid(np.asarray(pinballs), x=np.asarray(levels)))
+
+
 def crossing_metrics(
     raw_quantiles: np.ndarray,
     quantile_levels: Tuple[float, ...],

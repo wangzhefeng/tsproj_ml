@@ -5,7 +5,13 @@ import unittest
 
 import numpy as np
 
-from model_evaluation.metrics import crossing_metrics, interval_metrics, pinball_loss
+from model_evaluation.metrics import (
+    crps_from_pinball,
+    crossing_metrics,
+    interval_metrics,
+    pinball_loss,
+    seasonal_insample_scales,
+)
 
 
 class ProbabilisticMetricsTest(unittest.TestCase):
@@ -48,6 +54,38 @@ class ProbabilisticMetricsTest(unittest.TestCase):
         self.assertEqual(metrics["crossing_magnitude"], 0.5)
         self.assertAlmostEqual(metrics["repair_changed_ratio"], 1.0 / 3.0)
         self.assertEqual(metrics["q50_changed_ratio"], 0.0)
+
+    def test_crps_trapezoid_matches_hand_calculation(self):
+        # levels (0.25, 0.75)、pinball 均 0.25：梯形面积 0.25*0.5，×2 = 0.25
+        crps = crps_from_pinball((0.25, 0.75), (0.25, 0.25))
+        self.assertAlmostEqual(crps, 0.25)
+        # 非对称 pinball：levels (0.1, 0.5, 0.9)，pinball (0.2, 0.1, 0.3)
+        # 梯形 = (0.2+0.1)/2*0.4 + (0.1+0.3)/2*0.4 = 0.06 + 0.08 = 0.14，×2 = 0.28
+        crps = crps_from_pinball((0.1, 0.5, 0.9), (0.2, 0.1, 0.3))
+        self.assertAlmostEqual(crps, 0.28)
+        with self.assertRaises(ValueError):
+            crps_from_pinball((0.5,), (0.1,))
+        with self.assertRaises(ValueError):
+            crps_from_pinball((0.9, 0.1), (0.1, 0.2))
+        with self.assertRaises(ValueError):
+            crps_from_pinball((0.1, 0.9), (0.1,))
+
+    def test_seasonal_insample_scales_do_not_cross_series_boundary(self):
+        # (N=2, T=4)、lag=1：series0 差分 |1,2,4|、series1 全 0；
+        # 若误跨 series 边界会混入 |100-8|=92
+        mae_scale, rmse_scale = seasonal_insample_scales(
+            np.array([[1.0, 2.0, 4.0, 8.0], [100.0, 100.0, 100.0, 100.0]]),
+            1,
+        )
+        self.assertAlmostEqual(mae_scale, 7.0 / 6.0)
+        self.assertAlmostEqual(rmse_scale, float(np.sqrt(21.0 / 6.0)))
+        # 常数历史 → 尺度为零 → NaN（调用方按 NaN 传播，不伪造）
+        mae_scale, rmse_scale = seasonal_insample_scales(np.ones((1, 5)), 1)
+        self.assertTrue(np.isnan(mae_scale))
+        self.assertTrue(np.isnan(rmse_scale))
+        # 历史长度 <= lag 属显式误用：RAISE
+        with self.assertRaises(ValueError):
+            seasonal_insample_scales(np.ones((1, 2)), 2)
 
 
 if __name__ == "__main__":

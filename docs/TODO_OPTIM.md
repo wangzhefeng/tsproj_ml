@@ -47,6 +47,16 @@
 - **风险**：两分支语义已显式分化，未来再从 stable 移植回测相关改动时需逐条对照 refit 规则，不能默认 stable 行为；若长期无人触发，stable 侧的 bounded+refit 证据字段（did_refit/model_fit_origin）与 dev 字段名（refitted/fit_origin）的差异固化，跨分支结果对比需人工映射。
 - **验收标准**：触发实施时——spec 层放行组合的解析与校验测试通过；恢复 bounded+refit 的折级信息集更新测试（参照快照）；`tests/run_suite.py fast` 与 integration 全过；`docs/packages/model_testing.md` 与本文档同步。
 
+### OPT-029 model_evaluation 走读遗留：池化一致性、scope 集对齐与掩码全排除护栏
+
+- **状态**：待处理
+- **登记日期**：2026-10-05
+- **当前事实**：2026-10-05 model_evaluation 模块走读（§一/§二 已同批处理：过期 docstring 引用修正、`point_intervals.py` 补 docstring/`__all__`/门面导出、`normalized_width` 死输出删除、`crossing.report_raw` 断链激活至回测逐窗 execution_evidence、`eval_mask.mode` 解析期白名单前置）。遗留三项未动：① `marginal.py:247-287` 的 per-horizon aggregate 池化段把 `_emit` 内部的 valid 计算重写了第二遍（两处掩码合成逻辑手工保持一致，无合同测试钉住）；② `point_intervals.py` 只输出 target/horizon scope，`marginal.py` 输出 target/horizon/aggregate/aggregate_horizon——概率评分帧的 scope 集不统一，下游按统一 scope 集消费会静默少行（已在 `docs/packages/model_evaluation.md` 入档差异）；③ 掩码全排除时 `excluded_ratio=1.0` 不 RAISE，评分全 NaN 正常落盘——「掩码配置错误」与「数据真异常」产物不可区分。能力面缺口（MASE/RMSSE/SMAPE/CRPS）按活动配置（point-only、零 quantile、零 eval_mask）裁决为休眠，等场景立项。
+- **影响**：① 两处逻辑漂移时 per-horizon aggregate 与 target 行口径静默不一致；② 跨评分帧统一消费方（如未来的对比报表）可能漏行；③ 掩码误配的失败信号被推迟到人工读结果阶段。
+- **建议方向**：① 抽取「isfinite ∧ 掩码」合成为 marginal.py 内单一实现（或加池化一致性的合同测试：同一输入下池化段与 `_emit` 的 valid 计数逐 target 相等）；② 裁决：point_intervals 补 aggregate 行（与 marginal 对齐 proper-score 池化语义）或维持差异并在消费方文档显式声明；③ 在评分接缝处加护栏：`excluded_ratio == 1.0` 时 RAISE 或至少在评分帧 attrs / 回测 evidence 中记录告警字段。三项均语义敏感，实施前单独确认。
+- **风险**：① 重构触及概率评分主路径，需逐值对照验证；③ 护栏 RAISE 会改变「掩码全排除」场景的失败面（从静默 NaN 变显式失败），存量研究配置若有依赖该行为的会被打断。
+- **验收标准**：触发实施时——fast 套件与定向测试（test_eval_mask_rewire / test_eval_bias_horizon / test_probabilistic_metrics / test_residual_calibration / test_multitarget_probabilistic）全过；评分 CSV 逐值对照零差异（①②）或差异逐行解释（③）；`docs/packages/model_evaluation.md` 同步。
+
 ## 已完成
 
 ### OPT-024 sample_weight 功能激活、子包收口与 stats 白名单规范化

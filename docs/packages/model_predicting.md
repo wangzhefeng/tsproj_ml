@@ -2,7 +2,7 @@
 
 `model_predicting/` 是预测、部署与预测产物层；单模型生命周期和批调度属于 `pipeline/`。子包按消费方划分（2026-09-28）：`contracts/` 注入协议、`loops/` 执行、`artifacts/` 落盘与证据；无子包级转发门面，消费方走完整点路径。
 
-- `loops/predictor.py`：point 与 marginal quantile 推理，recursive quantile 使用 median path；包含张量 crossing 修复与 `assemble_marginal_quantile_distribution()`（median path 逐分位组装唯一实现，训练期与部署期共用）。
+- `loops/predictor.py`：point 与 marginal quantile 推理，recursive quantile 使用 median path；包含张量 crossing 修复与 `assemble_marginal_quantile_distribution()`（median path 逐分位组装唯一实现，训练期与部署期共用）。`crossing.report_raw`（默认 true）在组装段产出修复前后 crossing 诊断（`build_crossing_report()`，消费 `model_evaluation.metrics.crossing_metrics`），写入分布 metadata 的 `crossing_report`；回测侧由 `model_testing/loops/scoring.py` 合入逐窗 execution_evidence 落盘。
 - `loops/deployment.py`：`predict_strategy_bundle()`，消费已加载 bundle 和显式部署输入，不重新训练；分位数组装经 `loops/predictor.py` 共享函数，仅单 level 预测回调与 crossing 配置来源（bundle spec）不同。
 - `contracts/protocols.py`：`FeatureProvider` 特征注入协议唯一来源；训练期由 `pipeline/fold_fit` 注入，部署期由部署调用方/ensemble 注入。
 - `artifacts/persistence.py`：`build_strategy_model_bundle()` 统一 schema-2 final bundle 构造，`persist_model_bundle()` 持久化。

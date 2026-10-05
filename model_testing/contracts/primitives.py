@@ -32,12 +32,17 @@ def positive_validation_int(
     return value
 
 
-def seasonal_naive_tensor(
+def resolve_seasonal_naive_lag(
     builder,
-    origin: pd.Timestamp,
     forecast_times: pd.DatetimeIndex,
-) -> PointForecastTensor:
-    """seasonal-naive 基线：历史 target 按滞后阶数回看（默认一个自然日步数）。"""
+    origin: pd.Timestamp,
+) -> int:
+    """seasonal-naive 滞后阶数解析（2026-10-05 自 seasonal_naive_tensor 抽取）。
+
+    配置 ``validation.seasonal_naive_lag`` 优先；未配置时默认一个自然日步数
+    （且不小于 horizon；forecast_window 场景按 lead 向上取整到日步数倍数）。
+    回测评分（MASE/RMSSE 缩放）与 naive 基线共用本函数，保证同一 lag 口径。
+    """
     validation = builder.config.validation
     configured = validation.get("seasonal_naive_lag")
     if configured is None:
@@ -56,12 +61,28 @@ def seasonal_naive_tensor(
             if builder.config.validation.get("forecast_window") is not None:
                 lead = int((forecast_times[-1] - origin) / step)
                 configured = max(configured, ((lead + one_day_steps - 1) // one_day_steps) * one_day_steps)
-    lag = positive_validation_int(
+    return positive_validation_int(
         {"seasonal_naive_lag": configured},
         "seasonal_naive_lag",
         1,
     )
-    history = builder.target_history(origin)
+
+
+def seasonal_naive_tensor(
+    builder,
+    origin: pd.Timestamp,
+    forecast_times: pd.DatetimeIndex,
+    *,
+    history: PointForecastTensor | None = None,
+) -> PointForecastTensor:
+    """seasonal-naive 基线：历史 target 按滞后阶数回看（默认一个自然日步数）。
+
+    ``history``（2026-10-05）：调用方已实体化的 as-of 目标历史可传入复用，
+    避免同一折内重复 materialize（回测评分接缝 MASE 缩放与 naive 共用一次取数）。
+    """
+    lag = resolve_seasonal_naive_lag(builder, forecast_times, origin)
+    if history is None:
+        history = builder.target_history(origin)
     naive_times = pd.DatetimeIndex(
         [pd.Timestamp(value) - lag * builder.offset for value in forecast_times]
     )
@@ -100,5 +121,6 @@ def actual_tensor(
 __all__ = [
     "actual_tensor",
     "positive_validation_int",
+    "resolve_seasonal_naive_lag",
     "seasonal_naive_tensor",
 ]

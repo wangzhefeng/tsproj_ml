@@ -20,6 +20,7 @@ from model_evaluation.point import resolve_aggregate_weighting
 from model_testing.artifacts.reporting import write_backtest_results
 
 from model_testing.contracts import geometry as backtest_geometry
+from model_testing.contracts.primitives import resolve_seasonal_naive_lag
 from model_testing.loops.scoring import score_holdout_fold
 from model_testing.loops.execution import ordered_bounded_map
 from model_testing.contracts.protocols import BacktestRunner, BacktestRunnerFactory
@@ -170,6 +171,12 @@ def run_calendar_month_backtest(
             calibration_tracker=calibration_tracker,
             aggregate_weights=aggregate_weights,
             eval_mask_config=eval_mask_config,
+            # MASE/RMSSE 缩放（2026-10-05）：lag 与 seasonal-naive 基线同一解析入口
+            naive_lag=resolve_seasonal_naive_lag(
+                runner.builder,
+                runner.forecast_times(fold_ctx.origin),
+                fold_ctx.origin,
+            ),
         )
         cv_frames.append(fold.frame)
         if fold.calibration_audit is not None:

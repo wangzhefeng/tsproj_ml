@@ -16,6 +16,7 @@ from forecasting_core.specs import (
     SlidingWindowBacktestSpec,
 )
 from model_evaluation.point import resolve_aggregate_weighting
+from model_testing.contracts.primitives import resolve_seasonal_naive_lag
 from model_testing.contracts.protocols import BacktestRunner, BacktestWindow, FitResult
 from model_testing.artifacts.reporting import write_backtest_results
 from model_testing.loops.execution import ordered_bounded_map
@@ -185,6 +186,12 @@ def run_rolling_backtest(
             calibration_tracker=calibration_tracker,
             aggregate_weights=aggregate_weights,
             eval_mask_config=eval_mask_config,
+            # MASE/RMSSE 缩放（2026-10-05）：lag 与 seasonal-naive 基线同一解析入口
+            naive_lag=resolve_seasonal_naive_lag(
+                builder,
+                fold_runner.forecast_times(backtest_window.origin),
+                backtest_window.origin,
+            ),
         )
         if config.validation.get("training_window") is not None:
             fold.frame["forecast_origin"] = backtest_window.origin.isoformat()

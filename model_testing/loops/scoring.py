@@ -51,6 +51,7 @@ def score_holdout_fold(
     calibration_tracker: ConformalCalibrationTracker | ResidualCalibrationTracker | None,
     aggregate_weights: Any,
     eval_mask_config: Mapping[str, Any] | None,
+    naive_lag: int | None = None,
 ) -> FoldScoreResult:
     """对单个已完成拟合的回测折执行统一后处理。
 
@@ -58,13 +59,21 @@ def score_holdout_fold(
     ``(feature_scaler, target_transform, X, Y, artifact)``；
     ``runner`` 需提供 forecast_designs/predict/actual/seasonal_naive/
     forecast_times/execution_evidence 公开能力（与 ensemble 成员同一协议面）。
+
+    ``naive_lag``（2026-10-05）：提供时启用点评分的 MASE/RMSSE 列——缩放因子
+    取 ``runner.target_history(origin)`` 的 in-sample 季节差分尺度；未提供时
+    不取历史（零额外 IO），MASE/RMSSE 列为 NaN。
     """
     feature_scaler, target_transform, _X, _Y, artifact = fit_result
     designs, provider = runner.forecast_designs(origin, feature_scaler, target_transform)
     forecast_times = runner.forecast_times(origin)
     prediction = runner.predict(artifact, designs, provider, forecast_times, target_transform)
     actual = runner.actual(origin_index, forecast_times)
-    seasonal_naive = runner.seasonal_naive(origin, forecast_times)
+    # naive_lag 启用 MASE/RMSSE 时，目标历史只 materialize 一次：
+    # naive 基线与缩放尺度共用同一 as-of 历史（2026-10-05，identity 路径
+    # target_history 调用数合同见 tests/test_runtime_window_parallelism.py）。
+    insample_history = runner.target_history(origin) if naive_lag is not None else None
+    seasonal_naive = runner.seasonal_naive(origin, forecast_times, history=insample_history)
     point = (
         prediction
         if isinstance(prediction, PointForecastTensor)
@@ -96,6 +105,8 @@ def score_holdout_fold(
         seasonal_naive=seasonal_naive,
         window=window,
         eval_mask=eval_mask_config,
+        insample_history=insample_history,
+        naive_lag=naive_lag,
     )
     probabilistic_scores = None
     if calibrated_point is not None:

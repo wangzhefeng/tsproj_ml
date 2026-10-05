@@ -72,7 +72,12 @@ class BacktestLifecycleSplitTest(unittest.TestCase):
                     window=i + 1, origin=pd.Timestamp("2026-01-01") + pd.Timedelta(days=i),
                     origin_index=i, train_indices=(i,), metadata={"window": i + 1},
                 ) for i in range(2))
-                builder = SimpleNamespace(audit=(), reset_audit=Mock())
+                builder = SimpleNamespace(
+                    audit=(), reset_audit=Mock(),
+                    # 评分接缝的 MASE/RMSSE lag 解析（2026-10-05）消费 builder.config/offset
+                    config=SimpleNamespace(validation={}, problem=SimpleNamespace(horizon=2)),
+                    offset=pd.Timedelta(days=1),
+                )
                 runner = Mock(spec=BacktestRunner,
                     config=config, builder=builder, execution_plan=SimpleNamespace(window_workers=workers),
                     stage_wall_seconds={},

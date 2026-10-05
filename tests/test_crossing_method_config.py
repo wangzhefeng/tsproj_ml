@@ -316,8 +316,11 @@ class _StubScoringRunner:
     def actual(self, origin_index, forecast_times):
         return self._actual
 
-    def seasonal_naive(self, origin, forecast_times):
+    def seasonal_naive(self, origin, forecast_times, *, history=None):
         return None
+
+    def target_history(self, origin):
+        return self._actual
 
     def execution_evidence(self, artifact, target_transform):
         return {"stub": True}

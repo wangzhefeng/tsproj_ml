@@ -827,11 +827,14 @@ class CanonicalBaseModelRunner:
         self,
         origin: pd.Timestamp,
         forecast_times: pd.DatetimeIndex,
+        *,
+        history: PointForecastTensor | None = None,
     ) -> PointForecastTensor:
         return seasonal_naive_tensor(
             self.builder,
             origin,
             forecast_times,
+            history=history,
         )
 
     def forecast_times(

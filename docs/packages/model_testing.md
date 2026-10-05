@@ -5,9 +5,9 @@
 - `contracts/`：公共合同与几何（包外消费面）。
   - `protocols.py`（原 `contracts.py`）：`FoldScoringRunner`、`BacktestRunner`、runner factory、设计视图与窗口协议；模型和变换对象作为不透明载荷，不依赖上层实现类型。
   - `geometry.py`：fixed-step rolling-origin（`train_window_steps=None` 即 expanding 语义）、完整 calendar-month folds、标签非重叠排除（`_holdout_training_indices`）、`TimeGeometry/OriginTimeline` 公共时间几何。
-  - `windows.py`：回测窗口构造——rolling 系（fixed/sliding/expanding）折与显式原始历史（train_history_steps，仅 fixed-step）窗口（2026-09-27 自 `pipeline.supervised_design` 下沉，折载体复用 `geometry.RollingOriginFold`；`minimum_history` 由调用方显式传入）。
+  - `windows.py`：回测窗口构造——rolling 系（fixed/sliding/expanding）折、显式原始历史（train_history_steps，仅 fixed-step）窗口与显式 temporal 窗口（training_window/forecast_window，2026-10-05 引入；按原始时钟调度、折内应用 origin_sampling）（2026-09-27 自 `pipeline.supervised_design` 下沉，折载体复用 `geometry.RollingOriginFold`；`minimum_history` 由调用方显式传入）。
   - `primitives.py`：actual tensor、seasonal-naive 与正整数校验；forecast origin 解析已迁入 `forecasting_core/origin.py`（2026-09-27，部署路径通用原语）。
-- `loops/`：回测循环形态与共用逐折体。`fixed_step.py` 内含 rolling 系共用引擎 `run_rolling_backtest()`，`sliding_window.py`/`expanding_window.py` 为薄入口（sliding 重叠折不拼总图，expanding 训练集逐折扩大）。
+- `loops/`：回测循环形态与共用逐折体。`fixed_step.py` 内含 rolling 系共用引擎 `run_rolling_backtest()`，`sliding_window.py`/`expanding_window.py` 为薄入口（sliding 重叠折不拼总图，expanding 训练集逐折扩大）。折拟合/编译调度统一走 `loops/execution.py::ordered_bounded_map`（2026-10-05 引入：最多 workers 个在途、按序消费、失败传播并取消排队，评分留在消费线程）；training_window 配置的折 evidence 附 `forecast_origin`/`lead_steps`，产物 metadata 声明 `allow_overlapping_windows` 时跳过重叠拼接总图（保留逐窗图）。
   - `scoring.py`：两种回测共用的逐折评分体 `score_holdout_fold()`——predict 后处理 → point/probabilistic 评分 → CQR apply-before-collect → 执行证据；通过 `FoldScoringRunner` 消费公开能力，本包不 import model_predicting。
   - `fixed_step.py`：rolling 回测按 `refit_every` 选择拟合折，复用整组模型/变换/selector 状态；并行仅调度拟合折，评分与校准始终按窗口顺序进行。显式周期在执行证据中记录实际 fit origin/window/metadata，计划回测窗口不冒充已拟合窗口；历史准备委托 runner。默认每折重训。
   - `sliding_window.py`：重叠滑窗回测入口（stride_steps < horizon；`stitch_overview=False`）。

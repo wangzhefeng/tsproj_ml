@@ -37,6 +37,16 @@
 - **风险**：提前上收需为单消费方预造合同层接口；滞后处理的风险是触发时迁移面变大，但迁移路径已被 OPT-023 方案 A 验证（分层门禁 + 兼容 re-export 模式可复用）。
 - **验收标准**：触发时 `model_predicting` 对 `model_training` 的 import 归零（或仅剩合同层类型再导出）；`tests.test_package_layering` 通过；fast / integration 全过；`docs/packages/model_training.md` 与 `model_predicting.md` 同步边界描述。
 
+### OPT-028 refit_every 语义分歧裁决与「有界历史 + 间隔重训」组合缺口
+
+- **状态**：待处理
+- **登记日期**：2026-10-05
+- **当前事实**：stable 训练设计重构（2026-10-05 移植入 dev，快照 `.hermes/plans/migration_stable_wip_20261004/`）携带的 refit_every 语义与 dev 演进版分歧：stable 要求 refit_every ≥ 1、限 fixed_steps、允许搭配 train_history_steps、禁止搭配 target transform；dev 允许 refit_every=0（仅首折拟合）、要求 rolling 系几何、禁止搭配 train_history_steps、兼容 target transform（scaler 随 artifact 冻结复用，`tests/test_refit_schedule.py` 覆盖）。移植裁决（已执行）：保留 dev 语义，不引入 stable 的「refit_every > 1 需无 target transform」守卫；WIP 两个 refit 用例按 dev 语义改写/移除（`test_training_workload.py` 中 `test_refit_reuses_artifact_but_updates_prediction_context` 删除、`test_refit_contract_and_unsupported_modes` 改写）。同时新 temporal 合同（`forecasting_core/specs/temporal.py`）要求显式 training_window/forecast_window 必须 refit_every=1。
+- **影响**：dev 当前不存在「有界历史（train_history_steps 或 training_window）+ refit_every ≠ 1」的合法配置组合——stable 侧该组合的「复用 artifact 但逐折更新只读信息集/历史下界」能力未带入 dev。回测引擎已为此预留结构：`run_rolling_backtest` 的 strict 分支在 refit_every ≠ 1 时逐折 `for_backtest_window` 更新信息集（stable 语义已并入），仅缺 spec 层放行与合同测试。
+- **建议方向**：不立项预建。触发条件 = 出现「长历史 bounded 回测 + 控制重训频率」的真实需求（如 training_window 长窗逐日发报的批量回测成本压力）。触发时：放开 `validation.py` 的 refit_every/train_history_steps 互斥与 temporal.py 的 refit_every=1 约束，恢复 stable 版用例语义（快照中 `new_files/tests/test_training_workload.py` 的 refit 复用测试可作参照），并裁定与「scaler 冻结复用」合同的交互。
+- **风险**：两分支语义已显式分化，未来再从 stable 移植回测相关改动时需逐条对照 refit 规则，不能默认 stable 行为；若长期无人触发，stable 侧的 bounded+refit 证据字段（did_refit/model_fit_origin）与 dev 字段名（refitted/fit_origin）的差异固化，跨分支结果对比需人工映射。
+- **验收标准**：触发实施时——spec 层放行组合的解析与校验测试通过；恢复 bounded+refit 的折级信息集更新测试（参照快照）；`tests/run_suite.py fast` 与 integration 全过；`docs/packages/model_testing.md` 与本文档同步。
+
 ## 已完成
 
 ### OPT-024 sample_weight 功能激活、子包收口与 stats 白名单规范化

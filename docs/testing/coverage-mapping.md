@@ -39,6 +39,10 @@ rolling 系回测形态（2026-09-27 新增）：`test_window_backtest_modes` �
 - `test_conformal_tracker` 增加倒置区间整批拒绝且不污染历史池的负向断言；CQR 合法输入、as-of 和恢复链继续验证。
 - 资产缺列测试改走实际 `audit_runtime_assets` 的 CSV 审计与报告，选日尾部误差测试改走 `run_selection`，不再只测休眠包装。
 
+## 训练设计执行重构（2026-10-05，自 stable 移植）
+
+磁盘编译特征缓存退役（`test_compiled_feature_cache` 一并退役），新增测试默认 integration：`test_indexed_design`/`test_indexed_training`（IndexedDesign 紧凑视图、估计器边界展开、规划期预算前置、native 免编译、与独立编译器数值对照）、`test_numeric_snapshot`（数据源只读数值快照与运行中修订拒绝）、`test_compiler_array_kernels`（全统计量 single/batch/indexed 与独立窗口参照，批路径禁止逐原点标量重算）、`test_design_identity`（身份隔离与退役参数 RAISE）、`test_in_memory_design_execution`（规划不物化全量设计、并发准备仅一次、批量同组编译一次、组间释放）、`test_bounded_execution`/`test_calendar_bounded_execution`（有界在途与按序消费）、`test_forecast_schedule_windows`（next_day 多天/延迟目标、rolling/expanding training_window、重叠窗口、final 一致性）、`test_training_workload`（origin_sampling 契约与训练证据计数/计时）。stable 侧的 refit 复用用例未移植：dev 的 refit_every 语义（非负整数、rolling 几何、禁 train_history_steps、兼容 target transform）与 stable 不同，以 `test_refit_schedule` 为 dev 侧覆盖。
+
 ## 日历生成器回归
 
 `test_holiday_generator` 使用包级公开入口，独立钉住 2024 年年初四节气日期并与依赖库公开 API 对照；验证日内最后支持日不多读下一年、每帧仅构建一次节气表，以及 registry → compiler → VisibilityProof 接线和真实 CSV 导出。旧 `data_loading/holiday_generator.py` 不再是兼容合同；前轮信息集冻结 fixture 保留，不按修复后算法重生成。

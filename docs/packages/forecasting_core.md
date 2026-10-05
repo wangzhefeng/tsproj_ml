@@ -10,6 +10,8 @@
 - 部署态概率 spec 的唯一解析入口为 `probabilistic_spec_from_mapping()`；旧 args 解析/回写接口 `resolve_probabilistic_spec()`、`apply_probabilistic_spec_to_args()` 已退役，不保留 legacy 字段归一化分支。canonical 默认值、校验及 dataclass 持久化合同不变。
 - `artifacts.py`：`ForecastModelBundle`、`MarginalForecastDistribution`、`QuantileGrid`。
 - `origin.py`：预测原点解析 `resolve_origin()` 与数据源能力 Protocol `SupportsLatestTargetTime`（2026-09-27 自 `model_testing/contracts/primitives.py` 迁入）。
+- `specs/temporal.py`（2026-10-05 引入）：预测目标区间与原始训练历史边界合同——`forecast_times`/`forecast_ends` 向量化（含 next_day 完整日校验与 DST 防护）、`history_start`、`has_bounded_history`、`select_training_origins`（origin_sampling 抽样）与 `validate_temporal_contract`；回测与生产共用，不读取数据。
+- `design.py`（2026-10-05 引入）：`IndexedDesign` 只读按列索引设计（共享特征事实，估计器边界才展开行列）与 `retained_array_bytes` 去重字节核算。
 
 旧一维 `ForecastDistribution` 与无消费者的 `calibration_runtime_kwargs` / `validate_probabilistic_args` 已退出；使用现役张量分布及概率 spec 解析接口。不提供旧类型 import/pickle 兼容。`PredictionIntervalForecast`、`QuantileGrid` 和明确 unsupported 的 joint-sample 边界保留。
 

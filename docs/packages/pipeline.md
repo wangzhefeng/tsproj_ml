@@ -4,7 +4,7 @@
 
 `pipeline/` 负责单模型生命周期、监督设计与批量运行编排；根 `run.py` / `batch_run.py` 调用本包。融合仍由独立 `model_ensemble/` 负责，通过入口注入 runner 与执行服务复用单模型链。
 
-- `runner.py`：`CanonicalBaseModelRunner` 与 `run_canonical_config()`；提供训练、预测、历史准备和只读证据能力，run 入口设置线程限制后委托生命周期。构造期即校验 native 历史模型参数与 `probabilistic.mode=quantile` 能力冲突（2026-09-27 前置，不再等到折拟合期）。
+- `runner.py`：`CanonicalBaseModelRunner` 与 `run_canonical_config()`；提供训练、预测、历史准备和只读证据能力，run 入口设置线程限制后委托生命周期。构造即规划（2026-10-05 起）：构造期只做候选原点解析、单原点 schema 探测与资源准入（native 模型连探测都跳过），完整训练设计由 `prepare_training()` 按需物化（RLock 保护，并发折共享同一次准备）；`share_training_design()` 允许同 raw-design 指纹的 runner 共享不可变数组（ensemble 成员/批量同组复用），不共享拟合状态。构造期即校验 native 历史模型参数与 `probabilistic.mode=quantile` 能力冲突（2026-09-27 前置，不再等到折拟合期）。
 - `lifecycle.py`：`run_lifecycle()` 管理完成状态与异常传播，`execute_lifecycle()` 组织回测、CQR、final fit、预测和持久化；回测几何按 `validation.backtest` spec 类型显式分派（fixed-step / sliding-window / expanding-window / calendar-month，缺失即 RAISE；expanding-window 暂限 backtest-only）；产物证据组装函数位于 `model_predicting/artifacts/evidence_assembly.py`（2026-09-27 迁出，2026-09-28 随子包划分落入 artifacts/）。结果类型仍由 runner 公开导出。
 - `supervised_design.py`：`SupervisedDesignBuilder`、information set、训练/预测设计、监督标签窗口、`minimum_history_rows()`；批编译不支持的设计保留 single 路径，不隐式替换 provider。
 - `fold_fit.py`：fold/final 特征选择、变换与训练服务；回测和 final fit 共用配置训练窗口。
@@ -17,7 +17,7 @@
 
 天气阶段通过 `forecast_designs(..., data_phase="historical"|"future")` 传至不可变请求。默认 historical，供滑窗测试、OOF 及当前生命周期末次历史留出预测使用；训练始终 historical/实测列，测试预测为 historical/预报列。真正未来调用方必须显式传 future，递归 provider 捕获同阶段信息集。训练设计缓存仅哈希映射天气源的 history，不依赖未来文件；其他 source 原合同不变。
 
-显式 `validation.train_history_steps` 时，每个 runner 固定 `history_start = origin - (W-1) * freq`，只编译有界数据。调度依据 registry 的时间覆盖事实，不复用跨折 expanding；`for_backtest_window()` 构造独立 runner，拟合、预测和递归 provider 共用下界。主 runner 最后窗口的编译仅用于资源规划，不供各折训练。此模式暂限 backtest-only，拒绝 final fit/bundle，不能作为部署完成。
+显式有界历史（`validation.train_history_steps` 或 `validation.training_window`）时，每个 runner 的训练历史下界由 `forecasting_core/specs/temporal.py::history_start` 统一给出，只编译有界数据。调度依据 registry 的时间覆盖事实，不复用跨折 expanding；`for_backtest_window()` 构造独立 runner，拟合、预测和递归 provider 共用下界。主 runner 最后窗口的编译仅用于资源规划，不供各折训练。train_history_steps 模式暂限 backtest-only，拒绝 final fit/bundle，不能作为部署完成；training_window 模式支持 final fit（全窗采样后原点）。`training_window {kind: rolling|expanding}` 与 `forecast_window {start: after_origin|next_day, gap_steps}` 为 2026-10-05 引入的显式时间窗合同（仅 fixed_steps + refit_every=1 + Local point + 非 ETS），`validation.training.origin_sampling {stride_steps|time_of_day|max_origins|anchor_time}` 在窗口内抽样训练原点，不改变历史可见性。
 
 `SupervisedDesignBuilder` 经 `SourceRegistry.target_history_coverage()` 获取目标源序列/时间覆盖，再在本包决定 `series_order`、unknown/incomplete policy、训练窗口和监督张量。数据读取、验证及公共 identity 选择由数据层提供；runner、batch runtime、lifecycle 通过 registry 的公开 `base_dir`/`generators` 取得上下文，不穿透私有状态。递归预测目标 provider 与 oracle 标签策略仍属于本包，不迁入通用数据层。
 

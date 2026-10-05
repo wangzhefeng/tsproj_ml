@@ -396,6 +396,28 @@ class RuntimeExecutionPlanTest(unittest.TestCase):
                 budget=self._budget(),
             )
 
+    def test_ensemble_rejects_single_model_performance_keys(self):
+        import re
+        member_workload = self._workload(_config(strategy="recursive"))
+        for performance in (
+            {"window_parallel_workers": 2},
+            {"profile_ref": "opt017-catboost-short-a-pointwise-v1"},
+        ):
+            with self.subTest(performance=performance):
+                doc = _ensemble_doc("averaging")
+                doc["validation"]["performance"] = performance
+                config = parse_ensemble_document(doc, source_path="ensemble.yaml")
+
+                with self.assertRaisesRegex(
+                    ValueError,
+                    re.escape(f"got unsupported {sorted(performance)}"),
+                ):
+                    plan_ensemble_resources(
+                        config,
+                        {"m_direct": SimpleNamespace(workload=member_workload)},
+                        budget=self._budget(),
+                    )
+
 
 if __name__ == "__main__":
     unittest.main()

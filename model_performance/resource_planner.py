@@ -7,6 +7,8 @@ from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
+import psutil
+
 from forecasting_core.runtime_resources import (
     RuntimeExecutionPlan,
     RuntimeResourceBudget,
@@ -28,6 +30,12 @@ _DEFAULT_OUTPUT_WORKERS_BY_MODEL = {
     name: descriptor.output_workers for name, descriptor in MODEL_CATALOG.items()
     if descriptor.output_workers is not None
 }
+
+_ENSEMBLE_PERFORMANCE_KEYS = frozenset({
+    "ensemble_parallel_workers",
+    "total_thread_limit",
+    "memory_limit_bytes",
+})
 
 
 def _positive_performance_int(
@@ -169,23 +177,14 @@ def detect_runtime_budget(
     memory_limit_bytes: int | None = None,
     parent_concurrency: int = 1,
 ) -> RuntimeResourceBudget:
-    """Detect a conservative stdlib budget; psutil enrichment is optional."""
-    logical = os.cpu_count() or 1
-    physical = logical
-    detected_memory = memory_limit_bytes
-    source = "stdlib"
-    try:
-        import psutil
-    except ImportError:
-        pass
-    else:
-        physical = psutil.cpu_count(logical=False) or logical
-        logical = psutil.cpu_count(logical=True) or logical
-        if detected_memory is None:
-            detected_memory = int(psutil.virtual_memory().available)
-        source = "psutil"
-    if detected_memory is None:
-        detected_memory = 1
+    """Detect the machine budget via psutil (a hard project dependency)."""
+    logical = psutil.cpu_count(logical=True) or (os.cpu_count() or 1)
+    physical = psutil.cpu_count(logical=False) or logical
+    detected_memory = (
+        int(memory_limit_bytes)
+        if memory_limit_bytes is not None
+        else int(psutil.virtual_memory().available)
+    )
     return RuntimeResourceBudget(
         physical_cores=int(physical),
         logical_cores=int(logical),
@@ -194,10 +193,10 @@ def detect_runtime_budget(
             if total_thread_limit is not None
             else int(physical)
         ),
-        memory_limit_bytes=int(detected_memory),
+        memory_limit_bytes=detected_memory,
         parent_concurrency=parent_concurrency,
         require_determinism=True,
-        source=source,
+        source="psutil",
     )
 
 
@@ -485,6 +484,15 @@ def plan_ensemble_resources(
             f"memory_limit_bytes={resolved_budget.memory_limit_bytes}"
         )
     performance = _performance(config)
+    # ensemble 顶层只消费成员并行与预算上限；单模型轴（window/quantile/output/
+    # model_thread_count/profile_ref）属于成员配置，顶层声明一律 RAISE 而非静默忽略。
+    unsupported = sorted(set(performance) - _ENSEMBLE_PERFORMANCE_KEYS)
+    if unsupported:
+        raise ValueError(
+            "ensemble-level validation.performance supports only "
+            f"{sorted(_ENSEMBLE_PERFORMANCE_KEYS)}; got unsupported {unsupported}. "
+            "Set per-member performance keys in the member configs."
+        )
     configured_member_workers = _positive_performance_int(
         performance,
         "ensemble_parallel_workers",

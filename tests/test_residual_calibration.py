@@ -93,6 +93,35 @@ class ResidualCalibrationTest(unittest.TestCase):
         self.assertTrue((scores.loc[scores["scope"] == "target", "n_points"] == 1).all())
         self.assertTrue((scores.loc[(scores["target"] == "x") & (scores["metric"] == "interval_width") & (scores["scope"] == "target"), "value"] == 4.0).all())
 
+    def test_aggregate_scopes_pool_valid_points_across_targets(self):
+        # scope 补齐（2026-10-05）：aggregate / aggregate_horizon 跨 target 池化，
+        # 与 marginal 评分帧同一 proper-score 口径；无可用点的 target/horizon 不参与。
+        spec = ResidualCalibrationSpec(target_coverage=0.5, calibration_windows=2, min_windows=1,
+                                       min_scores=1, label_availability_delay_steps=2)
+        tracker = ResidualCalibrationTracker(spec, freq_offset=pd.offsets.Hour())
+        origin = pd.Timestamp("2026-01-01")
+        prediction = PointForecastTensor(values=np.ones((1, 2, 2)), series_ids=("A",),
+            forecast_times=pd.date_range(origin + pd.Timedelta(hours=1), periods=2, freq="h"), targets=("x", "y"))
+        actual = PointForecastTensor(values=prediction.values + np.asarray([[[2.0, 20.0], [4.0, 40.0]]]),
+            series_ids=prediction.series_ids, forecast_times=prediction.forecast_times, targets=prediction.targets)
+        tracker.collect(actual, prediction, forecast_origin=origin, window=1)
+        now = origin + pd.Timedelta(hours=3)
+        future = PointForecastTensor(values=prediction.values, series_ids=prediction.series_ids,
+            forecast_times=pd.date_range(now + pd.Timedelta(hours=1), periods=2, freq="h"), targets=prediction.targets)
+        result = tracker.apply(future, forecast_origin=now)
+        # 仅 h=0 可用：x 半径 2（宽 4）、y 半径 20（宽 40）
+        scores = evaluate_point_intervals(future, result, window=2)
+        aggregate = scores[scores["scope"] == "aggregate"]
+        self.assertTrue((aggregate["target"] == "__aggregate__").all())
+        width = aggregate.loc[aggregate["metric"] == "interval_width"]
+        self.assertEqual(width["value"].iloc[0], 22.0)
+        self.assertEqual(int(width["n_points"].iloc[0]), 2)
+        aggregate_h = scores[scores["scope"] == "aggregate_horizon"]
+        self.assertEqual(set(aggregate_h["horizon"]), {1})
+        width_h = aggregate_h.loc[aggregate_h["metric"] == "interval_width"]
+        self.assertEqual(width_h["value"].iloc[0], 22.0)
+        self.assertEqual(int(width_h["n_points"].iloc[0]), 2)
+
     def test_bad_radius_or_group_axes_are_rejected(self):
         origin = pd.Timestamp("2026-01-01")
         point = self.point("2026-01-01")

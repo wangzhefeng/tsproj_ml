@@ -29,6 +29,7 @@ from forecasting_core.checkpoints import FitCheckpointError
 from forecasting_core.runtime_resources import RuntimeResourceBudget
 from forecasting_core.specs import ForecastConfigSpec
 from model_performance.batch_memory import BoundedPayloadCache, SampledRSS
+from model_performance.checkpoints import prune_fit_checkpoints
 from model_performance.resource_planner import (
     detect_runtime_budget,
     plan_runtime_execution,
@@ -467,6 +468,9 @@ def _run_canonical_batch_locked(
     checkpoint_root = Path(state.setdefault(
         "checkpoint_root", str(root / "_batch_state" / batch_id / "checkpoints" / uuid.uuid4().hex)
     ))
+    # 批开始前有界清理本地 checkpoint 库存（默认 30 天 / 10 GiB）；
+    # 覆盖 _batch_state 下全部历史批次的 checkpoints，miss 只是重新拟合。
+    prune_fit_checkpoints(root / "_batch_state")
     groups: dict[str, list[_BatchTask]] = {}
     for task in tasks:
         groups.setdefault(task.raw_fingerprint, []).append(task)

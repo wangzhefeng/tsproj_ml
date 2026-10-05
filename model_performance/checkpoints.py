@@ -12,6 +12,7 @@ import json
 import os
 import pickle
 import platform
+import time
 from functools import wraps
 from pathlib import Path
 from typing import Any, Callable, Mapping, Sequence, TypeVar
@@ -30,10 +31,78 @@ except ImportError:  # Keep non-checkpoint runtime importable on Windows.
 T = TypeVar("T")
 CHECKPOINT_SCHEMA_VERSION = 1
 
+# 本地 checkpoint 库存的保留上限：超龄先删，再按最旧优先压到字节预算内。
+# 删除是安全的——miss 只是重新拟合，不删除任何非 .fit/.tmp/.lock 文件。
+FIT_CHECKPOINT_MAX_BYTES = 10 << 30
+FIT_CHECKPOINT_MAX_AGE_SECONDS = 30 * 24 * 3600
+_ORPHAN_TMP_MAX_AGE_SECONDS = 3600
+
 
 def _json(value: Any) -> bytes:
     return json.dumps(value, sort_keys=True, separators=(",", ":"),
                       ensure_ascii=False, allow_nan=False).encode("utf-8")
+
+
+def prune_fit_checkpoints(
+    root: str | Path,
+    *,
+    max_bytes: int = FIT_CHECKPOINT_MAX_BYTES,
+    max_age_seconds: int = FIT_CHECKPOINT_MAX_AGE_SECONDS,
+    orphan_tmp_age_seconds: int = _ORPHAN_TMP_MAX_AGE_SECONDS,
+    now: float | None = None,
+) -> dict[str, int]:
+    """Bounded retention for the trusted-local checkpoint store.
+
+    Removes ``*.fit`` entries older than ``max_age_seconds`` first, then evicts
+    oldest-write-first until the remainder fits ``max_bytes``. Orphan ``*.tmp``
+    files (abandoned writes) older than ``orphan_tmp_age_seconds`` are removed;
+    fresh ones may belong to an in-flight write and are left alone. A removed
+    ``.fit`` takes its sibling ``.lock`` along. Everything else (batch state
+    JSON, unrelated files) is never touched. Deletion is safe by construction:
+    a missing checkpoint is a miss that refits, never corrupted state.
+    """
+    root = Path(root)
+    stats = {"scanned_fits": 0, "removed_fits": 0,
+             "removed_orphan_tmps": 0, "removed_bytes": 0}
+    if not root.is_dir():
+        return stats
+    now = time.time() if now is None else float(now)
+    entries: list[tuple[float, int, Path]] = []
+    for path in root.rglob("*"):
+        if not path.is_file():
+            continue
+        if path.suffix == ".tmp":
+            info = path.stat()
+            if now - info.st_mtime > orphan_tmp_age_seconds:
+                path.unlink()
+                stats["removed_orphan_tmps"] += 1
+                stats["removed_bytes"] += info.st_size
+            continue
+        if path.suffix != ".fit":
+            continue
+        info = path.stat()
+        entries.append((info.st_mtime, info.st_size, path))
+    stats["scanned_fits"] = len(entries)
+
+    def _remove(size: int, path: Path) -> None:
+        path.unlink()
+        path.with_suffix(".lock").unlink(missing_ok=True)
+        stats["removed_fits"] += 1
+        stats["removed_bytes"] += size
+
+    keep: list[tuple[float, int, Path]] = []
+    for mtime, size, path in entries:
+        if now - mtime > max_age_seconds:
+            _remove(size, path)
+        else:
+            keep.append((mtime, size, path))
+    total = sum(size for _, size, _ in keep)
+    for _mtime, size, path in sorted(keep):
+        if total <= max_bytes:
+            break
+        _remove(size, path)
+        total -= size
+    return stats
 
 
 def implementation_fingerprint() -> str:

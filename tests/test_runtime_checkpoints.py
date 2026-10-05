@@ -386,5 +386,72 @@ class RuntimeCheckpointTest(unittest.TestCase):
                     self.assertEqual(len(calls), count)
 
 
+class PruneFitCheckpointsTest(unittest.TestCase):
+    def _write_fit(self, root, key):
+        from model_performance.checkpoints import FileFitCheckpoint
+        before = set(Path(root).rglob("*.fit"))
+        store = FileFitCheckpoint(root, {"config": "cfg"})
+        store.run(identity={"model": key}, arrays=(np.asarray([hash(key) % 7]),), fit=lambda: key)
+        created = set(Path(root).rglob("*.fit")) - before
+        self.assertEqual(len(created), 1)
+        return created.pop()
+
+    def test_age_based_prune_removes_old_fit_and_its_lock(self):
+        import os
+        from model_performance.checkpoints import prune_fit_checkpoints
+        with tempfile.TemporaryDirectory() as root:
+            old = self._write_fit(root, "old")
+            new = self._write_fit(root, "new")
+            now = new.stat().st_mtime
+            os.utime(old, (now - 7200, now - 7200))
+            stats = prune_fit_checkpoints(root, max_age_seconds=3600, now=now)
+            self.assertEqual(stats["removed_fits"], 1)
+            self.assertFalse(old.exists())
+            self.assertFalse(old.with_suffix(".lock").exists())
+            self.assertTrue(new.exists())
+            self.assertTrue(new.with_suffix(".lock").exists())
+
+    def test_size_budget_evicts_oldest_first(self):
+        import os
+        from model_performance.checkpoints import prune_fit_checkpoints
+        with tempfile.TemporaryDirectory() as root:
+            first = self._write_fit(root, "first")
+            second = self._write_fit(root, "second")
+            now = second.stat().st_mtime
+            os.utime(first, (now - 10, now - 10))
+            total = first.stat().st_size + second.stat().st_size
+            stats = prune_fit_checkpoints(root, max_bytes=total - 1, now=now)
+            self.assertEqual(stats["removed_fits"], 1)
+            self.assertFalse(first.exists())
+            self.assertTrue(second.exists())
+
+    def test_stale_orphan_tmp_removed_fresh_tmp_and_foreign_files_kept(self):
+        import json
+        import os
+        from model_performance.checkpoints import prune_fit_checkpoints
+        with tempfile.TemporaryDirectory() as root:
+            fit = self._write_fit(root, "kept")
+            stale_tmp = fit.with_name(fit.stem + ".deadbeef.tmp")
+            stale_tmp.write_bytes(b"garbage")
+            fresh_tmp = fit.with_name(fit.stem + ".cafef00d.tmp")
+            fresh_tmp.write_bytes(b"writing")
+            state = Path(root) / "state.json"
+            state.write_text(json.dumps({"tasks": {}}), encoding="utf-8")
+            now = fresh_tmp.stat().st_mtime
+            os.utime(stale_tmp, (now - 7200, now - 7200))
+            stats = prune_fit_checkpoints(root, orphan_tmp_age_seconds=3600, now=now)
+            self.assertEqual(stats["removed_orphan_tmps"], 1)
+            self.assertFalse(stale_tmp.exists())
+            self.assertTrue(fresh_tmp.exists())
+            self.assertTrue(state.exists())
+            self.assertTrue(fit.exists())
+
+    def test_missing_root_is_a_noop(self):
+        from model_performance.checkpoints import prune_fit_checkpoints
+        stats = prune_fit_checkpoints("/nonexistent/checkpoint/root")
+        self.assertEqual(stats["removed_fits"], 0)
+        self.assertEqual(stats["scanned_fits"], 0)
+
+
 if __name__ == "__main__":
     unittest.main()

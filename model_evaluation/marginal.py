@@ -13,7 +13,7 @@ from typing import Any, Dict, List, Mapping, Tuple
 import numpy as np
 import pandas as pd
 
-from model_evaluation.metrics import interval_metrics, pinball_loss
+from model_evaluation.metrics import crps_from_pinball, interval_metrics, pinball_loss
 from model_evaluation.point import build_eval_mask_payload
 from forecasting_core.tensors import PointForecastTensor
 from forecasting_core.artifacts import MarginalForecastDistribution
@@ -57,11 +57,12 @@ def evaluate_marginal_distribution(
     - ``window``: 可选窗口编号，写入 ``window`` 列（回测逐窗调用时传入）。
     - 输出 schema（tidy long）：``window, scope, target, metric, horizon,
       quantile, interval_name, lower_quantile, upper_quantile, target_coverage,
-      value, n_points, ci_lower, ci_upper``。metric ∈ {mae, bias, pinball,
+      value, n_points, ci_lower, ci_upper``。metric ∈ {mae, bias, pinball, crps,
       interval_coverage, interval_width, interval_winkler, coverage_gap,
-      calibration_error}；bias = mean(point − actual)（正=高估）；
-      interval_* / coverage_* 行的 quantile 为 NaN，mae/bias/pinball 行的
-      interval_* 列为 NaN；horizon 仅 per-horizon 行非空（1-based）。
+      calibration_error}；bias = mean(point − actual)（正=高估）；crps 为分位
+      梯形积分近似（单 level 网格记 NaN）；interval_* / coverage_* 行的
+      quantile 为 NaN，mae/bias/pinball/crps 行的 interval_* 列为 NaN；
+      horizon 仅 per-horizon 行非空（1-based）。
     - 区间对自动从 quantile levels 推导：q 与 1-q 同时存在即构成 central
       区间（如 [0.1, 0.5, 0.9] → central80，target_coverage=0.8）。
     - aggregate 行（``scope="aggregate"``, ``target="__aggregate__"``）按掩码后
@@ -144,6 +145,7 @@ def evaluate_marginal_distribution(
             _row("bias", float("nan"))
             for level in levels:
                 _row("pinball", float("nan"), quantile=level)
+            _row("crps", float("nan"))
             return None
 
         y_valid = y_true[valid]
@@ -151,9 +153,24 @@ def evaluate_marginal_distribution(
         _row("mae", float(np.mean(np.abs(y_valid - point_valid))))
         # bias（2026-09-02）：mean(point - actual)，正值 = 系统性高估。
         _row("bias", float(np.mean(point_valid - y_valid)))
+        pinball_means = {}
         for level in levels:
             loss = pinball_loss(y_valid, quantile_flat[level][valid], level)
-            _row("pinball", float(np.mean(loss)), quantile=level)
+            pinball_means[level] = float(np.mean(loss))
+            _row("pinball", pinball_means[level], quantile=level)
+        # CRPS（2026-10-05）：分位梯形积分近似 2∫pinball dq（levels 升序）；
+        # 单 level 网格无积分语义，记 NaN 不伪造。
+        if len(levels) >= 2:
+            ordered_levels = tuple(sorted(levels))
+            _row(
+                "crps",
+                crps_from_pinball(
+                    ordered_levels,
+                    tuple(pinball_means[level] for level in ordered_levels),
+                ),
+            )
+        else:
+            _row("crps", float("nan"))
         for lower, upper in interval_pairs:
             metrics = interval_metrics(
                 y_valid,
@@ -187,6 +204,7 @@ def evaluate_marginal_distribution(
         return valid
 
     n_series, n_horizons, _ = point_values.shape
+    target_valids: Dict[str, np.ndarray] = {}
     for target_index, target in enumerate(actual.targets):
         y_true = actual_values[:, :, target_index].reshape(-1)
         y_point = point_values[:, :, target_index].reshape(-1)
@@ -204,6 +222,9 @@ def evaluate_marginal_distribution(
                 )
         valid = _emit("target", target, y_true, y_point, quantile_flat, mask)
         if valid is not None:
+            # valid 供 aggregate_horizon 池化复用（同一掩码计算只算一遍，
+            # 2026-10-05 去重：此前池化段把 _emit 的 valid 合成重写了第二遍）。
+            target_valids[target] = valid
             pooled["y_true"].append(y_true[valid])
             pooled["y_point"].append(y_point[valid])
             for level in levels:
@@ -240,37 +261,26 @@ def evaluate_marginal_distribution(
         )
 
         # 跨 target 逐 horizon 池化（proper score 语义，与 aggregate 同口径但按 h 切）。
+        # 复用 target 行 _emit 返回的 valid（同一掩码只算一遍）；被整体排除
+        # （n_points==0 → valid None）的 target 不参与任何 horizon 池化。
         horizon_pools: Dict[int, Dict[str, Any]] = {
             h: {"y_true": [], "y_point": [], "quantiles": {level: [] for level in levels}}
             for h in range(n_horizons)
         }
         for target_index, target in enumerate(actual.targets):
-            y_true = actual_values[:, :, target_index].reshape(-1)
-            y_point = point_values[:, :, target_index].reshape(-1)
-            quantile_flat = {
-                level: quantile_values[:, :, target_index, level_index[level]].reshape(-1)
-                for level in levels
-            }
-            mask = None
-            if valid_masks is not None and target in valid_masks:
-                mask = np.asarray(valid_masks[target], dtype=bool).reshape(-1)
-            valid = np.isfinite(y_true) & np.isfinite(y_point)
-            for level in levels:
-                valid = valid & np.isfinite(quantile_flat[level])
-            if mask is not None:
-                valid = valid & mask
-            h_mask_2d = (
-                valid.reshape(n_series, n_horizons) if valid.size else None
-            )
+            valid = target_valids.get(target)
+            if valid is None:
+                continue
+            valid_2d = valid.reshape(n_series, n_horizons)
             for h in range(n_horizons):
-                h_valid = h_mask_2d[:, h] if h_mask_2d is not None else None
-                if h_valid is None or not h_valid.any():
+                h_valid = valid_2d[:, h]
+                if not h_valid.any():
                     continue
-                horizon_pools[h]["y_true"].append(y_true.reshape(n_series, n_horizons)[:, h][h_valid])
-                horizon_pools[h]["y_point"].append(y_point.reshape(n_series, n_horizons)[:, h][h_valid])
+                horizon_pools[h]["y_true"].append(actual_values[:, h, target_index][h_valid])
+                horizon_pools[h]["y_point"].append(point_values[:, h, target_index][h_valid])
                 for level in levels:
                     horizon_pools[h]["quantiles"][level].append(
-                        quantile_flat[level].reshape(n_series, n_horizons)[:, h][h_valid]
+                        quantile_values[:, h, target_index, level_index[level]][h_valid]
                     )
         for h in range(n_horizons):
             pool = horizon_pools[h]

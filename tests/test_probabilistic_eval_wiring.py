@@ -193,7 +193,10 @@ class EvaluateMarginalDistributionWiringTest(unittest.TestCase):
 
         report = evaluate_marginal_distribution(actual, distribution)
 
-        self.assertEqual(set(report["metric"].unique()), {"mae", "bias", "pinball"})
+        self.assertEqual(set(report["metric"].unique()), {"mae", "bias", "pinball", "crps"})
+        # 单 level 网格无 CRPS 积分语义：行保留但值为 NaN（2026-10-05 crps 补充）
+        crps = report[report["metric"] == "crps"]["value"]
+        self.assertTrue(crps.isna().all())
 
     def test_aggregate_pools_valid_points_across_targets(self):
         # K=2：target A 两点误差 0（全有效），target B 一点误差 10（掩码后 1 点）

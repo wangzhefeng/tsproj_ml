@@ -451,6 +451,7 @@ class CanonicalRuntimeSmokeTest(unittest.TestCase):
                     "mae",
                     "bias",
                     "pinball",
+                    "crps",
                     "interval_coverage",
                     "interval_width",
                     "interval_winkler",

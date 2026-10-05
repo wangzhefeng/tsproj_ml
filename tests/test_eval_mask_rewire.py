@@ -10,8 +10,11 @@
 
 import unittest
 
+import re
+
 import numpy as np
 
+from forecasting_core.specs.validation import RuntimeValidationSpec
 from forecasting_core.tensors import PointForecastTensor
 from model_evaluation.point import _metric_values, evaluate_point_forecasts
 from model_evaluation.mask import build_eval_mask
@@ -122,6 +125,23 @@ class EvaluateWithMaskTest(unittest.TestCase):
             build_eval_mask(np.array([1.0, 2.0, 3.0]), mode="absolute", min_value=1.5),
         )
         self.assertEqual(m["Valid Points"], 2)
+
+
+class EvalMaskParseTimeValidationTest(unittest.TestCase):
+    """eval_mask.mode 解析期白名单（2026-10-05 前置：拼错 mode 不再跑完回测才报错）。"""
+
+    def test_unknown_mode_raises_at_parse_time(self):
+        with self.assertRaisesRegex(
+            ValueError, re.escape("validation.eval_mask.mode must be one of")
+        ):
+            RuntimeValidationSpec.from_mapping({"eval_mask": {"mode": "percentil"}})
+
+    def test_known_modes_pass_parse(self):
+        for mode in ("percentile", "absolute", "combined"):
+            RuntimeValidationSpec.from_mapping({"eval_mask": {"mode": mode}})
+
+    def test_default_mode_passes_parse(self):
+        RuntimeValidationSpec.from_mapping({"eval_mask": {"percentile": 10.0}})
 
 
 if __name__ == "__main__":

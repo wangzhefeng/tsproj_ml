@@ -2,11 +2,13 @@
 
 from typing import Any, Callable
 
+import math
 import numpy as np
 import pandas as pd
 
 from forecasting_core.specs import ForecastConfigSpec
 from forecasting_core.probabilistic_spec import resolve_crossing_settings
+from model_evaluation.metrics import crossing_metrics
 from model_training.strategies import (
     CanonicalStrategyArtifact,
     TargetCoordinate,
@@ -140,10 +142,41 @@ def repair_marginal_quantile_crossing(
     )
 
 
+def build_crossing_report(
+    raw: MarginalQuantileForecastTensor,
+    repaired: MarginalQuantileForecastTensor,
+) -> dict[str, float] | None:
+    """修复前 raw crossing 统计 + 修复实际改动比例（``report_raw=True`` 时写入 metadata）。
+
+    raw 统计（row/adjacent crossing rate、crossing magnitude）唯一实现是
+    `model_evaluation.metrics.crossing_metrics`；levels 不足两个时无 crossing
+    语义，返回 None。processed 口径（crossing_metrics 的修复改动段）要求唯一
+    q50；levels 无唯一 q50 时修复改动比例在本地直接计算，q50 改动比例记 NaN。
+    """
+    if raw.n_levels < 2:
+        return None
+    raw_flat = raw.values.reshape(-1, raw.n_levels)
+    q50_matches = [
+        index
+        for index, level in enumerate(raw.levels)
+        if math.isclose(level, 0.5, rel_tol=0.0, abs_tol=1e-12)
+    ]
+    if len(q50_matches) == 1:
+        return crossing_metrics(
+            raw_flat, raw.levels, repaired.values.reshape(-1, raw.n_levels)
+        )
+    report = crossing_metrics(raw_flat, raw.levels)
+    changed = ~np.isclose(repaired.values, raw.values, rtol=0.0, atol=1e-12)
+    report["repair_changed_ratio"] = float(np.mean(changed))
+    report["q50_changed_ratio"] = float("nan")
+    return report
+
+
 def assemble_marginal_quantile_distribution(
     artifact: CanonicalMarginalQuantileArtifact,
     *,
     crossing_method: str,
+    report_raw: bool = True,
     feature_provider: Callable[..., np.ndarray] | None,
     predict_level: Callable[
         [CanonicalStrategyArtifact, Callable[..., np.ndarray] | None],
@@ -193,28 +226,36 @@ def assemble_marginal_quantile_distribution(
             ),
         )
     point_tensors = [tensors_by_level[level] for level in artifact.levels]
-    quantiles = repair_marginal_quantile_crossing(
-        MarginalQuantileForecastTensor(
-            values=np.stack(
-                [tensor.values for tensor in point_tensors],
-                axis=-1,
-            ),
-            levels=artifact.levels,
-            point_level=artifact.point_level,
-            series_ids=point_tensors[0].series_ids,
-            forecast_times=point_tensors[0].forecast_times,
-            targets=point_tensors[0].targets,
+    raw_quantiles = MarginalQuantileForecastTensor(
+        values=np.stack(
+            [tensor.values for tensor in point_tensors],
+            axis=-1,
         ),
+        levels=artifact.levels,
+        point_level=artifact.point_level,
+        series_ids=point_tensors[0].series_ids,
+        forecast_times=point_tensors[0].forecast_times,
+        targets=point_tensors[0].targets,
+    )
+    quantiles = repair_marginal_quantile_crossing(
+        raw_quantiles,
         method=crossing_method,
     )
+    metadata: dict[str, Any] = {
+        "recursive_propagation": "median_path",
+        "crossing_method": crossing_method,
+    }
+    if report_raw:
+        # crossing 诊断（变换域、修复前后对照）；restore 路径保留 metadata
+        # （feature_engineering/transforms/pipeline.py::restore_distribution）。
+        report = build_crossing_report(raw_quantiles, quantiles)
+        if report is not None:
+            metadata["crossing_report"] = report
     return MarginalForecastDistribution(
         point=quantiles.point(),
         quantiles=quantiles,
         dependence_model=None,
-        metadata={
-            "recursive_propagation": "median_path",
-            "crossing_method": crossing_method,
-        },
+        metadata=metadata,
     )
 
 
@@ -252,13 +293,15 @@ class CanonicalMarginalQuantileForecaster:
             )
 
         # 交叉修复消费 probabilistic.crossing.method（2026-09-01 裂缝修复：
-        # 此前无条件修复，配置被静默忽略）。
-        crossing_method, _report_raw = resolve_crossing_settings(
+        # 此前无条件修复，配置被静默忽略）；report_raw 消费同块
+        # （2026-10-05 断链修复：此前解析后被丢弃）。
+        crossing_method, report_raw = resolve_crossing_settings(
             self.config.probabilistic
         )
         return assemble_marginal_quantile_distribution(
             self.artifact,
             crossing_method=crossing_method,
+            report_raw=report_raw,
             feature_provider=feature_provider,
             predict_level=predict_level,
         )
@@ -268,5 +311,6 @@ __all__ = [
     "CanonicalForecaster",
     "CanonicalMarginalQuantileForecaster",
     "assemble_marginal_quantile_distribution",
+    "build_crossing_report",
     "repair_marginal_quantile_crossing",
 ]

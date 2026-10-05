@@ -107,6 +107,13 @@ def score_holdout_fold(
             eval_mask=eval_mask_config,
             window=window,
         )
+    execution_evidence = dict(runner.execution_evidence(artifact, target_transform))
+    if isinstance(prediction, MarginalForecastDistribution):
+        # crossing 诊断随折证据落盘（2026-10-05 report_raw 断链修复的落地端）：
+        # report_raw=True 时组装段写入 metadata，这里合入逐窗 execution_evidence。
+        crossing_report = prediction.metadata.get("crossing_report")
+        if crossing_report is not None:
+            execution_evidence["crossing_report"] = crossing_report
     return FoldScoreResult(
         window=window,
         origin=origin,
@@ -114,5 +121,5 @@ def score_holdout_fold(
         point_scores=point_scores,
         probabilistic_scores=probabilistic_scores,
         calibration_audit=calibration_audit,
-        execution_evidence=runner.execution_evidence(artifact, target_transform),
+        execution_evidence=execution_evidence,
     )

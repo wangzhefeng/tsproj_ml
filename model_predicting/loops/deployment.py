@@ -77,6 +77,7 @@ def predict_strategy_bundle(
             forecast_times=times,
             feature_provider=provider,
             crossing_method=bundle.probabilistic_spec.crossing_method,
+            crossing_report_raw=bundle.probabilistic_spec.crossing_report_raw,
         )
     else:
         raise TypeError(
@@ -215,6 +216,7 @@ def _predict_quantiles(
     forecast_times: pd.DatetimeIndex,
     feature_provider: FeatureProvider | None,
     crossing_method: str = "median_preserving_isotonic",
+    crossing_report_raw: bool = True,
 ) -> MarginalForecastDistribution:
     def predict_level(level_artifact, provider):
         return _predict_point(
@@ -231,6 +233,7 @@ def _predict_quantiles(
     return assemble_marginal_quantile_distribution(
         artifact,
         crossing_method=crossing_method,
+        report_raw=crossing_report_raw,
         feature_provider=feature_provider,
         predict_level=predict_level,
     )

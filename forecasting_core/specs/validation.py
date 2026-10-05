@@ -317,6 +317,18 @@ class RuntimeValidationSpec(FrozenMappingSpec):
             source=source,
             schemas=_VALIDATION_NESTED_FIELDS,
         )
+        # eval_mask.mode 解析期白名单（2026-10-05 前置：此前拼错 mode 要跑完
+        # 整条回测、在评分时才由 build_eval_mask 报 ValueError）。
+        # 与消费方 build_eval_mask_payload 同口径：不做大小写折叠。
+        eval_mask = payload.get("eval_mask")
+        if eval_mask is not None:
+            mask_mode = str(eval_mask.get("mode", "percentile"))
+            if mask_mode not in {"percentile", "absolute", "combined"}:
+                raise ValueError(
+                    "validation.eval_mask.mode must be one of "
+                    "['percentile', 'absolute', 'combined']; "
+                    f"got {mask_mode!r} in {source}"
+                )
         schedule_mode = str(payload.get("schedule_mode", "daily")).lower()
         if schedule_mode not in {"daily", "intraday"}:
             raise ValueError("validation.schedule_mode must be daily or intraday")

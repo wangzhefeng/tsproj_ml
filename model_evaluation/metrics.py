@@ -62,15 +62,6 @@ def wilson_interval(
     return max(0.0, center - half_width), min(1.0, center + half_width)
 
 
-def _robust_target_scale(y_true: np.ndarray) -> float:
-    scale = float(np.median(np.abs(y_true)))
-    if scale > np.finfo(float).eps:
-        return scale
-    q75, q25 = np.percentile(y_true, [75.0, 25.0])
-    iqr = float(q75 - q25)
-    return iqr if iqr > np.finfo(float).eps else 1.0
-
-
 def interval_metrics(
     y_true: np.ndarray,
     lower: np.ndarray,
@@ -109,7 +100,6 @@ def interval_metrics(
     return {
         "coverage": float(empirical_coverage),
         "width": mean_width,
-        "normalized_width": mean_width / _robust_target_scale(y),
         "winkler": float(np.mean(winkler)),
         "coverage_gap": float(coverage_gap),
         "calibration_error": float(abs(coverage_gap)),

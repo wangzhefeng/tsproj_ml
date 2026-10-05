@@ -8,6 +8,7 @@
 - `mask.py`：评估掩码（percentile/absolute/combined）——点/概率评估共用口径；
 - `point.py`：点预测评估（MAE/RMSE/MAPE/Accuracy + naive 对照 + 聚合加权）；
 - `marginal.py`：边际 quantile 评估（pinball + central 区间覆盖率/宽度/winkler）；
+- `point_intervals.py`：点模型残差校准区间评估（coverage/width/winkler/gap）；
 - `metrics.py`：指标内核（pinball_loss、interval_metrics、wilson_interval 等纯函数）。
 """
 
@@ -18,11 +19,13 @@ from model_evaluation.point import (
     evaluate_point_forecasts,
     resolve_aggregate_weighting,
 )
+from model_evaluation.point_intervals import evaluate_point_intervals
 
 __all__ = [
     "build_eval_mask",
     "build_eval_mask_payload",
     "evaluate_marginal_distribution",
     "evaluate_point_forecasts",
+    "evaluate_point_intervals",
     "resolve_aggregate_weighting",
 ]

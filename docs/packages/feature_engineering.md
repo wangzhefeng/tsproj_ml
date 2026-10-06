@@ -3,6 +3,7 @@
 `feature_engineering/` 是 canonical 唯一特征编译层，含特征与目标变换三件套。
 
 - `compiler.py`：lag、known-future、static、datetime、advanced transformation、visibility proof 与 lineage。
+- `statistics_provider.py` / `streaming_statistics.py`：全前缀统计只读协议与 EWM/事件/expanding 快照。在线生命周期显式注入 single compiler，校验 config/origin 绑定并追加完整前缀 lineage；默认离线路径不使用快照。精确前缀内存、恢复和数值边界见 [online-prediction](../config/online-prediction.md)。
 - `history_statistics.py`：单窗统计、rolling 序列和已确认峰谷距离的纯数值内核，供 single/batch 编译消费；保持 pandas 样本统计、熵定义和小样本告警，不负责配置、特征命名或 as-of。rolling 批路径仍保留逐 origin 精确复算，未放宽数值等价合同。
 - `seasonal.py`：同槽统计与近期状态的纯函数内核（按步长周期定位槽位、窗口统计），供 compiler 的 `advanced.same_slot`/`advanced.recent_state` 与残差基线（`transformations.seasonal_baseline`）共用；槽位越界或窗口不足由调用方 RAISE，不在内核静默截断。
 - `spectral.py`：FFT/小波/熵特征纯函数（trailing 窗），供 compiler 的 `advanced.fourier`/`advanced.wavelet` 与 rolling `entropy` 调用。

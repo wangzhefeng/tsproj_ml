@@ -10,6 +10,10 @@ rolling 系回测形态（2026-09-27 新增）：`test_window_backtest_modes` �
 
 ## 精简与覆盖映射
 
+在线统计：原 `test_online_prediction` 的扩展用例保留原精确断言，`test_online_statistics` 默认 integration，分别覆盖 Direct/recursive 全前缀 single 特征与预测精确对照、默认 batch 既有差异归因、逐点/分批追加等价、同尾不同前缀的数值与 lineage、失败发布原子性、状态防别名、旧 schema/缺统计/计数和 origin 错配拒绝、有限历史模式。EWM 与事件算子的独立 pandas 对照继续由 `test_streaming_statistics` 覆盖。
+
+引用式融合闭环新增测试默认 integration：`test_ensemble_regressions`（成员/原点身份、非整数缓存精确往返、quantile weighted/pinball、顶层 point_quantile 部署），`test_ensemble_strict_contract`（重复 YAML 键、源语义、未知参数、成员未消费选项拟合前拒绝），`test_ensemble_outer_evaluation`（外层标签扰动不改变融合权重/预测、成员窗口、掩码与季节基线传递），`test_ensemble_lifecycle_contract`（缓存写中断、bundle 写失败恢复、真实模型参数/visibility/lineage、CQR），`test_ensemble_panel_alignment`（异构 lag、Global direct+recursive、point/quantile/逐 horizon/动态权重的冷暖及 bundle 对照），`test_ensemble_adaptive_weights`（独立解析期望、时间衰减和未来标签拒绝）。`test_ensemble_methods` 的常量目标 stacking 断言精确恢复目标均值，NNLS 用独立解析权重，避免恒零/固定等权错误实现蒙混通过。
+
 - 核心残留清理：`test_core_cleanup_contract` 默认 integration，验证退役定义无 shim、无效结果筛选/事件 config 参数拒绝、完整多序列多目标 long 表读回、非 canonical 拒绝及 pickle IO 新进程导入不初始化日志。
 - `test_probabilistic_contracts` / `test_probabilistic_objectives` 改走生产 `probabilistic_spec_from_mapping()`；保留 quantile/interval/CQR 数值与错误断言，旧 args 新旧冲突检查改为 legacy 字段及 args 对象拒绝，不再维持生产兼容适配器。目标变换往返、融合四方法与 bundle 恢复继续由既有集成测试覆盖；未删测试文件或冻结 fixture。
 - 全仓模型数量不锁定历史快照：`fixtures/config_inventory.py` 独立读取物理 YAML，按 estimator/ensemble 建立相对路径及类型清单，不调用生产 loader 的发现规则。catalog 与 checker 核对完整路径集合、类型（catalog）及无重复，runtime grammar 核对单模型集合；资产审计总数对照独立清单，保留零缺文件、零缺列、零天气资产错误的全部断言。具体场景矩阵仍保留明确文件集合与数量门禁；`test_config_inventory` 默认 integration，覆盖新文件、非法版本不漏扫及类型歧义拒绝。
@@ -48,6 +52,8 @@ rolling 系回测形态（2026-09-27 新增）：`test_window_backtest_modes` �
 `test_holiday_generator` 使用包级公开入口，独立钉住 2024 年年初四节气日期并与依赖库公开 API 对照；验证日内最后支持日不多读下一年、每帧仅构建一次节气表，以及 registry → compiler → VisibilityProof 接线和真实 CSV 导出。旧 `data_loading/holiday_generator.py` 不再是兼容合同；前轮信息集冻结 fixture 保留，不按修复后算法重生成。
 
 ## 行为不变重构覆盖映射
+
+- Ensemble 子包化：`test_ensemble_package_structure` 默认 integration，固定根入口/共享类型与五个子包的职责清单，检查算法/预测不得反向依赖训练/IO，注入违规导入验证门禁确实拒绝；持久化类型仍定义于 `model_ensemble.artifacts`。既有测试的导入、mock目标和AST文件路径同步新位置，不减少原行为断言。
 
 - 数据层实现归入 `sources/processing/information`；根信息集/provider 兼容文件及 registry 旧 provider 别名已删除。冻结 provider fixture 不重生成，改为验证旧路径拒绝加载；新路径类往返、实际 provider 值及可得性往返仍有回归覆盖。
 

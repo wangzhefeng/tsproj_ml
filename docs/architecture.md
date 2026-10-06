@@ -42,7 +42,7 @@
 | `model_predicting/` | point/quantile 预测、crossing、部署、bundle 与预测 long result |
 | `model_performance/` | 资源规划、性能档、checkpoint、变换缓存与有界内存缓存 |
 | `probabilistic/` | CQR 校准内核与 apply-before-collect 追踪器 |
-| `model_ensemble/` | 引用解析、OOF、四种融合方法、缓存、持久化 |
+| `model_ensemble/` | configuration 配置、methods 算法、training 训练/验证、inference 预测、outputs 产物；根 runtime 编排 |
 | `models/` | catalog、factory、按 family 分组的 wrappers 与底层 pickle IO |
 | `decomposition/` | 趋势/季节/残差分解与恢复 |
 | `data_process/` | 进模型前的离线聚合、填补、异常、事件、周期与峰谷分析 |

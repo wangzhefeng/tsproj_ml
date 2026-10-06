@@ -6,7 +6,7 @@
 - `loops/deployment.py`：`predict_strategy_bundle()`，消费已加载 bundle 和显式部署输入，不重新训练；分位数组装经 `loops/predictor.py` 共享函数，仅单 level 预测回调与 crossing 配置来源（bundle spec）不同。
 - `contracts/protocols.py`：`FeatureProvider` 特征注入协议唯一来源；训练期由 `pipeline/fold_fit` 注入，部署期由部署调用方/ensemble 注入。
 - `artifacts/persistence.py`：`build_strategy_model_bundle()` 统一 schema-2 final bundle 构造，`persist_model_bundle()` 持久化。
-- `artifacts/evidence_collect.py`：运行时只读采集——现有模型状态的参数快照、环境版本与 JSON 安全转换，不执行拟合/预测（2026-09-28 自 `evidence.py` 改名，与 `evidence_assembly.py` 的「组装」对偶）。
+- `artifacts/evidence_collect.py`：运行时只读采集——现有模型状态的参数快照、环境版本与 JSON 安全转换，不执行拟合/预测。白名单内同时遍历 `__dict__` / `__slots__` 与 canonical estimator 适配器，共享底层模型按对象身份去重；避免 slotted predictor 导致空证据。
 - `artifacts/evidence_assembly.py`：生命周期产物证据组装（visibility proof / holdout proof 摘要 / source lineage / feature lineage 四个纯函数）；自 `pipeline/lifecycle.py` 迁入（2026-09-27 证据域聚集），实现逐字保真，由 lifecycle 调用。
 - `artifacts/results.py`：预测 canonical long result 写盘、绘图与 `CanonicalResultReader`；回测产物写盘属于 `model_testing/artifacts/reporting.py`。
 
@@ -28,7 +28,7 @@
 
 批调度与产物完成验收见 [`pipeline.md`](pipeline.md)；资源规划、性能档、checkpoint、fold 变换缓存与有界内存缓存见 [`model_performance.md`](model_performance.md)。
 
-部署只使用已保存的模型、变换和校准状态；不会重新选择训练窗口或读取训练期缓存来重建模型。
+部署只使用已保存的模型、变换和校准状态；不会重新选择训练窗口或读取训练期缓存来重建模型。Global 字符串类别先经保存的 feature scaler 编码，再转浮点；初始设计与递归 provider 同序。公开 `attach_bundle_prediction_intervals()` 同时供单模型及融合层应用冻结 CQR 状态，拒绝回用到校准原点之前。
 启用 point `absolute_residual` 时，在目标逆变换后返回 `PointIntervalForecast`；未启用仍返回原点张量。按保存的序列/目标/horizon 轴匹配，拒绝使用校准原点以后的残差去预测历史；样本不足组以 `pi_available=false` 明示，不伪造 quantile。预测/回测图支持独立 `predict_pi*` 区间带。
 
 ## 执行链与结果

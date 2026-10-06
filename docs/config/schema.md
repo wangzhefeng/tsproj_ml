@@ -8,6 +8,7 @@ estimator / probabilistic / validation / output
 ```
 
 - 单模型使用 `strategy`；Ensemble 使用成员 `config_ref`，两者互斥。
+- 引用式融合的权重、内外层窗口、动态衰减及拒绝组合见 [ensemble.md](ensemble.md)；YAML 身份与解析后运行身份分开记录。
 
 Ensemble 顶层：
 

@@ -10,9 +10,11 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-from forecasting_core.tensors import PointForecastTensor, require_matching_point_axes
-from forecasting_core.artifacts import MarginalForecastDistribution, QuantileGrid
-from forecasting_core.point_intervals import PointIntervalForecast, pi_column_names
+from forecasting_core.tensors.point import PointForecastTensor
+from forecasting_core.tensors.layout import require_matching_point_axes
+from forecasting_core.probability.distribution import MarginalForecastDistribution
+from forecasting_core.probability.grid import QuantileGrid
+from forecasting_core.probability.intervals import PointIntervalForecast, pi_column_names
 
 CANONICAL_KEY_COLUMNS = ["series_id", "time", "target"]
 BACKTEST_KEY_COLUMNS = [*CANONICAL_KEY_COLUMNS, "window"]

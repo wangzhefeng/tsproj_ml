@@ -69,17 +69,14 @@ class TemporalSampleWeightTest(unittest.TestCase):
         raw = temporal_sample_weight(ORIGINS, CUTOFF, {**spec, "normalization": "none"})
         self.assertAlmostEqual(raw[-1], np.exp2(-(0.0) / 3.0), places=12)
 
-    def test_anchor_semantics_differ_when_cutoff_beyond_origins(self):
-        # cutoff 比 latest_origin 晚 20 小时：两者年龄差恒定，比值同
-        # 半衰期下不同锚点产生恒定因子缩放；none 模式最老样本恒为 1，
-        # 差异体现在中间样本相对间隔上——用均值差异钉住语义区分。
+    def test_legal_anchor_shift_preserves_relative_weights(self):
+        # anchor 是可得性上界；相对年龄归一会消掉合法锚点的常数平移。
         spec = {"method": "exponential", "halflife_days": 2, "normalization": "none"}
         by_cutoff = temporal_sample_weight(ORIGINS, CUTOFF, spec)
         by_latest = temporal_sample_weight(ORIGINS, ORIGINS[-1], spec)
         self.assertAlmostEqual(by_latest[-1], 1.0, places=12)
         self.assertAlmostEqual(by_cutoff[-1], 1.0, places=12)  # none 下最新恒 1
-        # 锚点更晚 → 老样本相对更老 → 权重更低
-        self.assertTrue(np.all(by_cutoff <= by_latest + 1e-15))
+        np.testing.assert_allclose(by_cutoff, by_latest, rtol=1e-14, atol=1e-15)
 
     def test_future_origin_rejected(self):
         with self.assertRaisesRegex(ValueError, "not after anchor"):

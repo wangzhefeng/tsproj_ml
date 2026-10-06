@@ -15,10 +15,10 @@ from typing import Callable, Sequence
 
 import numpy as np
 
-from forecasting_core.checkpoints import FitCheckpoint
-from forecasting_core.tensors import unflatten_time_major
+from forecasting_core.execution.checkpoints import FitCheckpoint
+from forecasting_core.tensors.layout import unflatten_time_major
 from model_training.estimators.capabilities import EstimatorCapabilities
-from model_training.strategies.base import TargetCoordinate
+from forecasting_core.execution.strategy import TargetCoordinate
 
 
 @dataclass(frozen=True, slots=True)

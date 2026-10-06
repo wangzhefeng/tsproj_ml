@@ -4,9 +4,10 @@ import unittest
 import numpy as np
 import pandas as pd
 
-from forecasting_core.point_intervals import PointIntervalForecast, ResidualCalibrationSpec
-from forecasting_core.probabilistic_spec import probabilistic_spec_from_mapping
-from forecasting_core.tensors import PointForecastTensor
+from forecasting_core.probability.intervals import PointIntervalForecast
+from forecasting_core.probability.calibration import ResidualCalibrationSpec
+from forecasting_core.probability.spec import probabilistic_spec_from_mapping
+from forecasting_core.tensors.point import PointForecastTensor
 from probabilistic.residual import ResidualCalibrationTracker, apply_residual_state
 from model_evaluation.point_intervals import evaluate_point_intervals
 

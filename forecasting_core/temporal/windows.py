@@ -1,40 +1,8 @@
-"""预测目标区间和原始训练历史边界；回测与生产共用，不读取数据。"""
+"""预测时间网格、历史窗口及其跨字段合同。"""
+
 from collections.abc import Mapping
-from typing import Any
-
-import pandas as pd
 from pandas.tseries.frequencies import to_offset
-
-
-def select_training_origins(
-    origins: tuple[pd.Timestamp, ...],
-    indices: tuple[int, ...],
-    sampling: Mapping[str, Any] | None,
-    *,
-    freq: str | None = None,
-) -> tuple[int, ...]:
-    """在原训练窗口内选择监督原点；不改变历史可见性或回测时间几何。"""
-    if sampling is None:
-        return indices
-    selected = indices
-    clock = sampling.get("time_of_day")
-    if clock is not None:
-        selected = tuple(i for i in selected if origins[i].strftime("%H:%M:%S.%f") == clock + ":00.000000")
-    stride = sampling.get("stride_steps", 1)
-    if "anchor_time" in sampling:
-        if freq is None:
-            raise ValueError("anchor_time sampling requires the original data frequency")
-        period = stride * pd.tseries.frequencies.to_offset(freq).nanos
-        anchor = pd.Timestamp(sampling["anchor_time"])
-        selected = tuple(i for i in selected if (origins[i] - anchor).value % period == 0)
-    else:
-        selected = selected[::-stride][::-1]
-    maximum = sampling.get("max_origins")
-    if maximum is not None:
-        selected = selected[-maximum:]
-    if len(selected) < 2:
-        raise ValueError("origin_sampling must retain at least two supervised origins")
-    return selected
+import pandas as pd
 
 
 def validate_temporal_contract(problem, validation: Mapping) -> None:

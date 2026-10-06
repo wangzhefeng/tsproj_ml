@@ -15,7 +15,7 @@ import re
 import numpy as np
 
 from forecasting_core.specs.validation import RuntimeValidationSpec
-from forecasting_core.tensors import PointForecastTensor
+from forecasting_core.tensors.point import PointForecastTensor
 from model_evaluation.point import _metric_values, evaluate_point_forecasts
 from model_evaluation.mask import build_eval_mask
 

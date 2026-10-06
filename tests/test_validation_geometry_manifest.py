@@ -11,11 +11,11 @@ import yaml
 
 from config.config_loader import is_model_yaml, load_yaml_config
 from forecasting_core.specs import FixedStepBacktestSpec, ForecastConfigSpec
-from forecasting_core.specs.temporal import (
+from forecasting_core.temporal.windows import (
     forecast_ends as temporal_forecast_ends,
     history_start as temporal_history_start,
-    select_training_origins,
 )
+from forecasting_core.temporal.sampling import select_training_origins
 from pipeline.supervised_design import minimum_history_rows
 
 

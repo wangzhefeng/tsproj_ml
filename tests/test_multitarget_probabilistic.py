@@ -17,17 +17,15 @@ from forecasting_core.specs import (
     ForecastProblemSpec,
     ForecastStrategySpec,
 )
-from forecasting_core.tensors import (
-    MarginalQuantileForecastTensor,
-    PointForecastTensor,
-)
+from forecasting_core.tensors.quantile import MarginalQuantileForecastTensor
+from forecasting_core.tensors.point import PointForecastTensor
 from model_evaluation.marginal import evaluate_marginal_distribution
 from model_predicting.loops.predictor import (
     CanonicalMarginalQuantileForecaster,
     repair_marginal_quantile_crossing,
 )
 from model_training.quantile import CanonicalMarginalQuantileTrainer
-from forecasting_core.artifacts import (
+from forecasting_core.probability.distribution import (
     MarginalForecastDistribution,
     generate_joint_samples,
 )

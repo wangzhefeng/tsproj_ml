@@ -1,7 +1,7 @@
 """Typed YAML-level probabilistic configuration contract.
 
 The deployment artifact uses
-``forecasting_core.probabilistic_spec.ProbabilisticSpec`` instead.
+``forecasting_core.probability.spec.ProbabilisticSpec`` instead.
 Legacy flat keys (``crossing_method``, ``conformal``) were swept from all
 active YAMLs on 2026-09-01 and are rejected here; crossing behaviour is
 declared via ``crossing:`` and CQR via ``calibration:``.
@@ -9,51 +9,15 @@ declared via ``crossing:`` and CQR via ``calibration:``.
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Mapping
 from typing import Any
 
 from forecasting_core.specs._mapping import (
     FrozenMappingSpec,
     freeze_json_value,
     strict_mapping,
-    validate_nested_mappings,
 )
-from forecasting_core.probabilistic_spec import validate_quantile_grid
-from forecasting_core.point_intervals import ResidualCalibrationSpec
-
-
-PROBABILISTIC_FIELDS = frozenset(
-    {
-        "mode",
-        "quantiles",
-        "point_quantile",
-        "crossing",
-        "intervals",
-        "calibration",
-    }
-)
-
-_CROSSING_METHODS = frozenset(
-    {"none", "rearrangement", "median_preserving_isotonic"}
-)
-
-_PROBABILISTIC_NESTED_FIELDS: dict[str, frozenset[str]] = {
-    "probabilistic.crossing": frozenset({"method", "report_raw"}),
-    "probabilistic.calibration": frozenset(
-        {
-            "method",
-            "interval",
-            "target_coverage",
-            "calibration_windows",
-            "min_windows",
-            "min_scores",
-            "label_availability_delay_steps",
-            "allow_interval_shrink",
-            "grouping",
-        }
-    ),
-}
-_INTERVAL_FIELDS = frozenset({"name", "lower_quantile", "upper_quantile"})
+from forecasting_core.probability.spec import PROBABILISTIC_FIELDS, probabilistic_spec_from_mapping
 
 
 class ProbabilisticConfigSpec(FrozenMappingSpec):
@@ -74,64 +38,14 @@ class ProbabilisticConfigSpec(FrozenMappingSpec):
             source=source,
             allowed=PROBABILISTIC_FIELDS,
         )
-        validate_nested_mappings(
-            payload,
-            source=source,
-            schemas=_PROBABILISTIC_NESTED_FIELDS,
-        )
-        _validate_crossing(payload.get("crossing"), source=source)
-        _validate_intervals(payload.get("intervals"), source=source)
-        _validate_probability_semantics(payload)
+        # 唯一运行时解析器负责语义；默认值不写回原始 payload。
+        try:
+            probabilistic_spec_from_mapping(payload)
+        except ValueError as exc:
+            if str(exc).startswith("Unknown "):
+                raise ValueError(f"Unknown fields in probabilistic from {source}: {exc}") from exc
+            raise
         return cls(freeze_json_value(payload, "probabilistic"))
-
-
-def _validate_crossing(value: Any, *, source: str) -> None:
-    if value is None:
-        return
-    if not isinstance(value, Mapping):
-        raise TypeError(f"probabilistic.crossing must be a mapping in {source}")
-    method = str(value.get("method", "median_preserving_isotonic")).lower()
-    if method not in _CROSSING_METHODS:
-        raise ValueError(
-            f"probabilistic.crossing.method must be one of "
-            f"{sorted(_CROSSING_METHODS)} in {source}; got {method!r}"
-        )
-
-
-def _validate_intervals(value: Any, *, source: str) -> None:
-    if value is None:
-        return
-    if isinstance(value, (str, bytes)) or not isinstance(value, Sequence):
-        raise TypeError(f"probabilistic.intervals must be a sequence in {source}")
-    for index, item in enumerate(value):
-        strict_mapping(
-            item,
-            path=f"probabilistic.intervals[{index}]",
-            source=source,
-            allowed=_INTERVAL_FIELDS,
-            required=_INTERVAL_FIELDS,
-        )
-
-
-def _validate_probability_semantics(payload: Mapping[str, Any]) -> None:
-    mode = str(payload.get("mode", "point")).lower()
-    if mode not in {"point", "quantile"}:
-        raise ValueError("probabilistic.mode must be point or quantile")
-    calibration = payload.get("calibration")
-    if isinstance(calibration, Mapping) and calibration.get("method") == "absolute_residual":
-        if mode != "point":
-            raise ValueError("absolute_residual requires point mode")
-        ResidualCalibrationSpec.from_mapping(calibration)
-    if mode == "point":
-        return
-    raw_levels = payload.get("quantiles")
-    if isinstance(raw_levels, (str, bytes)) or not isinstance(raw_levels, Sequence):
-        raise TypeError("probabilistic.quantiles must be a sequence in quantile mode")
-    # 网格规则统一走合同层唯一实现（2026-09-01 去重）
-    validate_quantile_grid(
-        raw_levels,
-        point_quantile=float(payload.get("point_quantile", 0.5)),
-    )
 
 
 __all__ = ["ProbabilisticConfigSpec", "PROBABILISTIC_FIELDS"]

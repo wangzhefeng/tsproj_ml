@@ -11,9 +11,9 @@ import matplotlib
 
 matplotlib.use("Agg")
 
-from forecasting_core.tensors import PointForecastTensor
-from forecasting_core.artifacts import MarginalForecastDistribution
-from forecasting_core.point_intervals import PointIntervalForecast
+from forecasting_core.tensors.point import PointForecastTensor
+from forecasting_core.probability.distribution import MarginalForecastDistribution
+from forecasting_core.probability.intervals import PointIntervalForecast
 
 # 预测图复用回测侧的时间轴与文件名格式工具，不再导出未使用的绘图入口。
 from model_testing.artifacts.reporting import (

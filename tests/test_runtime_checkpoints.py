@@ -9,7 +9,7 @@ import numpy as np
 class CheckpointStoreTest(unittest.TestCase):
     def test_missing_process_lock_backend_fails_closed(self):
         from unittest.mock import patch
-        from forecasting_core.checkpoints import FitCheckpointError
+        from forecasting_core.execution.checkpoints import FitCheckpointError
         from model_performance.checkpoints import FileFitCheckpoint
         with tempfile.TemporaryDirectory() as root:
             store = FileFitCheckpoint(root, {"fold": "final"})
@@ -19,7 +19,7 @@ class CheckpointStoreTest(unittest.TestCase):
 
     def test_corrupt_schema_hash_and_stale_context(self):
         import json
-        from forecasting_core.checkpoints import FitCheckpointError
+        from forecasting_core.execution.checkpoints import FitCheckpointError
         from model_performance.checkpoints import FileFitCheckpoint
         for damage in ("hash", "schema", "truncated", "identity"):
             with self.subTest(damage=damage), tempfile.TemporaryDirectory() as root:
@@ -46,7 +46,7 @@ class CheckpointStoreTest(unittest.TestCase):
 
     def test_failed_fit_and_failed_atomic_publish_do_not_complete(self):
         from unittest.mock import patch
-        from forecasting_core.checkpoints import FitCheckpointError
+        from forecasting_core.execution.checkpoints import FitCheckpointError
         from model_performance.checkpoints import FileFitCheckpoint
         with tempfile.TemporaryDirectory() as root:
             store = FileFitCheckpoint(root, {"config": "cfg", "fold": "final"})
@@ -137,7 +137,7 @@ class TrainerCheckpointTest(unittest.TestCase):
         from model_training.trainer import CanonicalTrainer
         from model_training.estimators import EstimatorCapabilities
         from model_performance.checkpoints import FileFitCheckpoint
-        from forecasting_core.checkpoints import FitCheckpointError
+        from forecasting_core.execution.checkpoints import FitCheckpointError
         config = fixture.CanonicalRuntimeSmokeTest().build_config(
             "unused.csv", mode="point", strategy="direct", horizon=3)
         X = tuple(np.arange(12.).reshape(6, 2) + i for i in range(3))
@@ -165,7 +165,7 @@ class TrainerCheckpointTest(unittest.TestCase):
 class RuntimeCheckpointTest(unittest.TestCase):
     def test_config_source_failure_is_structured(self):
         from tests import test_canonical_runtime_smoke as fixture
-        from forecasting_core.checkpoints import FitCheckpointError
+        from forecasting_core.execution.checkpoints import FitCheckpointError
         from pipeline.runner import run_canonical_config
         with tempfile.TemporaryDirectory() as root:
             config = fixture.CanonicalRuntimeSmokeTest().build_config(
@@ -278,9 +278,13 @@ class RuntimeCheckpointTest(unittest.TestCase):
                      patch.object(ConformalCalibrationTracker, "apply_to_frame", apply), \
                      patch.object(ConformalCalibrationTracker, "collect_from_frame", collect):
                     if not calendar:
-                        from forecasting_core.checkpoints import FitCheckpointError
-                        with self.assertRaises(FitCheckpointError):
+                        from forecasting_core.execution.checkpoints import FitCheckpointError
+                        with self.assertRaisesRegex(FitCheckpointError, "interrupt second fold"):
                             run_canonical_config(config, root / "interrupted", checkpoint_root=root / "checkpoints")
+                        import json
+                        states = list((root / "interrupted").rglob("run_state.json"))
+                        self.assertEqual(len(states), 1)
+                        self.assertEqual(json.loads(states[0].read_text())["status"], "failed")
                         interrupt[0] = False
                         events.clear()
                     first = run_canonical_config(config, root / "first", checkpoint_root=root / "checkpoints")
@@ -293,9 +297,13 @@ class RuntimeCheckpointTest(unittest.TestCase):
                     second = run_canonical_config(config, root / "second", checkpoint_root=root / "checkpoints")
                     self.assertEqual(len(calls), count)
                     self.assertEqual(events, first_events)
-                for attr, name in (("test_dir", "cv_plot_df.csv"), ("forecast_dir", "prediction.csv")):
+                clean = run_canonical_config(config, root / "clean_without_checkpoint")
+                for attr, name in (("test_dir", "cv_plot_df.csv"), ("forecast_dir", "prediction.csv"),
+                                   ("test_dir", "test_scores_df.csv")):
                     pd.testing.assert_frame_equal(pd.read_csv(getattr(first, attr) / name),
                                                   pd.read_csv(getattr(second, attr) / name))
+                    pd.testing.assert_frame_equal(pd.read_csv(getattr(first, attr) / name),
+                                                  pd.read_csv(getattr(clean, attr) / name), check_exact=True)
                 self.assertEqual(first.bundle.calibration_state, second.bundle.calibration_state)
                 self.assertEqual(pickle.loads(pickle.dumps(second.bundle)).calibration_state,
                                  first.bundle.calibration_state)
@@ -307,7 +315,7 @@ class RuntimeCheckpointTest(unittest.TestCase):
         import pickle
         from pipeline.fold_fit import _fit_quantile
         from model_performance.checkpoints import FileFitCheckpoint
-        from forecasting_core.checkpoints import FitCheckpointError
+        from forecasting_core.execution.checkpoints import FitCheckpointError
         from model_training.estimators.capabilities import _ModelFactoryEstimator
         original = _ModelFactoryEstimator.fit
         config = fixture.CanonicalRuntimeSmokeTest().build_config(
@@ -370,7 +378,7 @@ class RuntimeCheckpointTest(unittest.TestCase):
                     trainer, artifact, capabilities = runner.fit_final(X, Y)
                     bundle = runner.build_final_bundle(scaler, transform, trainer, artifact, capabilities)
                     pickle.loads(pickle.dumps(bundle))
-                    from forecasting_core.checkpoints import FitCheckpointError
+                    from forecasting_core.execution.checkpoints import FitCheckpointError
                     bad_Y = Y.copy()
                     bad_Y[0, 0, 0] = np.nan
                     with self.assertRaises(FitCheckpointError) as error:

@@ -8,10 +8,10 @@ import numpy as np
 import pandas as pd
 
 from data_loading import SourceRegistry
-from forecasting_core.artifacts import MarginalForecastDistribution
-from forecasting_core.runtime_resources import RuntimeExecutionPlan
+from forecasting_core.probability.distribution import MarginalForecastDistribution
+from forecasting_core.execution.resources import RuntimeExecutionPlan
 from forecasting_core.specs import ForecastConfigSpec
-from forecasting_core.tensors import PointForecastTensor
+from forecasting_core.tensors.point import PointForecastTensor
 from model_testing.contracts.geometry import TimeGeometry
 
 # 变换/模型对象由上层持有，测试包不导入这些实现类型。

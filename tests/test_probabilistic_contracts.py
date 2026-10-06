@@ -4,15 +4,13 @@
 import unittest
 from types import SimpleNamespace
 
-from forecasting_core.probabilistic_spec import (
-    CalibrationSpec,
+from forecasting_core.probability.calibration import CalibrationSpec, validate_cqr_params
+from forecasting_core.probability.spec import (
     IntervalSpec,
     ProbabilisticSpec,
     probabilistic_spec_from_mapping,
-    validate_cqr_params,
-    validate_interval_quantiles,
-    validate_quantile_grid,
 )
+from forecasting_core.probability.grid import validate_interval_quantiles, validate_quantile_grid
 
 
 class QuantileGridValidationTest(unittest.TestCase):

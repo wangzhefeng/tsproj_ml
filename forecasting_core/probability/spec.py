@@ -1,14 +1,24 @@
-# -*- coding: utf-8 -*-
-"""概率预测配置归一化与严格语义校验。"""
-
+"""概率配置的唯一运行期语义解析。"""
 from __future__ import annotations
 
-import copy
+from dataclasses import dataclass
+from forecasting_core.probability._validation import (
+    _is_close,
+    _require_mapping,
+    _strict_bool,
+    _strict_int,
+    _strict_number,
+    _validate_unknown_keys,
+)
+from forecasting_core.probability.calibration import CalibrationSpec, ResidualCalibrationSpec
+from forecasting_core.probability.grid import (
+    _quantile_token,
+    validate_interval_quantiles,
+    validate_quantile_grid,
+)
+from typing import Any, Mapping, Optional, Tuple
 import math
 import warnings
-from dataclasses import dataclass
-from typing import Any, Iterable, Mapping, Optional, Tuple
-from forecasting_core.point_intervals import ResidualCalibrationSpec
 
 
 _SUPPORTED_CROSSING_METHODS = {
@@ -16,23 +26,30 @@ _SUPPORTED_CROSSING_METHODS = {
     "rearrangement",
     "median_preserving_isotonic",
 }
-# 运行时唯一默认（2026-09-01 裂缝修复）：与 forecaster 历史硬编码行为一致——
-# 排序 + 钳制到 point level 锚点。配置缺省时必须保持这一行为，否则全部存量
-# quantile 结果的语义静默改变。
+
+
 _DEFAULT_CROSSING_METHOD = "median_preserving_isotonic"
+
+
 _SUPPORTED_RECURSIVE_PROPAGATION = {"median_path"}
-_SUPPORTED_CALIBRATION_METHODS = {"cqr"}
-_SUPPORTED_CALIBRATION_GROUPINGS = {"pooled"}
-_TOP_LEVEL_KEYS = {
+
+
+PROBABILISTIC_FIELDS = frozenset({
     "mode",
     "quantiles",
     "point_quantile",
     "crossing",
     "intervals",
     "calibration",
-}
+})
+
+
 _CROSSING_KEYS = {"method", "report_raw"}
+
+
 _INTERVAL_KEYS = {"name", "lower_quantile", "upper_quantile"}
+
+
 _CALIBRATION_KEYS = {
     "method",
     "interval",
@@ -46,70 +63,6 @@ _CALIBRATION_KEYS = {
 }
 
 
-def _is_close(left: float, right: float) -> bool:
-    return math.isclose(float(left), float(right), rel_tol=0.0, abs_tol=1e-12)
-
-
-def _validate_unknown_keys(mapping: Mapping[str, Any], allowed: set[str], path: str) -> None:
-    unknown = sorted(set(mapping) - allowed)
-    if unknown:
-        raise ValueError(f"Unknown {path} key(s): {unknown}")
-
-
-def _require_mapping(value: Any, path: str) -> Mapping[str, Any]:
-    if not isinstance(value, Mapping):
-        raise ValueError(f"{path} must be a mapping")
-    return value
-
-
-def validate_quantile_grid(
-    quantiles: Iterable[float],
-    point_quantile: float = 0.5,
-) -> Tuple[float, ...]:
-    """将合法分位数网格归一化为严格递增的 float tuple。"""
-    levels = tuple(float(level) for level in quantiles)
-    if not levels:
-        raise ValueError("quantiles must not be empty")
-    if any(not math.isfinite(level) or not 0.0 < level < 1.0 for level in levels):
-        raise ValueError("quantiles must be finite and inside (0, 1)")
-    if len(set(levels)) != len(levels):
-        raise ValueError("quantiles must be unique")
-    if any(left >= right for left, right in zip(levels, levels[1:])):
-        raise ValueError("quantiles must be strictly increasing")
-    point = float(point_quantile)
-    if not any(_is_close(level, point) for level in levels):
-        raise ValueError(f"point_quantile={point:g} must be present in quantiles")
-    return levels
-
-
-def validate_interval_quantiles(
-    lower_quantile: float,
-    upper_quantile: float,
-    quantiles: Iterable[float],
-) -> Tuple[float, float]:
-    """校验区间边界引用已配置且严格有序的 quantile。"""
-    lower = float(lower_quantile)
-    upper = float(upper_quantile)
-    levels = tuple(float(level) for level in quantiles)
-    if lower >= upper:
-        raise ValueError("lower_quantile must be < upper_quantile")
-    for name, value in (("lower_quantile", lower), ("upper_quantile", upper)):
-        if not any(_is_close(level, value) for level in levels):
-            raise ValueError(f"{name}={value:g} must be present in quantiles")
-    return lower, upper
-
-
-def validate_cqr_params(alpha: float, min_scores: int) -> Tuple[float, int]:
-    """校验 CQR 的误覆盖率和最小 score 数。"""
-    alpha_value = float(alpha)
-    min_score_count = int(min_scores)
-    if not math.isfinite(alpha_value) or not 0.0 < alpha_value < 1.0:
-        raise ValueError("alpha must be finite and inside (0, 1)")
-    if min_score_count <= 0:
-        raise ValueError("min_scores must be > 0")
-    return alpha_value, min_score_count
-
-
 @dataclass(frozen=True)
 class IntervalSpec:
     """由两个模型 quantile 定义的基础边际区间。"""
@@ -120,8 +73,8 @@ class IntervalSpec:
 
     def __post_init__(self) -> None:
         name = str(self.name).strip()
-        lower = float(self.lower_quantile)
-        upper = float(self.upper_quantile)
+        lower = _strict_number(self.lower_quantile, "lower_quantile")
+        upper = _strict_number(self.upper_quantile, "upper_quantile")
         if not name:
             raise ValueError("interval name must not be empty")
         if not (math.isfinite(lower) and math.isfinite(upper)):
@@ -135,58 +88,6 @@ class IntervalSpec:
     @property
     def nominal_coverage(self) -> float:
         return self.upper_quantile - self.lower_quantile
-
-
-@dataclass(frozen=True)
-class CalibrationSpec:
-    """一个 prediction interval 的 CQR 校准配置。"""
-
-    method: str
-    interval_name: str
-    target_coverage: float
-    calibration_windows: int
-    min_windows: int
-    min_scores: int
-    label_availability_delay_steps: int = 0
-    allow_interval_shrink: bool = False
-    grouping: str = "pooled"
-
-    def __post_init__(self) -> None:
-        method = str(self.method).lower()
-        grouping = str(self.grouping).lower()
-        coverage = float(self.target_coverage)
-        calibration_windows = int(self.calibration_windows)
-        min_windows = int(self.min_windows)
-        min_scores = int(self.min_scores)
-        delay_steps = int(self.label_availability_delay_steps)
-        if method not in _SUPPORTED_CALIBRATION_METHODS:
-            raise ValueError(f"Unsupported calibration method={method}")
-        if grouping not in _SUPPORTED_CALIBRATION_GROUPINGS:
-            raise ValueError(f"Unsupported calibration grouping={grouping}")
-        if not math.isfinite(coverage) or not 0.0 < coverage < 1.0:
-            raise ValueError("target_coverage must be finite and inside (0, 1)")
-        if calibration_windows <= 0:
-            raise ValueError("calibration_windows must be > 0")
-        if min_windows <= 0:
-            raise ValueError("min_windows must be > 0")
-        if min_windows > calibration_windows:
-            raise ValueError("min_windows must be <= calibration_windows")
-        if min_scores <= 0:
-            raise ValueError("min_scores must be > 0")
-        if delay_steps < 0:
-            raise ValueError("label_availability_delay_steps must be >= 0")
-        interval_name = str(self.interval_name).strip()
-        if not interval_name:
-            raise ValueError("calibration interval must not be empty")
-        object.__setattr__(self, "method", method)
-        object.__setattr__(self, "interval_name", interval_name)
-        object.__setattr__(self, "target_coverage", coverage)
-        object.__setattr__(self, "calibration_windows", calibration_windows)
-        object.__setattr__(self, "min_windows", min_windows)
-        object.__setattr__(self, "min_scores", min_scores)
-        object.__setattr__(self, "label_availability_delay_steps", delay_steps)
-        object.__setattr__(self, "allow_interval_shrink", bool(self.allow_interval_shrink))
-        object.__setattr__(self, "grouping", grouping)
 
 
 @dataclass(frozen=True)
@@ -207,7 +108,7 @@ class ProbabilisticSpec:
         mode = str(self.mode).lower()
         if mode not in {"point", "quantile"}:
             raise ValueError(f"Unsupported probabilistic mode={mode}; expected point or quantile")
-        if int(self.schema_version) != 1:
+        if _strict_int(self.schema_version, "schema_version") != 1:
             raise ValueError(f"Unsupported probabilistic schema_version={self.schema_version}")
         crossing_method = str(self.crossing_method).lower()
         if crossing_method not in _SUPPORTED_CROSSING_METHODS:
@@ -256,10 +157,10 @@ class ProbabilisticSpec:
                     )
         object.__setattr__(self, "mode", mode)
         object.__setattr__(self, "quantiles", levels)
-        object.__setattr__(self, "point_quantile", float(self.point_quantile))
+        object.__setattr__(self, "point_quantile", _strict_number(self.point_quantile, "point_quantile"))
         object.__setattr__(self, "recursive_propagation", recursive_propagation)
         object.__setattr__(self, "crossing_method", crossing_method)
-        object.__setattr__(self, "crossing_report_raw", bool(self.crossing_report_raw))
+        object.__setattr__(self, "crossing_report_raw", _strict_bool(self.crossing_report_raw, "report_raw"))
         object.__setattr__(self, "intervals", tuple(self.intervals))
         object.__setattr__(self, "schema_version", 1)
 
@@ -274,13 +175,6 @@ class ProbabilisticSpec:
         if self.calibration is None or isinstance(self.calibration, ResidualCalibrationSpec):
             return None
         return self.interval_by_name(self.calibration.interval_name)
-
-
-def _quantile_token(level: float) -> str:
-    percent = float(level) * 100.0
-    if _is_close(percent, round(percent)):
-        return str(int(round(percent)))
-    return f"{percent:.12f}".rstrip("0").rstrip(".").replace(".", "p")
 
 
 def resolve_crossing_settings(
@@ -301,14 +195,23 @@ def resolve_crossing_settings(
     method = str(crossing.get("method", _DEFAULT_CROSSING_METHOD)).lower()
     if method not in _SUPPORTED_CROSSING_METHODS:
         raise ValueError(f"Unsupported crossing method={method}")
-    return method, bool(crossing.get("report_raw", True))
+    return method, _strict_bool(crossing.get("report_raw", True), "report_raw")
 
 
 def _new_spec(raw_mapping: Mapping[str, Any]) -> ProbabilisticSpec:
-    mapping = copy.deepcopy(dict(raw_mapping))
-    _validate_unknown_keys(mapping, _TOP_LEVEL_KEYS, "probabilistic")
+    if not isinstance(raw_mapping, Mapping):
+        raise TypeError("probabilistic must be a mapping")
+    # 解析不修改嵌套值，兼容不可 pickle 的冻结 Mapping。
+    mapping = dict(raw_mapping)
+    _validate_unknown_keys(mapping, PROBABILISTIC_FIELDS, "probabilistic")
+    if mapping.get("calibration") is not None:
+        calibration_mapping = _require_mapping(mapping["calibration"], "probabilistic.calibration")
+        _validate_unknown_keys(calibration_mapping, _CALIBRATION_KEYS, "probabilistic.calibration")
     mode = str(mapping.get("mode", "point") or "point").lower()
     if mode == "point":
+        unused = sorted(set(mapping) & {"quantiles", "point_quantile", "crossing"})
+        if unused:
+            raise ValueError(f"point mode forbids quantile-only fields: {unused}")
         raw_calibration = mapping.get("calibration")
         calibration = None
         if isinstance(raw_calibration, Mapping) and raw_calibration.get("method") == "absolute_residual":
@@ -320,7 +223,7 @@ def _new_spec(raw_mapping: Mapping[str, Any]) -> ProbabilisticSpec:
         return ProbabilisticSpec(
             mode="point",
             quantiles=(),
-            point_quantile=float(mapping.get("point_quantile", 0.5)),
+            point_quantile=_strict_number(mapping.get("point_quantile", 0.5), "point_quantile"),
             recursive_propagation="median_path",
             crossing_method="none",
             crossing_report_raw=True,
@@ -331,19 +234,13 @@ def _new_spec(raw_mapping: Mapping[str, Any]) -> ProbabilisticSpec:
     if mode != "quantile":
         raise ValueError(f"Unsupported probabilistic mode={mode}; expected point or quantile")
 
-    point_quantile = float(mapping.get("point_quantile", 0.5))
+    point_quantile = _strict_number(mapping.get("point_quantile", 0.5), "point_quantile")
     levels = validate_quantile_grid(mapping.get("quantiles", ()), point_quantile)
-    crossing_raw = mapping.get("crossing", {}) or {}
-    crossing = _require_mapping(crossing_raw, "probabilistic.crossing")
-    _validate_unknown_keys(crossing, _CROSSING_KEYS, "probabilistic.crossing")
-    crossing_method = str(
-        crossing.get("method", _DEFAULT_CROSSING_METHOD)
-    ).lower()
-    crossing_report_raw = bool(crossing.get("report_raw", True))
+    crossing_method, crossing_report_raw = resolve_crossing_settings(mapping)
 
     raw_intervals = mapping.get("intervals")
     if raw_intervals is None:
-        raw_intervals = [
+        raw_intervals = [] if len(levels) == 1 else [
             {
                 "name": f"q{_quantile_token(levels[0])}_q{_quantile_token(levels[-1])}",
                 "lower_quantile": levels[0],

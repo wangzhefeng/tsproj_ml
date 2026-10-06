@@ -3,7 +3,7 @@ from dataclasses import replace
 import unittest
 import numpy as np
 
-from forecasting_core.runtime_resources import RuntimeResourceBudget
+from forecasting_core.execution.resources import RuntimeResourceBudget
 from model_performance.transform_cache import FoldTransformCache
 
 

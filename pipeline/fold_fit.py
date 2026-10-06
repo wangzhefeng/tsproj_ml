@@ -7,11 +7,11 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-from forecasting_core.checkpoints import FitCheckpoint
-from forecasting_core.artifacts import MarginalForecastDistribution
-from forecasting_core.runtime_resources import RuntimeExecutionPlan
+from forecasting_core.execution.checkpoints import FitCheckpoint
+from forecasting_core.probability.distribution import MarginalForecastDistribution
+from forecasting_core.execution.resources import RuntimeExecutionPlan
 from forecasting_core.specs import ForecastConfigSpec, TargetAdapter
-from forecasting_core.tensors import PointForecastTensor
+from forecasting_core.tensors.point import PointForecastTensor
 from pipeline.supervised_design import SupervisedDesignBuilder
 from model_predicting.loops.predictor import (
     CanonicalForecaster,

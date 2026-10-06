@@ -6,12 +6,13 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
-from forecasting_core.artifacts import ForecastModelBundle
+from forecasting_core.bundle import ForecastModelBundle
 from forecasting_core.specs.weather import WeatherGenerationSpec
-from forecasting_core.probabilistic_spec import probabilistic_spec_from_mapping
+from forecasting_core.probability.spec import probabilistic_spec_from_mapping
 from model_training.strategies import CanonicalStrategyArtifact
 from model_training.trainer import CanonicalTrainer
 from model_building.pickle_io import ModelDeployPkl
@@ -78,18 +79,30 @@ def build_strategy_model_bundle(
     )
 
 
+def write_bundle_schema_json(bundle: ForecastModelBundle, path: str | Path) -> None:
+    """合同只生成 payload，文件系统写入由产物层拥有。"""
+    bundle.validate_calibration_state()
+    output_path = Path(path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text(
+        json.dumps(bundle.schema_payload(), ensure_ascii=False, indent=2, allow_nan=False),
+        encoding="utf-8",
+    )
+
+
 def persist_model_bundle(
     bundle: ForecastModelBundle,
     model_dir: str | Path,
 ) -> tuple[Path, Path]:
     """持久化单个 schema-2 模型 bundle 及其可读 schema 元数据。"""
+    bundle.validate_calibration_state()
     output_dir = Path(model_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
     model_path = output_dir / "model.pkl"
     schema_path = output_dir / "resolved_model.json"
     ModelDeployPkl(str(model_path)).save_model(bundle)
-    bundle.write_schema_json(schema_path)
+    write_bundle_schema_json(bundle, schema_path)
     return model_path, schema_path
 
 
-__all__ = ["build_strategy_model_bundle", "persist_model_bundle"]
+__all__ = ["build_strategy_model_bundle", "persist_model_bundle", "write_bundle_schema_json"]

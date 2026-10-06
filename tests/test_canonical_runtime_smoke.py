@@ -31,10 +31,10 @@ from model_training.strategies import (
     StrategyModelGroupArtifact,
     StrategyTargetPlan,
 )
-from forecasting_core.tensors import PointForecastTensor
+from forecasting_core.tensors.point import PointForecastTensor
 from model_predicting.loops.predictor import CanonicalMarginalQuantileForecaster
 from model_training.quantile import CanonicalMarginalQuantileArtifact
-from forecasting_core.artifacts import ForecastModelBundle
+from forecasting_core.bundle import ForecastModelBundle
 
 
 class _LagOffsetAdapter:
@@ -243,6 +243,10 @@ class CanonicalRuntimeSmokeTest(unittest.TestCase):
                 ["series_id", "time", "target", "predict_value"],
             )
             self.assertEqual(len(prediction), 2)
+            # 独立线性真值：产物结构正确不足以证明预测非恒零/未错位。
+            forecast_steps = (pd.to_datetime(prediction["time"]) - times[0]) / pd.Timedelta(hours=1)
+            np.testing.assert_allclose(prediction["predict_value"], 100.0 + 2.0 * forecast_steps,
+                                       rtol=1e-6, atol=1e-6)
             # K=1、H=2、1 窗：汇总 target + aggregate；horizon 明细独立文件
             self.assertEqual(scores["scope"].tolist(), ["target", "aggregate"])
             horizon_scores = pd.read_csv(

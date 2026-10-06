@@ -20,11 +20,11 @@ from data_loading import (
 from feature_engineering import CompiledFeatures, FeatureCompiler
 from feature_engineering.statistics_provider import HistoryStatisticsProvider
 from feature_engineering.indexed import compile_indexed_history, indexed_history_eligible
-from forecasting_core.specs.temporal import (
+from forecasting_core.temporal.windows import (
     forecast_ends,
     forecast_times as temporal_forecast_times,
-    select_training_origins,
 )
+from forecasting_core.temporal.sampling import select_training_origins
 from feature_engineering.seasonal import normalize_seasonal_baseline_spec, seasonal_baseline_values
 from forecasting_core.specs import (
     AvailabilityPolicy,
@@ -32,12 +32,13 @@ from forecasting_core.specs import (
     FixedStepBacktestSpec,
     ForecastConfigSpec,
 )
-from forecasting_core.tensors import PointForecastTensor
+from forecasting_core.tensors.point import PointForecastTensor
+from forecasting_core.execution.strategy import TargetCoordinate
 from feature_engineering.transforms import CanonicalTargetTransform
 from model_testing.contracts import geometry as backtest_geometry
 from model_testing.contracts.primitives import actual_tensor
 from model_training.strategies import (
-    TargetCoordinate,
+
     target_plan_for_config,
 )
 

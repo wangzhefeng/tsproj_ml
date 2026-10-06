@@ -11,7 +11,7 @@ import pandas as pd
 
 from data_loading import SourceRegistry
 from pipeline.runner import CanonicalBaseModelRunner
-from forecasting_core.specs.temporal import select_training_origins
+from forecasting_core.temporal.sampling import select_training_origins
 from tests import test_canonical_runtime_smoke as smoke
 from tests.test_raw_history_window import make_config
 

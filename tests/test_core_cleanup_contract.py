@@ -20,7 +20,7 @@ ROOT = Path(__file__).resolve().parents[1]
 class CoreCleanupContractTest(unittest.TestCase):
     def test_retired_definitions_are_not_compatibility_shims(self):
         retired = {
-            "forecasting_core/probabilistic_spec.py": {
+            "forecasting_core/probability/spec.py": {
                 "_legacy_spec", "_legacy_fields_are_explicit",
                 "resolve_probabilistic_spec", "apply_probabilistic_spec_to_args",
             },

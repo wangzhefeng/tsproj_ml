@@ -3,7 +3,7 @@
 
 import unittest
 
-from forecasting_core.probabilistic_spec import probabilistic_spec_from_mapping
+from forecasting_core.probability.spec import probabilistic_spec_from_mapping
 from forecasting_core.specs.output import OutputSpec
 from forecasting_core.specs.probabilistic import ProbabilisticConfigSpec
 

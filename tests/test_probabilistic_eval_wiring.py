@@ -16,9 +16,10 @@ import unittest
 import numpy as np
 import pandas as pd
 
-from forecasting_core.tensors import MarginalQuantileForecastTensor, PointForecastTensor
+from forecasting_core.tensors.quantile import MarginalQuantileForecastTensor
+from forecasting_core.tensors.point import PointForecastTensor
 from model_evaluation.marginal import evaluate_marginal_distribution
-from forecasting_core.artifacts import MarginalForecastDistribution
+from forecasting_core.probability.distribution import MarginalForecastDistribution
 
 
 TIMES = pd.date_range("2026-01-01", periods=4, freq="1h")

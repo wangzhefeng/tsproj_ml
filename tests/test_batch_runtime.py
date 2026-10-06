@@ -18,7 +18,7 @@ import yaml
 
 from config.config_loader import load_yaml_config
 from data_loading import SourceRegistry
-from forecasting_core.runtime_resources import RuntimeResourceBudget
+from forecasting_core.execution.resources import RuntimeResourceBudget
 from forecasting_core.specs import (
     ColumnSpec,
     DataSourceSpec,

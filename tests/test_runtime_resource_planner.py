@@ -6,7 +6,7 @@ import unittest
 from dataclasses import FrozenInstanceError, replace
 from types import SimpleNamespace
 
-from forecasting_core.runtime_resources import RuntimeResourceBudget
+from forecasting_core.execution.resources import RuntimeResourceBudget
 from forecasting_core.specs import EstimatorSpec, RuntimePerformanceSpec
 from model_performance.resource_planner import (
     build_runtime_workload,

@@ -9,6 +9,6 @@ quantile 逐 level 训练编排与原生 objective 能力映射已迁出——
 `model_predicting.loops.predictor` 的张量级实现负责，不维护 DataFrame 版副本。
 """
 
-from forecasting_core.probabilistic_spec import validate_quantile_grid
+from forecasting_core.probability.grid import validate_quantile_grid
 
 __all__ = ["validate_quantile_grid"]

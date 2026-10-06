@@ -13,7 +13,7 @@ import pandas as pd
 
 from data_loading import SourceRegistry
 from data_loading.information.information_set import MaterializedInformationSet, SourceLineage
-from forecasting_core.artifacts import ForecastModelBundle
+from forecasting_core.bundle import ForecastModelBundle
 from forecasting_core.specs import ForecastConfigSpec
 from forecasting_core.specs.data import AvailabilityPolicy, ColumnRole
 from forecasting_core.specs.validation import FixedStepBacktestSpec

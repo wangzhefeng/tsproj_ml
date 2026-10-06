@@ -30,13 +30,13 @@ from model_ensemble.inference.forecast import build_ensemble_forecast
 from model_ensemble.outputs.persistence import RunCompletion, build_ensemble_bundle
 from model_ensemble.configuration.preflight import parse_member_configs
 from model_ensemble.outputs.reporting import ensemble_output_paths, write_predictions_and_scores, write_run_metadata
-from forecasting_core.origin import resolve_origin
-from forecasting_core.probabilistic_spec import probabilistic_spec_from_mapping
+from forecasting_core.temporal.origin import resolve_origin
+from forecasting_core.probability.spec import probabilistic_spec_from_mapping
 from data_loading import SourceRegistry
 
 from model_predicting.loops.deployment import attach_bundle_prediction_intervals
 
-from forecasting_core.artifacts import MarginalForecastDistribution
+from forecasting_core.probability.distribution import MarginalForecastDistribution
 
 
 def run_ensemble_config_file(

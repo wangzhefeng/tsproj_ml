@@ -24,7 +24,7 @@ from typing import Callable, Sequence
 
 import numpy as np
 
-from forecasting_core.checkpoints import FitCheckpoint
+from forecasting_core.execution.checkpoints import FitCheckpoint
 from forecasting_core.specs.estimator import EstimatorCapabilities
 from model_building.adapters.canonical import (
     ModelFactoryEstimator,

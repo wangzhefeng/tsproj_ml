@@ -6,7 +6,7 @@
 
 `pipeline.runner` 保留同名私有别名转发，行为零变化；
 评估掩码 `build_eval_mask` 已迁入 `model_evaluation/mask.py`（2026-08-30 evaluation 模块化）；
-`resolve_origin` 已迁入 `forecasting_core/origin.py`（2026-09-27：部署路径通用原语，非回测专属）。
+`resolve_origin` 已迁入 `forecasting_core/temporal/origin.py`（2026-09-27：部署路径通用原语，非回测专属）。
 """
 
 from __future__ import annotations
@@ -17,7 +17,7 @@ import numpy as np
 import pandas as pd
 from pandas.tseries.offsets import MonthBegin, MonthEnd
 
-from forecasting_core.tensors import PointForecastTensor
+from forecasting_core.tensors.point import PointForecastTensor
 
 
 def positive_validation_int(

@@ -27,7 +27,7 @@ class PerformanceProfileTest(unittest.TestCase):
             adopted_catboost_profile, resolve_performance_profile,
         )
         from model_performance.resource_planner import build_runtime_workload
-        from forecasting_core.runtime_resources import RuntimeResourceBudget
+        from forecasting_core.execution.resources import RuntimeResourceBudget
 
         evidence = adopted_catboost_profile()
         for folds in (5, 31):
@@ -49,7 +49,7 @@ class PerformanceProfileTest(unittest.TestCase):
     def _resolve(self, *, config=None, workload_changes=None, budget_changes=None, schema=None, base_dir: str | Path = ROOT):
         from model_performance.performance_profiles import adopted_catboost_profile, resolve_performance_profile
         from model_performance.resource_planner import build_runtime_workload
-        from forecasting_core.runtime_resources import RuntimeResourceBudget
+        from forecasting_core.execution.resources import RuntimeResourceBudget
 
         config = config or self._profiled_config()
         workload = build_runtime_workload(config, training_rows=5072, feature_count=29, design_bytes=19476480)
@@ -147,7 +147,7 @@ class PerformanceProfileTest(unittest.TestCase):
     def test_planner_enforces_reference_and_records_distinct_source(self):
         from model_performance.performance_profiles import adopted_catboost_profile
         from model_performance.resource_planner import build_runtime_workload, plan_runtime_execution
-        from forecasting_core.runtime_resources import RuntimeResourceBudget
+        from forecasting_core.execution.resources import RuntimeResourceBudget
 
         config = self._profiled_config()
         workload = build_runtime_workload(config, training_rows=5072, feature_count=29, design_bytes=19476480)
@@ -171,7 +171,7 @@ class PerformanceProfileTest(unittest.TestCase):
     def test_stale_profile_cannot_emit_resolved_metadata(self):
         from model_performance.performance_profiles import adopted_catboost_profile
         from model_performance.resource_planner import build_runtime_workload, plan_runtime_execution
-        from forecasting_core.runtime_resources import RuntimeResourceBudget
+        from forecasting_core.execution.resources import RuntimeResourceBudget
 
         config = self._profiled_config()
         workload = build_runtime_workload(config, training_rows=5072, feature_count=29, design_bytes=19476480)

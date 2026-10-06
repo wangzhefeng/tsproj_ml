@@ -1,8 +1,7 @@
-"""只读按列索引设计：共享特征事实，估计器边界才展开行列。"""
+"""只读按列索引设计及共享底层存储核算。"""
 from __future__ import annotations
 
-from typing import Sequence
-
+from typing import Any, Sequence
 import numpy as np
 
 
@@ -17,8 +16,24 @@ def retained_array_bytes(arrays: Sequence[np.ndarray]) -> int:
             current = getattr(current, "base")
             if isinstance(current, np.ndarray):
                 root = current
-        blocks[id(root)] = root
-    return sum(array.nbytes for array in blocks.values())
+        if isinstance(current, bytes):
+            blocks[id(current)] = len(current)
+        else:
+            blocks[id(root)] = root.nbytes
+    return sum(blocks.values())
+
+
+def immutable_array(values: Any) -> np.ndarray:
+    """冻结实际 backing storage；已冻结数组零复制，可跨调用共享。"""
+    array = np.asarray(values)
+    if array.dtype.hasobject:
+        raise TypeError("immutable array storage forbids object dtype")
+    storage = array
+    while isinstance(storage, np.ndarray) and storage.base is not None:
+        storage = storage.base
+    if isinstance(storage, bytes):
+        return array
+    return np.frombuffer(array.tobytes(), dtype=array.dtype).reshape(array.shape)
 
 
 class IndexedDesign:
@@ -43,12 +58,10 @@ class IndexedDesign:
                 raise TypeError("column offset must be an integer")
             if stop > start and (start + offset < 0 or stop + offset > len(array)):
                 raise ValueError("indexed column access is outside its value block")
-            if array.flags.writeable:
-                key = id(array)
-                if key not in frozen:
-                    frozen[key] = array.copy()
-                    frozen[key].flags.writeable = False
-                array = frozen[key]
+            key = id(array)
+            if key not in frozen:
+                frozen[key] = immutable_array(array)
+            array = frozen[key]
             normalized.append((array, int(offset)))
         if not normalized:
             raise ValueError("indexed design needs at least one column")
@@ -58,7 +71,7 @@ class IndexedDesign:
             rows = np.asarray(rows, dtype=np.int64).copy()
             if rows.ndim != 1 or np.any((rows < start) | (rows >= stop)):
                 raise ValueError("row selector is outside indexed design bounds")
-            rows.flags.writeable = False
+            rows = immutable_array(rows)
         self.rows = rows
 
     @property
@@ -77,8 +90,10 @@ class IndexedDesign:
 
     @property
     def retained_bytes(self) -> int:
-        blocks = {id(values): values for values, _ in self.columns}
-        return sum(v.nbytes for v in blocks.values()) + (0 if self.rows is None else self.rows.nbytes)
+        blocks = [values for values, _ in self.columns]
+        if self.rows is not None:
+            blocks.append(self.rows)
+        return retained_array_bytes(blocks)
 
     def column(self, index: int) -> np.ndarray:
         values, offset = self.columns[index]

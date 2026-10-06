@@ -27,6 +27,7 @@ from config.config_loader import is_model_yaml, load_yaml_config  # noqa: E402
 from decomposition.configuration.spec import normalize_decomposition_config  # noqa: E402
 from feature_engineering.compiler import FeatureCompiler  # noqa: E402
 from forecasting_core.specs import ForecastConfigSpec  # noqa: E402
+from forecasting_core.specs.training import SAMPLE_WEIGHT_FIELDS  # noqa: E402
 from model_ensemble.configuration.specs import EnsembleConfigSpec  # noqa: E402
 
 PROJ = Path(__file__).resolve().parent.parent
@@ -131,7 +132,7 @@ _CANONICAL_NESTED_FIELDS = {
         "stride_months",
         "training_scope",
         "training",
-        "train_outlier",
+
         "eval_mask",
         "performance",
         "aggregate_weighting",
@@ -142,42 +143,12 @@ _CANONICAL_NESTED_FIELDS = {
         "unknown_series_policy",
     },
     "validation.training": {
-        "early_stopping_patience",
+        "origin_sampling",
         "sample_weight",
-        "tuning",
-        "augmentation",
-        "feature_selection",
-        "learning_rate",
-        "huber_delta",
-        "blend_weight_windows",
-        "estimator_ensemble",
     },
-    "validation.training.sample_weight": {"method", "halflife_days"},
-    "validation.training.tuning": {"method", "metric", "n_splits"},
-    "validation.training.augmentation": {
-        "method",
-        "ratio",
-        "feature_noise_std",
-        "target_noise_std",
-        "random_state",
-    },
-    "validation.training.feature_selection": {
-        "method",
-        "max_features",
-        "min_features",
-    },
-    "validation.training.learning_rate": {"method", "min", "max"},
-    "validation.training.estimator_ensemble": {
-        "method",
-        "members",
-        "member_specs",
-        "validation_ratio",
-    },
-    "validation.train_outlier": {"method", "high", "rise", "low", "drop"},
-    "validation.train_outlier.high": {"threshold", "max_run_points"},
-    "validation.train_outlier.rise": {"max_run_points", "rebound_min_abs_diff"},
-    "validation.train_outlier.low": {"threshold", "max_run_points"},
-    "validation.train_outlier.drop": {"max_run_points", "rebound_min_abs_diff"},
+    "validation.training.sample_weight": SAMPLE_WEIGHT_FIELDS,
+    "validation.training.origin_sampling": {"stride_steps", "time_of_day", "max_origins", "anchor_time"},
+
     "validation.eval_mask": {"mode", "percentile", "min_value", "max_value"},
     "validation.performance": {
         "profile_ref",

@@ -1,11 +1,12 @@
 """Estimator selection specification independent of forecasting strategy."""
 
-import math
+
 from collections.abc import Mapping
 from dataclasses import dataclass, fields
 from enum import Enum
-from types import MappingProxyType
+
 from typing import Any
+from forecasting_core.specs._mapping import freeze_json_value, thaw_json_value
 
 
 def _required_bool(value: object, field_name: str) -> bool:
@@ -82,36 +83,6 @@ def _normalize_target_adapter(value: Any) -> TargetAdapter:
         raise ValueError(f"unknown target_adapter: {value!r}") from exc
 
 
-def _freeze_json_value(value: Any, path: str) -> Any:
-    if value is None or isinstance(value, (str, bool, int)):
-        return value
-    if isinstance(value, float):
-        if not math.isfinite(value):
-            raise ValueError(f"{path} must contain only finite floats")
-        return value
-    if isinstance(value, list):
-        return tuple(
-            _freeze_json_value(item, f"{path}[{index}]")
-            for index, item in enumerate(value)
-        )
-    if isinstance(value, Mapping):
-        normalized: dict[str, Any] = {}
-        for key, item in value.items():
-            if not isinstance(key, str):
-                raise TypeError(f"{path} keys must be strings")
-            normalized[key] = _freeze_json_value(item, f"{path}.{key}")
-        return MappingProxyType(dict(sorted(normalized.items())))
-    raise TypeError(f"{path} must contain only JSON-like values")
-
-
-def _thaw_json_value(value: Any) -> Any:
-    if isinstance(value, tuple):
-        return [_thaw_json_value(item) for item in value]
-    if isinstance(value, Mapping):
-        return {key: _thaw_json_value(item) for key, item in value.items()}
-    return value
-
-
 @dataclass(frozen=True, slots=True, init=False)
 class EstimatorSpec:
     model_type: str
@@ -126,7 +97,7 @@ class EstimatorSpec:
     ) -> None:
         if not isinstance(params, Mapping):
             raise TypeError("params must be a mapping")
-        frozen_params = _freeze_json_value(params, "params")
+        frozen_params = freeze_json_value(params, "params", allow_tuple=False)
 
         object.__setattr__(self, "model_type", _required_model_type(model_type))
         object.__setattr__(self, "target_adapter", _normalize_target_adapter(target_adapter))
@@ -175,5 +146,5 @@ class EstimatorSpec:
         return {
             "model_type": self.model_type,
             "target_adapter": self.target_adapter.value,
-            "params": _thaw_json_value(self.params),
+            "params": thaw_json_value(self.params),
         }

@@ -8,7 +8,8 @@ from time import perf_counter
 from typing import Any, Mapping
 
 from feature_engineering import design_identity
-from forecasting_core.artifacts import ForecastModelBundle, MarginalForecastDistribution
+from forecasting_core.bundle import ForecastModelBundle
+from forecasting_core.probability.distribution import MarginalForecastDistribution
 from forecasting_core.specs import (
     CalendarMonthBacktestSpec,
     ExpandingWindowBacktestSpec,
@@ -16,7 +17,7 @@ from forecasting_core.specs import (
     SlidingWindowBacktestSpec,
     TargetAdapter,
 )
-from forecasting_core.tensors import PointForecastTensor
+from forecasting_core.tensors.point import PointForecastTensor
 from probabilistic.residual import ResidualCalibrationTracker, apply_residual_state
 from model_predicting.artifacts.evidence_assembly import (
     compiled_lineage,

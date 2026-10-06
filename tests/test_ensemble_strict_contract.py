@@ -23,7 +23,7 @@ class EnsembleStrictContractTest(unittest.TestCase):
                 MethodSpec(name, params)
 
     def test_unconsumed_top_level_options_are_rejected(self):
-        variants = (("training", {"sample_weight": {"method": "exponential_decay", "halflife_days": 1}}),
+        variants = (("training", {"sample_weight": {"method": "exponential", "halflife_days": 1}}),
                     ("train_outlier", {"method": "none"}), ("refit_every", 0))
         for key, value in variants:
             document = _ensemble_doc("averaging")

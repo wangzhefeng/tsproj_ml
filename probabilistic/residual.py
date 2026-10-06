@@ -8,8 +8,13 @@ from typing import Any, cast
 import numpy as np
 import pandas as pd
 
-from forecasting_core.point_intervals import PointIntervalForecast, ResidualCalibrationSpec, validate_residual_state
-from forecasting_core.tensors import PointForecastTensor, require_matching_point_axes
+from forecasting_core.probability.intervals import PointIntervalForecast
+from forecasting_core.probability.calibration import (
+    ResidualCalibrationSpec,
+    validate_residual_state,
+)
+from forecasting_core.tensors.point import PointForecastTensor
+from forecasting_core.tensors.layout import require_matching_point_axes
 
 
 @dataclass(frozen=True, slots=True)

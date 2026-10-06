@@ -2,7 +2,7 @@
 import unittest
 import numpy as np
 import pandas as pd
-from forecasting_core.tensors import PointForecastTensor
+from forecasting_core.tensors.point import PointForecastTensor
 from feature_engineering.transforms.windows import select_transform_history
 
 

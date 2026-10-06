@@ -1,4 +1,4 @@
-"""Immutable contracts for runtime workload and resource planning."""
+"""资源工作量、预算和执行计划合同，不探测或调度。"""
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, replace

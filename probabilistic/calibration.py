@@ -2,14 +2,15 @@
 """Conformalized Quantile Regression 的严格数学内核。"""
 
 from dataclasses import dataclass
-from typing import List, Optional, Sequence, Tuple
+from typing import List, Optional, Sequence, Tuple, cast
 
 import numpy as np
 import pandas as pd
 
-from forecasting_core.probabilistic_spec import CalibrationSpec, ProbabilisticSpec, validate_cqr_params
-from forecasting_core.artifacts import QuantileGrid
-from forecasting_core.point_intervals import pi_column_names
+from forecasting_core.probability.calibration import CalibrationSpec, validate_cqr_params
+from forecasting_core.probability.spec import ProbabilisticSpec
+from forecasting_core.probability.grid import QuantileGrid
+from forecasting_core.probability.intervals import pi_column_names
 
 
 @dataclass(frozen=True)
@@ -419,7 +420,8 @@ class ConformalCalibrationTracker:
     ) -> Tuple[CalibrationResult, dict]:
         """最终预测的修正量：消费全部满足 as-of 的历史折。"""
         result = self._calibrate(pd.Timestamp(forecast_origin))
-        return result, self._audit(result)
+        origin = cast(pd.Timestamp, pd.Timestamp(forecast_origin))
+        return result, {**self._audit(result), "forecast_origin": origin.isoformat()}
 
     def correction_bounds(
         self,

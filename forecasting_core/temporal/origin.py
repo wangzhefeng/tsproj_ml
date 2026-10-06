@@ -1,13 +1,7 @@
-"""预测原点解析合同：部署与回测共用的 origin 归一化。
-
-自 model_testing.contracts.primitives 迁入（2026-09-27 边界审计）：origin 解析服务于
-部署/final fit 路径，非回测专属；以 Protocol 描述数据源能力，本层不 import
-data_loading。
-"""
+"""预测原点解析与数据源能力协议。"""
 from __future__ import annotations
 
-from typing import Any, Protocol
-
+from typing import Any, Protocol, cast
 import pandas as pd
 
 
@@ -19,6 +13,7 @@ class SupportsLatestTargetTime(Protocol):
 
 def resolve_origin(registry: SupportsLatestTargetTime, raw_origin: Any) -> pd.Timestamp:
     """预测原点解析：None = 数据最后已知时刻，否则严格 Timestamp。"""
-    if raw_origin is None:
-        return registry.latest_target_time()
-    return pd.Timestamp(raw_origin)
+    origin = pd.Timestamp(registry.latest_target_time() if raw_origin is None else raw_origin)
+    if bool(pd.isna(origin)):
+        raise ValueError("forecast origin must be a finite timestamp")
+    return cast(pd.Timestamp, origin)

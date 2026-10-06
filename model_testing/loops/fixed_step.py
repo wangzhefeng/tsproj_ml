@@ -8,8 +8,8 @@ from typing import Any, Iterator, Mapping
 
 import pandas as pd
 from pandas.tseries.frequencies import to_offset
-from forecasting_core.probabilistic_spec import probabilistic_spec_from_mapping
-from forecasting_core.specs.temporal import has_bounded_history
+from forecasting_core.probability.spec import probabilistic_spec_from_mapping
+from forecasting_core.temporal.windows import has_bounded_history
 from forecasting_core.specs import (
     ExpandingWindowBacktestSpec,
     FixedStepBacktestSpec,
@@ -23,7 +23,7 @@ from model_testing.loops.execution import ordered_bounded_map
 from model_testing.loops.scoring import score_holdout_fold
 from probabilistic.calibration import ConformalCalibrationTracker
 from probabilistic.residual import ResidualCalibrationTracker
-from forecasting_core.point_intervals import ResidualCalibrationSpec
+from forecasting_core.probability.calibration import ResidualCalibrationSpec
 from utils.log_util import logger
 
 def _log_provider_usage(audits: Any) -> None:

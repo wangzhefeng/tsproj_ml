@@ -15,7 +15,8 @@ import pandas as pd
 
 from model_evaluation.mask import build_eval_mask
 from model_evaluation.metrics import seasonal_insample_scales
-from forecasting_core.tensors import PointForecastTensor, require_matching_point_axes
+from forecasting_core.tensors.point import PointForecastTensor
+from forecasting_core.tensors.layout import require_matching_point_axes
 
 
 EVALUATION_AGGREGATION = {

@@ -9,9 +9,9 @@ import numpy as np
 import pandas as pd
 
 from data_loading import SourceRegistry
-from forecasting_core.design import IndexedDesign
+from forecasting_core.execution.design import IndexedDesign
 from forecasting_core.specs import ColumnSpec
-from forecasting_core.runtime_resources import RuntimeResourceBudget
+from forecasting_core.execution.resources import RuntimeResourceBudget
 from pipeline.runner import CanonicalBaseModelRunner
 from tests.test_raw_history_window import make_config
 

@@ -8,7 +8,7 @@ import numpy as np
 import pandas as pd
 from matplotlib.figure import Figure
 
-from forecasting_core.tensors import PointForecastTensor
+from forecasting_core.tensors.point import PointForecastTensor
 from model_evaluation.point import evaluate_point_forecasts
 from model_testing.artifacts.tensor_frames import backtest_tensors_to_long
 from model_testing.artifacts.reporting import write_backtest_results

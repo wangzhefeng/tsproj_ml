@@ -20,7 +20,7 @@ from forecasting_core.specs.output import OutputSpec
 from forecasting_core.specs.problem import ForecastProblemSpec
 from forecasting_core.specs.probabilistic import ProbabilisticConfigSpec
 from forecasting_core.specs.validation import RuntimeValidationSpec
-from forecasting_core.probabilistic_spec import probabilistic_spec_from_mapping
+from forecasting_core.probability.spec import probabilistic_spec_from_mapping
 
 ENSEMBLE_ALLOWED_TOP_LEVEL = frozenset(
     {

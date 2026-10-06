@@ -4,8 +4,8 @@ from typing import Any, Callable, Mapping
 
 import pandas as pd
 
-from forecasting_core.artifacts import MarginalForecastDistribution
-from forecasting_core.probabilistic_spec import probabilistic_spec_from_mapping
+from forecasting_core.probability.distribution import MarginalForecastDistribution
+from forecasting_core.probability.spec import probabilistic_spec_from_mapping
 from model_ensemble.artifacts import OOFPredictionArtifact, method_artifact_audit_payload
 from model_ensemble.contracts import BaseModelRunner, member_execution_evidence
 from model_ensemble.inference.forecast import build_ensemble_forecast

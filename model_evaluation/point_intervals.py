@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """点模型预测区间（绝对残差校准）评分。
 
-消费 `forecasting_core.point_intervals.PointIntervalForecast`（残差校准产出的
+消费 `forecasting_core.probability.intervals.PointIntervalForecast`（残差校准产出的
 lower/upper/available），按 target 与 horizon 输出 coverage/width/winkler/
 coverage_gap；只计算 ``available`` 且通过评估掩码的样本，无可用区间时
 ``n_points=0``、指标 NaN。不生成 pinball 或伪 quantile 指标——点模型的区间
@@ -17,8 +17,9 @@ from typing import Any, Mapping
 import numpy as np
 import pandas as pd
 
-from forecasting_core.point_intervals import PointIntervalForecast
-from forecasting_core.tensors import PointForecastTensor, require_matching_point_axes
+from forecasting_core.probability.intervals import PointIntervalForecast
+from forecasting_core.tensors.point import PointForecastTensor
+from forecasting_core.tensors.layout import require_matching_point_axes
 from model_evaluation.metrics import interval_metrics
 from model_evaluation.point import build_eval_mask_payload
 

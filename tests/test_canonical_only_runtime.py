@@ -76,10 +76,12 @@ class CanonicalOnlyRuntimeTest(unittest.TestCase):
     def test_duplicate_probabilistic_contract_modules_are_removed(self):
         self.assertFalse((ROOT / "probabilistic" / "spec.py").exists())
         self.assertFalse((ROOT / "probabilistic" / "types.py").exists())
+        self.assertFalse((ROOT / "forecasting_core" / "probabilistic_spec.py").exists())
+        self.assertFalse((ROOT / "forecasting_core" / "artifacts.py").exists())
         self.assertTrue(
-            (ROOT / "forecasting_core" / "probabilistic_spec.py").is_file()
+            (ROOT / "forecasting_core" / "probability" / "spec.py").is_file()
         )
-        self.assertTrue((ROOT / "forecasting_core" / "artifacts.py").is_file())
+        self.assertTrue((ROOT / "forecasting_core" / "bundle.py").is_file())
         config_source = (
             ROOT / "forecasting_core" / "specs" / "config.py"
         ).read_text(encoding="utf-8")
@@ -124,7 +126,7 @@ class CanonicalOnlyRuntimeTest(unittest.TestCase):
         self.assertTrue(identity.is_identity)
         identity.fit_identity(["s1"], ["y"])
 
-        from forecasting_core.tensors import PointForecastTensor
+        from forecasting_core.tensors.point import PointForecastTensor
 
         values = np.arange(6, dtype=float).reshape(1, 6, 1)
         tensor = PointForecastTensor(

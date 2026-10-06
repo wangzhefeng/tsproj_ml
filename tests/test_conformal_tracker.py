@@ -14,7 +14,7 @@ import numpy as np
 import pandas as pd
 from pandas.tseries.frequencies import to_offset
 
-from forecasting_core.probabilistic_spec import probabilistic_spec_from_mapping
+from forecasting_core.probability.spec import probabilistic_spec_from_mapping
 from probabilistic.calibration import ConformalCalibrationTracker
 
 
@@ -186,11 +186,9 @@ class DeploymentPiColumnWiringTest(unittest.TestCase):
     必须经 distribution_to_long 落成 prediction.csv 列，不再是死写。"""
 
     def test_distribution_to_long_emits_pi_columns_from_metadata(self):
-        from forecasting_core.artifacts import MarginalForecastDistribution
-        from forecasting_core.tensors import (
-            MarginalQuantileForecastTensor,
-            PointForecastTensor,
-        )
+        from forecasting_core.probability.distribution import MarginalForecastDistribution
+        from forecasting_core.tensors.quantile import MarginalQuantileForecastTensor
+        from forecasting_core.tensors.point import PointForecastTensor
         from model_testing.artifacts.tensor_frames import distribution_to_long
 
         times = pd.date_range("2026-01-01", periods=2, freq="1h")
@@ -238,11 +236,9 @@ class DeploymentPiColumnWiringTest(unittest.TestCase):
         self.assertEqual(frame["predict_pi80_upper"].tolist(), [112.0, 112.0])
 
     def test_distribution_to_long_rejects_misaligned_pi_arrays(self):
-        from forecasting_core.artifacts import MarginalForecastDistribution
-        from forecasting_core.tensors import (
-            MarginalQuantileForecastTensor,
-            PointForecastTensor,
-        )
+        from forecasting_core.probability.distribution import MarginalForecastDistribution
+        from forecasting_core.tensors.quantile import MarginalQuantileForecastTensor
+        from forecasting_core.tensors.point import PointForecastTensor
         from model_testing.artifacts.tensor_frames import distribution_to_long
 
         times = pd.date_range("2026-01-01", periods=2, freq="1h")

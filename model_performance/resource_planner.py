@@ -9,7 +9,7 @@ from typing import Any
 
 import psutil
 
-from forecasting_core.runtime_resources import (
+from forecasting_core.execution.resources import (
     RuntimeExecutionPlan,
     RuntimeResourceBudget,
     RuntimeWorkload,

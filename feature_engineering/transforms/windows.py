@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from typing import Any, Sequence
 import pandas as pd
-from forecasting_core.tensors import PointForecastTensor
+from forecasting_core.tensors.point import PointForecastTensor
 
 
 def select_transform_history(

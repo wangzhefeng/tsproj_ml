@@ -15,7 +15,7 @@ from pipeline.runner import CanonicalBaseModelRunner, run_canonical_config
 from pipeline.batch_runtime import run_canonical_batch, _load_tasks, _preflight_groups
 from model_performance.resource_planner import detect_runtime_budget
 import test_batch_runtime as fixtures
-from forecasting_core.tensors import PointForecastTensor
+from forecasting_core.tensors.point import PointForecastTensor
 from forecasting_core.specs import ForecastConfigSpec
 from pipeline.lifecycle import CanonicalRuntimeResult
 

@@ -15,7 +15,7 @@ from sklearn.preprocessing import (
 )
 
 from feature_engineering.transform_specs import normalize_feature_scaling
-from forecasting_core.design import IndexedDesign
+from forecasting_core.execution.design import IndexedDesign
 
 
 class CanonicalFeatureScaler:

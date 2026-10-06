@@ -6,6 +6,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 import re
 from typing import Any
+from forecasting_core.specs.training import SAMPLE_WEIGHT_FIELDS, resolve_sample_weight_spec
 
 from forecasting_core.specs._mapping import (
     FrozenMappingSpec,
@@ -205,7 +206,7 @@ VALIDATION_FIELDS = frozenset(
         "stride_months",
         "training_scope",
         "training",
-        "train_outlier",
+
         "eval_mask",
         "performance",
         "aggregate_weighting",
@@ -226,41 +227,14 @@ _VALIDATION_NESTED_FIELDS: dict[str, frozenset[str]] = {
     "validation.training": frozenset(
         {
             "origin_sampling",
-            "early_stopping_patience",
             "sample_weight",
-            "tuning",
-            "augmentation",
-            "feature_selection",
-            "learning_rate",
-            "huber_delta",
-            "blend_weight_windows",
-            "estimator_ensemble",
         }
     ),
-    "validation.training.sample_weight": frozenset({"method", "halflife_days"}),
+    "validation.training.sample_weight": SAMPLE_WEIGHT_FIELDS,
     "validation.training.origin_sampling": frozenset(
         {"stride_steps", "time_of_day", "max_origins", "anchor_time"}
     ),
-    "validation.training.tuning": frozenset({"method", "metric", "n_splits"}),
-    "validation.training.augmentation": frozenset(
-        {"method", "ratio", "feature_noise_std", "target_noise_std", "random_state"}
-    ),
-    "validation.training.feature_selection": frozenset(
-        {"method", "max_features", "min_features"}
-    ),
-    "validation.training.learning_rate": frozenset({"method", "min", "max"}),
-    "validation.training.estimator_ensemble": frozenset(
-        {"method", "members", "member_specs", "validation_ratio"}
-    ),
-    "validation.train_outlier": frozenset({"method", "high", "rise", "low", "drop"}),
-    "validation.train_outlier.high": frozenset({"threshold", "max_run_points"}),
-    "validation.train_outlier.rise": frozenset(
-        {"max_run_points", "rebound_min_abs_diff"}
-    ),
-    "validation.train_outlier.low": frozenset({"threshold", "max_run_points"}),
-    "validation.train_outlier.drop": frozenset(
-        {"max_run_points", "rebound_min_abs_diff"}
-    ),
+
     "validation.eval_mask": frozenset(
         {"mode", "percentile", "min_value", "max_value"}
     ),
@@ -344,7 +318,12 @@ class RuntimeValidationSpec(FrozenMappingSpec):
             raise ValueError(
                 "forecast_window/training_window require fixed_steps horizon_mode"
             )
-        sampling = payload.get("training", {}).get("origin_sampling")
+        training = payload.get("training", {})
+        if not isinstance(training, Mapping):
+            raise TypeError("validation.training must be a mapping")
+        if "sample_weight" in training:
+            resolve_sample_weight_spec(training["sample_weight"])
+        sampling = training.get("origin_sampling")
         if sampling is not None:
             for field, minimum in (("stride_steps", 1), ("max_origins", 2)):
                 if field in sampling:

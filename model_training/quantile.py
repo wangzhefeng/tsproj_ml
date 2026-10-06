@@ -11,9 +11,9 @@ import numpy as np
 
 from model_training.estimators import EstimatorCapabilities
 from model_training.trainer import CanonicalTrainer
-from forecasting_core.checkpoints import FitCheckpoint
+from forecasting_core.execution.checkpoints import FitCheckpoint
 from forecasting_core.specs import ForecastConfigSpec
-from forecasting_core.probabilistic_spec import validate_quantile_grid
+from forecasting_core.probability.grid import validate_quantile_grid
 
 # level 间线程并行的默认 worker 上限；约束规则——level 并行时嵌套
 # output workers 压为 1——由 train() 实施。上限数值集中在此常量，

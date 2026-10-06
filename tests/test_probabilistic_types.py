@@ -7,12 +7,11 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-from forecasting_core.artifacts import (
-    MarginalForecastDistribution,
-    PredictionIntervalForecast,
-    QuantileGrid,
-)
-from forecasting_core.tensors import MarginalQuantileForecastTensor, PointForecastTensor
+from forecasting_core.probability.distribution import MarginalForecastDistribution
+from forecasting_core.probability.intervals import PredictionIntervalForecast
+from forecasting_core.probability.grid import QuantileGrid
+from forecasting_core.tensors.quantile import MarginalQuantileForecastTensor
+from forecasting_core.tensors.point import PointForecastTensor
 
 
 class QuantileGridTest(unittest.TestCase):

@@ -9,7 +9,7 @@ import yaml
 from config.config_loader import load_yaml_config
 from data_loading import SourceRegistry
 from forecasting_core.specs import ForecastConfigSpec
-from forecasting_core.tensors import PointForecastTensor
+from forecasting_core.tensors.point import PointForecastTensor
 from model_ensemble.inference.deployment import predict_ensemble_bundle
 from model_ensemble.configuration.loader import load_ensemble_config
 from model_ensemble.runtime import run_ensemble_config

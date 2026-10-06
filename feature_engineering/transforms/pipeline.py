@@ -19,11 +19,9 @@ from sklearn.preprocessing import (
 from decomposition import DecompositionPipeline, build_pipeline_from_args
 from feature_engineering.transform_specs import normalize_target_transformations
 # CanonicalFeatureScaler 住在同包 scaling.py（2026-09-06 R3 归位，re-export 桥删除）
-from forecasting_core.tensors import (
-    MarginalQuantileForecastTensor,
-    PointForecastTensor,
-)
-from forecasting_core.artifacts import MarginalForecastDistribution
+from forecasting_core.tensors.quantile import MarginalQuantileForecastTensor
+from forecasting_core.tensors.point import PointForecastTensor
+from forecasting_core.probability.distribution import MarginalForecastDistribution
 from utils.log_util import logger
 
 

@@ -6,6 +6,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+from forecasting_core.specs._mapping import strict_mapping
 
 from forecasting_core.specs.data import ColumnRole, ColumnSpec, DataSourceSpec, DataSpec
 from forecasting_core.specs.estimator import EstimatorSpec
@@ -14,7 +15,7 @@ from forecasting_core.specs.output import OutputSpec
 from forecasting_core.specs.problem import ForecastProblemSpec
 from forecasting_core.specs.probabilistic import ProbabilisticConfigSpec
 from forecasting_core.specs.strategy import ForecastStrategySpec
-from forecasting_core.specs.temporal import validate_temporal_contract
+from forecasting_core.temporal.windows import validate_temporal_contract
 from forecasting_core.specs.validation import (
     CalendarMonthBacktestSpec,
     FixedStepBacktestSpec,
@@ -353,22 +354,8 @@ def _mapping(
     allowed: frozenset[str],
     required: frozenset[str],
 ) -> Mapping[str, Any]:
-    if not isinstance(value, Mapping):
-        raise TypeError(f"{path} must be a mapping in {_source_label(source)}")
-    keys = set(value)
-    if any(not isinstance(key, str) for key in keys):
-        raise TypeError(f"{path} keys must be strings in {_source_label(source)}")
-    unknown = sorted(keys - allowed)
-    missing = sorted(required - keys)
-    if unknown:
-        raise ValueError(
-            f"Unknown fields in {path} from {_source_label(source)}: {unknown}"
-        )
-    if missing:
-        raise ValueError(
-            f"Missing required fields in {path} from {_source_label(source)}: {missing}"
-        )
-    return value
+    return strict_mapping(value, path=path, source=_source_label(source),
+                          allowed=allowed, required=required)
 
 
 def _sequence(value: Any, *, path: str, source: str | Path) -> Sequence[Any]:

@@ -25,8 +25,8 @@ else:
 from config.config_loader import load_yaml_config
 from data_loading import BUILTIN_GENERATORS, SourceRegistry
 from feature_engineering.design_identity import compute_raw_design_fingerprint
-from forecasting_core.checkpoints import FitCheckpointError
-from forecasting_core.runtime_resources import RuntimeResourceBudget
+from forecasting_core.execution.checkpoints import FitCheckpointError
+from forecasting_core.execution.resources import RuntimeResourceBudget
 from forecasting_core.specs import ForecastConfigSpec
 from model_performance.batch_memory import BoundedPayloadCache, SampledRSS
 from model_performance.checkpoints import prune_fit_checkpoints
@@ -35,7 +35,7 @@ from model_performance.resource_planner import (
     plan_runtime_execution,
 )
 from model_performance.transform_cache import FoldTransformCache
-from forecasting_core.origin import resolve_origin
+from forecasting_core.temporal.origin import resolve_origin
 from pipeline.batch_artifacts import (
     artifact_paths,
     artifact_digests,

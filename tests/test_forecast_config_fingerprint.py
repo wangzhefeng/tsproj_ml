@@ -215,7 +215,7 @@ class CanonicalConfigFingerprintTest(unittest.TestCase):
         sample_weight = baseline.canonical_payload()
         sample_weight["validation"]["training"] = {
             "sample_weight": {
-                "method": "time_decay",
+                "method": "exponential",
                 "halflife_days": 24,
             }
         }

@@ -15,8 +15,10 @@ from pathlib import Path
 from typing import Any
 
 from feature_engineering.design_identity import file_sha256
-from forecasting_core.runtime_resources import (
-    RuntimeExecutionPlan, RuntimeResourceBudget, RuntimeWorkload,
+from forecasting_core.execution.resources import (
+    RuntimeExecutionPlan,
+    RuntimeResourceBudget,
+    RuntimeWorkload,
 )
 from forecasting_core.specs import ForecastConfigSpec
 from model_building.wrappers.catboost import CatBoostModel

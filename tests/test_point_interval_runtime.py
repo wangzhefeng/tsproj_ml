@@ -10,7 +10,7 @@ import numpy as np
 import pandas as pd
 
 from data_loading import SourceRegistry
-from forecasting_core.point_intervals import PointIntervalForecast
+from forecasting_core.probability.intervals import PointIntervalForecast
 from model_predicting.loops.deployment import predict_strategy_bundle
 from pipeline.batch_artifacts import artifact_paths, artifact_digests, validate_artifacts
 from pipeline.runner import run_canonical_config

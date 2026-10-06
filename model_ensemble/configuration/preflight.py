@@ -9,7 +9,10 @@ def parse_member_configs(config, resolved):
     members = {}
     shared_validation = config.validation.canonical_payload()
     for ref in config.members:
-        member = parse_model_config(resolved[ref.name], source=ref.config_ref)
+        try:
+            member = parse_model_config(resolved[ref.name], source=ref.config_ref)
+        except (TypeError, ValueError) as exc:
+            raise EnsembleSpecError(f"invalid member {ref.name!r} ({ref.config_ref}): {exc}") from exc
         validation = member.validation
         for key in ("train_history_steps", "training_window", "forecast_window"):
             if validation.get(key) is not None:

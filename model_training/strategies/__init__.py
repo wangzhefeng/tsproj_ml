@@ -6,7 +6,7 @@ from model_training.strategies.base import (
     CanonicalStrategyArtifact,
     StrategyModelGroupArtifact,
     StrategyTargetPlan,
-    TargetCoordinate,
+
     target_plan_for_config,
 )
 from model_training.strategies.direct import DirectExecutor
@@ -46,7 +46,7 @@ __all__ = [
     "CanonicalStrategyArtifact",
     "StrategyModelGroupArtifact",
     "StrategyTargetPlan",
-    "TargetCoordinate",
+
     "target_plan_for_config",
     "get_standard_executor",
 ]

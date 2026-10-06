@@ -10,7 +10,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Mapping
 
-from forecasting_core.yaml_io import strict_yaml_load
+from forecasting_core.specs.yaml import strict_yaml_load
 
 from forecasting_core.specs.config import (
     parse_data_spec,
@@ -64,15 +64,18 @@ def parse_ensemble_document(
         )
 
     source = source_path or "<ensemble>"
-    problem = parse_problem_spec(raw.get("problem"), source)
-    data = parse_data_spec(raw.get("data"), source)
-    probabilistic = parse_probabilistic_config_spec(
-        raw.get("probabilistic") or {}, source
-    )
-    validation = parse_runtime_validation_spec(
-        raw.get("validation") or {}, source, require_geometry=False
-    )
-    output = parse_output_spec(raw.get("output") or {}, source)
+    try:
+        problem = parse_problem_spec(raw.get("problem"), source)
+        data = parse_data_spec(raw.get("data"), source)
+        probabilistic = parse_probabilistic_config_spec(
+            raw.get("probabilistic") or {}, source
+        )
+        validation = parse_runtime_validation_spec(
+            raw.get("validation") or {}, source, require_geometry=False
+        )
+        output = parse_output_spec(raw.get("output") or {}, source)
+    except (TypeError, ValueError) as exc:
+        raise EnsembleSpecError(f"invalid ensemble config {source}: {exc}") from exc
     calendar_month = str(validation.get("horizon_mode", "fixed_steps")) == "calendar_month"
     members, oof, method = parse_ensemble_section(
         raw["ensemble"], calendar_month=calendar_month

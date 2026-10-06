@@ -13,14 +13,16 @@ import numpy as np
 import pandas as pd
 
 from feature_engineering.selection import selected_indices_for_artifact
-from forecasting_core.artifacts import ForecastModelBundle, MarginalForecastDistribution
+from forecasting_core.bundle import ForecastModelBundle
+from forecasting_core.probability.distribution import MarginalForecastDistribution
 from forecasting_core.specs import ForecastStrategySpec
-from forecasting_core.tensors import PointForecastTensor
-from model_predicting.contracts.protocols import FeatureProvider
+from forecasting_core.tensors.point import PointForecastTensor
+from forecasting_core.execution.strategy import FeatureProvider
 from model_predicting.loops.predictor import assemble_marginal_quantile_distribution
 from probabilistic.calibration import pi_column_names
 from probabilistic.residual import apply_residual_state
-from forecasting_core.point_intervals import PointIntervalForecast, ResidualCalibrationSpec
+from forecasting_core.probability.intervals import PointIntervalForecast
+from forecasting_core.probability.calibration import ResidualCalibrationSpec
 from model_training.strategies import (
     CanonicalStrategyArtifact,
     get_standard_executor,
@@ -40,6 +42,7 @@ def predict_strategy_bundle(
     """从单个 schema-2 策略 bundle 预测，不做 config 或缓存 IO。"""
     if not isinstance(bundle, ForecastModelBundle) or bundle.schema_version != 2:
         raise TypeError("bundle must be a schema-2 ForecastModelBundle")
+    bundle.validate_calibration_state()
     if purpose not in {'production', 'research_replay'}:
         raise ValueError('invalid deployment purpose')
     if bundle.execution_mode not in {'strict', 'research_replay'}:
@@ -108,6 +111,7 @@ def attach_bundle_prediction_intervals(
     修正量在 final fit 时由回测校准池冻结；部署不重新校准，保证
     bundle 自包含、不读训练期数据。数组形状 (N,H,K)，与 quantiles 张量同轴。
     """
+    bundle.validate_calibration_state()
     state = bundle.calibration_state
     if not state or state.get("status") != "applied":
         return
@@ -122,6 +126,8 @@ def attach_bundle_prediction_intervals(
     upper_index = levels.index(interval.upper_quantile)
     lower = distribution.quantiles.values[..., lower_index] - correction
     upper = distribution.quantiles.values[..., upper_index] + correction
+    if not np.isfinite(lower).all() or not np.isfinite(upper).all() or np.any(lower > upper):
+        raise ValueError("CQR deployment bounds must be finite and ordered")
     lower_col, upper_col = pi_column_names(float(state["target_coverage"]))
     distribution.metadata["prediction_intervals"] = {
         interval.name: {

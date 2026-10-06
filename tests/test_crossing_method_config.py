@@ -15,7 +15,7 @@ import unittest
 import numpy as np
 import pandas as pd
 
-from forecasting_core.probabilistic_spec import resolve_crossing_settings
+from forecasting_core.probability.spec import resolve_crossing_settings
 from forecasting_core.specs import (
     ColumnSpec,
     DataSourceSpec,
@@ -27,8 +27,9 @@ from forecasting_core.specs import (
     ForecastStrategySpec,
 )
 from forecasting_core.specs.probabilistic import ProbabilisticConfigSpec
-from forecasting_core.artifacts import MarginalForecastDistribution
-from forecasting_core.tensors import MarginalQuantileForecastTensor, PointForecastTensor
+from forecasting_core.probability.distribution import MarginalForecastDistribution
+from forecasting_core.tensors.quantile import MarginalQuantileForecastTensor
+from forecasting_core.tensors.point import PointForecastTensor
 from model_predicting.loops.predictor import (
     CanonicalMarginalQuantileForecaster,
     build_crossing_report,

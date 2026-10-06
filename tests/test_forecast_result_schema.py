@@ -19,11 +19,9 @@ from model_testing.artifacts.tensor_frames import (
     point_tensor_to_long,
 )
 from model_testing.artifacts.reporting import write_backtest_results
-from forecasting_core.tensors import (
-    MarginalQuantileForecastTensor,
-    PointForecastTensor,
-)
-from forecasting_core.artifacts import MarginalForecastDistribution
+from forecasting_core.tensors.quantile import MarginalQuantileForecastTensor
+from forecasting_core.tensors.point import PointForecastTensor
+from forecasting_core.probability.distribution import MarginalForecastDistribution
 
 
 class ForecastResultSchemaTest(unittest.TestCase):

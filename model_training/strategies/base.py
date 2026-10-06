@@ -8,7 +8,7 @@
 ``target_plan_for_config`` 把 Direct 的逐 horizon 模型折叠为单模型共享。
 """
 
-from collections.abc import Callable, Mapping
+from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
 from typing import Any, ClassVar
 
@@ -16,39 +16,10 @@ import numpy as np
 import pandas as pd
 
 from forecasting_core.specs import ForecastConfigSpec
+from forecasting_core.execution.strategy import FeatureProvider, TargetCoordinate
 from forecasting_core.specs.strategy import ForecastStrategySpec, StrategyName
-from forecasting_core.tensors import (
-    PointForecastTensor,
-    flatten_time_major,
-    unflatten_time_major,
-)
-
-
-FeatureProvider = Callable[
-    [
-        int,
-        tuple["TargetCoordinate", ...],
-        tuple["TargetCoordinate", ...],
-        Mapping["TargetCoordinate", np.ndarray],
-    ],
-    np.ndarray,
-]
-
-
-@dataclass(frozen=True, slots=True)
-class TargetCoordinate:
-    target: str
-    horizon_step: int
-
-    def __post_init__(self) -> None:
-        if not isinstance(self.target, str):
-            raise TypeError("target must be a string")
-        if not self.target.strip() or self.target != self.target.strip():
-            raise ValueError("target must be nonblank without surrounding whitespace")
-        if isinstance(self.horizon_step, bool) or not isinstance(self.horizon_step, int):
-            raise TypeError("horizon_step must be an integer")
-        if self.horizon_step <= 0:
-            raise ValueError("horizon_step must be positive")
+from forecasting_core.tensors.point import PointForecastTensor
+from forecasting_core.tensors.layout import flatten_time_major, unflatten_time_major
 
 
 @dataclass(frozen=True, slots=True)

@@ -1,3 +1,6 @@
+import subprocess
+import sys
+from pathlib import Path
 import pickle
 import unittest
 from dataclasses import FrozenInstanceError
@@ -9,11 +12,9 @@ import numpy as np
 import pandas as pd
 from dateutil import tz
 
-from forecasting_core.tensors import (
-    MarginalQuantileForecastTensor,
-    PointForecastTensor,
-    SampleForecastTensor,
-)
+from forecasting_core.tensors.quantile import MarginalQuantileForecastTensor
+from forecasting_core.tensors.point import PointForecastTensor
+from forecasting_core.tensors.sample import SampleForecastTensor
 
 
 class MutableHashableSeriesId:
@@ -956,45 +957,15 @@ class ForecastTensorTestCase(unittest.TestCase):
                 with self.assertRaises(KeyError):
                     tensor.select_series("missing")
 
-    def test_public_exports_use_explicit_marginal_quantile_name(self):
-        import forecasting_core
-        self.assertEqual(
-            forecasting_core.__all__,
-            [
-                "ForecastModelBundle",
-                "MarginalForecastDistribution",
-                "ProbabilisticSpec",
-                "QuantileGrid",
-                # specs（原 ``from ... import *``，显式清单）
-                "AvailabilityPolicy",
-                "CalendarMonthBacktestSpec",
-                "ColumnRole",
-                "ColumnSpec",
-                "DataSourceSpec",
-                "DataSpec",
-                "EstimatorSpec",
-                "FeatureSpec",
-                "FixedStepBacktestSpec",
-                "ForecastConfigSpec",
-                "ForecastProblemSpec",
-                "ForecastStrategySpec",
-                "OutputSpec",
-                "ProbabilisticConfigSpec",
-                "RuntimePerformanceSpec",
-                "RuntimeValidationSpec",
-                "StrategyName",
-                "TargetAdapter",
-                "parse_model_config",
-                # tensors
-                "MarginalQuantileForecastTensor",
-                "PointForecastTensor",
-                "SampleForecastTensor",
-                "flatten_time_major",
-                "require_matching_point_axes",
-                "unflatten_time_major",
-            ],
+    def test_package_import_does_not_eagerly_load_contract_modules(self):
+        completed = subprocess.run(
+            [sys.executable, "-c",
+             "import sys; import forecasting_core; "
+             "assert not hasattr(forecasting_core, 'PointForecastTensor'); "
+             "assert not any(n.startswith('forecasting_core.') for n in sys.modules)"],
+            cwd=Path(__file__).resolve().parents[1], capture_output=True, text=True,
         )
-        self.assertFalse(hasattr(forecasting_core, "QuantileForecastTensor"))
+        self.assertEqual(completed.returncode, 0, completed.stderr)
 
 
 if __name__ == "__main__":

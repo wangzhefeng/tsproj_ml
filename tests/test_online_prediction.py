@@ -13,7 +13,7 @@ from model_predicting.loops.deployment import predict_strategy_bundle
 from pipeline.online import RollingForecastSession
 from pipeline.runner import run_canonical_config
 from pipeline.lifecycle import CanonicalRuntimeResult
-from forecasting_core.tensors import PointForecastTensor
+from forecasting_core.tensors.point import PointForecastTensor
 from pipeline.supervised_design import SupervisedDesignBuilder
 import test_canonical_runtime_smoke as fixtures
 

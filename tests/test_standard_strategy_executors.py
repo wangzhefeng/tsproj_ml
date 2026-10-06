@@ -7,6 +7,7 @@ import numpy as np
 import pandas as pd
 
 from forecasting_core.specs import ForecastStrategySpec
+from forecasting_core.execution.strategy import TargetCoordinate
 from model_training.strategies import (
     DirectExecutor,
     DirMOExecutor,
@@ -16,9 +17,9 @@ from model_training.strategies import (
     RecMOExecutor,
     RecursiveExecutor,
     StrategyTargetPlan,
-    TargetCoordinate,
+
 )
-from forecasting_core.tensors import PointForecastTensor
+from forecasting_core.tensors.point import PointForecastTensor
 
 
 class CalculableEstimator:

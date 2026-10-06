@@ -25,7 +25,8 @@ from model_ensemble.methods.horizon import fit_horizon_weights
 from model_ensemble.training.oof import actual_for_folds, generate_oof
 from model_ensemble.configuration.specs import EnsembleConfigSpec
 from model_evaluation.metrics import pinball_loss
-from forecasting_core.artifacts import ForecastModelBundle, MarginalForecastDistribution
+from forecasting_core.bundle import ForecastModelBundle
+from forecasting_core.probability.distribution import MarginalForecastDistribution
 
 METHOD_IMPLEMENTATIONS: dict[str, Any] = {
     averaging.METHOD_NAME: averaging.fit_averaging,

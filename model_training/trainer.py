@@ -22,15 +22,16 @@ from model_training.estimators import (
     RegressorChainMultiTargetAdapter,
     fit_independent_adapters,
 )
-from forecasting_core.checkpoints import FitCheckpoint
-from forecasting_core.design import IndexedDesign
+from forecasting_core.execution.checkpoints import FitCheckpoint
+from forecasting_core.execution.design import IndexedDesign
 from forecasting_core.specs import ForecastConfigSpec, TargetAdapter
-from forecasting_core.tensors import unflatten_time_major
+from forecasting_core.tensors.layout import unflatten_time_major
+from forecasting_core.execution.strategy import TargetCoordinate
 from model_training.strategies import (
     AdapterPredictor,
     CanonicalStrategyArtifact,
     StrategyModelGroupArtifact,
-    TargetCoordinate,
+
     target_plan_for_config,
 )
 

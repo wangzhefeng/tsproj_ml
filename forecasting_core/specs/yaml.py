@@ -1,7 +1,7 @@
-"""配置入口共用的严格 YAML 读取原语；不依赖任何配置分派器。"""
+"""共用的严格 YAML 文本解析；不打开文件。"""
+
 from pathlib import Path
 from typing import Any
-
 import yaml
 
 

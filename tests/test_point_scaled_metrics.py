@@ -15,7 +15,7 @@ import unittest
 import numpy as np
 import pandas as pd
 
-from forecasting_core.tensors import PointForecastTensor
+from forecasting_core.tensors.point import PointForecastTensor
 from model_evaluation.point import evaluate_point_forecasts
 from model_testing.loops.scoring import score_holdout_fold
 

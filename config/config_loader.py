@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Any, Mapping
 
 from forecasting_core.specs.config import parse_model_config
-from forecasting_core.yaml_io import strict_yaml_load
+from forecasting_core.specs.yaml import strict_yaml_load
 from model_ensemble.configuration.loader import parse_ensemble_document
 
 MODEL_CONFIG_FIELDS = frozenset(

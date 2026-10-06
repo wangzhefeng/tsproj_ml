@@ -32,7 +32,7 @@ from model_performance.resource_planner import plan_ensemble_resources
 
 from fixtures.legacy_nnls import fit_nonnegative_stacking_weights
 from forecasting_core.specs.config import parse_model_config
-from forecasting_core.runtime_resources import RuntimeResourceBudget
+from forecasting_core.execution.resources import RuntimeResourceBudget
 from model_performance.resource_planner import runtime_budget_for_config
 from probabilistic.calibration import ConformalCalibrationTracker
 

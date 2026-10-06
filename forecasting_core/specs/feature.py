@@ -5,6 +5,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from types import MappingProxyType
 from typing import Any
+from forecasting_core.specs._mapping import thaw_json_value
 
 
 def _required_name(value: Any, field_name: str) -> str:
@@ -73,14 +74,6 @@ def _freeze_json_value(value: Any, path: str) -> Any:
             )
         return MappingProxyType(dict(sorted(normalized.items())))
     raise TypeError(f"{path} must contain only JSON-like values")
-
-
-def _thaw_json_value(value: Any) -> Any:
-    if isinstance(value, tuple):
-        return [_thaw_json_value(item) for item in value]
-    if isinstance(value, Mapping):
-        return {key: _thaw_json_value(item) for key, item in value.items()}
-    return value
 
 
 def _validate_causal_transformations(transformations):
@@ -185,11 +178,11 @@ class FeatureSpec:
                 name: list(lags) for name, lags in self.observed_past_lags.items()
             },
             "datetime_features": list(self.datetime_features),
-            "transformations": _thaw_json_value(self.transformations),
+            "transformations": thaw_json_value(self.transformations),
         }
         # 未配置 selection 时不进 payload，保持存量配置 fingerprint 不变
         if self.selection is not None:
-            payload["selection"] = _thaw_json_value(self.selection)
+            payload["selection"] = thaw_json_value(self.selection)
         return payload
 
 

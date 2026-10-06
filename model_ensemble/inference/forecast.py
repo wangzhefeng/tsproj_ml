@@ -4,9 +4,10 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-from forecasting_core.artifacts import MarginalForecastDistribution
-from forecasting_core.probabilistic_spec import ProbabilisticSpec
-from forecasting_core.tensors import MarginalQuantileForecastTensor, PointForecastTensor
+from forecasting_core.probability.distribution import MarginalForecastDistribution
+from forecasting_core.probability.spec import ProbabilisticSpec
+from forecasting_core.tensors.quantile import MarginalQuantileForecastTensor
+from forecasting_core.tensors.point import PointForecastTensor
 from model_predicting.loops.predictor import build_crossing_report, repair_marginal_quantile_crossing
 
 

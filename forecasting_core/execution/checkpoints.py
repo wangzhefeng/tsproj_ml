@@ -1,7 +1,8 @@
-"""Completed-fit persistence contract; training never imports L2 storage."""
-from typing import Any, Callable, Mapping, Protocol, Sequence, TypeVar
+"""已完成拟合的持久化协议与结构化失败合同。"""
 
+from typing import Any, Callable, Mapping, Protocol, Sequence, TypeVar
 import numpy as np
+
 
 T = TypeVar("T")
 

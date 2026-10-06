@@ -19,12 +19,8 @@ from forecasting_core.specs import (
 )
 from model_testing.contracts import geometry as backtest_geometry
 from model_testing.contracts.geometry import RollingOriginFold
-from forecasting_core.specs.temporal import (
-    forecast_ends,
-    forecast_times,
-    history_start,
-    select_training_origins,
-)
+from forecasting_core.temporal.windows import forecast_ends, forecast_times, history_start
+from forecasting_core.temporal.sampling import select_training_origins
 
 RollingBacktestSpec = (
     FixedStepBacktestSpec | SlidingWindowBacktestSpec | ExpandingWindowBacktestSpec

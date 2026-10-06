@@ -14,10 +14,12 @@ from typing import Any, Mapping
 import numpy as np
 import pandas as pd
 
-from forecasting_core.artifacts import ForecastModelBundle, QuantileGrid
-from forecasting_core.point_intervals import ResidualCalibrationSpec, pi_column_names
+from forecasting_core.bundle import ForecastModelBundle
+from forecasting_core.probability.grid import QuantileGrid
+from forecasting_core.probability.calibration import ResidualCalibrationSpec
+from forecasting_core.probability.intervals import pi_column_names
 from forecasting_core.specs.problem import ForecastProblemSpec
-from forecasting_core.specs.temporal import forecast_times as temporal_forecast_times
+from forecasting_core.temporal.windows import forecast_times as temporal_forecast_times
 from model_testing.contracts.geometry import TimeGeometry, scheduled_origin_indices
 from pipeline.run_state import require_completed_state
 

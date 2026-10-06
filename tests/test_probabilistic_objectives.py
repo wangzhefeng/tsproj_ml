@@ -11,7 +11,7 @@ from pathlib import Path
 
 from config.config_loader import load_yaml_config
 from forecasting_core.specs import EstimatorSpec, ForecastConfigSpec
-from forecasting_core.probabilistic_spec import probabilistic_spec_from_mapping
+from forecasting_core.probability.spec import probabilistic_spec_from_mapping
 from model_building.catalog import quantile_parameters
 
 

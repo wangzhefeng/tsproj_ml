@@ -39,22 +39,22 @@ from forecasting_core.specs import (
     ForecastConfigSpec,
     SlidingWindowBacktestSpec,
 )
-from forecasting_core.origin import resolve_origin
+from forecasting_core.temporal.origin import resolve_origin
 from model_testing.contracts.primitives import seasonal_naive_tensor
 from model_predicting.artifacts.persistence import (
     build_strategy_model_bundle,
     persist_model_bundle,
 )
 from model_training.strategies import CanonicalStrategyArtifact
-from forecasting_core.design import IndexedDesign, retained_array_bytes
-from forecasting_core.specs.temporal import (
+from forecasting_core.execution.design import IndexedDesign, retained_array_bytes
+from forecasting_core.temporal.windows import (
     forecast_times as _temporal_forecast_times,
     forecast_ends as _temporal_forecast_ends,
     has_bounded_history,
     history_start as _temporal_history_start,
-    select_training_origins,
 )
-from forecasting_core.tensors import PointForecastTensor
+from forecasting_core.temporal.sampling import select_training_origins
+from forecasting_core.tensors.point import PointForecastTensor
 from feature_engineering.transforms import CanonicalFeatureScaler, CanonicalTargetTransform
 from model_performance.checkpoints import (
     FileFitCheckpoint, implementation_fingerprint, runtime_checkpoint_errors,
@@ -65,11 +65,9 @@ from model_performance.transform_cache import (
     fold_transform_fingerprint,
 )
 from model_training.trainer import CanonicalTrainer
-from forecasting_core.artifacts import ForecastModelBundle, MarginalForecastDistribution
-from forecasting_core.runtime_resources import (
-    RuntimeExecutionPlan,
-    RuntimeResourceBudget,
-)
+from forecasting_core.bundle import ForecastModelBundle
+from forecasting_core.probability.distribution import MarginalForecastDistribution
+from forecasting_core.execution.resources import RuntimeExecutionPlan, RuntimeResourceBudget
 from model_predicting.artifacts.evidence_collect import collect_model_evidence, dependency_versions, json_evidence
 from model_predicting.artifacts.evidence_assembly import compiled_lineage, proof_payload, source_lineage_payload
 from pipeline.lifecycle import BacktestRuntimeResult, CanonicalRuntimeResult, run_lifecycle
@@ -108,7 +106,7 @@ from model_performance.resource_planner import (
 # _native_history_cls 按 model_type 分发。
 
 # 回测公开原语（seasonal-naive 基线、actual 张量）位于
-# model_testing/contracts/primitives.py，origin 解析位于 forecasting_core/origin.py；
+# model_testing/contracts/primitives.py，origin 解析位于 forecasting_core/temporal/origin.py；
 # 本文件经公开名消费。
 
 

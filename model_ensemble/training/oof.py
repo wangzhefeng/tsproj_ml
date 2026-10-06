@@ -17,7 +17,7 @@ from typing import Any, Mapping
 import numpy as np
 import pandas as pd
 
-from forecasting_core.artifacts import MarginalForecastDistribution
+from forecasting_core.probability.distribution import MarginalForecastDistribution
 from model_testing.contracts.geometry import OriginTimeline, TimeGeometry, is_label_safe, scheduled_origin_indices
 
 from model_ensemble.artifacts import OOFPredictionArtifact

@@ -9,7 +9,7 @@ import numpy as np
 import pandas as pd
 
 from feature_engineering import FeatureCompiler
-from forecasting_core.artifacts import MarginalForecastDistribution
+from forecasting_core.probability.distribution import MarginalForecastDistribution
 from forecasting_core.specs import (
     ColumnSpec,
     DataSourceSpec,
@@ -20,7 +20,8 @@ from forecasting_core.specs import (
     ForecastProblemSpec,
     ForecastStrategySpec,
 )
-from forecasting_core.tensors import MarginalQuantileForecastTensor, PointForecastTensor
+from forecasting_core.tensors.quantile import MarginalQuantileForecastTensor
+from forecasting_core.tensors.point import PointForecastTensor
 from pipeline.fold_fit import _fit_runtime_transforms
 from feature_engineering.transforms import CanonicalFeatureScaler, CanonicalTargetTransform
 

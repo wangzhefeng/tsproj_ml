@@ -16,8 +16,8 @@ from typing import Any, Mapping
 
 import pandas as pd
 
-from forecasting_core.artifacts import MarginalForecastDistribution
-from forecasting_core.tensors import PointForecastTensor
+from forecasting_core.probability.distribution import MarginalForecastDistribution
+from forecasting_core.tensors.point import PointForecastTensor
 from model_evaluation.marginal import evaluate_marginal_distribution
 from model_evaluation.point import evaluate_point_forecasts
 from probabilistic.calibration import ConformalCalibrationTracker

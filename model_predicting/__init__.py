@@ -1,6 +1,6 @@
 """预测执行面、部署证据与 bundle 持久化。
 
-子包划分（2026-09-28，按消费方）：``contracts/`` 注入协议（FeatureProvider）、
+特征注入协议统一位于 ``forecasting_core.execution.strategy``。
 ``loops/`` 预测与部署执行（predictor/deployment）、``artifacts/`` bundle 持久化、
 结果写盘与证据（persistence/results/evidence_collect/evidence_assembly）。
 

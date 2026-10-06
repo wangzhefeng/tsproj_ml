@@ -26,7 +26,7 @@ from model_testing.loops.execution import ordered_bounded_map
 from model_testing.contracts.protocols import BacktestRunner, BacktestRunnerFactory
 from pandas.tseries.frequencies import to_offset
 from probabilistic.calibration import ConformalCalibrationTracker
-from forecasting_core.probabilistic_spec import probabilistic_spec_from_mapping
+from forecasting_core.probability.spec import probabilistic_spec_from_mapping
 
 
 def run_calendar_month_backtest(

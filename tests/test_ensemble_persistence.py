@@ -14,7 +14,7 @@ import pandas as pd
 import yaml
 
 from data_loading import SourceRegistry
-from forecasting_core.artifacts import MarginalForecastDistribution
+from forecasting_core.probability.distribution import MarginalForecastDistribution
 from forecasting_core.specs.config import parse_model_config
 from model_ensemble.inference.deployment import predict_ensemble_bundle
 from model_ensemble.configuration.loader import load_ensemble_config

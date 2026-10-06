@@ -6,8 +6,8 @@ from threading import Lock
 
 import pandas as pd
 
-from forecasting_core.probabilistic_spec import probabilistic_spec_from_mapping
-from forecasting_core.tensors import PointForecastTensor
+from forecasting_core.probability.spec import probabilistic_spec_from_mapping
+from forecasting_core.tensors.point import PointForecastTensor
 from model_ensemble.inference.forecast import build_ensemble_forecast
 from model_ensemble.inference.predictor import combine_members
 from model_evaluation.point import resolve_aggregate_weighting

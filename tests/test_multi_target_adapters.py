@@ -26,7 +26,8 @@ from model_training.estimators.multi_target import (
     RegressorChainMultiTargetAdapter,
 )
 from forecasting_core.specs import EstimatorSpec, TargetAdapter
-from model_training.strategies import StrategyTargetPlan, TargetCoordinate
+from model_training.strategies import StrategyTargetPlan
+from forecasting_core.execution.strategy import TargetCoordinate
 from forecasting_core.specs import ForecastStrategySpec
 from model_building.factory import ModelFactory
 

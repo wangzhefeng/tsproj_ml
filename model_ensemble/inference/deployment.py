@@ -8,12 +8,13 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-from forecasting_core.artifacts import ForecastModelBundle, MarginalForecastDistribution
-from forecasting_core.tensors import PointForecastTensor
+from forecasting_core.bundle import ForecastModelBundle
+from forecasting_core.probability.distribution import MarginalForecastDistribution
+from forecasting_core.tensors.point import PointForecastTensor
 from model_ensemble.artifacts import EnsembleArtifact, TemporalWeightsArtifact
 from model_ensemble.inference.predictor import combine_members
 from model_ensemble.inference.forecast import build_ensemble_forecast
-from model_predicting.contracts.protocols import FeatureProvider
+from forecasting_core.execution.strategy import FeatureProvider
 from model_predicting.loops.deployment import predict_strategy_bundle, attach_bundle_prediction_intervals
 
 

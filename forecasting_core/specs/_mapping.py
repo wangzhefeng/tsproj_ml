@@ -12,7 +12,7 @@ from typing import Any, TypeVar
 T = TypeVar("T", bound="FrozenMappingSpec")
 
 
-def freeze_json_value(value: Any, path: str) -> Any:
+def freeze_json_value(value: Any, path: str, *, allow_tuple: bool = True) -> Any:
     """Recursively freeze one JSON-like value and reject unsupported values."""
     if value is None or isinstance(value, (str, bool, int)):
         return value
@@ -20,9 +20,9 @@ def freeze_json_value(value: Any, path: str) -> Any:
         if not math.isfinite(value):
             raise ValueError(f"{path} must contain only finite floats")
         return value
-    if isinstance(value, (list, tuple)):
+    if isinstance(value, list) or (allow_tuple and isinstance(value, tuple)):
         return tuple(
-            freeze_json_value(item, f"{path}[{index}]")
+            freeze_json_value(item, f"{path}[{index}]", allow_tuple=allow_tuple)
             for index, item in enumerate(value)
         )
     if isinstance(value, Mapping):
@@ -30,7 +30,7 @@ def freeze_json_value(value: Any, path: str) -> Any:
         for key, item in value.items():
             if not isinstance(key, str):
                 raise TypeError(f"{path} keys must be strings")
-            normalized[key] = freeze_json_value(item, f"{path}.{key}")
+            normalized[key] = freeze_json_value(item, f"{path}.{key}", allow_tuple=allow_tuple)
         return MappingProxyType(dict(sorted(normalized.items())))
     raise TypeError(f"{path} must contain only JSON-like values")
 

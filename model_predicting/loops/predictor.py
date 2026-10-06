@@ -7,20 +7,19 @@ import numpy as np
 import pandas as pd
 
 from forecasting_core.specs import ForecastConfigSpec
-from forecasting_core.probabilistic_spec import resolve_crossing_settings
+from forecasting_core.execution.strategy import TargetCoordinate
+from forecasting_core.probability.spec import resolve_crossing_settings
 from model_evaluation.metrics import crossing_metrics
 from model_training.strategies import (
     CanonicalStrategyArtifact,
-    TargetCoordinate,
+
     get_standard_executor,
     target_plan_for_config,
 )
-from forecasting_core.tensors import (
-    MarginalQuantileForecastTensor,
-    PointForecastTensor,
-)
+from forecasting_core.tensors.quantile import MarginalQuantileForecastTensor
+from forecasting_core.tensors.point import PointForecastTensor
 from model_training.quantile import CanonicalMarginalQuantileArtifact
-from forecasting_core.artifacts import MarginalForecastDistribution
+from forecasting_core.probability.distribution import MarginalForecastDistribution
 
 
 class CanonicalForecaster:

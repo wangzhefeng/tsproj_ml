@@ -7,8 +7,8 @@ from typing import Any
 
 import pandas as pd
 
-from forecasting_core.artifacts import ForecastModelBundle
-from forecasting_core.probabilistic_spec import probabilistic_spec_from_mapping
+from forecasting_core.bundle import ForecastModelBundle
+from forecasting_core.probability.spec import probabilistic_spec_from_mapping
 from data_loading.sources.provenance import file_sha256
 from model_ensemble.artifacts import method_artifact_audit_payload
 

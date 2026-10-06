@@ -20,7 +20,7 @@ from uuid import uuid4
 
 import numpy as np
 
-from forecasting_core.checkpoints import FitCheckpointError
+from forecasting_core.execution.checkpoints import FitCheckpointError
 from utils.runtime_env import RUNTIME_DEPENDENCY_PACKAGES
 
 try:

@@ -11,7 +11,7 @@ from typing import Sequence
 import numpy as np
 import pandas as pd
 
-from forecasting_core.design import IndexedDesign
+from forecasting_core.execution.design import IndexedDesign, immutable_array
 from forecasting_core.specs import AvailabilityPolicy, ColumnRole
 from feature_engineering.history_statistics import expanding_statistics, rolling_statistics
 
@@ -78,8 +78,7 @@ def compile_indexed_history(compiler, information_set, origins: pd.DatetimeIndex
                 values = snapshot_values[begin:begin + len(index)]
             if not np.isfinite(values).all():
                 raise ValueError(f"history column {column.name!r} must be finite")
-            values.flags.writeable = False
-            columns[column.name] = values
+            columns[column.name] = immutable_array(values)
     positions = times.get_indexer(origins)
     if np.any(positions < 0):
         raise ValueError("supervised origins must belong to the regular history grid")
@@ -91,8 +90,7 @@ def compile_indexed_history(compiler, information_set, origins: pd.DatetimeIndex
 
     def freeze(values):
         array = np.asarray(values, dtype=float)
-        array.flags.writeable = False
-        return array
+        return immutable_array(array)
 
     origin_columns = {}
     advanced = config.features.transformations.get("advanced", {})

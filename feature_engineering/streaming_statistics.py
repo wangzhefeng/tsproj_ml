@@ -44,6 +44,8 @@ import numpy as np
 import pandas as pd
 
 from feature_engineering.history_statistics import history_statistic
+from data_loading.information.information_set import SourceLineage
+from forecasting_core.specs.data import AvailabilityPolicy
 
 
 def _fma(a: float, b: float, c: float) -> float:
@@ -230,6 +232,7 @@ class StreamingStatistics:
         self.columns = tuple(sorted({key[0] for key in self.ewm} | set(self.events) | set(self.expanding)))
         self.count = 0
         self.origin = None
+        self.history_start = None
         self.lineage_digest = hashlib.sha256(config_fingerprint.encode()).hexdigest()
 
     @property
@@ -255,6 +258,8 @@ class StreamingStatistics:
         if any(not np.isfinite(array).all() for array in values.values()):
             raise ValueError("statistics update requires finite values")
         result = deepcopy(self)
+        if result.history_start is None:
+            result.history_start = times[0]
         for position, timestamp in enumerate(times):
             for (column, _), state in result.ewm.items():
                 state.update(float(values[column][position]))
@@ -275,11 +280,33 @@ class StreamingStatistics:
         if any(state.arithmetic_mode != _arithmetic_mode() for state in self.ewm.values()):
             raise ValueError("statistics snapshot pandas arithmetic changed; rebuild required")
 
+    @property
+    def source_lineage(self) -> SourceLineage:
+        return SourceLineage("streaming_statistics", "online:" + self.lineage_digest, None,
+                             AvailabilityPolicy.SOURCE_TIME, False)
+
+    def validate_snapshot(self, expected: StreamingStatistics, origin) -> None:
+        """恢复只验证保存状态，不由截断历史重造完整前缀。"""
+        self.require_binding(expected.config_fingerprint, origin)
+        if (self.time_col != expected.time_col or self.freq != expected.freq
+                or self.ewm.keys() != expected.ewm.keys() or self.events.keys() != expected.events.keys()
+                or self.expanding.keys() != expected.expanding.keys()
+                or any(state.stats != expected.expanding[column].stats for column, state in self.expanding.items())):
+            raise ValueError("statistics snapshot configuration mismatch")
+        offset = pd.tseries.frequencies.to_offset(self.freq)
+        if (type(self.count) is not int or self.count < 1 or self.history_start is None
+                or self.history_start + (self.count - 1) * offset != self.origin
+                or any(state.count != self.count for state in (*self.ewm.values(), *self.events.values(), *self.expanding.values()))
+                or any(state.prefix is not None and len(state.prefix) != self.count for state in self.expanding.values())):
+            raise ValueError("statistics snapshot count/time grid mismatch")
+
     def value(self, kind: str, column: str, stat: str, *, origin, identity, parameter=None) -> float:
         self.require_binding(self.config_fingerprint, origin)
         if identity != ():
             raise ValueError("streaming statistics currently require Local identity")
         if kind == "ewm":
+            if stat not in {"mean", "std"}:
+                raise ValueError("unknown streaming EWM statistic")
             state = self.ewm[(column, float(parameter))]
             return state.mean() if stat == "mean" else state.std()
         if kind == "time_since":

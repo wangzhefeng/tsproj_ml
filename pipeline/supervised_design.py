@@ -18,6 +18,7 @@ from data_loading import (
     TargetAccess,
 )
 from feature_engineering import CompiledFeatures, FeatureCompiler
+from feature_engineering.statistics_provider import HistoryStatisticsProvider
 from feature_engineering.indexed import compile_indexed_history, indexed_history_eligible
 from forecasting_core.specs.temporal import (
     forecast_ends,
@@ -532,6 +533,7 @@ class SupervisedDesignBuilder:
         target_providers: Mapping[Any, EndogenousFutureProvider] | None,
         visibility_cutoff: pd.Timestamp | None = None,
         collect_audit: bool = True,
+        statistics_provider: HistoryStatisticsProvider | None = None,
     ) -> np.ndarray:
         request = self.request(origin)
         call_step = self.plan.call_coordinates[call_index][0].horizon_step
@@ -542,6 +544,7 @@ class SupervisedDesignBuilder:
             observed_future_providers=information_set.observed_future_providers,
             horizon_steps=(call_step,),
             visibility_cutoff=visibility_cutoff,
+            statistics_provider=statistics_provider,
         )
         schema = self._update_feature_schema(compiled)
         frame = compiled.frame.loc[:, list(schema)]
@@ -726,13 +729,14 @@ class SupervisedDesignBuilder:
         *,
         target_transform: CanonicalTargetTransform | None = None,
         data_phase: str = "historical",
+        statistics_provider: HistoryStatisticsProvider | None = None,
     ):
         information_set = self.registry.materialize(self.request(origin, data_phase=data_phase))
         call_steps = tuple(
             coordinates[0].horizon_step for coordinates in self.plan.call_coordinates
         )
         request = self.request(origin, data_phase=data_phase)
-        if (not self.compiler.resolved_strategy.consumes_previous
+        if (statistics_provider is None and not self.compiler.resolved_strategy.consumes_previous
                 and self.compiler.batch_eligibility((request,), horizon_steps=call_steps).eligible):
             compiled = self.compiler.compile_batch((information_set,), (request,), horizon_steps=call_steps)[0]
             schema = self._update_feature_schema(compiled)
@@ -747,6 +751,7 @@ class SupervisedDesignBuilder:
             origin,
             0,
             information_set,
+            statistics_provider=statistics_provider,
             target_providers={
                 self._provider_key(series_id): _PredictedTargetProvider(
                     self.config.problem.horizon,
@@ -772,6 +777,7 @@ class SupervisedDesignBuilder:
                 origin,
                 call_index,
                 information_set,
+                statistics_provider=statistics_provider,
                 target_providers={
                     self._provider_key(series_id): _PredictedTargetProvider(
                         self.config.problem.horizon,

@@ -45,6 +45,7 @@ from feature_engineering.transform_specs import (
     normalize_feature_scaling,
     normalize_target_transformations,
 )
+from feature_engineering.statistics_provider import HistoryStatisticsProvider
 
 
 @dataclass(frozen=True, slots=True)
@@ -124,6 +125,7 @@ class CompilationContext:
 
     frames: dict[str, dict[str, Any]]
     auxiliary: dict[str, Any] = field(default_factory=dict)
+    statistics_provider: HistoryStatisticsProvider | None = None
 
 
 class FeatureCompiler:
@@ -235,12 +237,20 @@ class FeatureCompiler:
         observed_future_providers: Mapping[Any, EndogenousFutureProvider] | None = None,
         horizon_steps: Sequence[int] | None = None,
         visibility_cutoff: pd.Timestamp | None = None,
+        statistics_provider: HistoryStatisticsProvider | None = None,
     ) -> CompiledFeatures:
         if not isinstance(information_set, MaterializedInformationSet):
             raise TypeError("information_set must be a MaterializedInformationSet")
         if not isinstance(request, InformationSetRequest):
             raise TypeError("request must be an InformationSetRequest")
-        with self._compilation_scope(information_set):
+        with self._compilation_scope(information_set) as context:
+            if statistics_provider is not None:
+                if (self.problem.training_scope != "local" or self.problem.series_id_cols
+                        or len(self.data.sources) != 1
+                        or self.data.sources[0].availability != AvailabilityPolicy.SOURCE_TIME):
+                    raise ValueError("statistics provider requires Local single source_time history")
+                statistics_provider.require_binding(self.config.fingerprint(), request.forecast_origin)
+                context.statistics_provider = statistics_provider
             if request.H != self.problem.horizon:
                 raise ValueError(
                     "information-set horizon does not match ForecastProblemSpec: "
@@ -365,7 +375,8 @@ class FeatureCompiler:
                     feature_names=feature_names,
                     categorical_names=tuple(dict.fromkeys(categorical_names)),
                 ),
-                source_lineage=information_set.lineage,
+                source_lineage=(*information_set.lineage, statistics_provider.source_lineage)
+                    if statistics_provider is not None else information_set.lineage,
                 visibility_proof=proofs,
             )
 
@@ -2050,6 +2061,20 @@ class FeatureCompiler:
                 raise TypeError(f"transformations.advanced.{kind} must be a mapping")
             columns = self._string_sequence(spec.get("columns", ()), f"advanced.{kind}.columns")
             for column in columns:
+                provider = self._active_context().statistics_provider
+                if provider is not None and kind in {"ewm", "expanding", "time_since"}:
+                    if kind == "ewm":
+                        for halflife in self._positive_number_sequence(spec.get("halflives", ()), "ewm.halflives"):
+                            for stat in self._validated_stats(spec.get("stats", ()), "ewm.stats", self.EWM_STATS):
+                                row[f"{column}_ewm_{stat}_{halflife}"] = provider.value(
+                                    kind, column, stat, origin=request.forecast_origin, identity=identity, parameter=halflife)
+                    else:
+                        stats = (self._string_sequence(spec.get("events", ()), "time_since.events") if kind == "time_since"
+                                 else self._validated_stats(spec.get("stats", ()), "expanding.stats", self.ROLLING_STATS))
+                        for stat in stats:
+                            row[f"{column}_{kind}_{stat}"] = provider.value(
+                                kind, column, stat, origin=request.forecast_origin, identity=identity)
+                    continue
                 history = self._visible_history_series(
                     column,
                     identity,

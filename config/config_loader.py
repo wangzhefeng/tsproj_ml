@@ -14,12 +14,8 @@ from pathlib import Path
 from typing import Any, Mapping
 
 from forecasting_core.specs.config import parse_model_config
-from model_ensemble.loader import parse_ensemble_document
-
-try:
-    import yaml
-except ImportError:  # pragma: no cover - exercised only in incomplete envs
-    yaml = None
+from forecasting_core.yaml_io import strict_yaml_load
+from model_ensemble.configuration.loader import parse_ensemble_document
 
 MODEL_CONFIG_FIELDS = frozenset(
     {
@@ -36,37 +32,11 @@ MODEL_CONFIG_FIELDS = frozenset(
 MODEL_GROUP_FIELDS = frozenset({"problem", "data", "features", "strategy", "estimator"})
 ENSEMBLE_GROUP_FIELDS = frozenset({"problem", "data", "ensemble", "output"})
 
-def _strict_yaml_load(text: str, source: str | Path) -> Any:
-    if yaml is None:
-        raise ImportError("PyYAML is required for YAML configs. Install dependency: pyyaml")
-
-    class UniqueKeyLoader(yaml.SafeLoader):
-        pass
-
-    def construct_mapping(loader, node, deep=False):
-        loader.flatten_mapping(node)
-        mapping = {}
-        for key_node, value_node in node.value:
-            key = loader.construct_object(key_node, deep=deep)
-            try:
-                duplicate = key in mapping
-            except TypeError as exc:
-                raise ValueError(f"Unhashable YAML mapping key in {source}: {key!r}") from exc
-            if duplicate:
-                raise ValueError(f"Duplicate YAML key {key!r} in {source}")
-            mapping[key] = loader.construct_object(value_node, deep=deep)
-        return mapping
-
-    UniqueKeyLoader.add_constructor(
-        yaml.resolver.BaseResolver.DEFAULT_MAPPING_TAG,
-        construct_mapping,
-    )
-    return yaml.load(text, Loader=UniqueKeyLoader)
 
 def is_model_yaml(path: str | Path) -> bool:
     """按顶层 schema 识别模型配置，避免把独立数据工具 YAML 当默认模型。"""
     config_path = Path(path)
-    payload = _strict_yaml_load(
+    payload = strict_yaml_load(
         config_path.read_text(encoding="utf-8"),
         config_path,
     )
@@ -82,14 +52,12 @@ def is_model_yaml(path: str | Path) -> bool:
 
 def load_yaml_document(config_yaml: str | Path) -> Mapping[str, Any]:
     """加载独立 YAML 文档并拒绝重复键；模型仍须经 load_yaml_config 校验。"""
-    if yaml is None:
-        raise ImportError("PyYAML is required for YAML configs. Install dependency: pyyaml")
 
     config_path = Path(config_yaml)
     if not config_path.exists():
         raise FileNotFoundError(f"YAML config file not found: {config_path}")
 
-    loaded = _strict_yaml_load(
+    loaded = strict_yaml_load(
         config_path.read_text(encoding="utf-8"),
         config_path,
     ) or {}

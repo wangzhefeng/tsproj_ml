@@ -27,7 +27,7 @@ from config.config_loader import is_model_yaml, load_yaml_config  # noqa: E402
 from decomposition.configuration.spec import normalize_decomposition_config  # noqa: E402
 from feature_engineering.compiler import FeatureCompiler  # noqa: E402
 from forecasting_core.specs import ForecastConfigSpec  # noqa: E402
-from model_ensemble.specs import EnsembleConfigSpec  # noqa: E402
+from model_ensemble.configuration.specs import EnsembleConfigSpec  # noqa: E402
 
 PROJ = Path(__file__).resolve().parent.parent
 

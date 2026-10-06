@@ -73,6 +73,10 @@ class BaseModelRunner(OriginTimeline, Protocol):
         """Full target history tensor as-of origin (for forecast-plot context)."""
         ...
 
+    def seasonal_naive(self, origin: pd.Timestamp, forecast_times: pd.DatetimeIndex, *, history: Any = None) -> Any:
+        """显式基线口径；复用已实体化的 as-of 历史。"""
+        ...
+
     def final_bundle_inputs(self) -> tuple[Any, Any, tuple[Any, ...], Any]:
         ...
 
@@ -116,6 +120,7 @@ class EnsembleRuntimeServices:
     persist_bundle: Callable[[Any, str | Path], Any]
     plan_resources: Callable[..., tuple[Any, Any, Any]]
     resolve_budget: Callable[[Any], Any] | None = None
+    calibration_factory: Callable[..., Any] | None = None
 
 
 def member_execution_evidence(runner: Any, artifact: Any, transform: Any) -> dict[str, Any]:

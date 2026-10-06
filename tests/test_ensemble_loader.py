@@ -17,13 +17,13 @@ from forecasting_core.specs import (
     ProbabilisticConfigSpec,
     RuntimeValidationSpec,
 )
-from model_ensemble.loader import (
+from model_ensemble.configuration.loader import (
     load_ensemble_config,
     parse_ensemble_document,
     resolve_members,
     validate_member_sources,
 )
-from model_ensemble.specs import EnsembleSpecError
+from model_ensemble.configuration.specs import EnsembleSpecError
 
 
 SINGLE_MODEL = {

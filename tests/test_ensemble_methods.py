@@ -15,7 +15,7 @@ from model_ensemble.methods import (
     weighted,
 )
 from model_ensemble.artifacts import EnsembleArtifact, EqualWeightsArtifact, PerTargetWeightsArtifact
-from model_ensemble.predictor import combine_members
+from model_ensemble.inference.predictor import combine_members
 
 
 def _two_member_oof():
@@ -49,7 +49,7 @@ class PredictorDelegationTest(unittest.TestCase):
                     if name != "averaging":
                         expected[:, :, 0] = 0.25 * a[:, :, 0] + 0.75 * b[:, :, 0]
                         expected[:, :, 1] = 0.75 * a[:, :, 1] + 0.25 * b[:, :, 1]
-                    with patch(f"model_ensemble.predictor.combine_{name}", wraps=combine) as call:
+                    with patch(f"model_ensemble.inference.predictor.combine_{name}", wraps=combine) as call:
                         actual = combine_members(artifact, {"a": a, "b": b})
                         call.assert_called_once()
                     np.testing.assert_array_equal(actual, expected)
@@ -130,6 +130,13 @@ class LinearBlendingTest(unittest.TestCase):
             self.assertTrue(all(w >= 0.0 for w in weights), key)
             self.assertAlmostEqual(sum(weights), 1.0, places=12)
 
+    def test_point_nnls_normalization_has_independent_analytic_weights(self):
+        actual = np.ones((1, 2, 1))
+        values = {"a": np.array([1., 0.]).reshape(1, 2, 1),
+                  "b": np.array([0., 2.]).reshape(1, 2, 1)}
+        artifact = linear_blending.fit_linear_blending(values, actual)
+        np.testing.assert_allclose(artifact.weights_by_target["target_0"], [2 / 3, 1 / 3], rtol=0, atol=1e-12)
+
     def test_degenerate_total_uses_fallback(self):
         actual = np.ones((5, 2, 1))
         zeros = np.zeros((5, 2, 1))
@@ -183,7 +190,7 @@ class StackingTest(unittest.TestCase):
         flat = np.zeros((6, 2, 1))
         artifact = stacking.fit_stacking({"a": flat, "b": flat * 0.0}, actual)
         combined = stacking.combine_stacking(artifact, {"a": flat, "b": flat})
-        self.assertTrue(np.isfinite(combined).all())
+        np.testing.assert_array_equal(combined, actual)
 
 
 if __name__ == "__main__":

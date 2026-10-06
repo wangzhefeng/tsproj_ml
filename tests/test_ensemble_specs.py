@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import unittest
 
-from model_ensemble.specs import (
+from model_ensemble.configuration.specs import (
     ENSEMBLE_FORBIDDEN_TOP_LEVEL,
     EnsembleSpecError,
     MemberRef,

@@ -2,7 +2,7 @@
 import unittest
 import pandas as pd
 from types import SimpleNamespace
-from model_ensemble.oof import oof_fold_origins
+from model_ensemble.training.oof import oof_fold_origins
 from model_testing.contracts.geometry import TimeGeometry, rolling_origin_folds
 
 

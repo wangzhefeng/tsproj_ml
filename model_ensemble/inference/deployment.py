@@ -9,11 +9,12 @@ import numpy as np
 import pandas as pd
 
 from forecasting_core.artifacts import ForecastModelBundle, MarginalForecastDistribution
-from forecasting_core.tensors import MarginalQuantileForecastTensor, PointForecastTensor
-from model_ensemble.artifacts import EnsembleArtifact
-from model_ensemble.predictor import combine_members
+from forecasting_core.tensors import PointForecastTensor
+from model_ensemble.artifacts import EnsembleArtifact, TemporalWeightsArtifact
+from model_ensemble.inference.predictor import combine_members
+from model_ensemble.inference.forecast import build_ensemble_forecast
 from model_predicting.contracts.protocols import FeatureProvider
-from model_predicting.loops.deployment import predict_strategy_bundle
+from model_predicting.loops.deployment import predict_strategy_bundle, attach_bundle_prediction_intervals
 
 
 def predict_ensemble_bundle(
@@ -54,6 +55,9 @@ def predict_ensemble_bundle(
 
     resolved_series_ids = tuple(series_ids or bundle.series_ids)
     times = pd.DatetimeIndex(forecast_times)
+    if isinstance(artifact.method_artifact, TemporalWeightsArtifact):
+        if times.empty or times[0] <= pd.Timestamp(artifact.method_artifact.forecast_origin):
+            raise ValueError("dynamic weights cannot predict at or before their fit origin")
     member_values: dict[str, np.ndarray] = {}
     for name in expected:
         prediction = predict_strategy_bundle(
@@ -80,28 +84,14 @@ def predict_ensemble_bundle(
             member_values[name] = np.asarray(prediction.quantiles.values, dtype=float)
 
     combined = np.asarray(combine_members(artifact, member_values), dtype=float)
-    if artifact.quantile_levels is None:
-        return PointForecastTensor(
-            values=combined,
-            series_ids=resolved_series_ids,
-            forecast_times=times,
-            targets=artifact.targets,
-        )
-    point_level = float(bundle.probabilistic_spec.point_quantile)
-    quantiles = MarginalQuantileForecastTensor(
-        values=combined,
-        levels=tuple(artifact.quantile_levels),
-        point_level=point_level,
-        series_ids=resolved_series_ids,
-        forecast_times=times,
-        targets=artifact.targets,
+    prediction = build_ensemble_forecast(
+        combined, probability=bundle.probabilistic_spec, series_ids=resolved_series_ids,
+        forecast_times=times, targets=artifact.targets,
+        method_name=artifact.method_artifact.method_name,
     )
-    return MarginalForecastDistribution(
-        point=quantiles.point(),
-        quantiles=quantiles,
-        dependence_model=None,
-        metadata={"ensemble_method": artifact.method_artifact.method_name},
-    )
+    if isinstance(prediction, MarginalForecastDistribution):
+        attach_bundle_prediction_intervals(bundle, prediction)
+    return prediction
 
 
 __all__ = ["predict_ensemble_bundle"]

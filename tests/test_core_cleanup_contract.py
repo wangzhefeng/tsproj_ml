@@ -27,7 +27,7 @@ class CoreCleanupContractTest(unittest.TestCase):
             "pipeline/supervised_design.py": {"_labels", "_holdout_training_indices"},
             "model_ensemble/runtime.py": {"_member_origin"},
             "model_ensemble/contracts.py": {"FusionMethod"},
-            "model_ensemble/trainer.py": {"MemberAuditScores"},
+            "model_ensemble/training/trainer.py": {"MemberAuditScores"},
             "feature_engineering/transforms/pipeline.py": {
                 "attach_fitted_target_scaler", "restore_quantile_matrix",
             },

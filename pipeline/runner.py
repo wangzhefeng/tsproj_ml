@@ -71,6 +71,7 @@ from forecasting_core.runtime_resources import (
     RuntimeResourceBudget,
 )
 from model_predicting.artifacts.evidence_collect import collect_model_evidence, dependency_versions, json_evidence
+from model_predicting.artifacts.evidence_assembly import compiled_lineage, proof_payload, source_lineage_payload
 from pipeline.lifecycle import BacktestRuntimeResult, CanonicalRuntimeResult, run_lifecycle
 from model_testing.contracts.protocols import BacktestWindow
 from model_testing.contracts.windows import (
@@ -1022,6 +1023,15 @@ class CanonicalBaseModelRunner:
             })
         return trainer, artifact, capabilities
 
+    def reset_forecast_audit(self) -> None:
+        """为一次显式预测单独收集输入证据；融合不访问 builder 私有状态。"""
+        self.builder.reset_audit()
+
+    def validate_ensemble_support(self) -> None:
+        """融合只接监督成员；原生历史模型需要独立原始历史折，不能假装支持。"""
+        if self._native_cls is not None:
+            raise ValueError(f"{self.config.estimator.model_type} native-history models do not support Ensemble OOF")
+
     def build_final_bundle(
         self,
         feature_scaler: CanonicalFeatureScaler,
@@ -1039,6 +1049,16 @@ class CanonicalBaseModelRunner:
         ``source_lineage``、``calibration_state``。ensemble 成员路径不传 extras，
         走默认产物元数据。
         """
+        if extras is None and self.builder.audit:
+            visibility = proof_payload(self.builder.audit)
+            feature_lineage, availability = compiled_lineage(self.feature_schema, visibility, self.config)
+            extras = {
+                "visibility_proof": visibility,
+                "source_lineage": source_lineage_payload(self.builder.audit),
+                "feature_lineage": feature_lineage,
+                "availability_summary": availability,
+                "unknown_series_policy": self.config.validation.get("training_scope", {}).get("unknown_series_policy", "raise"),
+            }
         extras = dict(extras or {})
         if self.config.validation.get("train_history_steps") is not None:
             raise ValueError("train_history_steps currently requires backtest-only; bundle unsupported")

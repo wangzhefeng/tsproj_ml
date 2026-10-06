@@ -5,7 +5,7 @@ from dataclasses import dataclass
 
 import pandas as pd
 
-from model_ensemble.oof import oof_fold_origins
+from model_ensemble.training.oof import oof_fold_origins
 from model_testing.contracts import geometry as backtest_geometry
 
 

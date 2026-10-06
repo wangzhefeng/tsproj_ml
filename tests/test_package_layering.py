@@ -125,15 +125,19 @@ ALLOWED_ROOTS = {
     "model_ensemble": {
         "data_loading",
         "forecasting_core.artifacts",
+        "forecasting_core.probabilistic_spec",  # 融合自身部署概率规格，不借用首成员
+        "forecasting_core.yaml_io",  # 入口共用的严格 YAML 读取，不依赖 config 分派
         "forecasting_core.specs",
         "forecasting_core.tensors",
         "model_evaluation",
         "model_predicting.loops.deployment",
+        "model_predicting.loops.predictor",  # 共用 crossing 原语，不重复实现
         "model_predicting.artifacts.results",
         "model_predicting.contracts.protocols",  # FeatureProvider 注入协议（2026-09-28 子包划分）
         "forecasting_core.origin",  # 预测原点解析（部署路径通用原语）
         "model_testing.contracts.geometry",  # 共享标签安全合同，不暴露 runner 执行面
         "model_testing.artifacts.tensor_frames",  # 张量->long 纯转换唯一实现（2026-09-28 直引收口）
+        "model_testing.artifacts.reporting",  # 外层回测共用标准产物与逐窗图
         "utils",
     },
 }

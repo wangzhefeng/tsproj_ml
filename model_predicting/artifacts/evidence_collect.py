@@ -13,9 +13,9 @@ from typing import Any
 from model_building.wrappers.base import BaseModel
 from utils.runtime_env import RUNTIME_DEPENDENCY_PACKAGES
 
-# 证据遍历的 artifact 宿主包前缀：__dict__ 递归只深入这些包的对象，
+# 证据遍历的 artifact 宿主包前缀：实例字段递归只深入这些包的对象，
 # 新增生产 artifact 宿主包时必须登记此处，否则该包节点被静默跳过（不 RAISE）。
-_ARTIFACT_MODULE_PREFIXES = ("model_training.", "probabilistic.")
+_ARTIFACT_MODULE_PREFIXES = ("model_training.", "model_building.adapters.", "probabilistic.")
 
 
 def dependency_versions() -> dict[str, str]:
@@ -78,8 +78,15 @@ def collect_model_evidence(artifact: Any) -> list[dict[str, Any]]:
         elif is_dataclass(value) and not isinstance(value, type):
             for field in fields(value):
                 walk(getattr(value, field.name), f"{path}/{field.name}")
-        elif type(value).__module__.startswith(_ARTIFACT_MODULE_PREFIXES) and hasattr(value, "__dict__"):
-            for key, item in vars(value).items():
+        elif type(value).__module__.startswith(_ARTIFACT_MODULE_PREFIXES):
+            # slots 适配器没有 __dict__；只读已存储字段，不调用任意 property。
+            attributes = dict(vars(value)) if hasattr(value, "__dict__") else {}
+            for cls in type(value).__mro__:
+                slots = cls.__dict__.get("__slots__", ())
+                for key in ((slots,) if isinstance(slots, str) else slots):
+                    if key not in {"__dict__", "__weakref__"} and hasattr(value, key):
+                        attributes[key] = getattr(value, key)
+            for key, item in attributes.items():
                 walk(item, f"{path}/{key}")
 
     walk(artifact, "artifact")

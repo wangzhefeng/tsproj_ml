@@ -228,7 +228,7 @@ class CanonicalConfigFingerprintTest(unittest.TestCase):
 
     def test_ensemble_config_uses_members_instead_of_blend_strategy(self):
         """v4: ensemble-shaped YAML parses to EnsembleConfigSpec, not a spec."""
-        from model_ensemble.loader import parse_ensemble_document
+        from model_ensemble.configuration.loader import parse_ensemble_document
 
         payload = {
             "problem": {

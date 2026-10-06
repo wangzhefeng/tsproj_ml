@@ -12,7 +12,7 @@ from test_weather_registry import weather_data
 
 class WeatherEnsembleTest(unittest.TestCase):
     def test_weather_assets_and_implementation_enter_member_identity(self):
-        from model_ensemble.cache import member_source_hashes
+        from model_ensemble.outputs.cache import member_source_hashes
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             data = weather_data(root)

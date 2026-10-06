@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 from dataclasses import dataclass
 from typing import Any, Mapping
 
@@ -19,6 +20,7 @@ from forecasting_core.specs.output import OutputSpec
 from forecasting_core.specs.problem import ForecastProblemSpec
 from forecasting_core.specs.probabilistic import ProbabilisticConfigSpec
 from forecasting_core.specs.validation import RuntimeValidationSpec
+from forecasting_core.probabilistic_spec import probabilistic_spec_from_mapping
 
 ENSEMBLE_ALLOWED_TOP_LEVEL = frozenset(
     {
@@ -38,7 +40,7 @@ OOF_ALLOWED_FIELDS = frozenset(
 # 内部算法语义标识，不是可配置字段；仅正 gap 改变历史执行语义。
 OOF_GAP_SEMANTICS = "label_embargo_v1"
 METHOD_NAMES = frozenset(
-    {"averaging", "weighted", "linear_blending", "stacking"}
+    {"averaging", "weighted", "linear_blending", "stacking", "adaptive_weighted"}
 )
 
 
@@ -131,6 +133,23 @@ class MethodSpec:
             )
         if not isinstance(self.params, dict):
             raise EnsembleSpecError("model_ensemble.method.params must be a mapping")
+        allowed = {
+            "averaging": set(), "stacking": set(),
+            "weighted": {"metric", "weight_scope"},
+            "linear_blending": {"weight_scope"},
+            "adaptive_weighted": {"metric", "weight_scope", "halflife_days"},
+        }[self.name]
+        unknown = set(self.params) - allowed
+        if unknown:
+            raise EnsembleSpecError(f"{self.name} params has unknown fields: {sorted(unknown)}")
+        if self.name in {"weighted", "adaptive_weighted"} and self.params.get("metric", "rmse") not in {"rmse", "mae", "mape"}:
+            raise EnsembleSpecError("weighted metric must be rmse, mae or mape")
+        if self.params.get("weight_scope", "target") not in {"target", "target_horizon"}:
+            raise EnsembleSpecError("weight_scope must be target or target_horizon")
+        if self.name == "adaptive_weighted":
+            halflife = self.params.get("halflife_days")
+            if isinstance(halflife, bool) or not isinstance(halflife, (int, float)) or not math.isfinite(halflife) or halflife <= 0:
+                raise EnsembleSpecError("adaptive_weighted params require finite positive halflife_days")
 
     def payload(self) -> dict[str, Any]:
         return {"name": self.name, "params": dict(self.params)}
@@ -148,6 +167,9 @@ class EnsembleConfigSpec:
     probabilistic: ProbabilisticConfigSpec
     validation: RuntimeValidationSpec
     output: OutputSpec
+    # 解析引用后的运行身份；不是 YAML 字段，也不把运行环境证据混入语义。
+    resolved_member_fingerprints: tuple[tuple[str, str], ...] = ()
+    resolved_origin: str | None = None
 
     def __post_init__(self) -> None:
         expected_types = (
@@ -168,11 +190,28 @@ class EnsembleConfigSpec:
         if (self.validation.get("training_window") is not None
                 or self.validation.get("forecast_window") is not None):
             raise EnsembleSpecError("Ensemble does not yet support explicit training_window/forecast_window")
-        if (self.validation.get("refit_every", 1) > 1
+        if (self.validation.get("refit_every", 1) != 1
                 or self.validation.get("training", {}).get("origin_sampling") is not None):
             raise EnsembleSpecError("Ensemble top-level does not support refit_every/origin_sampling")
         if self.validation.get("train_history_steps") is not None:
             raise EnsembleSpecError("Ensemble does not support train_history_steps")
+        allowed_validation = {
+            "forecast_origin", "schedule_mode", "horizon_mode", "history_steps",
+            "train_window_steps", "fold_count", "stride_steps", "eval_mask",
+            "aggregate_weighting", "seasonal_naive_lag", "performance", "refit_every", "training_scope",
+        }
+        unsupported = set(self.validation) - allowed_validation
+        if unsupported:
+            raise EnsembleSpecError(f"Ensemble top-level validation does not support {sorted(unsupported)}")
+        if self.validation.get("horizon_mode", "fixed_steps") not in {"fixed_steps", "sliding_window"}:
+            raise EnsembleSpecError("Ensemble requires fixed_steps or sliding_window horizon_mode")
+        if "overlay" in self.output:
+            raise EnsembleSpecError("Ensemble output.overlay is unsupported")
+        probability = probabilistic_spec_from_mapping(self.probabilistic.canonical_payload())
+        if probability.mode == "quantile" and self.method.name == "stacking":
+            raise EnsembleSpecError("stacking is point-only; quantile stacking is unsupported")
+        if probability.mode == "point" and probability.calibration is not None:
+            raise EnsembleSpecError("Ensemble does not support absolute_residual calibration")
         if not isinstance(self.members, tuple) or len(self.members) < 2:
             raise EnsembleSpecError("ensemble requires at least two members")
         names = [member.name for member in self.members]
@@ -207,6 +246,10 @@ class EnsembleConfigSpec:
         payload = self.canonical_payload()
         payload.pop("output", None)
         payload["validation"] = self.validation.semantic_payload()
+        if self.resolved_member_fingerprints:
+            payload["resolved_members"] = list(self.resolved_member_fingerprints)
+            payload["resolved_origin"] = self.resolved_origin
+            payload["ensemble_semantics"] = "nested_evaluation_v1"
         if self.oof.gap_steps > 0:
             payload["oof_gap_semantics"] = OOF_GAP_SEMANTICS
         encoded = json.dumps(
@@ -249,8 +292,8 @@ def parse_ensemble_member(payload: Any) -> MemberRef:
             f"model_ensemble.members missing fields: {sorted(missing)}"
         )
     return MemberRef(
-        name=str(payload["name"]),
-        config_ref=str(payload["config_ref"]),
+        name=payload["name"],
+        config_ref=payload["config_ref"],
     )
 
 

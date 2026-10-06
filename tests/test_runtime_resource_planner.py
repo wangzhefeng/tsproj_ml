@@ -15,7 +15,7 @@ from model_performance.resource_planner import (
     plan_runtime_execution,
     runtime_budget_for_config,
 )
-from model_ensemble.loader import parse_ensemble_document
+from model_ensemble.configuration.loader import parse_ensemble_document
 from tests.test_ensemble_runtime import _ensemble_doc
 from tests.test_model_thread_runtime import _config
 

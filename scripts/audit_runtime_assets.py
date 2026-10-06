@@ -24,7 +24,7 @@ from config.config_loader import is_model_yaml, load_yaml_config  # noqa: E402
 from data_loading.sources.assets import asset_columns, required_columns, source_paths  # noqa: E402
 from data_loading.weather_generator.assets import WeatherAssetStore  # noqa: E402
 from forecasting_core.specs import DataSourceSpec, ForecastConfigSpec  # noqa: E402
-from model_ensemble.specs import EnsembleConfigSpec  # noqa: E402
+from model_ensemble.configuration.specs import EnsembleConfigSpec  # noqa: E402
 
 
 def _config_sources(config: Any) -> tuple[DataSourceSpec, ...]:

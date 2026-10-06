@@ -61,7 +61,7 @@ class ModelYamlDetectionTest(unittest.TestCase):
         }
         payload["ensemble"]["method"] = {
             "name": "stacking",
-            "params": {"alpha": 1.0, "fit_intercept": True},
+            "params": {},
         }
         with tempfile.TemporaryDirectory() as temp_dir:
             path = Path(temp_dir) / "bad-ensemble.yaml"
@@ -82,7 +82,7 @@ class ModelYamlDetectionTest(unittest.TestCase):
             )
 
         self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
-        self.assertIn("stacking 只支持 point 模式", result.stdout)
+        self.assertIn("stacking is point-only", result.stdout + result.stderr)
 
     def test_calendar_month_intraday_schedule_is_a_hard_failure(self):
         config_path = (

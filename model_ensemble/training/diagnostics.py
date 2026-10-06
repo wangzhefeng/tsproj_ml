@@ -1,13 +1,12 @@
 # -*- coding: utf-8 -*-
-"""融合 OOF 评分：ensemble 的无泄漏质量证据（2026-08-30 遗留收口）。
+"""融合器 meta-train 诊断，不是独立泛化评估。
 
-ensemble 无独立回测循环，其无泄漏评估语义等价物是 OOF：用融合器把各成员的
-OOF 预测组合后，在与 OOF 对齐的 actual 上评分。复用 canonical 评估实现
-（`evaluate_point_forecasts` / `evaluate_marginal_distribution`），不复制指标公式。
+本函数在学习融合参数所用的 OOF 样本上评分；真正的外层留出评估在
+training.backtesting 中。复用 canonical 指标，不复制指标公式。
 
-张量映射约定：fold 维映射到 N（series）轴（series_ids 为 fold_1..fold_n）；
-``forecast_times`` 是满足张量轴合同的占位（指标只消费 values/targets，
-不消费时间戳）。
+样本轴按 fold-major/series-minor 展平后映射到 N，fold_* 仅为诊断行标签；
+forecast_times 是指标张量的占位，不表示真实预测时间。真实坐标保留在 OOF
+folds 与 outputs.reporting 生成的诊断 long 表中。
 """
 
 from __future__ import annotations
@@ -16,7 +15,7 @@ import numpy as np
 import pandas as pd
 
 from model_ensemble.artifacts import EnsembleArtifact, OOFPredictionArtifact
-from model_ensemble.predictor import combine_members
+from model_ensemble.inference.predictor import combine_members
 from model_evaluation.point import evaluate_point_forecasts
 from forecasting_core.tensors import MarginalQuantileForecastTensor, PointForecastTensor
 from model_evaluation.marginal import evaluate_marginal_distribution
@@ -37,8 +36,8 @@ def evaluate_fused_oof(
         quantile 模式两个都产出（point 行用分布的 point_quantile 切片，与
         pinball 同一点预测口径），point 模式 probabilistic 为 None。
 
-    掩码说明：eval_mask 是成员级 validation 概念，ensemble 层未定义融合口径，
-    本函数不接掩码（与单模型掩码口径的差异见 AGENTS.md 流水线数据契约）。
+    此处不应用 eval_mask，诊断完整拟合样本；顶层掩码与聚合权重在独立
+    外层回测消费，不能把本诊断分数作为标准测试成绩。
     """
     combined = np.asarray(
         combine_members(ens_artifact, oof.values_by_member), dtype=float

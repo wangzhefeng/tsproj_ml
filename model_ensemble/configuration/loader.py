@@ -10,7 +10,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Mapping
 
-import yaml
+from forecasting_core.yaml_io import strict_yaml_load
 
 from forecasting_core.specs.config import (
     parse_data_spec,
@@ -19,7 +19,7 @@ from forecasting_core.specs.config import (
     parse_problem_spec,
     parse_runtime_validation_spec,
 )
-from model_ensemble.specs import (
+from model_ensemble.configuration.specs import (
     EnsembleConfigSpec,
     EnsembleSpecError,
     MemberRef,
@@ -32,8 +32,7 @@ def load_raw_yaml(path: str | Path) -> dict[str, Any]:
     file_path = Path(path)
     if not file_path.exists():
         raise EnsembleSpecError(f"config_ref does not exist: {file_path}")
-    with file_path.open("r", encoding="utf-8") as handle:
-        raw = yaml.safe_load(handle)
+    raw = strict_yaml_load(file_path.read_text(encoding="utf-8"), file_path)
     if not isinstance(raw, Mapping):
         raise EnsembleSpecError(f"config is not a mapping: {file_path}")
     return dict(raw)
@@ -246,9 +245,10 @@ def validate_member_sources(
 
     for ref in ensemble.members:
         member_raw = members[ref.name]
+        member_data = parse_data_spec(member_raw.get("data"), ref.config_ref).canonical_payload()
         member_sources = {
             str(source.get("name")): dict(source)
-            for source in ((member_raw.get("data") or {}).get("sources") or [])
+            for source in member_data["sources"]
         }
         for name, source in member_sources.items():
             if name not in ens_sources:
@@ -293,19 +293,10 @@ def validate_member_sources(
 def _is_column_subset(
     member_source: Mapping[str, Any], ens_source: Mapping[str, Any]
 ) -> bool:
-    shared = {
-        "source_type",
-        "history_path",
-        "time_col",
-        "series_id_cols",
-        "availability",
-        "available_at_col",
-        "backtest_path",
-        "future_path",
-        "provider",
-    }
+    # 列可取子集；其余语义全量比较，新增源字段不会静默漏检。
+    shared = (set(member_source) | set(ens_source)) - {"columns"}
     for field in shared:
-        if member_source.get(field) != ens_source.get(field):
+        if _normalized(member_source.get(field)) != _normalized(ens_source.get(field)):
             return False
     member_cols = {
         (column.get("name"), column.get("role"), column.get("categorical"))

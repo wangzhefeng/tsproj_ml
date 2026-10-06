@@ -31,9 +31,9 @@ import pandas as pd
 
 from data_loading.sources.provenance import file_sha256, source_hashes, generator_hashes
 from model_ensemble.artifacts import OOFPredictionArtifact
-from model_ensemble.specs import OOF_GAP_SEMANTICS, EnsembleSpecError
+from model_ensemble.configuration.specs import OOF_GAP_SEMANTICS, EnsembleSpecError
 
-OOF_SCHEMA_VERSION = 2
+OOF_SCHEMA_VERSION = 4
 
 OOF_PREDICTIONS_FILE = "oof_predictions.csv"
 OOF_METADATA_FILE = "oof_metadata.json"
@@ -126,8 +126,8 @@ def oof_cache_lock(
 ) -> Iterator[None]:
     """Serialize same-key OOF cache access across threads and processes."""
     directory = cache_dir(results_root, oof_fingerprint).resolve()
-    directory.mkdir(parents=True, exist_ok=True)
-    lock_path = directory / ".lock"
+    lock_path = directory.parent / "_locks" / f"{directory.name}.lock"
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
     with _PROCESS_LOCKS_GUARD:
         process_lock = _PROCESS_LOCKS.setdefault(lock_path, threading.Lock())
     with process_lock, lock_path.open("a+b") as lock_file:
@@ -155,7 +155,16 @@ def _save_oof_cache_unlocked(
     artifact: OOFPredictionArtifact,
     extra_metadata: Mapping[str, Any] | None = None,
 ) -> Path:
-    directory = cache_dir(results_root, artifact.oof_fingerprint)
+    destination = cache_dir(results_root, artifact.oof_fingerprint)
+    if destination.exists():
+        existing = _load_oof_cache_unlocked(results_root, artifact.oof_fingerprint)
+        if any(not np.array_equal(existing.values_by_member[name], artifact.values_by_member[name]) for name in artifact.member_order):
+            raise ValueError("OOF cache same-key write has different predictions")
+        return destination
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    # 同一父目录 staging，所有文件完成后一次 rename 发布。失败 staging 保留供诊断；
+    # 读者永远不扫描 staging，重试只在尚未发布的 key 上重新生成。
+    directory = Path(tempfile.mkdtemp(prefix=f".{destination.name}.staging-", dir=destination.parent))
     member_frames = []
     for name in artifact.member_order:
         values = artifact.values_by_member[name]
@@ -199,7 +208,8 @@ def _save_oof_cache_unlocked(
         directory / MEMBER_MANIFEST_FILE,
         json.dumps(manifest, sort_keys=True).encode("utf-8"),
     )
-    return directory
+    os.replace(directory, destination)
+    return destination
 
 
 def save_oof_cache(
@@ -229,7 +239,10 @@ def _load_oof_cache_unlocked(
     if str(metadata.get("oof_fingerprint")) != oof_fingerprint:
         raise ValueError(f"OOF cache fingerprint mismatch at {directory}")
 
-    frame = pd.read_csv(directory / OOF_PREDICTIONS_FILE, header=[0, 1])
+    # 校验的是 float64 原始字节，文本解析必须正确舍入，不能用默认解析器。
+    frame = pd.read_csv(
+        directory / OOF_PREDICTIONS_FILE, header=[0, 1], float_precision="round_trip"
+    )
     member_order = tuple(metadata["member_order"])
     n_samples = int(frame.shape[0])
     horizon = int(metadata["horizon"])
@@ -273,7 +286,7 @@ def _load_oof_cache_unlocked(
         quantile_levels=tuple(float(v) for v in levels) if levels else None,
         oof_fingerprint=oof_fingerprint,
         folds=tuple(metadata.get("folds", ())),
-        series_ids=tuple(metadata.get("series_ids", ())),
+        series_ids=tuple(tuple(value) if isinstance(value, list) else value for value in metadata.get("series_ids", ())),
         execution_evidence=tuple(metadata.get("execution_evidence", ())),
     )
 

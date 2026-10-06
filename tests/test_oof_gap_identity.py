@@ -7,8 +7,8 @@ import unittest
 from copy import deepcopy
 
 
-from model_ensemble import cache
-from model_ensemble.loader import parse_ensemble_document
+from model_ensemble.outputs import cache
+from model_ensemble.configuration.loader import parse_ensemble_document
 from test_ensemble_loader import ENSEMBLE_DOC
 from test_ensemble_oof import _artifact
 

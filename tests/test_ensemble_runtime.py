@@ -24,9 +24,9 @@ import yaml
 
 import model_ensemble.runtime as runtime_module
 from model_ensemble.contracts import EnsembleRuntimeServices
-from model_ensemble.loader import load_ensemble_config
+from model_ensemble.configuration.loader import load_ensemble_config
 from model_ensemble.runtime import run_ensemble_config
-from model_ensemble.specs import EnsembleSpecError
+from model_ensemble.configuration.specs import EnsembleSpecError
 from pipeline.runner import CanonicalBaseModelRunner, persist_model_bundle
 from model_performance.resource_planner import plan_ensemble_resources
 
@@ -34,6 +34,7 @@ from fixtures.legacy_nnls import fit_nonnegative_stacking_weights
 from forecasting_core.specs.config import parse_model_config
 from forecasting_core.runtime_resources import RuntimeResourceBudget
 from model_performance.resource_planner import runtime_budget_for_config
+from probabilistic.calibration import ConformalCalibrationTracker
 
 
 RUNTIME_SERVICES = EnsembleRuntimeServices(
@@ -41,6 +42,7 @@ RUNTIME_SERVICES = EnsembleRuntimeServices(
     persist_bundle=persist_model_bundle,
     plan_resources=plan_ensemble_resources,
     resolve_budget=runtime_budget_for_config,
+    calibration_factory=ConformalCalibrationTracker,
 )
 
 
@@ -387,15 +389,19 @@ class EnsembleRuntimeMatrixTest(EnsembleRuntimeTestBase):
             sleep(0.05)
             return original_fit(runner, train_indices)
 
-        with patch.object(CanonicalBaseModelRunner, "fit", slow_fit), patch(
-            "model_ensemble.runtime.write_forecast_results"
-        ):
+        with patch.object(CanonicalBaseModelRunner, "fit", slow_fit):
             with ThreadPoolExecutor(max_workers=2) as executor:
                 results = tuple(
                     executor.map(self._run, ("averaging", "linear_blending"))
                 )
 
-        self.assertEqual(fit_calls, 4)
+        document = _ensemble_doc("averaging")
+        members = len(document["ensemble"]["members"])
+        inner_folds = document["ensemble"]["oof"]["fold_count"]
+        outer_folds = document["validation"]["fold_count"]
+        # final OOF 和每个 outer 的 inner OOF 跨方法只生成一次；
+        # 外层 holdout 的成员 fit 则每个方法独立执行。
+        self.assertEqual(fit_calls, members * inner_folds * (1 + outer_folds) + members * outer_folds * len(results))
         self.assertEqual(
             len({result["oof_fingerprint"] for result in results}),
             1,

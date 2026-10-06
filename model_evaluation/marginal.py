@@ -3,7 +3,7 @@
 
 自 `probabilistic/model_evaluation.py` 迁入（2026-08-30 evaluation 模块化），实现逐字保真。
 生产通路：canonical 回测 quantile 模式 → `results_test/test_scores_probabilistic_df.csv`；
-ensemble 融合 OOF 评分（`model_ensemble/evaluation.py`）复用本模块。
+ensemble 融合 OOF 诊断评分（`model_ensemble/training/diagnostics.py`）复用本模块。
 """
 
 from __future__ import annotations

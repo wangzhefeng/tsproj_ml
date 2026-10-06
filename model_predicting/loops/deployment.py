@@ -91,7 +91,7 @@ def predict_strategy_bundle(
     else:
         restored = bundle.target_transform.restore_distribution(transformed)
     if isinstance(restored, MarginalForecastDistribution):
-        _attach_bundle_prediction_intervals(bundle, restored)
+        attach_bundle_prediction_intervals(bundle, restored)
     elif isinstance(bundle.probabilistic_spec.calibration, ResidualCalibrationSpec):
         if not isinstance(restored, PointForecastTensor) or bundle.calibration_state is None:
             raise ValueError("absolute_residual deployment requires saved point calibration state")
@@ -99,7 +99,7 @@ def predict_strategy_bundle(
     return restored
 
 
-def _attach_bundle_prediction_intervals(
+def attach_bundle_prediction_intervals(
     bundle: ForecastModelBundle,
     distribution: MarginalForecastDistribution,
 ) -> None:
@@ -111,6 +111,8 @@ def _attach_bundle_prediction_intervals(
     state = bundle.calibration_state
     if not state or state.get("status") != "applied":
         return
+    if state.get("forecast_origin") is not None and distribution.point.forecast_times[0] <= pd.Timestamp(state["forecast_origin"]):
+        raise ValueError("saved calibration cannot predict at or before its calibration origin")
     interval = bundle.probabilistic_spec.calibration_interval
     if interval is None:
         return
@@ -154,14 +156,16 @@ def _prepare_features(
     columns = bundle.input_schema.get("columns")
     if not isinstance(columns, list) or any(not isinstance(value, str) for value in columns):
         raise ValueError("strategy bundle input_schema.columns must be a string list")
-    design = np.asarray(raw_design, dtype=float)
+    # 原始 Global 设计可含字符串类别；必须先经过保存的编码器再转数值。
+    design = np.asarray(raw_design)
     if design.ndim != 2 or design.shape[1] != len(columns):
         raise ValueError(
             "raw deployment design must be two-dimensional and match "
             "bundle.input_schema.columns"
         )
     if bundle.feature_scaler is not None:
-        design = np.asarray(bundle.feature_scaler.transform(design), dtype=float)
+        design = bundle.feature_scaler.transform(design)
+    design = np.asarray(design, dtype=float)
     indices = selected_indices_for_artifact(tuple(columns), artifact_schema)
     if indices is not None:
         design = design[:, indices]
@@ -172,10 +176,10 @@ def _prepare_features(
     def provider(call_index, coordinates, dependencies, predicted):
         values = np.asarray(
             raw_feature_provider(call_index, coordinates, dependencies, predicted),
-            dtype=float,
         )
         if bundle.feature_scaler is not None:
-            values = np.asarray(bundle.feature_scaler.transform(values), dtype=float)
+            values = bundle.feature_scaler.transform(values)
+        values = np.asarray(values, dtype=float)
         if indices is not None:
             values = values[:, indices]
         return values
@@ -239,4 +243,4 @@ def _predict_quantiles(
     )
 
 
-__all__ = ["predict_strategy_bundle"]
+__all__ = ["predict_strategy_bundle", "attach_bundle_prediction_intervals"]

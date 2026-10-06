@@ -15,11 +15,14 @@ from model_ensemble.artifacts import (
     EnsembleArtifact,
     PerTargetMetaArtifact,
     PerTargetWeightsArtifact,
+    HorizonWeightsArtifact,
+    TemporalWeightsArtifact,
 )
 from model_ensemble.methods.stacking import combine_stacking
 from model_ensemble.methods.averaging import combine_averaging
 from model_ensemble.methods.linear_blending import combine_linear_blending
 from model_ensemble.methods.weighted import combine_weighted
+from model_ensemble.methods.horizon import combine_horizon_weights
 
 
 def combine_members(
@@ -32,6 +35,10 @@ def combine_members(
             "member predictions must be provided exactly in member_order"
         )
     method_artifact = ens_artifact.method_artifact
+    if isinstance(method_artifact, TemporalWeightsArtifact):
+        method_artifact = method_artifact.weights
+    if isinstance(method_artifact, HorizonWeightsArtifact):
+        return combine_horizon_weights(method_artifact, member_values)
     if isinstance(method_artifact, PerTargetWeightsArtifact):
         if method_artifact.method_name == "linear_blending":
             return combine_linear_blending(method_artifact, member_values)

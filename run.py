@@ -21,7 +21,7 @@ from config.config_loader import load_yaml_config
 from forecasting_core.specs import ForecastConfigSpec
 from model_ensemble.contracts import EnsembleRuntimeServices
 from model_ensemble.runtime import run_ensemble_config_file
-from model_ensemble.specs import EnsembleConfigSpec
+from model_ensemble.configuration.specs import EnsembleConfigSpec
 from pipeline.runner import (
     CanonicalBaseModelRunner,
     persist_model_bundle,
@@ -32,6 +32,7 @@ from model_performance.resource_planner import (
     runtime_budget_for_config,
 )
 from utils.runtime_env import ensure_runtime_environment
+from probabilistic.calibration import ConformalCalibrationTracker
 
 warnings.filterwarnings("ignore")
 
@@ -40,6 +41,7 @@ ENSEMBLE_RUNTIME_SERVICES = EnsembleRuntimeServices(
     persist_bundle=persist_model_bundle,
     plan_resources=plan_ensemble_resources,
     resolve_budget=runtime_budget_for_config,
+    calibration_factory=ConformalCalibrationTracker,
 )
 
 # global variable
@@ -143,7 +145,7 @@ def run(args):
             if not aggregate.empty:
                 row = aggregate.iloc[0]
                 logger.info(
-                    "[run.py] ensemble fused OOF: MAE=%.4f RMSE=%.4f MAPE=%.4f",
+                    "[run.py] ensemble meta-train diagnostic (not holdout): MAE=%.4f RMSE=%.4f MAPE=%.4f",
                     row["MAE"],
                     row["RMSE"],
                     row["MAPE"],

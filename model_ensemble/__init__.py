@@ -4,7 +4,7 @@ Public typed surface (v4 §4); algorithm implementations live in
 `model_ensemble.methods`, orchestration in `model_ensemble.runtime` (E5+).
 """
 
-from model_ensemble.specs import (
+from model_ensemble.configuration.specs import (
     ENSEMBLE_FORBIDDEN_TOP_LEVEL,
     EnsembleConfigSpec,
     EnsembleSpecError,
@@ -14,7 +14,7 @@ from model_ensemble.specs import (
     enforce_forbidden_top_level,
     parse_ensemble_section,
 )
-from model_ensemble.loader import (
+from model_ensemble.configuration.loader import (
     load_ensemble_config,
     parse_ensemble_document,
     resolve_members,

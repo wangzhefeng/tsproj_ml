@@ -16,8 +16,8 @@ import yaml
 from data_loading import SourceRegistry
 from forecasting_core.artifacts import MarginalForecastDistribution
 from forecasting_core.specs.config import parse_model_config
-from model_ensemble.deployment import predict_ensemble_bundle
-from model_ensemble.loader import load_ensemble_config
+from model_ensemble.inference.deployment import predict_ensemble_bundle
+from model_ensemble.configuration.loader import load_ensemble_config
 from model_ensemble.runtime import run_ensemble_config, run_ensemble_config_file
 from pipeline.runner import CanonicalBaseModelRunner
 from tests.test_ensemble_runtime import RUNTIME_SERVICES, _ensemble_doc, _member_doc

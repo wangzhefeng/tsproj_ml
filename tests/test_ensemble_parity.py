@@ -157,7 +157,7 @@ def _weighted_ensemble_config(
     """Write the legacy-equivalent weighted ensemble as YAML and parse it."""
     import yaml
 
-    from model_ensemble.loader import load_ensemble_config
+    from model_ensemble.configuration.loader import load_ensemble_config
 
     estimator = (
         {"model_type": "ridge", "target_adapter": "independent", "params": {"alpha": 1e-8}}

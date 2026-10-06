@@ -22,7 +22,7 @@ from test_weather_compiler import config_fixture
 from data_loading import SourceRegistry
 from data_loading.weather_generator.generator import weather_implementation_hash
 from feature_engineering.design_identity import compute_raw_design_fingerprint
-from model_ensemble.cache import member_source_hashes
+from model_ensemble.outputs.cache import member_source_hashes
 root = Path.cwd()
 data = root/'assets'
 data.mkdir()

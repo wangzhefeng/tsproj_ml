@@ -23,17 +23,29 @@ def target_key(index: int) -> str:
 
 
 def _metric_values(
-    actual: np.ndarray, prediction: np.ndarray, metric: str
+    actual: np.ndarray, prediction: np.ndarray, metric: str,
+    sample_weights: np.ndarray | None = None,
 ) -> np.ndarray:
     """Per-target error aggregation: (K,) array of error magnitudes."""
+    if prediction.ndim == 4:
+        actual = actual[..., None]
+    axes = (0, 1, 3) if prediction.ndim == 4 else (0, 1)
     err = prediction - actual
+    if sample_weights is not None:
+        loss = np.square(err) if metric == "rmse" else np.abs(err)
+        if metric == "mape":
+            loss = loss / np.maximum(np.abs(actual), _MAPE_FLOOR)
+        if prediction.ndim == 4:
+            loss = loss.mean(axis=-1)
+        mean_loss = np.average(loss.mean(axis=1), axis=0, weights=sample_weights)
+        return np.sqrt(mean_loss) if metric == "rmse" else mean_loss
     if metric == "rmse":
-        return np.sqrt(np.mean(np.square(err), axis=(0, 1)))
+        return np.sqrt(np.mean(np.square(err), axis=axes))
     if metric == "mae":
-        return np.mean(np.abs(err), axis=(0, 1))
+        return np.mean(np.abs(err), axis=axes)
     if metric == "mape":
         denom = np.maximum(np.abs(actual), _MAPE_FLOOR)
-        return np.mean(np.abs(err) / denom, axis=(0, 1))
+        return np.mean(np.abs(err) / denom, axis=axes)
     raise ValueError(
         f"weighted metric must be one of {SUPPORTED_METRICS}; got {metric!r}"
     )
@@ -45,6 +57,7 @@ def fit_weighted(
     *,
     metric: str = "rmse",
     fallback_weights: Mapping[str, float] | None = None,
+    sample_weights: np.ndarray | None = None,
 ) -> PerTargetWeightsArtifact:
     if metric not in SUPPORTED_METRICS:
         raise ValueError(
@@ -53,9 +66,20 @@ def fit_weighted(
     names = tuple(oof_values_by_member)
     if len(names) < 2:
         raise ValueError("weighted requires at least two members")
+    actual = np.asarray(actual, dtype=float)
+    if actual.ndim != 3 or not all(actual.shape) or not np.isfinite(actual).all():
+        raise ValueError("weighted actual must be finite with shape (samples,H,K)")
+    for prediction in oof_values_by_member.values():
+        if prediction.ndim not in (3, 4) or prediction.shape[:3] != actual.shape or not np.isfinite(prediction).all():
+            raise ValueError("weighted predictions must be finite and match actual on (samples,H,K)")
+    if sample_weights is not None:
+        sample_weights = np.asarray(sample_weights, dtype=float)
+        if (sample_weights.shape != (actual.shape[0],) or not np.isfinite(sample_weights).all()
+                or np.any(sample_weights < 0) or sample_weights.sum() <= 0):
+            raise ValueError("sample_weights must be finite, nonnegative and match samples")
     errors = np.stack(
         [
-            _metric_values(actual, oof_values_by_member[name], metric)
+            _metric_values(actual, oof_values_by_member[name], metric, sample_weights)
             for name in names
         ],
         axis=0,

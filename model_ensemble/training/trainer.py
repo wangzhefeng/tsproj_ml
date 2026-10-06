@@ -14,21 +14,25 @@ import pandas as pd
 
 from model_ensemble.artifacts import (
     EnsembleArtifact,
-    MethodArtifact,
+
     OOFPredictionArtifact,
 )
 from model_ensemble.contracts import BaseModelRunner, member_execution_evidence
-from model_ensemble.evaluation import evaluate_fused_oof
+from model_ensemble.training.diagnostics import evaluate_fused_oof
 from model_ensemble.methods import averaging, linear_blending, stacking, weighted
-from model_ensemble.oof import actual_for_folds, generate_oof
-from model_ensemble.specs import EnsembleConfigSpec
+from model_ensemble.methods.adaptive_weighted import fit_adaptive_weighted
+from model_ensemble.methods.horizon import fit_horizon_weights
+from model_ensemble.training.oof import actual_for_folds, generate_oof
+from model_ensemble.configuration.specs import EnsembleConfigSpec
+from model_evaluation.metrics import pinball_loss
 from forecasting_core.artifacts import ForecastModelBundle, MarginalForecastDistribution
 
 METHOD_IMPLEMENTATIONS: dict[str, Any] = {
-    averaging.METHOD_NAME: averaging,
-    weighted.METHOD_NAME: weighted,
-    linear_blending.METHOD_NAME: linear_blending,
-    stacking.METHOD_NAME: stacking,
+    averaging.METHOD_NAME: averaging.fit_averaging,
+    weighted.METHOD_NAME: weighted.fit_weighted,
+    linear_blending.METHOD_NAME: linear_blending.fit_linear_blending,
+    stacking.METHOD_NAME: stacking.fit_stacking,
+    "adaptive_weighted": fit_adaptive_weighted,
 }
 
 
@@ -63,6 +67,7 @@ def generate_oof_for_config(
         quantile_levels=_quantile_levels_for_config(config),
         outer_cutoff_origin=outer_cutoff_origin,
         member_workers=member_workers,
+        schedule_origin=next(iter(runners.values())).origin if config.validation.get("schedule_mode") == "intraday" else None,
     )
 
 
@@ -70,18 +75,20 @@ def _member_oof_scores(
     oof: OOFPredictionArtifact, actual: np.ndarray
 ) -> dict[str, dict[str, dict[str, float]]]:
     scores: dict[str, dict[str, dict[str, float]]] = {}
-    quantile = oof.quantile_levels is not None
+
     for name in oof.member_order:
         values = oof.values_by_member[name]
         per_target: dict[str, dict[str, float]] = {}
         for index, target in enumerate(oof.targets):
             member_values = values[:, :, index]
             target_actual = actual[:, :, index]
-            if quantile:
+            if oof.quantile_levels is not None:
                 # pinball-averaged absolute error across levels
-                levels = np.asarray(oof.quantile_levels, dtype=float)
                 err = member_values - target_actual[:, :, None]
-                losses = np.maximum(levels * err, (levels - 1.0) * err)
+                losses = np.stack([
+                    pinball_loss(target_actual, member_values[..., level_index], level)
+                    for level_index, level in enumerate(oof.quantile_levels)
+                ])
                 per_target[target] = {
                     "pinball": float(np.mean(losses)),
                     "mae": float(np.mean(np.abs(err))),
@@ -94,6 +101,38 @@ def _member_oof_scores(
                 }
         scores[name] = per_target
     return scores
+
+
+def fit_fusion_artifact(
+    config: EnsembleConfigSpec,
+    oof: OOFPredictionArtifact,
+    actual: np.ndarray,
+    *,
+    origin: pd.Timestamp,
+) -> EnsembleArtifact:
+    """只学习融合器；外层回测与 final 使用同一入口，不执行成员 final fit。"""
+    fit = METHOD_IMPLEMENTATIONS[config.method.name]
+    values = oof.values_by_member
+    kwargs: dict[str, Any] = {}
+    if config.method.name in {"weighted", "adaptive_weighted"}:
+        kwargs["metric"] = config.method.params.get("metric", "rmse")
+    if config.method.name == "linear_blending":
+        kwargs["quantile_levels"] = oof.quantile_levels
+    scope = config.method.params.get("weight_scope", "target")
+    if config.method.name == "adaptive_weighted":
+        kwargs.update(
+            sample_label_ends=[fold["label_end"] for fold in oof.folds for _ in range(max(1, len(oof.series_ids)))],
+            forecast_origin=origin, halflife_days=config.method.params["halflife_days"], weight_scope=scope,
+        )
+    if scope == "target_horizon" and config.method.name != "adaptive_weighted":
+        method = fit_horizon_weights(fit, values, actual, **kwargs)
+    else:
+        method = fit(values, actual, **kwargs)
+    return EnsembleArtifact(
+        method_artifact=method, member_order=oof.member_order, targets=oof.targets,
+        horizon=oof.horizon, quantile_levels=oof.quantile_levels,
+        oof_fingerprint=oof.oof_fingerprint, fold_summary=oof.folds,
+    )
 
 
 def fit_ensemble(
@@ -117,15 +156,13 @@ def fit_ensemble(
     at the ensemble forecast origin using the same explicit training-window
     contract as standalone members.
     """
-    impls = METHOD_IMPLEMENTATIONS
     method_name = config.method.name
-    impl = impls[method_name]
     names = tuple(runners)
     if set(names) != {member.name for member in config.members}:
         raise ValueError("runners do not match the ensemble member references")
 
     first = runners[names[0]]
-    quantile_levels = _quantile_levels_for_config(config)
+
 
     if oof is None:
         oof = generate_oof_for_config(
@@ -146,28 +183,7 @@ def fit_ensemble(
         }
         for fold in folds
     ])
-    oof_values = {
-        name: oof.values_by_member[name] for name in oof.member_order
-    }
-
-    if method_name == "averaging":
-        method_artifact: MethodArtifact = impl.fit_averaging(oof_values, actual)
-    elif method_name == "weighted":
-        method_artifact = impl.fit_weighted(
-            oof_values,
-            actual,
-            metric=str(config.method.params.get("metric", "rmse")),
-        )
-    elif method_name == "linear_blending":
-        method_artifact = impl.fit_linear_blending(
-            oof_values,
-            actual,
-            quantile_levels=quantile_levels,
-        )
-    elif method_name == "stacking":
-        method_artifact = impl.fit_stacking(oof_values, actual)
-    else:  # defensive; specs already restrict names
-        raise ValueError(f"unsupported ensemble method: {method_name!r}")
+    ens_artifact = fit_fusion_artifact(config, oof, actual, origin=first.origin)
 
     # final refits: every member on the full visible history, predict at the
     # ensemble forecast origin, restored to original target space
@@ -178,6 +194,9 @@ def fit_ensemble(
         try:
             scaler, transform, X_all, Y_all = runner.final_bundle_inputs()
             trainer, artifact, capabilities = runner.fit_final(X_all, Y_all)
+            reset_audit = getattr(runner, "reset_forecast_audit", None)
+            if callable(reset_audit):
+                reset_audit()
             designs, provider = runner.forecast_designs(origin, scaler, transform)
             prediction = runner.predict(artifact, designs, provider, times, transform)
             values = (
@@ -210,17 +229,7 @@ def fit_ensemble(
 
     member_scores = _member_oof_scores(oof, actual)
 
-    ens_artifact = EnsembleArtifact(
-        method_artifact=method_artifact,
-        member_order=tuple(oof.member_order),
-        targets=tuple(oof.targets),
-        horizon=oof.horizon,
-        quantile_levels=oof.quantile_levels,
-        oof_fingerprint=oof.oof_fingerprint,
-        fold_summary=tuple(oof.folds),
-    )
-    # 融合 OOF 评分（2026-08-30 遗留收口）：ensemble 的无泄漏质量证据，
-    # point/quantile 均产出；quantile 模式附带 pinball/central 区间指标。
+    # 这是融合器的 meta-train 诊断，不是独立泛化评估。
     fused_scores = evaluate_fused_oof(
         ens_artifact,
         oof,

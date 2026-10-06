@@ -179,7 +179,7 @@ class ForecastConfigSpec:
         if strategy is None:
             raise ValueError(
                 "ForecastConfigSpec is base-only (v4): strategy is required; "
-                "ensemble configs use model_ensemble.specs.EnsembleConfigSpec"
+                "ensemble configs use model_ensemble.configuration.specs.EnsembleConfigSpec"
             )
         expected_types = (
             ("problem", problem, ForecastProblemSpec),
@@ -522,13 +522,13 @@ def parse_model_config(mapping: Mapping[str, Any], source: str | Path) -> Foreca
     """Parse a single-model canonical config (base-only, v4 §5.1).
 
     Ensemble-shaped documents are rejected here; they belong to
-    `model_ensemble.loader.parse_ensemble_document` (the production dispatcher in
+    `model_ensemble.configuration.loader.parse_ensemble_document` (the production dispatcher in
     `config/config_loader.py` routes by the mutually exclusive field sets).
     """
     if isinstance(mapping.get("ensemble"), Mapping):
         raise ValueError(
             f"ensemble-shaped config is not a single-model config; route it "
-            f"through model_ensemble.loader instead: {_source_label(source)}"
+            f"through model_ensemble.configuration.loader instead: {_source_label(source)}"
         )
     _reject_forbidden_fields(mapping, path="config", source=source)
     payload = _mapping(

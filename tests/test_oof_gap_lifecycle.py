@@ -10,8 +10,8 @@ import yaml
 from data_loading import SourceRegistry
 from forecasting_core.artifacts import MarginalForecastDistribution
 from forecasting_core.specs.config import parse_model_config
-from model_ensemble.deployment import predict_ensemble_bundle
-from model_ensemble.loader import parse_ensemble_document
+from model_ensemble.inference.deployment import predict_ensemble_bundle
+from model_ensemble.configuration.loader import parse_ensemble_document
 from model_ensemble.runtime import run_ensemble_config
 from pipeline.runner import CanonicalBaseModelRunner
 from test_ensemble_runtime import (
@@ -66,7 +66,9 @@ class OOFGapLifecycleTest(EnsembleRuntimeTestBase):
             ).any())
         with (first["model_dir"] / "model.pkl").open("rb") as handle:
             bundle = pickle.load(handle)
-        self.assertEqual(bundle.config_fingerprint, config.fingerprint())
+        self.assertEqual(bundle.config_fingerprint, first["config"].fingerprint())
+        self.assertEqual(first["document_fingerprint"], config.fingerprint())
+        self.assertNotEqual(bundle.config_fingerprint, config.fingerprint())
         raw_designs, providers = {}, {}
         for name, member_config in member_configs.items():
             origin = pd.Timestamp(member_config.validation["forecast_origin"])

@@ -17,7 +17,7 @@ import pandas as pd
 from config.config_loader import load_yaml_config
 from data_loading import SourceRegistry
 from forecasting_core.specs import CalendarMonthBacktestSpec, FixedStepBacktestSpec, ForecastConfigSpec
-from model_ensemble.loader import resolve_members, validate_member_sources
+from model_ensemble.configuration.loader import resolve_members, validate_member_sources
 from pipeline.supervised_design import minimum_history_rows
 from model_testing.contracts.geometry import calendar_month_folds
 

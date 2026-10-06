@@ -16,9 +16,9 @@ from time import sleep
 import numpy as np
 import pandas as pd
 
-from model_ensemble import cache as oof_cache
+from model_ensemble.outputs import cache as oof_cache
 from model_ensemble.artifacts import OOFPredictionArtifact
-from model_ensemble.oof import oof_fold_origins
+from model_ensemble.training.oof import oof_fold_origins
 
 
 from model_testing.contracts import geometry as backtest_geometry
@@ -207,9 +207,11 @@ class OOFCacheTest(unittest.TestCase):
         first = oof_cache.save_oof_cache(self.root, artifact)
         second = oof_cache.save_oof_cache(self.root, artifact)
         self.assertEqual(first, second)
-        self.assertEqual(
-            len(list((self.root / "_ensemble_oof").iterdir())), 1
-        )
+        published = {
+            path.name for path in (self.root / "_ensemble_oof").iterdir()
+            if (path / oof_cache.MEMBER_MANIFEST_FILE).is_file()
+        }
+        self.assertEqual(published, {artifact.oof_fingerprint})
 
     def test_concurrent_same_key_miss_generates_once(self):
         calls = 0
@@ -418,7 +420,7 @@ class OOFCacheTest(unittest.TestCase):
                 )
 
     def test_cache_module_does_not_import_posix_lock_unconditionally(self):
-        cache_module = Path(__file__).parents[1] / "model_ensemble/cache.py"
+        cache_module = Path(__file__).parents[1] / "model_ensemble/outputs/cache.py"
         module = ast.parse(cache_module.read_text(encoding="utf-8"))
         self.assertFalse(
             any(

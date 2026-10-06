@@ -9,17 +9,54 @@ Fusion methods never see this module — they only consume the produced
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass
+import hashlib
+import json
 from typing import Any, Mapping
 
 import numpy as np
 import pandas as pd
 
 from forecasting_core.artifacts import MarginalForecastDistribution
-from model_testing.contracts.geometry import OriginTimeline, is_label_safe, scheduled_origin_indices
+from model_testing.contracts.geometry import OriginTimeline, TimeGeometry, is_label_safe, scheduled_origin_indices
 
 from model_ensemble.artifacts import OOFPredictionArtifact
 from model_ensemble.contracts import BaseModelRunner, member_execution_evidence
-from model_ensemble.specs import OOF_GAP_SEMANTICS
+from model_ensemble.configuration.specs import OOF_GAP_SEMANTICS
+
+
+@dataclass(frozen=True)
+class SharedOriginTimeline:
+    geometry: TimeGeometry
+    supervised_origins: tuple[pd.Timestamp, ...]
+    origin: pd.Timestamp
+    config: Any
+
+
+def shared_origin_timeline(runners: Mapping[str, BaseModelRunner]) -> SharedOriginTimeline:
+    """共享 holdout 坐标；成员自己的预热和训练候选集不必相同。"""
+    first = next(iter(runners.values()))
+    common = set(first.supervised_origins)
+    for name, runner in runners.items():
+        if runner.geometry != first.geometry or tuple(runner.series_ids) != tuple(first.series_ids):
+            raise ValueError(f"member {name!r} geometry/series order differs")
+        if tuple(runner.config.problem.targets) != tuple(first.config.problem.targets):
+            raise ValueError(f"member {name!r} target order differs")
+        common.intersection_update(runner.supervised_origins)
+    if not common:
+        raise ValueError("ensemble members have no common supervised holdout origins")
+    return SharedOriginTimeline(first.geometry, tuple(sorted(common)), first.origin, first.config)
+
+
+def member_training_indices(runner, origin, train_window_steps, *, gap_steps=0, earliest_origin=None):
+    """按真实原点映射成员自己的监督索引，不跨成员复用位置索引。"""
+    indices = tuple(index for index, candidate in enumerate(runner.supervised_origins)
+                    if (earliest_origin is None or candidate >= earliest_origin)
+                    and is_label_safe(candidate, runner.geometry.offset, runner.geometry.horizon,
+                                      runner.geometry.label_start(origin), gap_steps=gap_steps))[-train_window_steps:]
+    if not indices:
+        raise ValueError("ensemble member has no label-safe training samples")
+    return indices
 
 
 def oof_fold_origins(
@@ -85,7 +122,10 @@ def oof_fold_origins(
             "ensemble OOF requires at least one fold with non-overlapping "
             "training samples"
         )
+    # 保留既有 stride 锚点；坐标对齐扩展不顺带改变旧配置的折选择。
     chosen = list(reversed(candidates))[::(1 if scheduled is not None else stride_steps)][-fold_count:]
+    if len(chosen) != fold_count:
+        raise ValueError(f"ensemble OOF requires {fold_count} folds; only {len(chosen)} are label-safe")
     folds = []
     for fold_number, (index, origin, train_indices) in enumerate(chosen, start=1):
         folds.append(
@@ -109,6 +149,7 @@ def generate_oof(
     quantile_levels: tuple[float, ...] | None = None,
     outer_cutoff_origin: pd.Timestamp | None = None,
     member_workers: int = 1,
+    schedule_origin: pd.Timestamp | None = None,
 ) -> OOFPredictionArtifact:
     """Run every member over the shared folds and collect restored predictions.
 
@@ -126,39 +167,37 @@ def generate_oof(
     ):
         raise ValueError("member_workers must be between 1 and the member count")
     first = runners[names[0]]
+    timeline = shared_origin_timeline(runners)
     folds = oof_fold_origins(
-        first,
+        timeline,
         fold_count=fold_count,
         stride_steps=stride_steps,
         train_window_steps=train_window_steps,
         gap_steps=gap_steps,
         outer_cutoff_origin=outer_cutoff_origin,
+        schedule_origin=schedule_origin,
     )
 
-    # every member must share the supervised origin timeline (guaranteed by
-    # the loader's problem contract; double-check the geometry explicitly)
-    for name, runner in runners.items():
-        if runner.supervised_origins != first.supervised_origins:
-            raise ValueError(
-                f"member {name!r} supervised origin timeline differs from "
-                f"{names[0]!r}; OOF folds must be shared"
-            )
 
     per_fold = {name: [] for name in names}
     fold_summaries = []
     execution_evidence = []
     for fold in folds:
         times = first.forecast_times(fold["origin"])
+        indices_by_member = {
+            name: member_training_indices(runner, fold["origin"], train_window_steps, gap_steps=gap_steps)
+            for name, runner in runners.items()
+        }
         def fit_member(name: str) -> tuple[np.ndarray, dict[str, Any]]:
             runner = runners[name]
             try:
                 if member_workers > 1:
                     fit_result = runner.fit(
-                        fold["train_indices"],
+                        indices_by_member[name],
                         force_serial=True,
                     )
                 else:
-                    fit_result = runner.fit(fold["train_indices"])
+                    fit_result = runner.fit(indices_by_member[name])
                 scaler, transform, _X, _Y, artifact = fit_result
                 designs, provider = runner.forecast_designs(
                     fold["origin"], scaler, transform
@@ -174,12 +213,14 @@ def generate_oof(
                     raise ValueError(
                         f"member {name!r} prediction must be an (N,H,K[,Q]) tensor"
                     )
-                if values.shape[0] != 1:
-                    raise ValueError(
-                        "OOF generation expects Local members (N=1); Global "
-                        "panel members must be split per series before OOF"
-                    )
-                return values[0], member_execution_evidence(runner, artifact, transform)
+                tensor = prediction.quantiles if isinstance(prediction, MarginalForecastDistribution) else prediction
+                if (tuple(tensor.series_ids) != tuple(first.series_ids)
+                        or tuple(tensor.targets) != tuple(first.config.problem.targets)
+                        or not tensor.forecast_times.equals(times)):
+                    raise ValueError(f"member {name!r} prediction axes differ from shared coordinates")
+                if quantile_levels is not None and tuple(tensor.levels) != quantile_levels:
+                    raise ValueError(f"member {name!r} prediction quantile grid differs")
+                return values, member_execution_evidence(runner, artifact, transform)
             except Exception as exc:
                 raise RuntimeError(
                     f"OOF fold={fold['fold']} member={name!r} failed"
@@ -202,7 +243,8 @@ def generate_oof(
                 "origin": fold["origin"].isoformat(),
                 "label_start": first.geometry.label_start(fold["origin"]).isoformat(),
                 "label_end": first.geometry.label_end(fold["origin"]).isoformat(),
-                "training_sample_count": len(fold["train_indices"]),
+                "training_sample_count": len(indices_by_member[names[0]]),
+                "training_sample_count_by_member": {name: len(indices) for name, indices in indices_by_member.items()},
             }
         )
         if gap_steps > 0:
@@ -211,15 +253,13 @@ def generate_oof(
                 "gap_semantics": OOF_GAP_SEMANTICS,
                 "training_label_end_max": max(
                     first.geometry.label_end(first.supervised_origins[index])
-                    for index in fold["train_indices"]
+                    for index in indices_by_member[names[0]]
                 ).isoformat(),
             })
 
     values_by_member = {
         name: _stack(per_fold[name]) for name in names
     }
-    import hashlib
-    import json
 
     fingerprint_payload = json.dumps(
         {
@@ -248,9 +288,8 @@ def generate_oof(
 
 
 def _stack(chunks):
-    import numpy as np
-
-    return np.stack([np.asarray(chunk, dtype=float) for chunk in chunks], axis=0)
+    # samples 轴按 fold-major / series-minor 展平；真实 series 顺序另存。
+    return np.concatenate([np.asarray(chunk, dtype=float) for chunk in chunks], axis=0)
 
 
 def actual_for_folds(
@@ -258,14 +297,13 @@ def actual_for_folds(
     folds,
 ) -> Any:
     """Ground-truth tensor stack aligned with the OOF folds (samples,H,K[,Q])."""
-    import numpy as np
 
     chunks = []
     for fold in folds:
         times = runner.forecast_times(fold["origin"])
         actual = runner.actual(fold["origin_index"], times)
-        chunks.append(actual.values[0])  # Local members: drop the N axis
-    return np.stack(chunks, axis=0)
+        chunks.append(actual.values)
+    return np.concatenate(chunks, axis=0)
 
 
 __all__ = [

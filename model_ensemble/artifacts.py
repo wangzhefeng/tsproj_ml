@@ -96,11 +96,41 @@ class PerTargetMetaArtifact:
     y_mean_by_target: dict[str, float] = field(default_factory=dict)
 
 
-MethodArtifact = EqualWeightsArtifact | PerTargetWeightsArtifact | PerTargetMetaArtifact
+@dataclass(frozen=True, slots=True)
+class HorizonWeightsArtifact:
+    """逐 target×horizon 权重，全部 quantile 共享同一组。"""
+    method_name: str
+    artifacts_by_horizon: tuple[PerTargetWeightsArtifact, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class TemporalWeightsArtifact:
+    """按预测原点重估后冻结的权重及可读时间证据；部署不在线更新。"""
+    weights: PerTargetWeightsArtifact | HorizonWeightsArtifact
+    forecast_origin: str
+    halflife_days: float
+    sample_label_ends: tuple[str, ...]
+    sample_weights: tuple[float, ...]
+    method_name: str = "adaptive_weighted"
+
+
+MethodArtifact = EqualWeightsArtifact | PerTargetWeightsArtifact | PerTargetMetaArtifact | HorizonWeightsArtifact | TemporalWeightsArtifact
 
 
 def method_artifact_audit_payload(artifact: MethodArtifact) -> dict[str, Any]:
     """Return JSON-safe fusion state without serializing estimator objects."""
+    if isinstance(artifact, TemporalWeightsArtifact):
+        return {
+            "method_name": artifact.method_name, "forecast_origin": artifact.forecast_origin,
+            "halflife_days": artifact.halflife_days, "sample_label_ends": list(artifact.sample_label_ends),
+            "sample_weights": list(artifact.sample_weights), "weights": method_artifact_audit_payload(artifact.weights),
+        }
+    if isinstance(artifact, HorizonWeightsArtifact):
+        return {
+            "method_name": artifact.method_name, "weight_scope": "target_horizon",
+            "horizons": [{"horizon": index + 1, **method_artifact_audit_payload(item)}
+                         for index, item in enumerate(artifact.artifacts_by_horizon)],
+        }
     if isinstance(artifact, EqualWeightsArtifact):
         return {"method_name": artifact.method_name}
     if isinstance(artifact, PerTargetWeightsArtifact):

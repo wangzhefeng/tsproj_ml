@@ -18,7 +18,7 @@ from sklearn.linear_model import Ridge
 from sklearn.ensemble import RandomForestRegressor
 
 from model_ensemble.contracts import EnsembleRuntimeServices
-from model_ensemble.loader import load_ensemble_config
+from model_ensemble.configuration.loader import load_ensemble_config
 from model_ensemble.runtime import run_ensemble_config
 from model_training.estimators.capabilities import EstimatorCapabilities
 from pipeline.runner import (

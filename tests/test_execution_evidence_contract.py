@@ -7,7 +7,7 @@ from types import SimpleNamespace
 import unittest
 import numpy as np
 from model_ensemble.artifacts import OOFPredictionArtifact
-from model_ensemble.cache import save_oof_cache, load_oof_cache
+from model_ensemble.outputs.cache import save_oof_cache, load_oof_cache
 from model_ensemble.contracts import member_execution_evidence
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -57,12 +57,12 @@ class ExecutionEvidenceContractTest(unittest.TestCase):
         for path, name in (("model_testing/loops/fixed_step.py", "score_holdout_fold"),
                            ("model_testing/loops/calendar_month.py", "score_holdout_fold"),
                            ("model_testing/loops/scoring.py", "execution_evidence"),
-                           ("model_ensemble/oof.py", "member_execution_evidence"),
-                           ("model_ensemble/trainer.py", "member_execution_evidence")):
+                           ("model_ensemble/training/oof.py", "member_execution_evidence"),
+                           ("model_ensemble/training/trainer.py", "member_execution_evidence")):
             tree = ast.parse((ROOT / path).read_text())
             names = {getattr(n.func, "id", getattr(n.func, "attr", "")) for n in ast.walk(tree) if isinstance(n, ast.Call)}
             self.assertIn(name, names, path)
-        source = (ROOT / "model_ensemble/oof.py").read_text()
+        source = (ROOT / "model_ensemble/training/oof.py").read_text()
         fingerprint_section = source.split("fingerprint_payload =", 1)[1].split("oof_fingerprint =", 1)[0]
         self.assertNotIn("execution_evidence", fingerprint_section)
 

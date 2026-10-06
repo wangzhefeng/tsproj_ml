@@ -1,5 +1,7 @@
 # 项目架构收敛设计、Coder Review 与整改方案
 
+> 后续合同层子包化：`forecasting_core` 当前采用 specs/tensors/probability/execution/temporal 与 bundle.py；本设计中的根级旧路径保留为历史记录，现行归属及 pickle 边界见 [包文档](../packages/forecasting_core.md)。
+
 > 文档状态：**v4 整改已 `closed`（2026-08-31）**。§1–§10 和 §11 的旧基线保留为历史证据，不得当作当前验收结果；目标架构与实施要求见 §12–§16，二轮 fresh 证据见 §17.5。C1–C6 实现与当前态文档、H16 short + H31 calendar-month 两个 quantile linear-blending 代表配置以及 C7 代码/配置/资产门禁均已通过。**任何整改片均不自动 commit**（review-then-commit）。
 > 创建日期：2026-08-29（v1）／ v2：纳入 ensemble v4 现状 ／ v3：新增流水线第一性原理审计并完成原收敛切片 ／ v4：重构后 coder review 与整改方案
 > 作者：Machine-C（MC）

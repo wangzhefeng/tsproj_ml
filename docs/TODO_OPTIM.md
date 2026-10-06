@@ -27,6 +27,9 @@
 - **风险**：提前下沉需为单一消费方造中间接口（checkpoint 抽象层），纯增维护负担且无真实场景约束接口设计；滞后处理的风险是触发时迁移面变大，但迁移路径已被方案 A 验证（分层门禁 + 兼容 re-export 模式可复用）。
 - **验收标准**：触发时按方案 B 执行——全量下沉后 `model_building/adapters/` 无 forecasting_core / model_training 依赖（`tests.test_package_layering` 通过）；`model_training/estimators/` 保留兼容 re-export；fast 套件与定向测试（adapters / quantile / multitarget / ensemble）全过；`docs/packages/model_building.md` 与 `model_training.md` 同步包边界描述。
 
+- **实施补充（forecasting_core 合同收口）**：`TargetCoordinate` 已迁入 `forecasting_core/strategy_contracts.py`，适配器改为直接消费该合同；这仅完成坐标解耦，不代表 Pool、MultiTargetAdapter 或 checkpoint 依赖已经下沉。本条其余范围仍待处理。
+- **子包化追加**：共用坐标现位于 `forecasting_core/execution/strategy.py`，checkpoint 协议位于 `forecasting_core/execution/checkpoints.py`；此前实施记录的根级路径已退出，其余适配器下沉范围不变。
+
 ### OPT-025 strategy executor 与 artifact 合同的包归属（预测侧消费训练包）
 
 - **状态**：待处理
@@ -36,6 +39,9 @@
 - **建议方向**：不立项预建。与 OPT-023 绑定同一触发条件（第二个真实消费方出现）：触发时先做 TargetCoordinate / tensor 几何与 strategies 解耦（即 OPT-023 Step 2 前置），随后将 executor 与 artifact 合同上收（候选位置：`forecasting_core/specs/strategy.py` 已有策略 spec，或独立 strategies 包），`model_predicting` 只认合同层类型。解耦成本与 OPT-023 共摊一次，不重复付费。
 - **风险**：提前上收需为单消费方预造合同层接口；滞后处理的风险是触发时迁移面变大，但迁移路径已被 OPT-023 方案 A 验证（分层门禁 + 兼容 re-export 模式可复用）。
 - **验收标准**：触发时 `model_predicting` 对 `model_training` 的 import 归零（或仅剩合同层类型再导出）；`tests.test_package_layering` 通过；fast / integration 全过；`docs/packages/model_training.md` 与 `model_predicting.md` 同步边界描述。
+
+- **实施补充（forecasting_core 合同收口）**：共用 `TargetCoordinate`、完整签名 `FeatureProvider` 已迁入 `forecasting_core/strategy_contracts.py`；旧 `model_predicting/contracts/` 已退出。executor、target plan、模型组 artifact 仍在 `model_training`，预测侧对训练包的依赖未归零，本条不标记整体完成。
+- **子包化追加**：上述共用坐标与协议现统一位于 `forecasting_core/execution/strategy.py`；本次仅重排合同层内部职责，不迁移 executor 或模型组 artifact。
 
 ### OPT-028 refit_every 语义分歧裁决与「有界历史 + 间隔重训」组合缺口
 

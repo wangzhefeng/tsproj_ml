@@ -19,7 +19,7 @@
 ## 缓存与训练态
 
 - 磁盘编译特征缓存已退役（2026-10-05 起）：不再持久化编译后的设计矩阵，旧 `compiled_cache_root` 参数在 runner/preflight 边界 RAISE。`design_identity.py` 保留 raw-design 内容寻址身份（源文件/生成器哈希由 `data_loading.sources.provenance` 提供，设计语义、依赖环境及编译链身份在本包组合），供运行内内存共享（`share_training_design`/precompiled payload）与执行证据使用；不等同于配置语义 fingerprint。
-- `indexed.py`：规则 source-time 历史设计的因子化编译——整窗一次性计算 rolling/expanding/difference/lag，输出只读 `IndexedDesign`（`forecasting_core/design.py`）按列索引共享底层数组，估计器边界才展开行列；不适用的节点显式返回 None 回落既有编译器，不降级数据语义。
+- `indexed.py`：规则 source-time 历史设计的因子化编译——整窗一次性计算 rolling/expanding/difference/lag，输出只读 `IndexedDesign`（`forecasting_core/execution/design.py`）按列索引共享底层数组，估计器边界才展开行列；不适用的节点显式返回 None 回落既有编译器，不降级数据语义。
 - 历史统计内核（`history_statistics.py`）：rolling std 平移后计算（防大直流分量的增量方差消减）；expanding 按历史下界一次计算全部前缀；kurt 恒定窗 mask 为 0 对齐单窗 `Series.kurt` 语义。
 - `CanonicalFeatureSelector` 只在本训练窗拟合，保留的特征索引随训练 artifact 使用；不在全量数据上先选列再做回测。
 - 可见历史行定位缓存仅在单次 compile 内有效，按 `(source.name, source.time_col, identity)` 隔离；同源不同列可复用索引，不同序列不得复用。Global single/fallback 曾错误复用首个序列的历史，现已纠正；旧黄金样本仅修正受影响数值，schema/proof/lineage 不变。不自动重训或覆盖存量结果，受影响 Global 结果须经显式重跑才能取得修正值。

@@ -5,11 +5,11 @@ quantile 逐 level 训练编排在 `model_training/quantile.py`，quantile 能�
 `model_building/catalog.py::quantile_parameters` 在参数注入边界执行。
 
 - `calibration.py`：CQR 数学内核与 apply-before-collect 追踪器；score 统一调用 `compute_nonconformity_scores`。有限且有效的倒置区间直接报错，整批 score 校验通过后才追加记录；原有非有限值及评估掩码筛选保留。
-- `residual.py`：按序列/目标/horizon 独立选择 as-of 残差、计算有限样本顺序统计量、冻结并应用分组半径；不满足样本数或有限样本秩时明确无区间。合同与 `PointIntervalForecast` 位于 `forecasting_core/point_intervals.py`，共用 PI 列名编码也在该合同层。配置及边界见 [point-intervals](../config/point-intervals.md)。
+- `residual.py`：按序列/目标/horizon 独立选择 as-of 残差、计算有限样本顺序统计量、冻结并应用分组半径；不满足样本数或有限样本秩时明确无区间。校准配置/状态合同位于 `forecasting_core/probability/calibration.py`；`PointIntervalForecast` 与共用 PI 列名编码位于 `forecasting_core/probability/intervals.py`。配置及边界见 [point-intervals](../config/point-intervals.md)。
 - 张量 crossing 修复由 `model_predicting.loops.predictor.repair_marginal_quantile_crossing` 承载，不在本包维护重复的 DataFrame 通路。
 - 原生 quantile 参数注入唯一实现为 `model_building.catalog.quantile_parameters`。
 
-稳定概率合同位于 `forecasting_core/{probabilistic_spec,artifacts}.py`；point/quantile forecaster 位于 `model_predicting/loops/predictor.py`。Canonical runtime 显式启用 CQR 时输出 `predict_pi*`，final 修正量随 bundle 保存并用于部署，不在部署期重校准。
+稳定概率合同位于 `forecasting_core/probability/`，部署模型合同位于 `forecasting_core/bundle.py`；point/quantile forecaster 位于 `model_predicting/loops/predictor.py`。Canonical runtime 显式启用 CQR 时输出 `predict_pi*`，final 修正量随 bundle 保存并用于部署，不在部署期重校准。
 
 旧 DataFrame `pipeline.py`/`postprocessing.py`、重复的 `inject_quantile_objective` 已退出，不提供兼容 shim。删除旧 API 不改变合法 canonical 配置的原生 objective 参数；直接传给 `quantile_parameters` 的非法分位点、未知模型会明确报错。
 

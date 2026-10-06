@@ -18,7 +18,7 @@
                          └── probabilistic/       仅 CQR 校准
                  │
                  ▼
-  forecasting_core/                  specs/tensors/artifacts/probabilistic contracts
+  forecasting_core/                  specs/tensors/probability/execution/temporal + bundle
   models/ model_evaluation/ decomposition/ data_process/
                  │
                  ▼
@@ -31,7 +31,7 @@
 
 | 路径 | 职责 |
 |---|---|
-| `forecasting_core/` | Forecast/Data/Feature/Strategy/Estimator specs，预测张量，bundle/distribution/probabilistic spec |
+| `forecasting_core/` | specs 配置、tensors 张量、probability 概率合同、execution 执行协作合同、temporal 时间规则与 bundle；不执行训练/推理或文件写入 |
 | `data_loading/` | SourceRegistry、information set、显式 provider |
 | `feature_engineering/` | FeatureCompiler、监督特征选择、transform 配置归一化及 `transforms/` 训练态 |
 | `model_training/` | CanonicalTrainer、quantile 训练、七策略 executor、能力探测与多目标 adapter |

@@ -6,7 +6,7 @@
 - `wrappers/`：按 family 保留原生模型封装；`base.py` 为共享基类/构造模板（`_resolve_params` → `_build_estimator` 钩子、`_require_fitted`、NaN 防御共享 `nan_defense_fit_state`），`lightgbm.py`、`xgboost.py`、`catboost.py` 为 boosting 封装，`sklearn_tree.py` 为 RF/HistGB，`linear.py` 为 Ridge/ElasticNet/Lasso/QuantileRegressor，`seasonal_template.py` 为 SeasonalTemplate（支持 `day_type_split` 与 `holiday_split` 按 `is_holiday` 列分组，后者优先且列缺失时回退），`ets.py`/`naive.py`/`theta.py` 为直接消费原始时序历史的原生序列模型。参数校验统一来自 `preflight/`，wrappers 只保留训练/预测本体。
 - `pickle_io.py`：`ModelDeployPkl` 的底层 pickle 保存/加载，导入不修改 `sys.path`，也不再因未用 logger 导入而初始化项目日志；对象保存/加载行为不变。
 
-训练在 `model_training/`，推理/产物在 `model_predicting/`，生命周期编排在 `pipeline/`，稳定 bundle 合同在 `forecasting_core/artifacts.py`。本包不得反向 import 上述高层包。
+训练在 `model_training/`，推理/产物在 `model_predicting/`，生命周期编排在 `pipeline/`，稳定 bundle 合同在 `forecasting_core/bundle.py`。本包不得反向 import 上述高层包。
 
 ## 描述表与参数校验
 

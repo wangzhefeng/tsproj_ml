@@ -46,3 +46,11 @@ features:
 - canonical fingerprint 只取语义 payload；并行度、日志和输出目录相关字段不进入 fingerprint。结果 identity = 可读前缀 + 12 位 fingerprint；语义相同的配置别名共享 identity，这不是 hash 碰撞。
 - Direct 结果前缀沿用 direct、direct-pointwise、direct-pointwise-horizon 三类；cyclical 属于第三类内部特征变体，仅在元数据记录并由 fingerprint 区分，不从 pointwise 文件名推断语义。统一规则见 [`../packages/model_predicting.md`](../packages/model_predicting.md)，修改展示前缀不改变 fingerprint、不自动迁移旧目录。
 - 启用目标分解时语义 payload 带 `decomposition_semantics: component_fit_v2`，区分已修复的 STL/MSTL 外推参数语义。分解别名与严格参数校验唯一入口是 `decomposition/configuration/spec.py`；不修改 YAML、不自动重跑或清除旧结果。
+
+## 训练与概率边界
+
+- `validation.training` 只接受 `sample_weight`、`origin_sampling`，不能为 null。未接线的 early_stopping_patience/tuning/augmentation/feature_selection/learning_rate/huber_delta/blend_weight_windows/estimator_ensemble 及 `validation.train_outlier` 一律拒绝；模型参数仍放 `estimator.params`，特征选择放 `features.selection`。
+- sample_weight：`method: exponential`（可省略），必填正数 `halflife_days`；可选 `anchor: cutoff|latest_origin`、`normalization: mean|sum|none`，默认 cutoff/mean。anchor 是可得性上界，合法锚点平移不改变相对权重；none 下最新样本权重为 1。
+- point 只使用点预测及可选 absolute_residual 校准，不接受 quantiles/point_quantile/crossing。quantile 支持单分位网格（仍须包含 point_quantile），此时不自动生成区间。
+- crossing.report_raw、calibration.allow_interval_shrink 只接受 YAML 布尔值；窗口、样本数、标签延迟只接受整数且拒绝 bool。字符串 `"false"`、小数计数和负小数延迟不会被自动转换。
+- YAML 与部署概率解析使用同一校验；合法配置不自动补默认字段，因此不改变原有 payload/fingerprint。新声明的有效权重选项属于显式语义输入。

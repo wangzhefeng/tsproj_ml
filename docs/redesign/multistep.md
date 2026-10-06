@@ -1,5 +1,7 @@
 # 多步预测 Canonical 架构与实施记录
 
+> 后续合同层子包化：当前目录与兼容性以 [forecasting_core 包文档](../packages/forecasting_core.md) 为准；张量布局位于 `forecasting_core/tensors/layout.py`，checkpoint 协议位于 `forecasting_core/execution/checkpoints.py`。本文历史实施记录保留原路径，不表示仍提供兼容导入。
+
 > 文档状态：**当前唯一权威设计／C0–C7 全部完成并关闭（2026-08-31）**
 > 当前实现以代码、活动 schema-2 YAML 和本次 fresh 验证为准；历史方案见 Git 及文末溯源，不再作为现状事实源。
 > 七类运行、全量门禁、source header 合同和活动文档均有 fresh 证据；Global N2K2 fixture 已获批作为能力验收，`AGENTS.md` 当前合同已同步。

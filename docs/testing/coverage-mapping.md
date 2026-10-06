@@ -10,6 +10,10 @@ rolling 系回测形态（2026-09-27 新增）：`test_window_backtest_modes` �
 
 ## 精简与覆盖映射
 
+core 子包化：`test_core_subpackage_layering` 默认 integration，检查子包依赖方向及实际模块图无环；用反向依赖和同包环两个故障输入验证门禁本身失败。`test_forecast_tensor` 在独立进程验证根包不提前加载合同模块，张量的轴、不可变存储与 pickle 往返仍走原行为测试。旧模块路径不提供兼容层，部署必须使用新版本重建的 bundle。
+
+合同层：`test_core_strict_boundaries` 默认 integration，覆盖真实 YAML 未消费训练选项拒绝、概率有损类型拒绝、单分位无隐式区间、冻结 Mapping 解析、权重选项入口及 CQR 保存/部署坏状态；实际 pickle 往返验证合法状态保持，反序列化拒绝坏 correction、缺原点和 schema-v1，保存坏状态在创建产物目录前失败。`test_indexed_design` 增加只读 view 的可写 base 别名隔离及底层字节核算。点预测产物冒烟增加独立线性真值；CQR checkpoint 恢复检验具体注入原因、failed 状态、无 checkpoint 干净运行与恢复后的预测/评分精确一致。
+
 在线统计：原 `test_online_prediction` 的扩展用例保留原精确断言，`test_online_statistics` 默认 integration，分别覆盖 Direct/recursive 全前缀 single 特征与预测精确对照、默认 batch 既有差异归因、逐点/分批追加等价、同尾不同前缀的数值与 lineage、失败发布原子性、状态防别名、旧 schema/缺统计/计数和 origin 错配拒绝、有限历史模式。EWM 与事件算子的独立 pandas 对照继续由 `test_streaming_statistics` 覆盖。
 
 引用式融合闭环新增测试默认 integration：`test_ensemble_regressions`（成员/原点身份、非整数缓存精确往返、quantile weighted/pinball、顶层 point_quantile 部署），`test_ensemble_strict_contract`（重复 YAML 键、源语义、未知参数、成员未消费选项拟合前拒绝），`test_ensemble_outer_evaluation`（外层标签扰动不改变融合权重/预测、成员窗口、掩码与季节基线传递），`test_ensemble_lifecycle_contract`（缓存写中断、bundle 写失败恢复、真实模型参数/visibility/lineage、CQR），`test_ensemble_panel_alignment`（异构 lag、Global direct+recursive、point/quantile/逐 horizon/动态权重的冷暖及 bundle 对照），`test_ensemble_adaptive_weights`（独立解析期望、时间衰减和未来标签拒绝）。`test_ensemble_methods` 的常量目标 stacking 断言精确恢复目标均值，NNLS 用独立解析权重，避免恒零/固定等权错误实现蒙混通过。

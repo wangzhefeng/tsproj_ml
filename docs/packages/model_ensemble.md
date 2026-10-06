@@ -2,7 +2,7 @@
 
 `model_ensemble/` 是引用式模型融合能力包。
 
-- `configuration/{specs,loader,preflight}.py`：成员引用、共享 problem/data/probabilistic/origin、方法参数与成员能力预检；严格 YAML reader 与单模型共用 `forecasting_core.yaml_io`，嵌套及 merge 后重复键同样拒绝。
+- `configuration/{specs,loader,preflight}.py`：成员引用、共享 problem/data/probabilistic/origin、方法参数与成员能力预检；严格 YAML reader 与单模型共用 `forecasting_core.specs.yaml`，嵌套及 merge 后重复键同样拒绝。
 - `training/oof.py` 与 `outputs/cache.py`：严格时间 OOF 与 `(member,source,path_role,file_sha256)` 内容寻址缓存。文件 SHA 实现复用 `data_loading.sources.provenance.file_sha256`；成员身份组合、OOF 缓存读写与校验仍由本包负责。
 - generated weather 的 OOF 身份同时绑定 manifest/raw/normalized 和天气实现哈希；其他尚无传递资产合同的生成器继续 RAISE。OOF 保存 Global series 坐标，当前内部 schema 常量为 4；本次子包迁移沿用原值，不改变缓存身份、不删除存量目录。天气融合真实业务场景仍需单独验收。
 - `methods/`：averaging、weighted、linear blending、stacking、adaptive_weighted；参数与支持面见 [配置合同](../config/ensemble.md)。
@@ -10,7 +10,7 @@
 - `training/{trainer,backtesting,diagnostics}.py`：融合器学习、成员 final fit、独立外层回测和 meta-train 诊断；`inference/forecast.py` 统一顶层 point_quantile/crossing；`outputs/{reporting,persistence}.py` 拥有报告、bundle 组装与完成清单。根 `runtime.py` 只编排阶段。
 - `inference/deployment.py`：从已加载 bundle 预测；调用方显式提供按 bundle input schema 编译的部署特征及需要时的 feature provider，不读取成员 YAML 或 OOF cache。
 - 运行身份绑定有序成员语义 fingerprint 和实际原点；未解析 YAML 的 document fingerprint 仅作配置溯源，不作为运行产物身份。OOF key 同时绑定实际成员原点；CSV 读回采用正确舍入，保证 float64 字节校验精确往返。
-- 顶层部署概率规格经 `forecasting_core.probabilistic_spec` 唯一解析器构造，不复制首成员的 point_quantile；weighted 的 quantile 误差按样本/步长/分位共同池化，各分位共享逐目标权重；成员 pinball 复用通用指标。
+- 顶层部署概率规格经 `forecasting_core.probability.spec` 唯一解析器构造，不复制首成员的 point_quantile；weighted 的 quantile 误差按样本/步长/分位共同池化，各分位共享逐目标权重；成员 pinball 复用通用指标。
 
 Quantile linear blending 按 target 最小化 simplex 约束 pooled pinball；同一 target 的全部 quantile level 共享权重。产物同时保存 quantile grid、有效样本数、optimizer 状态/消息与 fallback 原因，并写入 `resolved_model.json` 供人工审计。
 

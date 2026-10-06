@@ -12,4 +12,4 @@
 
 checkpoint 的实现指纹递归包含受保护源码目录，`model_building/wrappers/` 随 `models/` 自动纳入。实现变化会使缓存/恢复身份变化，不改变 YAML 的配置语义，也不自动删除已有结果。
 
-raw-design 编译缓存属于 `feature_engineering/cache.py`，批调度和产物验收属于 `pipeline/`。性能档只能在其签名和资源条件满足时使用，不能借运行参数静默改算法、训练窗或输出合同。
+磁盘编译缓存已退役；raw-design 身份组合属于 `pipeline/design_identity.py`，批调度和产物验收属于 `pipeline/`。性能签名直接消费 `data_loading.sources.provenance.file_sha256`，不经特征层转导出。性能档只能在其签名和资源条件满足时使用，不能借运行参数静默改算法、训练窗或输出合同。

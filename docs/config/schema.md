@@ -33,7 +33,7 @@ features:
     target:
       calendar_normalization: {method: none}
       decomposition: {method: none}
-      scaling: {method: none, inverse: false}
+      scaling: {method: none}
 ```
 
 未知顶层或嵌套字段在 `load_yaml_config()` 阶段 RAISE。

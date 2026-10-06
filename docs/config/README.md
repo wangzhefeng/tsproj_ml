@@ -8,6 +8,7 @@
 
 | 章节 | 内容 | 何时读 |
 |---|---|---|
+| [feature-contracts.md](feature-contracts.md) | 特征严格校验、缩放迁移、分位窗/偏移窗与选择器 | 改特征配置 |
 | [schema.md](schema.md) | 唯一 schema、顶层结构、transformation 嵌套 schema、加载严格性与 fingerprint | 写/改 YAML、改 loader |
 | [ensemble.md](ensemble.md) | 引用式融合、独立外层评估、逐 horizon/冻结动态权重与支持边界 | 写融合 YAML、部署 Ensemble |
 | [geometry.md](geometry.md) | 严格原始历史窗口、fixed-step/calendar-month 字段、时间边界 | 改时间几何/回测窗口 |

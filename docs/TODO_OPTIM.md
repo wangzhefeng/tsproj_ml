@@ -75,7 +75,7 @@
   1. 子包收口：`sample_weight.py` → `model_training/weights/`（`temporal.py` 算法本体 + `resolve.py` 配置接线与能力前置校验），旧文件删除（内部文件、零引用）。
   2. 功能完善：`anchor`（`cutoff` 默认 / `latest_origin`）与 `normalization`（`mean` 默认 / `sum` / `none`）两个语义维度显式化。
   3. 接线：`fold_fit.py::_fit_point/_fit_quantile` 增加 `sample_weight` 参数透传 `trainer.train`；`runner.fit()` 按训练 origins + 标签末端 cutoff 计算权重；`fit_final()` 防护——声明加权但跳过 `final_bundle_inputs` 时 RAISE；`resolve.py` 对 catalog `sample_weight=False` 的模型（seasonal_template）前置 RAISE。
-  4. 关联规范化（EWM 特征检查中发现）：`feature_engineering/compiler.py` 的 rolling/expanding/ewm `stats` 此前无解析期白名单，拼错统计名要到编译中段才 RAISE；新增 `ROLLING_STATS`（10 项全集）/`EWM_STATS`（mean/std）frozenset 与 `_validated_stats`，5 处调用点替换，报错列明非法项与合法集。
+  4. 关联规范化（EWM 特征检查中发现）：`feature_engineering/compilation/compiler.py` 的 rolling/expanding/ewm `stats` 此前无解析期白名单，拼错统计名要到编译中段才 RAISE；新增 `ROLLING_STATS`（10 项全集）/`EWM_STATS`（mean/std）frozenset 与 `_validated_stats`，5 处调用点替换，报错列明非法项与合法集。
 - **验证命令及结果**：
   - 新增 `tests/test_training_sample_weight.py`（12 项：数值正确性/防御合同/配置接线/能力 RAISE）与 `tests/test_sample_weight_wiring.py`（4 项端到端：加权前后预测差异严格为正证明权重到达估计器、未声明时行为不变、fit_final 防护、final fit 加权完整跑通）——全过。
   - `tests/test_feature_visibility_compiler.py` 新增 `test_unknown_stats_rejected_at_compile_time`（rolling/expanding/ewm 三子用例）——全过。

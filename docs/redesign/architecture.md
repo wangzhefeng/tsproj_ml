@@ -449,7 +449,7 @@ env -u PYTHONPATH UV_CACHE_DIR=.uv_cache uv run python scripts/audit_ensemble_co
 
 #### RF1 — P0：624/824 个基模型 YAML 与 FeatureCompiler 的 canonical schema 不一致
 
-- 运行时只接受 `direct/advanced/feature_scaling/target/datetime_categorical/interactions`（`feature_engineering/compiler.py:95-104,569-572`）。
+- 运行时只接受 `direct/advanced/feature_scaling/target/datetime_categorical/interactions`（`feature_engineering/compilation/compiler.py:95-104,569-572`）。
 - checker 同时放行旧 `direct_layout/target_transform/rolling_windows/diff_periods/pct_change_periods`（`scripts/check_model_configs.py:44-66`）。
 - 现役例：`config/aidc_power_month/route_A/freq_1month/window_length_10/lgbm_usmd_prob_mean.yaml:67-72`。
 - 最小复现：`ValueError: unsupported feature transformations: ['direct_layout', 'target_transform']`。
@@ -687,7 +687,7 @@ C0 锁失败证据
 - Modify: `model_forecasting/specs/feature.py`
 - Modify: `probabilistic/spec.py`
 - Modify: `config/config_loader.py`
-- Modify: `feature_engineering/compiler.py`
+- Modify: `feature_engineering/compilation/compiler.py`
 - Modify: `scripts/check_model_configs.py`
 - Modify: 624 个受影响 YAML
 - Test: `tests/test_active_config_runtime_contract.py`

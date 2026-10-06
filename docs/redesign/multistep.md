@@ -40,7 +40,7 @@ MO 策略严格要求 `1 < B < H` 且 `H % B == 0`；不满足时在配置解析
 | 维度 | 配置字段 | 取值 | 行为作用层 | 代码入口 |
 |---|---|---|---|---|
 | 策略 | `strategy.name`（+MO 的 `output_chunk_length`） | recursive / direct / mimo / recmo / dirrec / dirmo / dirrecmo | H 步输出如何在模型调用间分配、是否消费自身预测 | `forecasting_core/specs/strategy.py` 规则表；`model_training/strategies/` 执行 |
-| Direct layout | `features.transformations.direct.layout` | independent_models（H 个独立模型）/ single_model_horizon（共享单模型=pointwise，必配 horizon_feature） | 同一 Direct 策略下训练样本的行×列组织 | `model_training/strategies/base.py::target_plan_for_config`；`feature_engineering/compiler.py`；`estimators/multi_target.py` |
+| Direct layout | `features.transformations.direct.layout` | independent_models（H 个独立模型）/ single_model_horizon（共享单模型=pointwise，必配 horizon_feature） | 同一 Direct 策略下训练样本的行×列组织 | `model_training/strategies/base.py::target_plan_for_config`；`feature_engineering/compilation/compiler.py`；`estimators/multi_target.py` |
 | 训练 scope | `problem.training_scope` | local（逐序列独立建模）/ global（panel 池化共享模型，series_id 作 key 特征） | 序列间是否共享参数 | `forecasting_core/specs/problem.py` |
 | 估计器耦合 | `estimator.target_adapter` | independent（标量模型组）/ regressor_chain（标量组+前序输出作输入，不支持 quantile）/ native（单实例多输出） | 语义输出块到物理估计器实例的映射 | `model_training/estimators/multi_target.py` |
 

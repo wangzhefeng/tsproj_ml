@@ -14,7 +14,7 @@ from forecasting_core.specs.validation import RuntimeValidationSpec
 from forecasting_core.specs import ColumnSpec, EstimatorSpec
 from model_training.estimators.capabilities import _ModelFactoryEstimator
 from pipeline.runner import CanonicalBaseModelRunner, run_canonical_config
-from pipeline.supervised_design import minimum_history_rows
+from feature_engineering.compilation.requirements import minimum_history_rows
 from tests import test_canonical_runtime_smoke as smoke
 
 

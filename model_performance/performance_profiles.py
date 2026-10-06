@@ -14,7 +14,7 @@ from importlib.metadata import version
 from pathlib import Path
 from typing import Any
 
-from feature_engineering.design_identity import file_sha256
+from data_loading.sources.provenance import file_sha256
 from forecasting_core.execution.resources import (
     RuntimeExecutionPlan,
     RuntimeResourceBudget,

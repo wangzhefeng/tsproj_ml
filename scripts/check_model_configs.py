@@ -25,7 +25,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from config.config_loader import is_model_yaml, load_yaml_config  # noqa: E402
 from decomposition.configuration.spec import normalize_decomposition_config  # noqa: E402
-from feature_engineering.compiler import FeatureCompiler  # noqa: E402
+from feature_engineering.compilation.compiler import FeatureCompiler  # noqa: E402
 from forecasting_core.specs import ForecastConfigSpec  # noqa: E402
 from forecasting_core.specs.training import SAMPLE_WEIGHT_FIELDS  # noqa: E402
 from model_ensemble.configuration.specs import EnsembleConfigSpec  # noqa: E402
@@ -91,14 +91,12 @@ _CANONICAL_NESTED_FIELDS = {
     "features.transformations.advanced.polynomial": {"columns", "degree"},
     "features.transformations.direct": {
         "layout",
-        "use_horizon_exogenous",
         "align_to_target",
         "horizon_feature",
     },
     "features.transformations.direct.horizon_feature": {"enabled", "name", "cyclical"},
     "features.transformations.feature_scaling": {
         "method",
-        "grouped",
         "encode_categorical",
     },
     "features.transformations.target": {
@@ -118,7 +116,7 @@ _CANONICAL_NESTED_FIELDS = {
         "trend_lookback",
         "seasonal_cycles",
     },
-    "features.transformations.target.scaling": {"method", "inverse"},
+    "features.transformations.target.scaling": {"method"},
     "validation": {
         "forecast_origin",
         "schedule_mode",
@@ -336,7 +334,7 @@ def _check_direct_transform(value: Any) -> list[str]:
     layout = value.get("layout")
     if layout not in _DIRECT_LAYOUTS:
         problems.append(f"{path}.layout 不合法: {layout!r}")
-    for field_name in ("use_horizon_exogenous", "align_to_target"):
+    for field_name in ("align_to_target",):
         if field_name in value and not isinstance(value[field_name], bool):
             problems.append(f"{path}.{field_name} 必须是 bool")
     horizon_feature = value.get("horizon_feature")
@@ -471,8 +469,6 @@ def _check_target_transform(value: Any) -> list[str]:
         method = scaling.get("method", "none")
         if method not in _TARGET_SCALING_METHODS:
             problems.append(f"{path}.scaling.method 不合法: {method!r}")
-        if "inverse" in scaling and not isinstance(scaling["inverse"], bool):
-            problems.append(f"{path}.scaling.inverse 必须是 bool")
     return problems
 
 

@@ -4,7 +4,7 @@ import unittest
 import numpy as np
 import pandas as pd
 
-from feature_engineering.history_statistics import history_statistic, rolling_statistics, time_since_event
+from feature_engineering.kernels.history import history_statistic, rolling_statistics, time_since_event
 
 
 class HistoryStatisticsTest(unittest.TestCase):
@@ -54,8 +54,8 @@ class HistoryStatisticsTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "unsupported time-since event"):
             time_since_event(series, "unknown")
         for stat in ("std", "max_diff", "min_diff"):
-            with self.subTest(stat=stat), self.assertWarnsRegex(RuntimeWarning, "falling back to 0.0"):
-                self.assertEqual(history_statistic(series, stat), 0.0)
+            with self.subTest(stat=stat), self.assertRaisesRegex(ValueError, "samples"):
+                history_statistic(series, stat)
 
 
 if __name__ == "__main__":

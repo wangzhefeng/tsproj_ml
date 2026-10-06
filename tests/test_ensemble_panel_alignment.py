@@ -35,7 +35,7 @@ class EnsemblePanelAlignmentTest(EnsembleRuntimeTestBase):
                 source = raw["data"]["sources"][0]
                 source["series_id_cols"] = ["series_id"]
                 source["columns"].append({"name": "series_id", "role": "key", "categorical": True})
-                raw["features"]["transformations"] = {"feature_scaling": {"method": "none", "grouped": False, "encode_categorical": True}}
+                raw["features"]["transformations"] = {"feature_scaling": {"method": "none", "encode_categorical": True}}
                 raw["validation"]["training_scope"] = {"series_order": ["A", "B"], "incomplete_series_policy": "raise", "unknown_series_policy": "raise"}
             (self.root / f"member_{name}.yaml").write_text(yaml.safe_dump(raw))
             configs[f"m_{name}"] = parse_model_config(raw, source=name)

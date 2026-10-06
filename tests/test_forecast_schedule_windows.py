@@ -9,7 +9,7 @@ import numpy as np
 import pandas as pd
 
 from data_loading import SourceRegistry
-from feature_engineering.design_identity import compute_raw_design_fingerprint
+from pipeline.design_identity import compute_raw_design_fingerprint
 from pipeline.batch_artifacts import artifact_paths, validate_artifacts
 from pipeline.runner import CanonicalBaseModelRunner
 from tests.test_raw_history_window import make_config

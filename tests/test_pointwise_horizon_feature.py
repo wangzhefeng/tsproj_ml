@@ -35,15 +35,10 @@ class PointwiseHorizonFeatureTest(unittest.TestCase):
         fixture.setUp()
         self.addCleanup(fixture.tearDown)
         fixture.write_fixture(global_scope=False)
-        config = fixture.build_config(global_scope=False, transformations={
-            "direct": {"layout": "single_model_horizon", "horizon_feature": {"enabled": "false"}},
-        })
-        compiler = FeatureCompiler(config)
-        request = fixture.request(global_scope=False)
-        info = SourceRegistry(config.data, fixture.base_dir).materialize(request)
-        for compile_call in (lambda: compiler.compile(info, request), lambda: compiler.compile_batch([info], [request])):
-            with self.assertRaisesRegex(TypeError, "enabled must be a boolean"):
-                compile_call()
+        with self.assertRaisesRegex(TypeError, "enabled must be bool"):
+            fixture.build_config(global_scope=False, transformations={
+                "direct": {"layout": "single_model_horizon", "horizon_feature": {"enabled": "false"}},
+            })
 
 
 if __name__ == "__main__":

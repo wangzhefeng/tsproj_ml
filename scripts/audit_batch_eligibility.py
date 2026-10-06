@@ -14,7 +14,7 @@ import yaml
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from config.config_loader import ENSEMBLE_GROUP_FIELDS, MODEL_GROUP_FIELDS, load_yaml_config  # noqa: E402
-from feature_engineering.compiler import FeatureCompiler  # noqa: E402
+from feature_engineering.compilation.compiler import FeatureCompiler  # noqa: E402
 from forecasting_core.specs import ForecastConfigSpec  # noqa: E402
 from model_ensemble.configuration.specs import EnsembleConfigSpec  # noqa: E402
 from model_training.strategies import target_plan_for_config  # noqa: E402

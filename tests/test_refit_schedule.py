@@ -39,7 +39,7 @@ class RefitScheduleTest(unittest.TestCase):
             # 复用要连同 scaler 一起冻结，不能暗中只更新变换。
             base = replace(base, features=replace(base.features, transformations={
                 "feature_scaling": {"method": "standard"},
-                "target": {"scaling": {"method": "standard", "inverse": True}},
+                "target": {"scaling": {"method": "standard"}},
             }))
             fit = CanonicalBaseModelRunner.fit
             reference = None

@@ -129,10 +129,8 @@ class CompilerSharedRulesTest(unittest.TestCase):
                 self.assertIn("x_substract_y", row)  # 历史拼写是输出合同，不修正。
 
     def test_empty_batch_preserves_direct_validation(self):
-        config = self.fixture.build_config(transformations={"direct": {"layout": "unknown"}})
-        compiler = FeatureCompiler(config)
-        with self.assertRaisesRegex(ValueError, "unsupported direct layout"):
-            compiler.compile_batch([], [])
+        with self.assertRaisesRegex(ValueError, "unsupported direct.layout"):
+            self.fixture.build_config(transformations={"direct": {"layout": "unknown"}})
 
 
 if __name__ == "__main__":

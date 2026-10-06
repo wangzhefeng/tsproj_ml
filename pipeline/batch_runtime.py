@@ -24,7 +24,7 @@ else:
 
 from config.config_loader import load_yaml_config
 from data_loading import BUILTIN_GENERATORS, SourceRegistry
-from feature_engineering.design_identity import compute_raw_design_fingerprint
+from pipeline.design_identity import compute_raw_design_fingerprint
 from forecasting_core.execution.checkpoints import FitCheckpointError
 from forecasting_core.execution.resources import RuntimeResourceBudget
 from forecasting_core.specs import ForecastConfigSpec

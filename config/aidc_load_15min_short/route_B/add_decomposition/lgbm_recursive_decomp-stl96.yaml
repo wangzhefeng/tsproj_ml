@@ -56,7 +56,6 @@ features:
         damping: 0.98
       scaling:
         method: none
-        inverse: false
     advanced:
       rolling:
         columns:

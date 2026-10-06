@@ -99,7 +99,7 @@ features:
       decomposition:
         method: mstl
         periods: [96]
-      scaling: {method: none, inverse: false}
+      scaling: {method: none}
 strategy: {name: direct}
 estimator:
   model_type: lightgbm
@@ -151,7 +151,7 @@ features:
     target:
       calendar_normalization: {method: none}
       decomposition: {method: stl, periods: [2]}
-      scaling: {method: none, inverse: false}
+      scaling: {method: none}
 strategy: {name: direct}
 estimator:
   model_type: lightgbm
@@ -509,7 +509,7 @@ class Task27ExecutionMatrixTest(unittest.TestCase):
                     {
                         "feature_scaling": {
                             "method": "none",
-                            "grouped": False,
+
                             "encode_categorical": True,
                         }
                     }

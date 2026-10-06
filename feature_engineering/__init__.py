@@ -1,6 +1,6 @@
 """Canonical visibility-driven feature compilation."""
 
-from feature_engineering.compiler import (
+from feature_engineering.compilation.compiler import (
     CompiledFeatures,
     FeatureCompiler,
     FeatureSchema,

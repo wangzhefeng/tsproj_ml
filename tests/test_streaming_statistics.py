@@ -5,8 +5,8 @@ import unittest
 import numpy as np
 import pandas as pd
 
-from feature_engineering.streaming_statistics import EwmState, EventState
-from feature_engineering.history_statistics import time_since_event
+from feature_engineering.statistics.streaming import EwmState, EventState, StreamingStatistics
+from feature_engineering.kernels.history import time_since_event
 
 
 class StreamingStatisticsTest(unittest.TestCase):
@@ -45,6 +45,24 @@ class StreamingStatisticsTest(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     state.update(invalid)
                 self.assertEqual(pickle.dumps(state), before)
+    def test_restore_rejects_invalid_numeric_state(self):
+        advanced = {"ewm": {"columns": ["y"], "halflives": [2.0]},
+                    "time_since": {"columns": ["y"]},
+                    "expanding": {"columns": ["y"], "stats": ["mean", "min", "max"]}}
+        expected = StreamingStatistics(advanced, config_fingerprint="test", time_col="time", freq="h")
+        frame = pd.DataFrame({"time": pd.date_range("2026-01-01", periods=4, freq="h"), "y": [1., 3., 2., 4.]})
+        state = expected.updated(frame, origin=frame.time.iloc[-1])
+        state.validate_snapshot(expected, state.origin)
+        for kind, attribute, value in (("ewm", "weighted_mean", float("nan")),
+                                       ("ewm", "covariance", -1.),
+                                       ("events", "last_peak", 999),
+                                       ("expanding", "minimum", 100.),
+                                       ("expanding", "minimum", -123456.)):
+            corrupted = pickle.loads(pickle.dumps(state))
+            mapping = getattr(corrupted, kind)
+            setattr(next(iter(mapping.values())), attribute, value)
+            with self.subTest(kind=kind, attribute=attribute, value=value), self.assertRaisesRegex(ValueError, "snapshot"):
+                corrupted.validate_snapshot(expected, state.origin)
 
 
 if __name__ == "__main__":

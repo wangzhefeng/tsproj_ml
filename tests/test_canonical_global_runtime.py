@@ -122,13 +122,13 @@ class CanonicalGlobalRuntimeTest(unittest.TestCase):
                 transformations={
                     "feature_scaling": {
                         "method": "standard",
-                        "grouped": True,
+
                         "encode_categorical": True,
                     },
                     "target": {
                         "calendar_normalization": {"method": "none"},
                         "decomposition": {"method": "none"},
-                        "scaling": {"method": "standard", "inverse": True},
+                        "scaling": {"method": "standard"},
                     },
                 },
             ),
@@ -242,7 +242,7 @@ class CanonicalGlobalRuntimeTest(unittest.TestCase):
                 )
                 self.assertEqual(
                     set(result.bundle.feature_scaler.scalers),
-                    {"lag", "datetime", "other"},
+                    {"all"},
                 )
 
                 with (result.model_dir / "model.pkl").open("rb") as file:

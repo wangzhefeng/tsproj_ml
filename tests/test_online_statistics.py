@@ -10,7 +10,7 @@ import numpy as np
 import pandas as pd
 
 from data_loading import SourceRegistry
-from feature_engineering.streaming_statistics import StreamingStatistics
+from feature_engineering.statistics.streaming import StreamingStatistics
 from model_predicting.loops.deployment import predict_strategy_bundle
 from pipeline.online import RollingForecastSession
 from pipeline.runner import run_canonical_config

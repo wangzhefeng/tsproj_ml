@@ -264,7 +264,7 @@ class CanonicalBatchRuntimeTest(unittest.TestCase):
                     "target": {
                         "calendar_normalization": {"method": "none"},
                         "decomposition": {"method": "none"},
-                        "scaling": {"method": "standard", "inverse": True},
+                        "scaling": {"method": "standard"},
                     },
                 },
             ),

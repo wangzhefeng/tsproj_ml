@@ -16,7 +16,7 @@ from forecasting_core.temporal.windows import (
     history_start as temporal_history_start,
 )
 from forecasting_core.temporal.sampling import select_training_origins
-from pipeline.supervised_design import minimum_history_rows
+from feature_engineering.compilation.requirements import minimum_history_rows
 
 
 ROOT = Path(__file__).resolve().parents[1]

@@ -13,6 +13,7 @@ from typing import Any, cast
 
 from data_loading.information.information_set import WeatherSourceLineage
 from feature_engineering import CompiledFeatures
+from feature_engineering.compilation.planning import feature_plan
 from forecasting_core.specs import ForecastConfigSpec
 
 
@@ -160,6 +161,7 @@ def compiled_lineage(
     proof_payload_items: list[dict[str, Any]],
     config: ForecastConfigSpec,
 ) -> tuple[tuple[dict[str, Any], ...], dict[str, list[str]]]:
+    plan = feature_plan(config)
     by_feature = {}
     for item in proof_payload_items:
         by_feature.setdefault(item["feature_name"], item)
@@ -200,6 +202,8 @@ def compiled_lineage(
                 "source_time": proof["source_time"],
                 "provider": proof["provider"],
                 "availability": availability,
+                "derivation": plan[feature],
+                "available_at_upper_bound": proof["available_at"],
             }
         )
         availability_summary.setdefault(availability, []).append(feature)

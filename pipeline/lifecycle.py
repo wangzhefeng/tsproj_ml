@@ -7,7 +7,7 @@ from pathlib import Path
 from time import perf_counter
 from typing import Any, Mapping
 
-from feature_engineering import design_identity
+from pipeline import design_identity
 from forecasting_core.bundle import ForecastModelBundle
 from forecasting_core.probability.distribution import MarginalForecastDistribution
 from forecasting_core.specs import (

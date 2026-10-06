@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from types import MappingProxyType
 from typing import Any
 from forecasting_core.specs._mapping import thaw_json_value
+from forecasting_core.specs.feature_transformations import validate_transformations
 
 
 def _required_name(value: Any, field_name: str) -> str:
@@ -137,6 +138,7 @@ class FeatureSpec:
     ) -> None:
         if not isinstance(transformations, Mapping):
             raise TypeError("transformations must be a mapping")
+        validate_transformations(transformations)
         _validate_causal_transformations(transformations)
         if selection is not None and not isinstance(selection, Mapping):
             raise TypeError("selection must be a mapping when present")

@@ -29,12 +29,12 @@ from feature_engineering.transforms import CanonicalFeatureScaler, CanonicalTarg
 def _config(*, target_transform=None, feature_scaling=None):
     transformations = {
         "feature_scaling": feature_scaling
-        or {"method": "none", "grouped": False, "encode_categorical": False},
+        or {"method": "none", "encode_categorical": False},
         "target": target_transform
         or {
             "calendar_normalization": {"method": "none"},
             "decomposition": {"method": "none"},
-            "scaling": {"method": "none", "inverse": False},
+            "scaling": {"method": "none"},
         },
     }
     targets = ("load", "power")
@@ -243,7 +243,7 @@ class CanonicalTargetTransformTest(unittest.TestCase):
                         target_transform={
                             "calendar_normalization": {"method": "none"},
                             "decomposition": decomposition,
-                            "scaling": {"method": scaling, "inverse": scaling != "none"},
+                            "scaling": {"method": scaling},
                         }
                     )
                     transform = CanonicalTargetTransform.from_config(config)
@@ -262,7 +262,7 @@ class CanonicalTargetTransformTest(unittest.TestCase):
             target_transform={
                 "calendar_normalization": {"method": "none"},
                 "decomposition": {"method": "linear"},
-                "scaling": {"method": "standard", "inverse": True},
+                "scaling": {"method": "standard"},
             }
         )
         history = self._history()
@@ -291,7 +291,7 @@ class CanonicalTargetTransformTest(unittest.TestCase):
             target_transform={
                 "calendar_normalization": {"method": "per_calendar_day"},
                 "decomposition": {"method": "linear"},
-                "scaling": {"method": "minmax", "inverse": True},
+                "scaling": {"method": "minmax"},
             }
         )
         full = self._history()
@@ -319,7 +319,7 @@ class CanonicalFeatureScalerTest(unittest.TestCase):
         config = _config(
             feature_scaling={
                 "method": "standard",
-                "grouped": True,
+
                 "encode_categorical": True,
             }
         )
@@ -343,13 +343,13 @@ class CanonicalFeatureScalerTest(unittest.TestCase):
         self.assertEqual(transformed.shape, (3, 3))
         self.assertTrue(np.isfinite(transformed).all())
         np.testing.assert_allclose(holdout, restored_scaler.transform(training.iloc[[2]]))
-        self.assertEqual(scaler.feature_groups["categorical"], ("site",))
+        self.assertEqual(scaler.categorical_names, ("site",))
 
     def test_no_scaling_numeric_calls_use_ndarray_fast_path(self):
         config = _config(
             feature_scaling={
                 "method": "none",
-                "grouped": False,
+
                 "encode_categorical": False,
             }
         )
@@ -373,11 +373,11 @@ class CanonicalFeatureScalerTest(unittest.TestCase):
             target_transform={
                 "calendar_normalization": {"method": "none"},
                 "decomposition": {"method": "linear"},
-                "scaling": {"method": "robust", "inverse": True},
+                "scaling": {"method": "robust"},
             },
             feature_scaling={
                 "method": "minmax",
-                "grouped": False,
+
                 "encode_categorical": False,
             },
         )

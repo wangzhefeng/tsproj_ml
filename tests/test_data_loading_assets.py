@@ -13,7 +13,7 @@ from scripts.audit_runtime_assets import audit_runtime_assets
 from config.config_loader import load_yaml_config
 from data_loading import BUILTIN_GENERATORS
 from forecasting_core.specs import ColumnSpec, DataSourceSpec, DataSpec, ForecastConfigSpec
-from feature_engineering import design_identity
+from pipeline import design_identity
 from unittest.mock import patch
 import test_ensemble_loader as fixtures
 

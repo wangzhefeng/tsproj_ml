@@ -11,7 +11,7 @@ import pandas as pd
 
 from data_loading import InformationSetRequest, SourceRegistry
 from feature_engineering import FeatureCompiler
-from feature_engineering.spectral import (
+from feature_engineering.kernels.spectral import (
     fourier_features,
     signal_entropy,
     wavelet_energy_features,
@@ -81,6 +81,19 @@ class SpectralPureFunctionTest(unittest.TestCase):
         total = sum(features.values())
         self.assertAlmostEqual(total, 1.0, places=9)
         self.assertTrue(all(value >= 0.0 for value in features.values()))
+
+    def test_haar_energy_matches_independent_subbands(self):
+        # 这些信号恰落 Haar 的不同子带，非负且总和为1不足以证明正确。
+        cases = (
+            ([1., 1., 1., 1.], {"a2": 1., "d2": 0., "d1": 0.}),
+            ([1., 1., -1., -1.], {"a2": 0., "d2": 1., "d1": 0.}),
+            ([1., -1., 1., -1.], {"a2": 0., "d2": 0., "d1": 1.}),
+        )
+        for signal, expected in cases:
+            with self.subTest(signal=signal):
+                actual = wavelet_energy_features(signal, wavelet="haar", level=2)
+                for name, value in expected.items():
+                    self.assertAlmostEqual(actual[name], value, places=12)
 
     def test_wavelet_rejects_invalid_wavelet_and_level(self):
         values = _sine_mix(64)
@@ -242,11 +255,10 @@ class SpectralCompilerTest(unittest.TestCase):
             self.compile(config, self.request("2026-01-02 12:00"))
 
     def test_invalid_fourier_spec_raises(self):
-        config = self.build_config(
-            {"advanced": {"fourier": {"columns": ["load"], "windows": [64], "top_k": 0}}}
-        )
         with self.assertRaisesRegex(ValueError, "top_k"):
-            self.compile(config, self.request())
+            self.build_config(
+                {"advanced": {"fourier": {"columns": ["load"], "windows": [64], "top_k": 0}}}
+            )
 
     def test_rolling_entropy_stat_matches_manual(self):
         config = self.build_config(

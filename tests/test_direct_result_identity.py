@@ -79,6 +79,5 @@ class DirectResultIdentityTest(unittest.TestCase):
         for direct in ({}, {"layout": "wrong"}, {"layout": "single_model_horizon", "horizon_feature": []},
                        {"layout": "single_model_horizon", "horizon_feature": {"enabled": 1}}):
             with self.subTest(direct=direct):
-                config = replace(baseline, features=replace(baseline.features, transformations={"direct": direct}))
                 with self.assertRaises((TypeError, ValueError)):
-                    config.result_identity()
+                    replace(baseline, features=replace(baseline.features, transformations={"direct": direct}))

@@ -428,11 +428,8 @@ class FeatureVisibilityCompilerTest(unittest.TestCase):
         )
         for advanced, message in cases:
             with self.subTest(message=message):
-                config = self.build_config(transformations={"advanced": advanced})
                 with self.assertRaisesRegex(ValueError, re.escape(message)):
-                    FeatureCompiler(config).compile(
-                        self.materialize(config, request), request,
-                    )
+                    self.build_config(transformations={"advanced": advanced})
 
     def test_direct_can_freeze_history_lags_at_forecast_origin(self):
         """显式 align_to_target=false 时，Direct 各 horizon 共用原点历史。"""
@@ -443,7 +440,7 @@ class FeatureVisibilityCompilerTest(unittest.TestCase):
             transformations={
                 "direct": {
                     "layout": "independent_models",
-                    "use_horizon_exogenous": True,
+
                     "align_to_target": False,
                 }
             },
@@ -586,7 +583,7 @@ class FeatureVisibilityCompilerTest(unittest.TestCase):
             transformations={
                 "direct": {
                     "layout": "independent_models",
-                    "use_horizon_exogenous": True,
+
                     "align_to_target": False,
                     "horizon_feature": {
                         "name": "forecast_horizon_idx",
@@ -612,13 +609,13 @@ class FeatureVisibilityCompilerTest(unittest.TestCase):
                 },
                 "feature_scaling": {
                     "method": "none",
-                    "grouped": False,
+
                     "encode_categorical": False,
                 },
                 "target": {
                     "calendar_normalization": {"method": "none"},
                     "decomposition": {"method": "none"},
-                    "scaling": {"method": "none", "inverse": False},
+                    "scaling": {"method": "none"},
                 },
                 "datetime_categorical": ["hour", "month"],
             },

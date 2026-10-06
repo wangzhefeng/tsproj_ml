@@ -15,7 +15,7 @@ from __future__ import annotations
 from typing import Any, Mapping
 
 import numpy as np
-from sklearn.feature_selection import SelectKBest, f_regression, mutual_info_regression
+from sklearn.feature_selection import f_regression, mutual_info_regression, r_regression
 
 _SELECTION_FIELDS = frozenset(
     {"enabled", "method", "max_features", "min_features", "force_keep"}
@@ -80,6 +80,9 @@ def normalize_feature_selection(value: Any) -> FeatureSelectionSpec | None:
     unknown = set(value) - _SELECTION_FIELDS
     if unknown:
         raise ValueError(f"features.selection unknown fields: {sorted(unknown)}")
+    force_keep = value.get("force_keep", ())
+    if isinstance(force_keep, (str, bytes)) or not isinstance(force_keep, (list, tuple)):
+        raise TypeError("features.selection.force_keep must be a sequence of strings")
     return FeatureSelectionSpec(
         enabled=value.get("enabled", False),
         method=value.get("method", "f_regression"),
@@ -108,36 +111,53 @@ class CanonicalFeatureSelector:
         self.selected_names_: tuple[str, ...] | None = None
 
     def fit(self, X: np.ndarray, y_signal: np.ndarray) -> "CanonicalFeatureSelector":
-        X = np.asarray(X, dtype=float)
-        if X.ndim != 2 or X.shape[1] != len(self._schema):
-            raise ValueError("X must be two-dimensional with feature_schema width")
-        y_signal = np.asarray(y_signal, dtype=float).reshape(-1)
-        if len(y_signal) != X.shape[0]:
-            raise ValueError("y_signal must match X row count")
+        return self.fit_calls((X,), np.asarray(y_signal, dtype=float).reshape(-1, 1, 1))
 
-        n_features = X.shape[1]
-        spec = self._spec
-        if not spec.enabled or n_features <= spec.min_features:
-            self.selected_names_ = self._schema
-            return self
+    def fit_calls(self, calls, targets: np.ndarray, *, call_horizons=None) -> "CanonicalFeatureSelector":
+        """各 call 与各目标通道独立评分，单位最大值归一后等权聚合。
 
-        k = min(max(spec.max_features, spec.min_features), n_features)
-        selector = SelectKBest(score_func=_METHODS[spec.method], k=k)
-        selector.fit(X, y_signal)
-        support = np.asarray(selector.get_support(), dtype=bool)
-        selected = [
-            name for name, keep in zip(self._schema, support) if keep
-        ]
-        for name in spec.force_keep:
+        不平均物理目标值，避免反向目标相消及不同量纲主导选择。
+        保留一个统一列子集，所有训练/预测 call 使用相同 schema。
+        """
+        arrays = tuple(np.asarray(call, dtype=float) for call in calls)
+        y = np.asarray(targets, dtype=float)
+        if not arrays or y.ndim != 3 or not y.shape[0] or not np.isfinite(y).all():
+            raise ValueError("selection requires nonempty calls and finite (samples,H,K) targets")
+        for array in arrays:
+            if array.ndim != 2 or array.shape != (len(y), len(self._schema)) or not np.isfinite(array).all():
+                raise ValueError("selection X must have finite rows matching target samples and feature_schema width")
+        for name in self._spec.force_keep:
             if name not in self._schema:
                 raise ValueError(f"force_keep feature {name!r} not in feature schema")
-            if name not in selected:
-                selected.append(name)
-        # 保持 schema 顺序，保证列索引推导确定
-        selected_set = set(selected)
-        self.selected_names_ = tuple(
-            name for name in self._schema if name in selected_set
-        )
+        spec = self._spec
+        if not spec.enabled or len(self._schema) <= spec.min_features:
+            self.selected_names_ = self._schema
+            return self
+        scores = np.zeros(len(self._schema), dtype=float)
+        if call_horizons is None:
+            call_horizons = tuple((index,) for index in range(len(arrays))) if len(arrays) == y.shape[1] else (tuple(range(y.shape[1])),) * len(arrays)
+        if len(call_horizons) != len(arrays) or any(not steps or any(type(step) is not int or not 0 <= step < y.shape[1] for step in steps) for steps in call_horizons):
+            raise ValueError("selection call_horizons must match calls and target horizon")
+        for array, steps in zip(arrays, call_horizons):
+            for signal in y[:, steps, :].reshape(len(y), -1).T:
+                # 常数目标不提供选列信息；不产生随机互信息噪声。
+                if np.ptp(signal) == 0:
+                    continue
+                if spec.method == "f_regression":
+                    # F 分数由有界相关系数推导；sklearn 在 r 略大于1时
+                    # 可产生负的巨大 F 值。仅数值上截断理论有界的 r。
+                    correlation = np.clip(r_regression(array, signal, force_finite=True), -1., 1.)
+                    squared = correlation ** 2
+                    current = squared / np.maximum(1. - squared, np.finfo(float).eps)
+                else:
+                    current = mutual_info_regression(array, signal, random_state=0)
+                maximum = float(np.max(current))
+                if maximum > 0:
+                    scores += current / maximum
+        k = min(spec.max_features, len(self._schema))
+        selected = {self._schema[index] for index in np.argsort(-scores, kind="stable")[:k]}
+        selected.update(spec.force_keep)
+        self.selected_names_ = tuple(name for name in self._schema if name in selected)
         return self
 
     def transform(self, X: np.ndarray) -> np.ndarray:

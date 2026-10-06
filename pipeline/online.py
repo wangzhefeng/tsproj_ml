@@ -18,9 +18,10 @@ from forecasting_core.specs import ForecastConfigSpec
 from forecasting_core.specs.data import AvailabilityPolicy, ColumnRole
 from forecasting_core.specs.validation import FixedStepBacktestSpec
 from model_predicting.loops.deployment import predict_strategy_bundle
-from pipeline.supervised_design import SupervisedDesignBuilder, minimum_history_rows
-from feature_engineering.streaming_statistics import StreamingStatistics
-from feature_engineering.compiler import CompiledFeatures
+from pipeline.supervised_design import SupervisedDesignBuilder
+from feature_engineering.compilation.requirements import minimum_history_rows
+from feature_engineering.statistics.streaming import StreamingStatistics
+from feature_engineering.compilation.compiler import CompiledFeatures
 
 
 class _SnapshotRegistry(SourceRegistry):

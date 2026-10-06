@@ -239,7 +239,7 @@ class HolidaySourceEndToEndTest(unittest.TestCase):
                 transformations={
                     "direct": {
                         "layout": "independent_models",
-                        "use_horizon_exogenous": False,
+
                         "align_to_target": False,
                     }
                 },

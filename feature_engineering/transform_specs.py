@@ -18,7 +18,7 @@ def normalize_feature_scaling(value: Any) -> dict[str, Any]:
         value = {}
     if not isinstance(value, Mapping):
         raise TypeError("transformations.feature_scaling must be a mapping")
-    unknown = set(value) - {"method", "grouped", "encode_categorical"}
+    unknown = set(value) - {"method", "encode_categorical"}
     if unknown:
         raise ValueError(
             f"unknown transformations.feature_scaling keys: {sorted(unknown)}"
@@ -29,17 +29,13 @@ def normalize_feature_scaling(value: Any) -> dict[str, Any]:
             f"unsupported feature scaling method {method!r}; "
             f"expected one of {sorted(_FEATURE_SCALING_METHODS)}"
         )
-    grouped = value.get("grouped", False)
     encode_categorical = value.get("encode_categorical", False)
-    if not isinstance(grouped, bool):
-        raise TypeError("transformations.feature_scaling.grouped must be bool")
     if not isinstance(encode_categorical, bool):
         raise TypeError(
             "transformations.feature_scaling.encode_categorical must be bool"
         )
     return {
         "method": method,
-        "grouped": grouped,
         "encode_categorical": encode_categorical,
     }
 
@@ -74,7 +70,7 @@ def normalize_target_transformations(value: Any) -> dict[str, dict[str, Any]]:
     scaling = value.get("scaling", {})
     if not isinstance(scaling, Mapping):
         raise TypeError("transformations.target.scaling must be a mapping")
-    scaling_unknown = set(scaling) - {"method", "inverse"}
+    scaling_unknown = set(scaling) - {"method"}
     if scaling_unknown:
         raise ValueError(
             f"unknown transformations.target.scaling keys: {sorted(scaling_unknown)}"
@@ -85,13 +81,10 @@ def normalize_target_transformations(value: Any) -> dict[str, dict[str, Any]]:
             f"unsupported target scaling method {scaling_method!r}; "
             f"expected one of {sorted(_TARGET_SCALING_METHODS)}"
         )
-    inverse = scaling.get("inverse", False)
-    if not isinstance(inverse, bool):
-        raise TypeError("transformations.target.scaling.inverse must be bool")
     return {
         "calendar_normalization": {"method": calendar_method},
         "decomposition": decomposition_payload,
-        "scaling": {"method": scaling_method, "inverse": inverse},
+        "scaling": {"method": scaling_method},
     }
 
 

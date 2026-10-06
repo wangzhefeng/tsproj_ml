@@ -10,7 +10,7 @@ import numpy as np
 import pandas as pd
 
 from data_loading import SourceRegistry
-from feature_engineering.indexed import compile_indexed_history
+from feature_engineering.compilation.indexed import compile_indexed_history
 from pipeline.supervised_design import SupervisedDesignBuilder
 from tests.test_raw_history_window import make_config
 
@@ -34,16 +34,15 @@ class CompilerArrayKernelsTest(unittest.TestCase):
                 config = make_config(path, strategy='direct')
                 transforms = config.features.canonical_payload()['transformations']
                 transforms['advanced'] = {
-                    'rolling': {'columns': ['load'], 'windows': [1, 2, 4, 8], 'stats': list(stats)},
+                    'rolling': {'columns': ['load'], 'windows': [4, 8], 'stats': list(stats)},
                     'expanding': {'columns': ['load'], 'stats': list(stats)},
                 }
                 config = replace(config, features=replace(config.features, transformations=transforms))
                 builder = SupervisedDesignBuilder(config, SourceRegistry(config.data, directory),
                     history_start=cast(pd.Timestamp, times[10]))
                 origins = tuple(times[25:30])
-                # 短窗的std/skew/kurt/diff按既有合同警告并返回0；显式验证该警告。
-                with self.assertWarnsRegex(RuntimeWarning, 'falling back to 0.0'):
-                    single = [builder.training_row(origin)[0] for origin in origins]
+                # 每种统计量均在数学上定义充分的完整窗口上验证。
+                single = [builder.training_row(origin)[0] for origin in origins]
                 batch = [row[0] for row in builder.training_rows(origins)]
                 indexed = compile_indexed_history(builder.compiler,
                     builder.registry.materialize(builder.request(cast(pd.Timestamp, times[47]))), pd.DatetimeIndex(origins), (1, 2),
@@ -55,7 +54,7 @@ class CompilerArrayKernelsTest(unittest.TestCase):
                     assert isinstance(end, (int, np.integer))
                     history = parsed.iloc[10:end + 1]
                     windows = {'expanding': history}
-                    windows.update({f'rolling_{window}': history.iloc[-window:] for window in (1, 2, 4, 8)})
+                    windows.update({f'rolling_{window}': history.iloc[-window:] for window in (4, 8)})
                     for kind, sample in windows.items():
                         for stat in stats:
                             if stat == 'entropy':
@@ -91,7 +90,7 @@ class CompilerArrayKernelsTest(unittest.TestCase):
                     origins = tuple(times[25:30])
                     # This is a complexity contract: batch must not invoke the scalar
                     # reducer for every origin/window after already computing rolling.
-                    with patch("feature_engineering.compiler.history_statistic",
+                    with patch("feature_engineering.compilation.compiler.history_statistic",
                                side_effect=AssertionError("scalar history rescan")):
                         rows = builder.training_rows(origins)
                     parsed = pd.read_csv(path)["load"].to_numpy()

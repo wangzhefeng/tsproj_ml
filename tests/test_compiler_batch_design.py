@@ -13,7 +13,8 @@ import numpy as np
 import pandas as pd
 
 from data_loading import SourceRegistry
-from feature_engineering.compiler import FeatureCompiler
+from feature_engineering.compilation.compiler import FeatureCompiler
+from feature_engineering.compilation.batch import BatchExecutor
 from forecasting_core.specs import (
     ColumnSpec,
     DataSourceSpec,
@@ -136,7 +137,7 @@ class CompilerBatchDesignTest(unittest.TestCase):
         )
 
         with patch(
-            "feature_engineering.compiler.VisibilityProof",
+            "feature_engineering.compilation.batch.VisibilityProof",
             side_effect=AssertionError("batch training materialized VisibilityProof"),
         ):
             rows = builder.training_rows(origins)
@@ -152,7 +153,7 @@ class CompilerBatchDesignTest(unittest.TestCase):
         origins = tuple(
             cast(pd.Timestamp, pd.Timestamp(value)) for value in self.times[12:18]
         )
-        add_proof_column = FeatureCompiler._add_batch_proof_column
+        add_proof_column = BatchExecutor._add_batch_proof_column
 
         def inject_late_availability(*args, **kwargs) -> None:
             add_proof_column(*args, **kwargs)
@@ -172,7 +173,7 @@ class CompilerBatchDesignTest(unittest.TestCase):
             )
 
         with patch.object(
-            FeatureCompiler,
+            BatchExecutor,
             "_add_batch_proof_column",
             side_effect=inject_late_availability,
         ), self.assertRaisesRegex(ValueError, "available after forecast_origin"):

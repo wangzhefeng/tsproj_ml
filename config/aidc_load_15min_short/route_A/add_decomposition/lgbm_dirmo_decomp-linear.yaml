@@ -58,7 +58,6 @@ features:
         trend_lookback: 28
       scaling:
         method: none
-        inverse: false
     advanced:
       rolling:
         columns:

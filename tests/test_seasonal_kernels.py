@@ -10,7 +10,7 @@ import pandas as pd
 
 class SeasonalKernelGoldTest(unittest.TestCase):
     def test_history_only_anchor_and_every_slot_visibility(self):
-        from feature_engineering.seasonal import same_slot_stats
+        from feature_engineering.kernels.seasonal import same_slot_stats
         times = pd.date_range("2026-08-01", periods=48, freq="1h", tz="Asia/Shanghai")
         history = pd.Series(np.arange(48, dtype=float), index=times)
         anchor = times[-1] + pd.Timedelta(hours=13)
@@ -24,7 +24,7 @@ class SeasonalKernelGoldTest(unittest.TestCase):
             same_slot_stats(history.drop(times[5]), anchor=anchor, origin=times[-1], period=24, days=(2,))
 
     def test_same_slot_gold_and_causality(self):
-        from feature_engineering.seasonal import same_slot_stats
+        from feature_engineering.kernels.seasonal import same_slot_stats
 
         times = pd.date_range("2026-08-01", periods=96, freq="1h")
         values = pd.Series(np.arange(96, dtype=float), index=times)
@@ -49,7 +49,7 @@ class SeasonalKernelGoldTest(unittest.TestCase):
             same_slot_stats(values, anchor=times[12], origin=origin, period=24, days=(1,))
 
     def test_recent_state_gold_and_causality(self):
-        from feature_engineering.seasonal import recent_state_stats
+        from feature_engineering.kernels.seasonal import recent_state_stats
 
         times = pd.date_range("2026-08-01", periods=48, freq="1h")
         values = pd.Series(np.arange(48, dtype=float), index=times)
@@ -67,7 +67,7 @@ class SeasonalKernelGoldTest(unittest.TestCase):
             recent_state_stats(values, origin=times[3], windows=(6,))
 
     def test_seasonal_baseline_gold(self):
-        from feature_engineering.seasonal import seasonal_baseline_values
+        from feature_engineering.kernels.seasonal import seasonal_baseline_values
 
         times = pd.date_range("2026-08-01", periods=96, freq="1h")
         values = pd.Series(np.arange(96, dtype=float), index=times)
@@ -82,7 +82,7 @@ class SeasonalKernelGoldTest(unittest.TestCase):
             seasonal_baseline_values(values, origin=times[23], horizon=24, period=24, days=2)
 
     def test_specs_reject_unknown_fields(self):
-        from feature_engineering.seasonal import (
+        from feature_engineering.kernels.seasonal import (
             normalize_seasonal_baseline_spec,
             normalize_same_slot_spec,
             normalize_recent_state_spec,

@@ -70,9 +70,13 @@ def fourier_features(
     spectrum = np.fft.rfft(y)
     freqs = np.fft.rfftfreq(n, d=1.0)
     # 排除 DC bin（已被去均值置零），只保留正频
-    amps = 2.0 * np.abs(spectrum[1:]) / n
+    weights = np.full(len(spectrum) - 1, 2.0)
+    if n % 2 == 0:
+        # Nyquist 无负频配对；振幅和能量都不能重复计入。
+        weights[-1] = 1.0
+    amps = weights * np.abs(spectrum[1:]) / n
     pos_freqs = freqs[1:]
-    power = np.abs(spectrum[1:]) ** 2
+    power = weights * np.abs(spectrum[1:]) ** 2
     phases = np.angle(spectrum[1:])
 
     if top_k > len(amps):

@@ -13,7 +13,7 @@ import pandas as pd
 
 from forecasting_core.execution.design import IndexedDesign, immutable_array
 from forecasting_core.specs import AvailabilityPolicy, ColumnRole
-from feature_engineering.history_statistics import expanding_statistics, rolling_statistics
+from feature_engineering.kernels.history import expanding_statistics, rolling_statistics
 
 
 def indexed_history_eligible(compiler, call_steps: Sequence[int]) -> bool:
@@ -136,14 +136,4 @@ def compile_indexed_history(compiler, information_set, origins: pd.DatetimeIndex
         schema = tuple(descriptors)
         design = IndexedDesign(tuple(descriptors.values()), start=start, stop=stop)
         calls.append(design[rows] if sparse else design)
-    if len(config.problem.targets) == 1:
-        windows = np.lib.stride_tricks.sliding_window_view(columns[config.problem.targets[0]], config.problem.horizon)
-        targets = windows[start + 1:stop + 1, :, None]
-        if sparse:
-            targets = targets[rows]
-        return tuple(calls), targets, schema
-    targets = np.empty((len(origins), config.problem.horizon, len(config.problem.targets)), dtype=float)
-    for k, name in enumerate(config.problem.targets):
-        windows = np.lib.stride_tricks.sliding_window_view(columns[name], config.problem.horizon)
-        targets[:, :, k] = windows[positions + 1]
-    return tuple(calls), targets, schema
+    return tuple(calls), schema

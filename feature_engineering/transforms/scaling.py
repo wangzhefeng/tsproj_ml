@@ -32,7 +32,6 @@ class CanonicalFeatureScaler:
     ) -> None:
         normalized = normalize_feature_scaling(spec)
         self.method = normalized["method"]
-        self.grouped = normalized["grouped"]
         self.encode_categorical = normalized["encode_categorical"]
         self.feature_names = tuple(str(name) for name in feature_names)
         self.categorical_names = tuple(str(name) for name in categorical_names)
@@ -47,7 +46,6 @@ class CanonicalFeatureScaler:
             for name, values in dict(category_orders or {}).items()
         }
         self.category_mappings: dict[str, dict[Any, int]] = {}
-        self.feature_groups = self._identify_groups()
         self.scalers: dict[str, Any] = {}
         self.is_fitted = False
 
@@ -68,34 +66,6 @@ class CanonicalFeatureScaler:
             category_orders=category_orders,
         )
 
-    def _identify_groups(self) -> dict[str, tuple[str, ...]]:
-        categorical = set(self.categorical_names)
-        lag = tuple(
-            name for name in self.feature_names if name not in categorical and "_lag_" in name
-        )
-        datetime = tuple(
-            name for name in self.feature_names if name not in categorical and name.startswith("dt_")
-        )
-        weather_keywords = ("temp", "humidity", "wind", "rain", "pressure", "weather")
-        weather = tuple(
-            name
-            for name in self.feature_names
-            if name not in categorical
-            and name not in lag
-            and name not in datetime
-            and any(keyword in name.lower() for keyword in weather_keywords)
-        )
-        assigned = set(lag) | set(datetime) | set(weather) | categorical
-        other = tuple(name for name in self.feature_names if name not in assigned)
-        return {
-            "lag": lag,
-            "datetime": datetime,
-            "weather": weather,
-            "other": other,
-            "categorical": tuple(
-                name for name in self.feature_names if name in categorical
-            ),
-        }
 
     def _frame(self, values: Any) -> pd.DataFrame:
         if isinstance(values, pd.DataFrame):
@@ -107,6 +77,8 @@ class CanonicalFeatureScaler:
             if array.shape[1] != len(self.feature_names):
                 raise ValueError("feature matrix width must match feature schema")
             frame = pd.DataFrame(array, columns=self.feature_names)
+        if not frame.columns.is_unique:
+            raise ValueError("feature schema columns must be unique")
         missing = [name for name in self.feature_names if name not in frame.columns]
         extra = [name for name in frame.columns if name not in self.feature_names]
         if missing or extra:
@@ -129,7 +101,7 @@ class CanonicalFeatureScaler:
                 raise ValueError("canonical transformed features must be finite")
             return values
         array = (
-            values.to_numpy(dtype=float, copy=False)
+            self._frame(values).to_numpy(dtype=float, copy=False)
             if isinstance(values, pd.DataFrame)
             else np.asarray(values, dtype=float)
         )
@@ -184,12 +156,6 @@ class CanonicalFeatureScaler:
         return result
 
     def _numeric_groups(self) -> dict[str, tuple[str, ...]]:
-        if self.grouped:
-            return {
-                name: columns
-                for name, columns in self.feature_groups.items()
-                if name != "categorical" and columns
-            }
         numeric = tuple(
             name for name in self.feature_names if name not in self.categorical_names
         )

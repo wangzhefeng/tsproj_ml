@@ -142,10 +142,10 @@ class CanonicalOnlyRuntimeTest(unittest.TestCase):
         """R1 死代码清扫：TargetScaler 三个零消费 legacy 方法与死 resolver 删除。"""
         import ast as _ast
 
-        import feature_engineering.transforms.pipeline as transforms_module
+        import feature_engineering.transforms.target_scaling as transforms_module
 
         tree = _ast.parse(
-            (ROOT / "feature_engineering" / "transforms" / "pipeline.py").read_text(encoding="utf-8")
+            (ROOT / "feature_engineering" / "transforms" / "target_scaling.py").read_text(encoding="utf-8")
         )
         target_scaler_methods = {
             node.name

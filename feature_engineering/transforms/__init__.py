@@ -8,11 +8,9 @@
 - `scaling.py`：canonical 特征缩放器。
 - `windows.py`：按唯一监督标签时间选取 scaler 窗口；分解默认同窗，允许显式较长上下文。
 """
-from feature_engineering.transforms.pipeline import (  # noqa: F401
-    CalendarDayTargetNormalizer,
-    CanonicalTargetTransform,
-    PerSeriesTargetTransformPipeline,
-    TargetTransformPipeline,
-)
+from feature_engineering.transforms.pipeline import CanonicalTargetTransform
+from feature_engineering.transforms.calendar import CalendarDayTargetNormalizer
+from feature_engineering.transforms.stack import TargetTransformPipeline
+from feature_engineering.transforms.per_series import PerSeriesTargetTransformPipeline
 from feature_engineering.transforms.scaling import CanonicalFeatureScaler  # noqa: F401
 from feature_engineering.transforms.windows import select_transform_history  # noqa: F401

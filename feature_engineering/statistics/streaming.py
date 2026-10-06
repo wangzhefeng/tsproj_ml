@@ -43,7 +43,7 @@ import json
 import numpy as np
 import pandas as pd
 
-from feature_engineering.history_statistics import history_statistic
+from feature_engineering.kernels.history import history_statistic
 from data_loading.information.information_set import SourceLineage
 from forecasting_core.specs.data import AvailabilityPolicy
 
@@ -299,6 +299,35 @@ class StreamingStatistics:
                 or any(state.count != self.count for state in (*self.ewm.values(), *self.events.values(), *self.expanding.values()))
                 or any(state.prefix is not None and len(state.prefix) != self.count for state in self.expanding.values())):
             raise ValueError("statistics snapshot count/time grid mismatch")
+        if not isinstance(self.lineage_digest, str) or len(self.lineage_digest) != 64:
+            raise ValueError("statistics snapshot lineage digest invalid")
+        try:
+            bytes.fromhex(self.lineage_digest)
+        except ValueError as exc:
+            raise ValueError("statistics snapshot lineage digest invalid") from exc
+        for key, state in self.ewm.items():
+            if (not all(math.isfinite(value) for value in (state.weighted_mean, state.covariance, state.weight, state.squared_weight))
+                    or state.covariance < 0 or state.weight <= 0 or state.squared_weight <= 0
+                    or state.squared_weight > state.weight * state.weight
+                    or state.halflife != expected.ewm[key].halflife or state.factor != expected.ewm[key].factor):
+                raise ValueError("statistics snapshot EWM numerical state invalid")
+        for state in self.events.values():
+            if (len(state.tail) != min(self.count, 2) or not all(math.isfinite(v) for v in state.tail)
+                    or any(type(index) is not int or index < 0 or index >= max(1, self.count - 1)
+                           for index in (state.last_peak, state.last_trough))):
+                raise ValueError("statistics snapshot event state invalid")
+        for state in self.expanding.values():
+            if (not all(math.isfinite(v) for v in (state.minimum, state.maximum, state.last))
+                    or not state.minimum <= state.last <= state.maximum
+                    or (self.count > 1 and (not math.isfinite(state.min_diff) or not math.isfinite(state.max_diff)
+                                           or state.min_diff > state.max_diff))):
+                raise ValueError("statistics snapshot expanding state invalid")
+            if state.prefix is not None:
+                values = np.asarray(state.prefix, dtype=float)
+                if (not np.isfinite(values).all() or values[-1] != state.last
+                        or values.min() != state.minimum or values.max() != state.maximum
+                        or (self.count > 1 and (np.diff(values).min() != state.min_diff or np.diff(values).max() != state.max_diff))):
+                    raise ValueError("statistics snapshot expanding prefix mismatch")
 
     def value(self, kind: str, column: str, stat: str, *, origin, identity, parameter=None) -> float:
         self.require_binding(self.config_fingerprint, origin)

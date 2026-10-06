@@ -18,14 +18,16 @@ from data_loading import (
     TargetAccess,
 )
 from feature_engineering import CompiledFeatures, FeatureCompiler
-from feature_engineering.statistics_provider import HistoryStatisticsProvider
-from feature_engineering.indexed import compile_indexed_history, indexed_history_eligible
+from feature_engineering.statistics.provider import HistoryStatisticsProvider
+from feature_engineering.compilation.requirements import minimum_history_rows
+from pipeline.labels import indexed_training_labels
+from feature_engineering.compilation.indexed import compile_indexed_history, indexed_history_eligible
 from forecasting_core.temporal.windows import (
     forecast_ends,
     forecast_times as temporal_forecast_times,
 )
 from forecasting_core.temporal.sampling import select_training_origins
-from feature_engineering.seasonal import normalize_seasonal_baseline_spec, seasonal_baseline_values
+from feature_engineering.kernels.seasonal import normalize_seasonal_baseline_spec, seasonal_baseline_values
 from forecasting_core.specs import (
     AvailabilityPolicy,
     ColumnRole,
@@ -797,62 +799,6 @@ class SupervisedDesignBuilder:
         return (base_design,), provider
 
 
-def minimum_history_rows(config: ForecastConfigSpec) -> int:
-    """Return visible rows required before one supervised origin is valid."""
-    configured_lags = tuple(
-        lag
-        for lag_mapping in (
-            config.features.target_lags,
-            config.features.observed_past_lags,
-        )
-        for lags in lag_mapping.values()
-        for lag in lags
-    )
-    required = max((*configured_lags, 1))
-    baseline = config.features.transformations.get("seasonal_baseline")
-    if baseline is not None:
-        spec = normalize_seasonal_baseline_spec(baseline)
-        required = max(required, spec["period"] * spec["days"])
-    if config.strategy is None:
-        raise ValueError("minimum_history_rows requires a single-model strategy")
-    resolved_strategy = config.strategy.resolve(config.problem.horizon)
-    direct = config.features.transformations.get("direct")
-    if (
-        configured_lags
-        and not resolved_strategy.consumes_previous
-        and isinstance(direct, Mapping)
-        and direct.get("align_to_target") is False
-    ):
-        required = max(required, max(configured_lags) + 1)
-    advanced = config.features.transformations.get("advanced", {})
-    if not isinstance(advanced, Mapping):
-        return required
-    rolling = advanced.get("rolling")
-    same_slot = advanced.get("same_slot")
-    if isinstance(same_slot, Mapping):
-        required = max(required, same_slot["period"] * max(same_slot["days"]))
-    recent = advanced.get("recent_state")
-    if isinstance(recent, Mapping):
-        required = max(required, max(recent["windows"]))
-    if isinstance(rolling, Mapping):
-        windows = rolling.get("windows", ())
-        if isinstance(windows, Sequence) and not isinstance(windows, (str, bytes)):
-            required = max(required, *(int(value) for value in windows))
-    for kind in ("fourier", "wavelet"):
-        spec = advanced.get(kind)
-        if not isinstance(spec, Mapping):
-            continue
-        windows = spec.get("windows", ())
-        if isinstance(windows, Sequence) and not isinstance(windows, (str, bytes)):
-            required = max(required, *(int(value) for value in windows))
-    for kind in ("difference", "percent_change"):
-        spec = advanced.get(kind)
-        if not isinstance(spec, Mapping):
-            continue
-        periods = spec.get("periods", ())
-        if isinstance(periods, Sequence) and not isinstance(periods, (str, bytes)):
-            required = max(required, *(int(value) + 1 for value in periods))
-    return required
 
 
 def supervised_candidate_origins(
@@ -938,7 +884,8 @@ def _supervised_arrays(
             )
             builder._add_training_compile_wall("compile_batch", perf_counter() - started)
             if indexed is not None:
-                designs, targets, schema = indexed
+                designs, schema = indexed
+                targets = indexed_training_labels(builder.config, builder.registry, information, pd.DatetimeIndex(candidate_origins))
                 if schema is None:
                     raise ValueError("indexed history compile must return a feature schema")
                 builder.feature_schema = schema

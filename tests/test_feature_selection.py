@@ -58,6 +58,22 @@ class CanonicalFeatureSelectorTest(unittest.TestCase):
         selector = CanonicalFeatureSelector(spec, schema).fit(X, y)
         return selector, schema
 
+    def test_multi_call_selection_does_not_cancel_opposite_targets(self):
+        rng = np.random.default_rng(17)
+        a, b = rng.normal(size=(2, 200))
+        first = np.column_stack([a, rng.normal(size=200), rng.normal(size=200)])
+        second = np.column_stack([rng.normal(size=200), b, rng.normal(size=200)])
+        targets = np.stack([np.column_stack([a, -a]), np.column_stack([b, -b])], axis=1)
+        selector = CanonicalFeatureSelector(FeatureSelectionSpec(enabled=True, max_features=2, min_features=1),
+                                            ("signal_a", "signal_b", "noise"))
+        selector.fit_calls((first, second), targets)
+        self.assertEqual(selector.selected_names_, ("signal_a", "signal_b"))
+        scaled = targets * np.array([1.0, 1000000.0])
+        other = CanonicalFeatureSelector(FeatureSelectionSpec(enabled=True, max_features=2, min_features=1),
+                                         ("signal_a", "signal_b", "noise"))
+        other.fit_calls((first, second), scaled)
+        self.assertEqual(other.selected_names_, selector.selected_names_)
+
     def test_disabled_selects_all(self):
         selector, schema = self._fit(enabled=False)
         self.assertEqual(selector.selected_names_, schema)

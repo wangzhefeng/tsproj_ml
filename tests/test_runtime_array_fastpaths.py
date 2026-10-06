@@ -9,7 +9,7 @@ from unittest.mock import patch
 import numpy as np
 import pandas as pd
 
-from feature_engineering.compiler import (
+from feature_engineering.compilation.compiler import (
     CompiledFeatures,
     FeatureSchema,
     VisibilityProof,

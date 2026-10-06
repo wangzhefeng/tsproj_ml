@@ -25,7 +25,7 @@ from model_training.weights import (
 )
 from model_building.adapters.native_registry import native_history_cls as _native_history_cls
 from model_building.catalog import MODEL_CATALOG
-from feature_engineering import design_identity
+from pipeline import design_identity
 from feature_engineering.selection import (
     CanonicalFeatureSelector,
     normalize_feature_selection,
@@ -56,6 +56,7 @@ from forecasting_core.temporal.windows import (
 from forecasting_core.temporal.sampling import select_training_origins
 from forecasting_core.tensors.point import PointForecastTensor
 from feature_engineering.transforms import CanonicalFeatureScaler, CanonicalTargetTransform
+from feature_engineering.compilation.requirements import minimum_history_rows
 from model_performance.checkpoints import (
     FileFitCheckpoint, implementation_fingerprint, runtime_checkpoint_errors,
 )
@@ -83,7 +84,6 @@ from pipeline.supervised_design import (
     _label_end,
     _sample_indices,
     _supervised_arrays,
-    minimum_history_rows,
     supervised_candidate_origins,
 )
 from pipeline.fold_fit import (
@@ -1126,8 +1126,10 @@ class CanonicalBaseModelRunner:
         if spec is None or not spec.enabled:
             return X_by_call, feature_schema
         selector = CanonicalFeatureSelector(spec, feature_schema)
-        y_signal = Y.reshape(Y.shape[0], -1).mean(axis=1)
-        selector.fit(X_by_call[0], y_signal)
+        selector.fit_calls(X_by_call, Y, call_horizons=tuple(
+            tuple(sorted({coordinate.horizon_step - 1 for coordinate in coordinates}))
+            for coordinates in self.builder.plan.call_coordinates
+        ))
         assert selector.selected_names_ is not None  # fit 后必有选中集
         logger.info(
             "[FeatureSelection] %d -> %d features (method=%s)",

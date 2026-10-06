@@ -9,7 +9,7 @@ from typing import Any, cast
 from unittest.mock import patch
 import numpy as np
 import pandas as pd
-from feature_engineering.design_identity import compute_raw_design_fingerprint
+from pipeline.design_identity import compute_raw_design_fingerprint
 from forecasting_core.specs import (ColumnSpec, DataSourceSpec, DataSpec, EstimatorSpec,
     FeatureSpec, ForecastConfigSpec, ForecastProblemSpec, ForecastStrategySpec, parse_model_config)
 
@@ -93,7 +93,7 @@ class DesignIdentityTest(unittest.TestCase):
         )
 
     def test_compiler_source_change_invalidates_raw_design(self) -> None:
-        from feature_engineering import design_identity
+        from pipeline import design_identity
 
         def fingerprint():
             return compute_raw_design_fingerprint(

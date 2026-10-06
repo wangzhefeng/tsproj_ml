@@ -12,7 +12,7 @@ import numpy as np
 import pandas as pd
 
 from data_loading import SourceRegistry
-from pipeline.supervised_design import minimum_history_rows
+from feature_engineering.compilation.requirements import minimum_history_rows
 from pipeline.supervised_design import SupervisedDesignBuilder
 from pipeline.runner import run_canonical_config
 from forecasting_core.specs import (
@@ -190,13 +190,13 @@ class CanonicalRuntimeSmokeTest(unittest.TestCase):
                 transformations={
                     "feature_scaling": {
                         "method": "standard",
-                        "grouped": False,
+
                         "encode_categorical": False,
                     },
                     "target": {
                         "calendar_normalization": {"method": "none"},
                         "decomposition": {"method": "linear"},
-                        "scaling": {"method": "standard", "inverse": True},
+                        "scaling": {"method": "standard"},
                     },
                 },
             ),
@@ -674,13 +674,13 @@ class CanonicalRuntimeSmokeTest(unittest.TestCase):
                     transformations={
                         "feature_scaling": {
                             "method": "none",
-                            "grouped": False,
+
                             "encode_categorical": False,
                         },
                         "target": {
                             "calendar_normalization": {"method": "none"},
                             "decomposition": {"method": "none"},
-                            "scaling": {"method": "none", "inverse": False},
+                            "scaling": {"method": "none"},
                         },
                     },
                 ),

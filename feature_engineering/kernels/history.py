@@ -1,17 +1,16 @@
 """历史统计纯数值内核：调用方负责历史可见性、配置校验和特征命名。
 
-保持 pandas 统计定义及既有小样本告警；不持有序列、origin 或拟合状态。
+保持 pandas 统计定义；单窗未定义统计报错，不持有序列、origin 或拟合状态。
 """
 from __future__ import annotations
 
 from collections.abc import Sequence
 from typing import cast
-import warnings
 
 import numpy as np
 import pandas as pd
 
-from feature_engineering.spectral import signal_entropy
+from feature_engineering.kernels.spectral import signal_entropy
 
 
 def rolling_statistics(
@@ -80,17 +79,9 @@ def history_statistic(values: pd.Series, stat: str) -> float:
         # 香农熵（p = |y|/sum|y|）；非常量窗内分布越均匀熵越高。
         return signal_entropy(values.to_numpy())
     if stat in {"max_diff", "min_diff"}:
-        # 爬坡统计：窗内相邻步最大/最小变化量。窗口 < 2 时无相邻对，
-        # 与其他统计的防御回退一致（minimum_history_rows 已保证
-        # window >= 2 才会启用 diff 类特征，此处为纵深防御）。
+        # 爬坡统计必须存在至少一对真实相邻观测，不以0替代未定义值。
         if len(values) < 2:
-            warnings.warn(
-                f"{stat!r} requires at least 2 samples (got {len(values)}); "
-                "falling back to 0.0",
-                RuntimeWarning,
-                stacklevel=3,
-            )
-            return 0.0
+            raise ValueError(f"{stat} requires at least 2 history samples")
         diffs = values.diff().dropna()
         return float(diffs.max() if stat == "max_diff" else diffs.min())
     supported = {"mean", "std", "min", "max", "median", "skew", "kurt"}
@@ -98,15 +89,7 @@ def history_statistic(values: pd.Series, stat: str) -> float:
         raise ValueError(f"unsupported history statistic: {stat!r}")
     result = getattr(values, stat)()
     if pd.isna(result):
-        # 理论上 minimum_history_rows 门禁已保证窗口足够，此处只是防御
-        # 回退（窗口 < window 时 pandas 返回 NaN），显式告警避免静默。
-        warnings.warn(
-            f"history statistic {stat!r} produced NaN "
-            f"(sample size {len(values)}); falling back to 0.0",
-            RuntimeWarning,
-            stacklevel=2,
-        )
-        result = 0.0
+        raise ValueError(f"history statistic {stat!r} is undefined for {len(values)} samples")
     return float(result)
 
 

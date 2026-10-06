@@ -72,6 +72,7 @@ ALLOWED_PACKAGES = {
     },
     "model_evaluation": {"forecasting_core"},
     "model_performance": {
+        "data_loading",  # 直接消费 provenance 哈希，不经特征层转导出。
         "forecasting_core",
         "feature_engineering",
         "model_training",

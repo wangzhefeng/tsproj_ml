@@ -58,6 +58,7 @@ features:
       layout: single_model_horizon
       align_to_target: true
       horizon_feature:
+        enabled: false
         name: forecast_horizon_idx
         cyclical: false
     advanced:

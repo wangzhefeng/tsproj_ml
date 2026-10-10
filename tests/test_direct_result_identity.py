@@ -72,7 +72,7 @@ class DirectResultIdentityTest(unittest.TestCase):
                 self.assertEqual(load_yaml_config(path).result_identity(), config.result_identity())
         for strategy in ("recursive", "mimo"):
             other = replace(config, strategy=ForecastStrategySpec(strategy))
-            self.assertEqual(other.result_identity(), f"{strategy}-ridge-local-k1-{other.fingerprint()[:12]}")
+            self.assertEqual(other.result_identity(), f"ridge-{strategy}-local-k1-{other.fingerprint()[:12]}")
 
     def test_invalid_direct_settings_raise_instead_of_mislabeling(self):
         baseline = fingerprints.CanonicalConfigFingerprintTest().config()

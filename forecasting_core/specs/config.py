@@ -341,8 +341,8 @@ class ForecastConfigSpec:
         strategy_label = str(self.result_method()["method_label"])
         return "-".join(
             (
-                strategy_label,
                 self.estimator.model_type,
+                strategy_label,
                 self.problem.training_scope,
                 f"k{len(self.problem.targets)}",
                 self.fingerprint()[:hash_length],

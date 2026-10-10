@@ -107,7 +107,6 @@ class CanonicalConfigFingerprintTest(unittest.TestCase):
             estimator=estimator,
             probabilistic={"mode": "point"},
             validation=validation or {
-                "history_steps": 48,
                 'training_window': {'kind': 'rolling', 'history_steps': 24},
                 "fold_count": 3,
                 "stride_steps": 4,
@@ -135,7 +134,6 @@ class CanonicalConfigFingerprintTest(unittest.TestCase):
     def test_training_and_evaluation_identity_changes_fingerprint(self):
         baseline = self.config()
         for field, value in (
-            ("history_steps", 49),
             ("training_window", {"kind": "rolling", "history_steps": 25}),
             ("fold_count", 4),
             ("stride_steps", 5),
@@ -151,7 +149,6 @@ class CanonicalConfigFingerprintTest(unittest.TestCase):
     def test_only_nonsemantic_runtime_controls_are_excluded(self):
         first = self.config(
             validation={
-                "history_steps": 48,
                 'training_window': {'kind': 'rolling', 'history_steps': 24},
                 "fold_count": 3,
                 "stride_steps": 4,
@@ -166,7 +163,6 @@ class CanonicalConfigFingerprintTest(unittest.TestCase):
                 "stride_steps": 4,
                 "fold_count": 3,
                 'training_window': {'kind': 'rolling', 'history_steps': 24},
-                "history_steps": 48,
                 "performance": {
                     "window_parallel_workers": 8,
                     "total_thread_limit": 8,

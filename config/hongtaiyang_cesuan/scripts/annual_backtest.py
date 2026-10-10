@@ -55,7 +55,7 @@ def window_config(config: ForecastConfigSpec, horizon: int, strategy: str, *, ra
     transformations = config.features.canonical_payload()["transformations"]
     if strategy != "direct":
         transformations.pop("direct", None)
-    validation = {"horizon_mode": "fixed_steps", "history_steps": 35040,
+    validation = {"horizon_mode": "fixed_steps",
                   "training_window": {"kind": "rolling", "history_steps": raw_history_steps},
                   "fold_count": 1, "stride_steps": horizon}
     if config.validation.get('training') is not None:

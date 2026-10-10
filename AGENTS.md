@@ -22,7 +22,7 @@
 - canonical fingerprint 只取语义 payload；并行度、日志、输出目录不进 fingerprint。修改语义后适用新身份，不自动重跑、不删除存量结果。
 - 结果目录统一 `results/{pretrained_models,results_test,results_forecast}/<scenario_subpath>/<result_identity>/`；identity 规则与 long 结果 schema 见 `model_forecasting/README.md`。
 - target transform 顺序固定 `calendar normalization → decomposition → scaling`，point/quantile 严格逆序恢复，状态按 `(series_id,target)` 隔离。
-- fixed-step 必须声明 `validation.training_window`；旧 `train_history_steps/train_window_steps`（含 OOF）一律拒绝。自然月保留独立 `train_window_days` 合同。回测与 final fit 使用同一配置训练窗口；融合成员 final fit 与对应单模型同一显式窗口。
+- fixed-step 必须声明 `validation.training_window`；外层 `validation.history_steps` 与旧 `train_history_steps/train_window_steps`（含 OOF）一律拒绝。回测按截止原点、预测区间、fold_count/stride_steps 选最近完整折，不足报错；内层 training_window.history_steps 仍定义原始训练点数。自然月保留独立 `train_window_days` 合同。回测与 final fit 使用同一配置训练窗口；融合成员 final fit 与对应单模型同一显式窗口。
 - 模型静态描述唯一入口 `models/catalog.py`；构造参数严格校验，未知参数 RAISE，不静默丢弃、不静默降级。
 - 改动被测模块必须同步修复测试导入与接口断言。
 

@@ -16,7 +16,7 @@ runner构造只做候选原点几何、一个真实原点的schema探测和资�
 
 ## 训练原点选择
 
-显式 training_window 经 temporal 合同统一历史下界和预测网格；temporal_backtest_windows 基于真实时间覆盖生成折，折 runner/final 共用标签截止和采样规则。采样前置，fit/final 不重复采样；窗口、预测区间、采样进入原始设计身份。旧字段及旧滚动切分器已退役。
+显式 training_window 经 temporal 合同统一历史下界和预测网格；temporal_backtest_windows 基于真实时间覆盖生成最近完整折，不再接受外层 history_steps 搜索上限。按截止原点相位和 stride_steps 后退，选满 fold_count；覆盖或训练窗不足直接报错。折 runner/final 共用标签截止和采样规则。采样前置，fit/final 不重复采样；窗口、预测区间、采样进入原始设计身份。旧字段及旧滚动切分器已退役。
 
 `training_origins.select_training_origins`在安全训练窗内执行间隔/固定时刻/锚点周期/最近数量筛选。artifact 区分采样前 candidate 与采样后 selected 原点数；运行计时不是语义。自然月保留日窗合同。
 

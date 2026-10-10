@@ -50,7 +50,7 @@ class WeatherRuntimeTest(unittest.TestCase):
                 options['semantics_version'] = 'weather_research_v1'
             options['inputs'][0]['sha256'] = hashlib.sha256((root / 'manifest.json').read_bytes()).hexdigest()
             weather = replace(source,generator_options=WeatherGenerationSpec.from_mapping(options))
-            config = replace(config,data=replace(config.data,sources=(config.data.sources[0],weather)),strategy=ForecastStrategySpec('recursive'),validation={'forecast_origin':'2026-01-02T23:00:00','history_steps':24,'training_window': {'kind': 'rolling', 'history_steps': 12},'seasonal_naive_lag':2,'fold_count':1,'stride_steps':2})
+            config = replace(config,data=replace(config.data,sources=(config.data.sources[0],weather)),strategy=ForecastStrategySpec('recursive'),validation={'forecast_origin':'2026-01-02T23:00:00','training_window': {'kind': 'rolling', 'history_steps': 12},'seasonal_naive_lag':2,'fold_count':1,'stride_steps':2})
             original = Path.cwd()
             try:
                 os.chdir(root)

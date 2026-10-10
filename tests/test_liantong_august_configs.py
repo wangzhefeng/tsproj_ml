@@ -64,7 +64,7 @@ class LiantongAugustConfigsTest(unittest.TestCase):
                         strategy=replace(config.strategy, output_chunk_length=2) if config.strategy.output_chunk_length else config.strategy,
                         estimator=replace(config.estimator, params={"n_estimators": 5, "num_leaves": 4, "min_child_samples": 2, "verbosity": -1}),
                         validation={"forecast_origin": str(times[-1]), "schedule_mode": "intraday",
-                                    "history_steps": 40, 'training_window': {'kind': 'rolling', 'history_steps': 13}, "fold_count": 2, "stride_steps": 4},
+                                    'training_window': {'kind': 'rolling', 'history_steps': 13}, "fold_count": 2, "stride_steps": 4},
                     )
                     config = replace(config, validation={**dict(config.validation),
                         'training_window': {'kind': 'rolling', 'history_steps': 56},

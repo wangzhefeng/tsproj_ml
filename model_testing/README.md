@@ -21,6 +21,8 @@
 
 fixed-step 显式原始历史窗口经 for_backtest_window 取得独立上下文；串/并行都由本折上下文评分。metadata 记录 raw_history_start/end、raw_history_steps 与 training_sample_count。lead_steps 按频率时间网格定位，同时支持固定频率和1ME/1MS，不除以月度 Timedelta。actual 正常评分，不自动新增填充来源掩码。
 
+外层 validation.history_steps 已退役，metadata 不再输出该字段。最近完整折由截止原点、forecast_window/H、fold_count/stride_steps 决定；历史覆盖、每折原始训练窗或安全样本不足仍直接报错，不自动降折或缩窗。
+
 本包依赖 `forecasting_core`、`data_loading`、`model_evaluation`、`probabilistic`（CQR tracker 类型）及 `utils` 日志；不 import model_pipeline/model_forecasting/model_ensemble。指标计算属于 `model_evaluation/`。
 
 `model_testing` 不是 `tests/` 测试套件；不恢复旧 `ModelTesting` 类。

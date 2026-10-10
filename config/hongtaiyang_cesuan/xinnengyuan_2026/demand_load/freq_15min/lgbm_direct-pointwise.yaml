@@ -112,7 +112,6 @@ validation:
   forecast_origin: '2026-08-31T23:45:00'
   horizon_mode: fixed_steps
   schedule_mode: daily
-  history_steps: 35040
   fold_count: 1
   stride_steps: 96
   training_window:

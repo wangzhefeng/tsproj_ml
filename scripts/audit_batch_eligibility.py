@@ -41,7 +41,7 @@ def _request_for_config(config: ForecastConfigSpec):
 
 def _estimated_training_origins(config: ForecastConfigSpec) -> int:
     validation = config.validation
-    history_steps = validation.get("history_steps")
+    history_steps = validation.get("training_window", {}).get("history_steps")
     if isinstance(history_steps, int) and not isinstance(history_steps, bool):
         return history_steps
     train_window_days = validation.get("train_window_days")

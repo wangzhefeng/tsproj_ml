@@ -153,7 +153,7 @@ class AidcDateWindowModelConfigTest(unittest.TestCase):
                     self.assertEqual(cfg.estimator.model_type, "lightgbm")
                     # 固定步长几何统一按监督 origin steps 保存：32 天历史、
                     # 15 天窗口扣除 H=288 后得到 4032 个训练 origins。
-                    self.assertEqual(cfg.validation["history_steps"], 32 * 288)
+                    self.assertNotIn("history_steps", cfg.validation)
                     expected_window = 4032 + minimum_history_rows(cfg) + 288 - 1
                     self.assertEqual(cfg.validation["training_window"]["history_steps"], expected_window)
                     times = pd.to_datetime(pd.read_csv(target.history_path)[target.time_col])

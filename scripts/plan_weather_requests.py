@@ -16,7 +16,7 @@ import pandas as pd
 
 from config.config_loader import load_yaml_config
 from data_loading import SourceRegistry
-from forecasting_core.specs import CalendarMonthBacktestSpec, FixedStepBacktestSpec, ForecastConfigSpec
+from forecasting_core.specs import CalendarMonthBacktestSpec, ForecastConfigSpec
 from model_ensemble.loader import resolve_members, validate_member_sources
 from model_pipeline.supervised_design import minimum_history_rows
 from model_pipeline.training_origins import select_training_origins
@@ -70,9 +70,6 @@ def plan_single_model(config, root, *, origin=None, coverage_cache=None):
         if stop <= start:
             raise ValueError('insufficient actual history for supervised origins')
         values = times[start:stop]
-        backtest = current.validation.backtest
-        if isinstance(backtest, FixedStepBacktestSpec):
-            values = values[-backtest.history_steps:]
         if len(values) < 2:
             raise ValueError('at least two actual supervised origins required')
         required_start = values[0] - (minimum_history_rows(current) - 1) * offset

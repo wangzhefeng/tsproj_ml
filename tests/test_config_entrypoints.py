@@ -108,7 +108,6 @@ estimator:
   params: {}
 probabilistic: {mode: point}
 validation:
-  history_steps: 60
   training_window: {kind: rolling, history_steps: 222}
   fold_count: 1
   stride_steps: 1
@@ -161,7 +160,6 @@ estimator:
   params: {}
 probabilistic: {mode: point}
 validation:
-  history_steps: 12
   training_window: {kind: rolling, history_steps: 14}
   fold_count: 1
   stride_steps: 1
@@ -210,7 +208,6 @@ estimator:
   params: {}
 probabilistic: {mode: point}
 validation:
-  history_steps: 60
   training_window: {kind: rolling, history_steps: 894}
   fold_count: 1
   stride_steps: 1
@@ -262,7 +259,6 @@ estimator:
   params: {}
 probabilistic: {mode: point}
 validation:
-  history_steps: 60
   training_window: {kind: rolling, history_steps: 606}
   fold_count: 1
   stride_steps: 1
@@ -320,7 +316,6 @@ estimator:
   params: {}
 probabilistic: {mode: point}
 validation:
-  history_steps: 60
   training_window: {kind: rolling, history_steps: 8382}
   fold_count: 1
   stride_steps: 1
@@ -581,7 +576,6 @@ class Task27ExecutionMatrixTest(unittest.TestCase):
             ),
             validation={
                 "forecast_origin": "2026-01-03T23:00:00",
-                "history_steps": 10_000,
                 'training_window': {'kind': 'expanding', 'start_time': '2026-01-01T00:00:00'},
                 "fold_count": 1,
                 "stride_steps": 4,

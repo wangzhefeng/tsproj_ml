@@ -996,14 +996,15 @@ def temporal_backtest_windows(builder: SupervisedDesignBuilder, origin: pd.Times
     offset = builder.offset
     minimum = minimum_history_rows(config)
     current = origin
-    earliest = max(times[0], origin - (spec.history_steps - 1) * offset)
+    # 最近完整折由发报网格和折数确定，原始数据起点是唯一搜索下界。
+    earliest = times[0]
     candidates = []
     while current >= earliest and len(candidates) < spec.fold_count:
         if forecast_times(config.problem, config.validation, current)[-1] <= origin:
             candidates.append(current)
         current -= spec.stride_steps * offset
     if len(candidates) != spec.fold_count:
-        raise ValueError("training_window cannot provide requested fold_count")
+        raise ValueError("target history cannot provide requested fold_count")
     result = []
     for number, current in enumerate(reversed(candidates), 1):
         start = history_start(config.validation, current, offset)

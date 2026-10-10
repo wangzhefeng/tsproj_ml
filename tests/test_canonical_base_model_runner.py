@@ -33,7 +33,7 @@ class RollingOriginFoldContractTest(unittest.TestCase):
         from tests.test_ensemble_runtime import _member_doc
         document = _member_doc("direct", "ridge", "geometry")
         document["validation"] = {
-            "history_steps": len(origins), "fold_count": fold_count, "stride_steps": stride_steps,
+            "fold_count": fold_count, "stride_steps": stride_steps,
             "training_window": {"kind": "rolling", "history_steps": raw_steps},
         }
         config = parse_model_config(document, source="geometry-test")
@@ -140,7 +140,6 @@ class CanonicalBaseModelRunnerTest(unittest.TestCase):
         runner = self._runner("recursive")
         validation_payload = {
             **dict(runner.config.validation),
-            "history_steps": 8,
             'training_window': {'kind': 'rolling', 'history_steps': 13},
             "fold_count": 1,
             "stride_steps": 2,

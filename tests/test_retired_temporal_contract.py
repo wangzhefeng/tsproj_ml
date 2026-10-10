@@ -7,6 +7,20 @@ from tests.test_ensemble_runtime import _member_doc
 
 
 class RetiredTemporalContractTest(unittest.TestCase):
+    def test_fixed_step_geometry_needs_no_outer_history_cap(self):
+        document = _member_doc('direct', 'ridge', 'retired')
+        document['validation'].pop('history_steps', None)
+        config = parse_model_config(document, source='retired-test')
+        assert config.validation.backtest is not None
+        self.assertEqual(config.validation.backtest.fold_count, document['validation']['fold_count'])
+        self.assertNotIn('history_steps', config.validation.semantic_payload())
+
+    def test_outer_history_cap_is_rejected_not_ignored(self):
+        document = _member_doc('direct', 'ridge', 'retired')
+        document['validation']['history_steps'] = 10000
+        with self.assertRaisesRegex(ValueError, 'Unknown fields.*history_steps'):
+            parse_model_config(document, source='retired-test')
+
     def test_single_model_rejects_legacy_window_without_new_contract(self):
         for raw_history in (False, True):
             with self.subTest(raw_history=raw_history):

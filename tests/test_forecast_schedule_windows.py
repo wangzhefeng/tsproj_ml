@@ -35,7 +35,7 @@ class ForecastScheduleWindowsTest(unittest.TestCase):
     def config(self, kind="rolling", start="next_day"):
         validation = {k: v for k, v in dict(self.base.validation).items()
                       if k not in {"train_history_steps", "train_window_steps", "seasonal_naive_lag"}}
-        validation.update(forecast_origin=self.times[302].isoformat(), history_steps=300,
+        validation.update(forecast_origin=self.times[302].isoformat(),
                           fold_count=2, stride_steps=24,
                           forecast_window={"start": start},
                           training_window=({"kind": "rolling", "history_steps": 120} if kind == "rolling"
@@ -58,6 +58,31 @@ class ForecastScheduleWindowsTest(unittest.TestCase):
         np.testing.assert_array_equal(runner.Y_all[-1, :, 0],
             pd.read_csv(self.path, parse_dates=["time"]).set_index("time").loc[
                 runner.forecast_times(runner.supervised_origins[-1]), "load"].to_numpy())
+
+    def test_recent_complete_folds_without_search_cap(self):
+        # 独立给出黄金日期：截止1月13日14:00，次日两天目标需后退三天。
+        cases = (
+            ({"start": "next_day"}, 48, ("2026-01-09 14:00", "2026-01-10 14:00")),
+            ({"start": "after_origin"}, 48, ("2026-01-10 14:00", "2026-01-11 14:00")),
+            ({"start": "after_origin", "gap_steps": 2}, 4,
+             ("2026-01-11 14:00", "2026-01-12 14:00")),
+        )
+        for forecast, horizon, expected in cases:
+            with self.subTest(forecast=forecast):
+                config = self.config()
+                config = replace(config, problem=replace(config.problem, horizon=horizon),
+                    validation={**dict(config.validation), "forecast_window": forecast})
+                windows = self.runner(config).backtest_windows()
+                self.assertEqual([w.origin for w in windows], [pd.Timestamp(t) for t in expected])
+                self.assertTrue(all(w.metadata['raw_history_steps'] == 120 for w in windows))
+
+    def test_insufficient_history_does_not_shrink_folds_or_training_window(self):
+        config = self.config()
+        for count, message in ((20, 'requested fold_count'), (10, 'insufficient history')):
+            with self.subTest(count=count):
+                changed = replace(config, validation={**dict(config.validation), 'fold_count': count})
+                with self.assertRaisesRegex(ValueError, message):
+                    self.runner(changed).backtest_windows()
 
     def test_rolling_and_expanding_refit_overlap_and_final_bundle(self):
         for kind in ("rolling", "expanding"):
@@ -177,7 +202,7 @@ class NativeHistoryTrainingWindowTest(unittest.TestCase):
         validation = {k: v for k, v in dict(base.validation).items()
                       if k not in {"train_history_steps", "train_window_steps",
                                    "seasonal_naive_lag"}}
-        validation.update(forecast_origin=self.times[302].isoformat(), history_steps=300,
+        validation.update(forecast_origin=self.times[302].isoformat(),
                           fold_count=2, stride_steps=24,
                           training_window={"kind": "rolling", "history_steps": 120})
         # 单次 replace：ETS 合同校验在构造期执行，validation 必须同批进入。
@@ -232,7 +257,7 @@ class QuantileTrainingWindowTest(unittest.TestCase):
         validation = {k: v for k, v in dict(base.validation).items()
                       if k not in {"train_history_steps", "train_window_steps",
                                    "seasonal_naive_lag"}}
-        validation.update(forecast_origin=self.times[302].isoformat(), history_steps=300,
+        validation.update(forecast_origin=self.times[302].isoformat(),
                           fold_count=2, stride_steps=24,
                           training_window={"kind": "rolling", "history_steps": 120})
         return replace(base, validation=validation)
@@ -301,7 +326,7 @@ class TargetTransformTrainingWindowTest(unittest.TestCase):
         validation = {k: v for k, v in dict(base.validation).items()
                       if k not in {"train_history_steps", "train_window_steps",
                                    "seasonal_naive_lag"}}
-        validation.update(forecast_origin=self.times[302].isoformat(), history_steps=300,
+        validation.update(forecast_origin=self.times[302].isoformat(),
                           fold_count=2, stride_steps=24,
                           training_window={"kind": "rolling", "history_steps": 120})
         # 与现役 decomp 配置同形的 target transform（scaling 用 standard 以覆盖状态拟合）
@@ -377,7 +402,7 @@ class MonthlyTrainingWindowTest(unittest.TestCase):
             problem=replace(base.problem, freq="1ME", horizon=3),
             features=replace(base.features, **features),
             validation={"forecast_origin": self.times[-1].isoformat(),
-                        "history_steps": 36, "fold_count": 2, "stride_steps": 2,
+                        "fold_count": 2, "stride_steps": 2,
                         "training_window": {"kind": "rolling", "history_steps": 24}})
 
     def test_monthly_rolling_training_window_builds_folds(self):

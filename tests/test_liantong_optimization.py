@@ -47,7 +47,7 @@ def synthetic_config(root, variant='mimo', weather=False):
         strategy=replace(config.strategy, output_chunk_length=2) if config.strategy.output_chunk_length else config.strategy,
         estimator=replace(config.estimator, params={'n_estimators': 3, 'num_leaves': 3, 'min_child_samples': 2, 'verbosity': -1}),
         validation={'forecast_origin': str(times[-1]), 'schedule_mode': 'intraday',
-                    'history_steps': 60, 'training_window': {'kind': 'rolling', 'history_steps': 9}, 'fold_count': 2, 'stride_steps': 4,
+                    'training_window': {'kind': 'rolling', 'history_steps': 9}, 'fold_count': 2, 'stride_steps': 4,
                     'performance': {'total_thread_limit': 1}}), times
 
 
@@ -182,7 +182,7 @@ class OptimizationCompilerTest(unittest.TestCase):
                 config = replace(config,
                     features=replace(config.features, transformations=transforms),
                     validation={**dict(config.validation), 'forecast_origin': str(times[-1]),
-                                'history_steps': 90, 'fold_count': 2, 'training_window': {'kind': 'rolling', 'history_steps': 48}})
+                                'fold_count': 2, 'training_window': {'kind': 'rolling', 'history_steps': 48}})
                 if native:
                     config = replace(config,
                         features=replace(config.features, target_lags={}, datetime_features=(), transformations={}),

@@ -124,7 +124,7 @@ class HvacModelConfigsTest(unittest.TestCase):
                 n_train = train_days * 288 - minimum_history_rows(config) - 288 + 1
                 self.assertGreater(n_train, 0)
                 self.assertNotIn('train_window_steps', config.validation)
-                self.assertEqual(config.validation['history_steps'], n_train + fold_count * 288)
+                self.assertNotIn('history_steps', config.validation)
                 self.assertEqual(config.validation['fold_count'], fold_count)
                 self.assertEqual(config.validation['stride_steps'], 288)
                 ts = pd.DatetimeIndex(pd.to_datetime(frames[source.history_path]['time']))

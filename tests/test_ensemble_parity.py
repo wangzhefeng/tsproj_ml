@@ -56,8 +56,9 @@ GOLDEN_WINDOW1_ACTUAL = [55.0, 55.5]
 GOLDEN_WINDOW1_PREDICT = [54.99999999999561, 55.49999999999552]
 GOLDEN_WINDOW1_MAE = 4.437339384821826e-12
 GOLDEN_WINDOW1_RMSE = float("4.437579734041818e-12")
-# 显式 expanding 窗口改变身份；上面的数值黄金值保持不变。
-GOLDEN_FINGERPRINT = "1e51fd1d83bd"
+# 退役外层 history_steps 改变身份；预测/评分数值黄金值保持不变。
+# 补回旧值10000的语义payload仍得到原身份1e51fd1d83bd。
+GOLDEN_FINGERPRINT = "3367f8b5f5a2"
 GOLDEN_IDENTITY = "recursive-ridge-local-k1"
 
 # ---------------------------------------------------------------------------
@@ -144,7 +145,6 @@ def _single_model_config(data_path: Path) -> ForecastConfigSpec:
         probabilistic={"mode": "point"},
         validation={
             "forecast_origin": "2026-01-03T23:00:00",
-            "history_steps": 10_000,
             'training_window': {'kind': 'expanding', 'start_time': '2026-01-01T00:00:00'},
             "fold_count": 1,
             "stride_steps": 2,
@@ -185,7 +185,6 @@ def _weighted_ensemble_config(
         "probabilistic": probabilistic,
         "validation": {
             "forecast_origin": "2026-01-03T23:00:00",
-            "history_steps": 10_000,
             'training_window': {'kind': 'expanding', 'start_time': '2026-01-01T00:00:00'},
             "fold_count": 1,
             "stride_steps": 2,
@@ -215,7 +214,6 @@ def _weighted_ensemble_config(
         },
         "validation": {
             "forecast_origin": "2026-01-03T23:00:00",
-            "history_steps": 10_000,
             'training_window': {'kind': 'expanding', 'start_time': '2026-01-01T00:00:00'},
             "fold_count": 1,
             "stride_steps": 2,

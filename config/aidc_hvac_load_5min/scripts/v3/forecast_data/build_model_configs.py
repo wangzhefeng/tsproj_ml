@@ -103,7 +103,6 @@ def build_documents():
                 payload['validation'] = {
                     'forecast_origin': times[-1].isoformat(),
                     'schedule_mode': 'daily', 'horizon_mode': 'fixed_steps',
-                    'history_steps': train_window + folds * DAY,
                     'fold_count': folds, 'stride_steps': DAY,
                     **({'performance': performance} if performance else {}),
                     'training_window': {'kind': 'rolling', 'history_steps': train_days * DAY},

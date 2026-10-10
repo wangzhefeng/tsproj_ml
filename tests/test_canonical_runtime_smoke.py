@@ -131,7 +131,6 @@ class CanonicalRuntimeSmokeTest(unittest.TestCase):
             ),
             validation={
                 "forecast_origin": "2026-01-02T23:00:00",
-                "history_steps": 10_000,
                 'training_window': {'kind': 'expanding', 'start_time': '2026-01-01T00:00:00'},
                 "fold_count": 1,
                 "stride_steps": horizon,
@@ -217,7 +216,6 @@ class CanonicalRuntimeSmokeTest(unittest.TestCase):
             ),
             validation={
                 "forecast_origin": "2026-01-04T11:00:00",
-                "history_steps": 10_000,
                 'training_window': {'kind': 'expanding', 'start_time': '2026-01-01T00:00:00'},
                 "fold_count": 1,
                 "stride_steps": 2,
@@ -382,7 +380,6 @@ class CanonicalRuntimeSmokeTest(unittest.TestCase):
                 probabilistic=base.probabilistic,
                 validation={
                     "forecast_origin": "2026-01-04T23:00:00",
-                    "history_steps": 48,
                     'training_window': {'kind': 'rolling', 'history_steps': 24},
                     "fold_count": 3,
                     "stride_steps": 4,
@@ -689,7 +686,6 @@ class CanonicalRuntimeSmokeTest(unittest.TestCase):
                 probabilistic={"mode": "point"},
                 validation={
                     "forecast_origin": origin.isoformat(),
-                    "history_steps": 10_000,
                     'training_window': {'kind': 'expanding', 'start_time': '2026-01-01T00:00:00'},
                     "fold_count": 1,
                     "stride_steps": 2,
@@ -1015,7 +1011,6 @@ class CanonicalRuntimeSmokeTest(unittest.TestCase):
                         probabilistic={"mode": "point"},
                         validation={
                             "forecast_origin": "2026-01-03T23:00:00",
-                            "history_steps": 10_000,
                             'training_window': {'kind': 'expanding', 'start_time': '2026-01-01T00:00:00'},
                             "fold_count": 1,
                             "stride_steps": 4,

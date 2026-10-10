@@ -95,7 +95,6 @@ validation:
   forecast_origin: '2026-07-31T14:00:00'
   schedule_mode: intraday
   horizon_mode: fixed_steps
-  history_steps: 5072
   fold_count: 31
   stride_steps: 96
   training_window:

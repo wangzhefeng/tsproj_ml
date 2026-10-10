@@ -149,7 +149,6 @@ class CanonicalGlobalRuntimeTest(unittest.TestCase):
             ),
             validation={
                 "forecast_origin": "2026-01-04T19:00:00",
-                "history_steps": 10_000,
                 'training_window': {'kind': 'expanding', 'start_time': '2026-01-01T00:00:00'},
                 "fold_count": 1,
                 "stride_steps": 4,
@@ -266,7 +265,6 @@ class CanonicalGlobalRuntimeTest(unittest.TestCase):
                             base.validation["training_scope"]["series_order"]
                         ),
                     },
-                    "history_steps": 48,
                     'training_window': {'kind': 'rolling', 'history_steps': 24},
                     "fold_count": 2,
                     "stride_steps": 4,
@@ -380,7 +378,6 @@ class CanonicalGlobalRuntimeTest(unittest.TestCase):
             probabilistic=config.probabilistic,
             validation={
                 "forecast_origin": "2026-01-04T19:00:00",
-                "history_steps": 10_000,
                 'training_window': {'kind': 'expanding', 'start_time': '2026-01-01T00:00:00'},
                 "fold_count": 1,
                 "stride_steps": 4,

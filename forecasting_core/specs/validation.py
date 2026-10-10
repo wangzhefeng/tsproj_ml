@@ -19,12 +19,11 @@ from forecasting_core.specs._mapping import (
 class FixedStepBacktestSpec:
     """Backtest issue-time grid; the raw training window is declared separately."""
 
-    history_steps: int
     fold_count: int
     stride_steps: int
 
     def __post_init__(self) -> None:
-        for field_name in ("history_steps", "fold_count", "stride_steps"):
+        for field_name in ("fold_count", "stride_steps"):
             value = getattr(self, field_name)
             if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
                 raise ValueError(f"validation.{field_name} must be a positive integer")
@@ -121,7 +120,6 @@ VALIDATION_FIELDS = frozenset(
         "forecast_origin",
         "schedule_mode",
         "horizon_mode",
-        "history_steps",
         "fold_count",
         "stride_steps",
         "train_window_days",
@@ -286,7 +284,7 @@ def _parse_backtest_geometry(
     source: str,
     required: bool,
 ) -> BacktestSpec | None:
-    fixed_fields = frozenset({"history_steps", "training_window", "fold_count", "stride_steps"})
+    fixed_fields = frozenset({"training_window", "fold_count", "stride_steps"})
     calendar_fields = frozenset({"train_window_days", "fold_count", "stride_months"})
     keys = set(payload)
     if horizon_mode == "fixed_steps":
@@ -302,12 +300,11 @@ def _parse_backtest_geometry(
         if not isinstance(payload["training_window"], Mapping):
             raise ValueError("training_window must be a mapping")
         return FixedStepBacktestSpec(
-            history_steps=payload["history_steps"],
             fold_count=payload["fold_count"],
             stride_steps=payload["stride_steps"],
         )
 
-    forbidden = sorted(keys & {"history_steps", "training_window", "stride_steps"})
+    forbidden = sorted(keys & {"training_window", "stride_steps"})
     if forbidden:
         raise ValueError(
             f"calendar_month validation forbids fixed-step fields in {source}: {forbidden}"

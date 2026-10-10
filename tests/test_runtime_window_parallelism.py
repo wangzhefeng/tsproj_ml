@@ -142,7 +142,6 @@ class RuntimeWindowParallelismTest(unittest.TestCase):
             ),
             validation={
                 "forecast_origin": self.origin.isoformat(),
-                "history_steps": 50,
                 'training_window': {'kind': 'rolling', 'history_steps': 26},
                 "fold_count": 3,
                 "stride_steps": 2,

@@ -25,7 +25,7 @@ class SeasonalTrainingWindowTest(unittest.TestCase):
             transforms = base.features.canonical_payload()['transformations']
             transforms['seasonal_baseline'] = {'column': 'load', 'period': 24, 'days': 2}
             config = replace(base, features=replace(base.features, transformations=transforms),
-                validation={'forecast_origin': times[302].isoformat(), 'history_steps': 300,
+                validation={'forecast_origin': times[302].isoformat(),
                             'fold_count': 2, 'stride_steps': 24,
                             'training_window': {'kind': 'rolling', 'history_steps': 120}})
             runner = CanonicalBaseModelRunner(config, SourceRegistry(config.data, root), times[302])
@@ -55,7 +55,7 @@ class SeasonalTrainingWindowTest(unittest.TestCase):
             transforms = base.features.canonical_payload()['transformations']
             transforms['seasonal_baseline'] = {'column': 'load', 'period': 24, 'days': 2}
             config = replace(base, features=replace(base.features, transformations=transforms),
-                validation={'forecast_origin': times[302].isoformat(), 'history_steps': 300,
+                validation={'forecast_origin': times[302].isoformat(),
                             'fold_count': 2, 'stride_steps': 24,
                             'training_window': {'kind': 'rolling', 'history_steps': 120}})
 

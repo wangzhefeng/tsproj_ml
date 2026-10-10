@@ -27,7 +27,7 @@ def make_config(path, *, strategy="recursive", workers=1):
     base = replace(base, features=replace(base.features, transformations=features["transformations"]))
     return replace(base, validation={
         "forecast_origin": "2026-01-02T23:00:00", "schedule_mode": "intraday",
-        "history_steps": 44, 'training_window': {'kind': 'rolling', 'history_steps': 20},
+        'training_window': {'kind': 'rolling', 'history_steps': 20},
 
         "fold_count": 3, "stride_steps": 2, "seasonal_naive_lag": 2,
         "performance": {"window_parallel_workers": workers, "total_thread_limit": 2},

@@ -44,8 +44,7 @@ class EssQuantileConfigMatrixTest(unittest.TestCase):
         )
 
     def test_all_model_configs_use_nonoverlapping_backtest_contract(self):
-        # 2026-08-30 折合同修复：history_steps 语义 = 折候选池大小，必须满足
-        # E1 非重叠合同 history_steps > horizon（其余量级不限制窗口个数）。
+        # 原始训练窗必须足够；测试区间非重叠由 stride >= horizon 保证。
         config_paths = sorted(
             path
             for path in CONFIG_ROOT.glob("route_*/**/*.yaml")
@@ -64,8 +63,7 @@ class EssQuantileConfigMatrixTest(unittest.TestCase):
             self.assertEqual(window["kind"], "rolling", path)
             self.assertGreaterEqual(window["history_steps"], cfg.problem.horizon + 2, path)
             self.assertGreaterEqual(cfg.validation["stride_steps"], cfg.problem.horizon, path)
-            self.assertGreaterEqual(cfg.validation["history_steps"],
-                                    cfg.validation["fold_count"] * cfg.validation["stride_steps"] + 1, path)
+            self.assertNotIn("history_steps", cfg.validation, path)
 
     def test_matrix_contains_only_expected_quantile_configs(self):
         expected_counts = {

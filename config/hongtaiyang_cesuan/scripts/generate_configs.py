@@ -65,7 +65,7 @@ def model_document(site: str, target: str, daily: bool, strategy: str) -> dict:
         "validation": ({"forecast_origin": "2025-12-31T00:00:00", "horizon_mode": "calendar_month",
                         "train_window_days": 59, "fold_count": 1, "stride_months": 1} if daily else
                        {"forecast_origin": "2025-12-31T23:45:00", "horizon_mode": "fixed_steps",
-                        "schedule_mode": "daily", "history_steps": 35040,
+                        "schedule_mode": "daily",
                         "training_window": {"kind": "rolling", "history_steps": 2880},
                         "fold_count": 334, "stride_steps": 96}),
         "output": {"scenario_subpath": scenario, "results_root": "results"}}

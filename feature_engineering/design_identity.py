@@ -54,8 +54,6 @@ def _raw_validation_payload(config: ForecastConfigSpec) -> dict[str, Any]:
     raw_fields = (
         "schedule_mode",
         "horizon_mode",
-        "history_steps",
-
         "fold_count",
         "stride_steps",
         "train_window_days",

@@ -210,7 +210,6 @@ def run_fixed_step_backtest(
         holdout_metadata = {
             **windows[-1].metadata,
             "mode": "fixed_steps",
-            "history_steps": backtest.history_steps,
             "training_window": dict(config.validation["training_window"]),
             "fold_count": backtest.fold_count,
             "stride_steps": backtest.stride_steps,

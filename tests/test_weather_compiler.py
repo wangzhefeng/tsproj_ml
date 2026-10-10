@@ -21,7 +21,7 @@ def config_fixture(root):
         problem=ForecastProblemSpec(time_col='time',freq='1h',horizon=2,targets=('load',),training_scope='local'),
         data=data, features=FeatureSpec(target_lags={'load':(2,)},observed_past_lags={},datetime_features=(),transformations={}),
         strategy=ForecastStrategySpec('direct'), estimator=EstimatorSpec(model_type='ridge',target_adapter='independent'),
-        probabilistic={},validation={'history_steps':4,'training_window': {'kind': 'rolling', 'history_steps': 7},'fold_count':1,'stride_steps':2},output={},
+        probabilistic={},validation={'training_window': {'kind': 'rolling', 'history_steps': 7},'fold_count':1,'stride_steps':2},output={},
     )
     path = root / 'model.yaml'
     path.write_text(yaml.safe_dump(config.canonical_payload(), sort_keys=False))

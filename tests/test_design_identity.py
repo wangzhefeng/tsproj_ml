@@ -47,7 +47,6 @@ class DesignIdentityTest(unittest.TestCase):
     ) -> ForecastConfigSpec:
         validation = {
             "forecast_origin": str(self.origin),
-            "history_steps": 32,
             'training_window': {'kind': 'rolling', 'history_steps': 16},
             "fold_count": 1,
             "stride_steps": 2,
@@ -144,7 +143,7 @@ class DesignIdentityTest(unittest.TestCase):
         changed_geometry: dict[str, Any] = copy.deepcopy(
             self.config.canonical_payload()
         )
-        changed_geometry["validation"]["history_steps"] = 31
+        changed_geometry["validation"]["training_window"]["history_steps"] = 15
         payloads.append(changed_geometry)
 
         changed_data: dict[str, Any] = copy.deepcopy(self.config.canonical_payload())

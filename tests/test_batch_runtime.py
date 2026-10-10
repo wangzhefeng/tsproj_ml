@@ -264,7 +264,6 @@ class CanonicalBatchRuntimeTest(unittest.TestCase):
             probabilistic={"mode": "point"},
             validation={
                 "forecast_origin": self.origin.isoformat(),
-                "history_steps": 48,
                 'training_window': {'kind': 'rolling', 'history_steps': 22},  # 16 origins + 5 warm-up + H - 1
                 'seasonal_naive_lag': 2,
                 "fold_count": 2,

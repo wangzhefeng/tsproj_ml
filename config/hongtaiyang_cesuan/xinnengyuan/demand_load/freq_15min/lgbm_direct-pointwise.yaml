@@ -112,7 +112,6 @@ validation:
   forecast_origin: '2025-12-31T23:45:00'
   horizon_mode: fixed_steps
   schedule_mode: daily
-  history_steps: 35040
   fold_count: 334
   stride_steps: 96
   training_window:

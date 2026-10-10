@@ -26,6 +26,8 @@
 
 ## 执行集合
 
+外层 `validation.history_steps` 退役：`test_retired_temporal_contract` 验证无旧键可解析、旧键显式拒绝；`test_forecast_schedule_windows` 验证普通/gap/次日最近完整折黄金日期及历史不足不减折、不缩窗。训练窗口同名内层键仍有效，现有月频、融合、真实回测/final/bundle测试继续覆盖，不改变发现规则。
+
 收尾回归：`test_seasonal_training_window` 验证残差逐折拟合及五个 final/lifecycle 入口在训练、写盘前拒绝；`test_scenario_script_paths` 验证迁移脚本项目根、ESS 默认数据根、非项目 cwd 无 PYTHONPATH 的真实 CLI，以及真实 A/B 输入只读合并；`test_weather_request_planning` 验证 gap/next_day 包络边界及非全回测范围标记。均默认 integration，不改测试发现规则。
 
 `test_in_memory_design_execution`默认integration，验证runner计划不物化完整矩阵、并发准备仅一次、批量同组仅编译一次、后组失败不回滚前组及组间释放、单模型生命周期不读写磁盘编译缓存并对照预测数值。融合内存共享在`test_ensemble_runtime`验证；原磁盘缓存专属测试已退役；`test_design_identity`保留数据/代码/生成器身份隔离断言，旧缓存参数必须报错。内部批量预检也不接收缓存root；旧关键字和旧位置参数形态均拒绝，避免删除参数后发生位置错绑。

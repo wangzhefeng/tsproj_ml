@@ -58,7 +58,7 @@ class BacktestLifecycleSplitTest(unittest.TestCase):
         for workers in (1, 2):
             with self.subTest(workers=workers), tempfile.TemporaryDirectory() as directory:
                 backtest = FixedStepBacktestSpec(
-                    history_steps=10, fold_count=2, stride_steps=2,
+                    fold_count=2, stride_steps=2,
                 )
                 validation = dict(aggregate_weighting=None, training_window={"kind": "rolling", "history_steps": 6})
                 validation = type("Validation", (dict,), {"backtest": backtest})(validation)

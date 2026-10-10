@@ -24,6 +24,8 @@
 
 部署只使用已保存的模型、变换和校准状态；不会重新选择训练窗口或读取训练期缓存来重建模型。
 
+`seasonal_baseline` 残差目前仅支持回测，不支持 final fit/bundle；旧训练窗口字段退役不解除此能力限制。监督模型的一般部署支持不包含该残差通路。
+
 显式training_window已贯通单模型final fit和bundle；forecast_window时间网格由公共temporal合同生成，批产物验收使用同一网格。部署调用方仍须按该合同提供raw设计和forecast_times，加载bundle本身不触发重新训练。新合同限制见config/README.md，不能据一个Local point配置通过推断全部模型模式支持。
 
 ## 执行链与结果

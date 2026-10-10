@@ -2,7 +2,7 @@
 
 > **场景**：`aidc_power_month`，A/B 两路数据中心。业务问题 = **月末预测下一自然月的总用电量（kWh）**。
 > **路线**：月频建模——以 5min 功率聚合的月电量序列为目标，one-step（`predict_steps: 1`）直接预测下个月总量。样本极少（10 个月度点），定位为**低频对照链**；生产主链是日频 `freq_1day` 逐日预测后求和。
-> **本文范围**：`config/aidc_power_month/route_{A,B}/freq_1month/window_length_{7,8,9,10}/` 四组共 72 个配置。A/B 两路配置结构完全相同，仅数据不同，下文不再分开赘述。
+> **本文范围**：`config/aidc_power_month/route_{A,B}/freq_1month/window_length_{7,8,9,10}/` 四组共 24 个配置（每路每档 3 个 lgbm）。2026-10-09 起收敛为 LightGBM 单估计器，ridge/enet/lasso/st 配置已移出活动集（Git 保留历史）。A/B 两路配置结构完全相同，仅数据不同，下文不再分开赘述。
 
 ---
 
@@ -80,20 +80,18 @@ $$\{y_t,\ y_{t-1},\ y_{t-2},\ X_{t+1}\} \rightarrow y_{t+1}$$
 |---|---|
 | USMD（horizon=1 时即单输出） | lag 3 + 日历 3 + 天气 4 ≈ 10 个 predictor |
 | USMDR / USMR | 同 USMD；USMDP 不生成 lag（纯日历+天气模板） |
-| ST | 仅消费 lag 列做 NNLS 模板拟合 |
+
+> 2026-10-09 起估计器收敛为 LightGBM：上表方法维度不变，Ridge/ElasticNet/Lasso 点预测与 ST（NNLS lag 模板）配置已移出活动集。
 
 ---
 
 ## 4. 模型与配置分组
 
-每路 × 每窗口档（W7/W8/W9/W10）各 9 个配置，4 档共 72 个：
+每路 × 每窗口档（W7/W8/W9/W10）各 3 个 LightGBM 配置，4 档共 24 个（2026-10-09 估计器收敛，原 72 配置中的 ridge/enet/lasso/st 已移出活动集）：
 
 | 类别 | 配置 | 目的 |
 |---|---|---|
-| 概率主链 | lgbm usmd / usmdr / usmr / usmdp（quantile [0.1,0.5,0.9] + conformal） | 树模型四方法全谱系 + 区间 |
-| 线性分位数 | qr usmd（quantile + conformal） | 线性分位数对照 |
-| 点预测基线 | ridge / enet / lasso usmd（point，`scale_features: true`） | 小样本下正则化线性通常优于树 |
-| 季节模板 | st usmd（point，NNLS 学 lag 权重） | naive 的可学习推广，零超参 |
+| 概率主链 | lgbm usmd / usmdp / usmr（quantile [0.1,0.5,0.9] + conformal） | 树模型方法覆盖 + 区间；原 qr 线性分位数对照已先行移除 |
 
 | 训练设置 | 取值 | 为什么 |
 |---|---|---|
@@ -119,6 +117,8 @@ $$\{y_t,\ y_{t-1},\ y_{t-2},\ X_{t+1}\} \rightarrow y_{t+1}$$
 ---
 
 ## 6. 已知结论与边界（供阅读结果时参照）
+
+> 以下结论产生于收敛前的 72 配置矩阵（含 ridge/enet/lasso/st）；估计器收敛为 LightGBM 后这些对照配置已移出活动集，结论仍作为历史证据保留。
 
 - **ST 季节模板是唯一在 A/B 两路、全部窗口档稳定优于 naive 的模型**（A 路 W10 median 0.18%；B 路 W9 1.72%）；Lasso 在 A 路长窗口有效但 B 路不稳。
 - LightGBM 四方法全部明显劣于 naive（约 7.6%~15.9%）——10 个样本不足以支撑树模型。

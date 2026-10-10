@@ -87,7 +87,7 @@ estimator / probabilistic / validation / output
 - 单模型使用 `strategy`；Ensemble 使用成员 `config_ref`，两者互斥。
 - 公共 YAML 不接受内部固定值或死参数：`problem.information_mode`、`output.setting_suffix`、`probabilistic.recursive_propagation`、`probabilistic.schema_version` 均按未知字段 RAISE。
 - `problem.horizon` 以 `freq` 为步长单位。
-- fixed-step 配置使用 `validation.history_steps/train_window_steps/fold_count/stride_steps`，四者均按监督 origin steps 保存。
+- fixed-step 用 validation.training_window 定义原始训练历史，history_steps/fold_count/stride_steps 定义发报几何；旧 train_history_steps/train_window_steps（含 OOF）解析即拒绝。自然月保留独立 train_window_days 合同。
 - `horizon_mode=calendar_month` 使用 `train_window_days/fold_count/stride_months`；训练窗按原始日数计，每个历史月和最终目标月动态解析 28/29/30/31 步。
 - final fit 与回测使用相同训练窗口合同，不再隐式切换为全部历史。
 

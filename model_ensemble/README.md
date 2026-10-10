@@ -18,7 +18,9 @@ Quantile linear blending 按 target 最小化 simplex 约束 pooled pinball；�
 
 ## 生命周期与依赖注入
 
-显式 `validation.train_history_steps` 当前仅为单模型 backtest-only 合同；Ensemble 顶层及引用此字段的成员均拒绝，避免 OOF/final 绕过原始历史边界。
+显式 `validation.training_window` 支持 Local 成员的有界 OOF 与 final fit：顶层与所有成员必须声明相同原始窗口；每折通过注入 runner 的 `for_forecast_origin()` 重建 as-of 历史与变换状态，允许不同特征预热产生不同训练原点数。OOF 的 `gap_steps` 继续按训练标签末端隔离；真值与 CSV 落盘均在对应折原点读取。逐成员实际训练数写入 `member_training_sample_count`，不能复用最终窗口的索引计数。窗口外/未来扰动、正 gap、独立成员预热和持久化 bundle 部署回放由 `test_ensemble_temporal_windows` 覆盖。
+
+旧 train_history_steps/train_window_steps（包括 ensemble.oof 内同名键）全部拒绝。OOF 只负责折调度与 gap，不再设置独立训练样本上限；训练窗口由成员合同定义，自然月成员按 train_window_days 选取安全原点。删除样本上限是语义变更，生成新身份。shifted forecast_window、间隔重训和顶层 origin_sampling 仍拒绝。
 
 1. `run_ensemble_config_file()` 解析引用式 YAML 并校验成员共享合同，不接受 ensemble-of-ensemble。
 2. `generate_oof_for_config()` 生成或读取成员 OOF；验证标签与训练标签用 `is_label_safe` 隔离（`ensemble.oof.gap_steps` 隔离合同），不能用成员 final fit 的训练内预测学习融合权重。

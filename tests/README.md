@@ -22,7 +22,11 @@
 
 `test_training_sampling_configs`默认integration：遍历三个15min场景及联通物理模型配置，按真实模型组调用布局断言独立模型密集训练、共享模型保留采样；真实联通天气Direct只编译/拟合第一个预测步，保持默认叶节点参数并验证树实际分裂及非恒定预测。不写正式结果，不代替完整288步或17折回测。`test_compiler_array_kernels`对全部统计量核对single/batch/indexed与独立窗口参照，覆盖恒定峰度0、全零、近恒定、短窗、状态切换，保留禁止逐原点标量重算门禁。
 
+`test_seasonal_training_window` 与 `test_ensemble_temporal_windows` 默认 integration：显式原始历史窗的季节残差逐折拟合与窗口外污染隔离；融合 OOF 独立预热、正 gap、真值对齐、扰动隔离和真实 pickle 部署回放。`test_retired_temporal_contract` 默认 integration，验证单模型与 OOF 旧字段解析拒绝；自然月与月频真实产物继续由 `test_calendar_month_runtime` 验证。
+
 ## 执行集合
+
+收尾回归：`test_seasonal_training_window` 验证残差逐折拟合及五个 final/lifecycle 入口在训练、写盘前拒绝；`test_scenario_script_paths` 验证迁移脚本项目根、ESS 默认数据根、非项目 cwd 无 PYTHONPATH 的真实 CLI，以及真实 A/B 输入只读合并；`test_weather_request_planning` 验证 gap/next_day 包络边界及非全回测范围标记。均默认 integration，不改测试发现规则。
 
 `test_in_memory_design_execution`默认integration，验证runner计划不物化完整矩阵、并发准备仅一次、批量同组仅编译一次、后组失败不回滚前组及组间释放、单模型生命周期不读写磁盘编译缓存并对照预测数值。融合内存共享在`test_ensemble_runtime`验证；原磁盘缓存专属测试已退役；`test_design_identity`保留数据/代码/生成器身份隔离断言，旧缓存参数必须报错。内部批量预检也不接收缓存root；旧关键字和旧位置参数形态均拒绝，避免删除参数后发生位置错绑。
 
@@ -90,7 +94,7 @@ env -u PYTHONPATH .venv/bin/python -m unittest discover -s tests -p "test_*.py"
 | `test_ensemble_runtime.test_learned_methods_end_to_end` 的三次独立运行 | 有限值与 method 断言合入 `test_oof_cache_reused_across_fusion_methods`；四方法仍真实执行，减少三次重复生命周期 |
 | TASK27 Local K2 的七策略 × independent/native 完整 runtime | Direct 保留两种 adapter 的完整接线；其余十二组合改为真实 Ridge/RF 的 trainer → forecaster 测试；regressor-chain 原有七组合保留。矩阵仍覆盖原组合，并非跳过策略 |
 | TASK27 的其他轴 | Local K1、Local K2 quantile、Global K2 仍逐策略完整 runtime；两种融合及非法配置/产物检查保留。策略依赖与 time-major 精确值另由 `test_standard_strategy_executors`、`test_multi_target_adapters` 保护 |
-| 历史 migration manifest 与当前 fingerprint/路径全集的永久相等锁 | `test_validation_geometry_manifest` 不读取历史 manifest；继续扫描当前活动配置，拒绝旧字段，并基于真实时间轴验证实际训练 origin 数等于当前 `train_window_steps`。历史 manifest 已于 2026-09-06 清除（连同 `_regen_validation_geometry_manifest.py`），内容从 Git 溯源 |
+| 历史 migration manifest 与当前 fingerprint/路径全集的永久相等锁 | `test_validation_geometry_manifest` 不读取历史 manifest；扫描活动配置并拒绝旧字段，基于真实时间轴、原始窗口、预热、标签截止和采样核验每折至少两个训练 origin。历史 manifest 从 Git 溯源 |
 
 上述改变只影响测试执行与历史快照验收，不修改预测、评估、模型文件或配置解析。下沉的十二组合不再各自单独验证落盘：这是有意收窄重复的接线覆盖，保留 Direct adapter 接线及七策略其他 runtime 轴作为补偿，不宣称逐组合端到端覆盖完全不变。
 

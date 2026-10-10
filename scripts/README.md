@@ -65,6 +65,8 @@ env -u PYTHONPATH .venv/bin/python config/aidc_power_month/scripts/prepare_weath
 
 `plan_weather_requests.py --inventory <上述审计JSON> --report <json>` 在配置字节哈希仍匹配时读取真实目标覆盖，规划监督候选原点和最终输出包络；包含calendar-month动态horizon及融合成员引用，按相同几何去重。窗口之外的旧时间缺口不扩大检查范围；正式源校验拒绝的业务缺值保持报错。此工具不读取旧天气值、不训练、不枚举OOF逐折/target-history辅助请求，也未把输出标签映射为proxy年份或原生区间依赖；不能直接当作完整下载清单或as-of验收。存在任何配置规划错误时输出部分结果并返回1，禁止把该部分结果称为全量完成。
 
+包络边界使用公共 `forecast_times()`，包含 gap/next_day 的实际提前量。fixed-step 的监督原点限定为主 runner 的最终训练窗，不覆盖较早回测折的全部训练窗；报告显式标记 `backtest_windows_verified=false`，不得用该包络替代全回测天气覆盖。
+
 ## 日历与节假日数据导出
 
 跨场景日历、节假日数据文件统一放在 `dataset/shared/holidays/`；生成逻辑仍位于 `data_loading/calendar_generator/`。导出脚本的 `--output` 保持必填，不强制限制目录，测试可使用临时路径。

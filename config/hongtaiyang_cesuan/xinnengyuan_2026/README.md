@@ -16,10 +16,10 @@
 
 ```bash
 # 数据准备和两份配置生成，不训练
- env -u PYTHONPATH .venv/bin/python config/hongtaiyang_cesuan/prepare_xinnengyuan_2026.py
+ env -u PYTHONPATH .venv/bin/python config/hongtaiyang_cesuan/scripts/prepare_xinnengyuan_2026.py
 # 下列为正式全年回放命令，按需另行启动
- env -u PYTHONPATH MPLBACKEND=Agg .venv/bin/python config/hongtaiyang_cesuan/annual_backtest.py --config-yaml config/hongtaiyang_cesuan/xinnengyuan_2026/demand_load/freq_15min/lgbm_direct-pointwise.yaml
- env -u PYTHONPATH MPLBACKEND=Agg .venv/bin/python config/hongtaiyang_cesuan/annual_backtest.py --config-yaml config/hongtaiyang_cesuan/xinnengyuan_2026/demand_load/freq_1day/lgbm_direct-pointwise.yaml
+ env -u PYTHONPATH MPLBACKEND=Agg .venv/bin/python config/hongtaiyang_cesuan/scripts/annual_backtest.py --config-yaml config/hongtaiyang_cesuan/xinnengyuan_2026/demand_load/freq_15min/lgbm_direct-pointwise.yaml
+ env -u PYTHONPATH MPLBACKEND=Agg .venv/bin/python config/hongtaiyang_cesuan/scripts/annual_backtest.py --config-yaml config/hongtaiyang_cesuan/xinnengyuan_2026/demand_load/freq_1day/lgbm_direct-pointwise.yaml
 ```
 
 `--max-windows 1`为独立身份的冒烟结果，不是全年完成；不加`--rerun`可续跑匹配身份的完整窗口。结果位于正式`results/results_test/hongtaiyang_cesuan/xinnengyuan_2026/`下，周期、滚动规则、数据、配置及代码身份写入audit。YAML validation仅描述末窗参考几何，不能用通用run.py代替变长窗口年度调度。

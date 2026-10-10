@@ -4,7 +4,7 @@
 
 `model_testing/` 是模型测试包：滑窗回测的几何、原语、逐折评分与回测产物落盘。
 
-- `geometry.py`：fixed-step rolling-origin、完整 calendar-month folds、标签非重叠校验、`TimeGeometry/OriginTimeline` 公共时间几何。
+- `geometry.py`：完整 calendar-month folds、标签非重叠校验、TimeGeometry/OriginTimeline；旧 rolling_origin_folds 已退役，fixed-step 显式窗口由注入 runner 提供。
 - `primitives.py`：actual tensor、seasonal-naive、forecast origin 与正整数校验。
 - `contracts.py`：`FoldScoringRunner`、`BacktestRunner`、runner factory、设计视图与窗口协议；模型和变换对象作为不透明载荷，不依赖上层实现类型。
 - `scoring.py`：两种回测共用的逐折评分体 `score_holdout_fold()`——predict 后处理 → point/probabilistic 评分 → CQR apply-before-collect → 执行证据；通过 `FoldScoringRunner` 消费公开能力，本包不 import model_forecasting。
@@ -19,12 +19,12 @@
 
 `refit_every > 1`固定步长回测按序持有最近模型及其拟合态；每折重新取得当前预测上下文，不共享旧history_start。证据记录did_refit/model_fit_origin/refit_every，复用折的training_workload属于源模型，不应重复累计为当折拟合。预测（含特征准备）与评分独立计时，结果写盘计时在完成写盘后记入runner资源报告；特征设计耗时仍见逐runner的design阶段。默认refit=1保留有界并行路径。
 
-fixed-step 显式原始历史窗口通过 runner 的 `for_backtest_window()` 取得独立有界上下文；串行、并行拟合均由同一折上下文评分，不共用可变历史起点。窗口 metadata 记录 raw_history_start/end、train_history_steps 与预热后的 training_sample_count。actual 正常评分，不按离线填充来源新增掩码。
+fixed-step 显式原始历史窗口经 for_backtest_window 取得独立上下文；串/并行都由本折上下文评分。metadata 记录 raw_history_start/end、raw_history_steps 与 training_sample_count。lead_steps 按频率时间网格定位，同时支持固定频率和1ME/1MS，不除以月度 Timedelta。actual 正常评分，不自动新增填充来源掩码。
 
 本包依赖 `forecasting_core`、`data_loading`、`model_evaluation`、`probabilistic`（CQR tracker 类型）及 `utils` 日志；不 import model_pipeline/model_forecasting/model_ensemble。指标计算属于 `model_evaluation/`。
 
 `model_testing` 不是 `tests/` 测试套件；不恢复旧 `ModelTesting` 类。
 
-显式training_window逐折独立重训，允许stride小于H；long表和逐horizon评分补充forecast_origin/lead_steps，window唯一键保留。重叠场景只生成windows_results逐窗图并在metadata记录overview_policy，不去重、不拼接成伪连续总图；旧路径仍保留原重叠保护。标签可用性以本折origin为截止，不以更晚的目标起点代替。次日预测的默认季节基线自动选足够长的整日滞后，保证来源不晚于原点。
+显式 training_window 支持 stride 小于 H；重叠结果保留 window 键、forecast_origin/lead_steps，逐窗作图，不伪拼连续总图。默认逐折重训；refit_every > 1 见上文。标签可用性以本折 origin 为截止，不以后移的预测起点代替。next_day 默认季节基线取足够整日滞后，来源不晚于原点。
 
 天气滑窗训练/测试统一使用完整 history 文件：拟合用实测列，测试预测用对应预报列；future 只用于真正未来推理，不参与回测。目标实际值仍用于训练标签和测试评分，递归测试特征使用自身目标预测。节假日/datetime 按请求时刻提供已知特征，无天气式双列映射。

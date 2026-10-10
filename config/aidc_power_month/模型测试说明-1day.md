@@ -2,7 +2,7 @@
 
 > **场景**：`aidc_power_month`，A/B 两路数据中心。业务问题 = **月初预测下一完整自然月的总用电量（kWh）**。
 > **路线**：日频建模——以 5min 功率聚合的日电量序列为目标，逐日预测 28~31 天，求和得到月总量。这是本场景的生产主链（月频 `freq_1month` 仅作低频对照）。
-> **本文范围**：`config/aidc_power_month/route_{A,B}/freq_1day/` 下 baseline、add_exogenous_weather_date、add_decomposition、add_load_state 四组共 124 个配置（tuning 调参组不在本文范围）。A/B 两路配置结构完全相同，仅数据不同，下文不再分开赘述。
+> **本文范围**：`config/aidc_power_month/route_{A,B}/freq_1day/` 下 baseline、add_exogenous_weather_date、add_decomposition、add_load_state 四组共 74 个配置（每路 baseline 6 + ensemble_members 1、weather 5、load_state 5、decomposition 20；tuning 调参组不在本文范围）。2026-10-09 起收敛为 LightGBM 单估计器，Ridge/ElasticNet/Lasso/SeasonalTemplate 配置已移出活动集（Git 保留历史）。A/B 两路配置结构完全相同，仅数据不同，下文不再分开赘述。
 
 ---
 
@@ -108,7 +108,8 @@ inference_columns: {rt_tt2: pred_tt2, cal_rh: pred_rh, rt_ssr: pred_ssrd, rt_ws1
 | USMDP | **无 lag**（`enable_lags_features: false`，日历/天气逐点模板）；rolling/diff 关闭 |
 | USMR | lag + 日历 + 天气 + state（无 rolling/diff，递归逐步构造） |
 | USBR | Direct（shift_1..H）+ Recursive（shift_0）双子模型共享 X，**天气组降级为无天气 control**（共享 X 无法同时满足两子模型的外生时点） |
-| ST（USMR） | wrapper 只消费 lag 与 dt_day_of_week；保留在 baseline/decomposition 组，不进入 weather/load_state 实验组 |
+
+> 2026-10-09 起估计器收敛为 LightGBM：上表方法维度不变，Ridge/ElasticNet/Lasso 线性基线与 ST（USMR wrapper）配置已移出活动集。
 
 ---
 
@@ -118,24 +119,24 @@ inference_columns: {rt_tt2: pred_tt2, cal_rh: pred_rh, rt_ssr: pred_ssrd, rt_ws1
 
 | 分组 | 数量/路 | 构成 | 目的 |
 |---|---:|---|---|
-| `baseline` | 10 | 6 个 quantile+conformal（lgbm usmd/usmdr/usmr/usmdp/usbr、horizon-feature usmd）+ 4 个 point（ridge/enet/lasso usmd、st usmr） | 无天气基础对照，含概率区间主链（qr 已移除） |
-| `add_exogenous_weather_date` | 8 | baseline 同构 + 严格天气信息集；USBR/st 不进入（no-op control 不混入实验组，对照走 baseline 同名配置） | 天气消融实验组（qr 已移除） |
-| `add_decomposition` | 36 | 9 个模型 × {linear, STL7, quadratic, damped}，天气开启、conformal 关闭 | 目标分解消融实验组（qr 已移除） |
-| `add_load_state` | 8 | weather-date 同名配置 + 15 列 origin-frozen 状态；decomposition=none，概率配置保留 conformal | 负荷状态的独立消融实验组（qr/st/USBR 不进入） |
+| `baseline` | 7 | 6 个 quantile+conformal（lgbm usmd/usmdr/usmr/usmdp/usbr、horizon-feature usmd）+ ensemble_members 1（usbr 递归子模型） | 无天气基础对照，含概率区间主链（qr 已移除；2026-10-09 起 ridge/enet/lasso/st 移出活动集） |
+| `add_exogenous_weather_date` | 5 | lgbm 同构五方法 + 严格天气信息集；USBR/st 不进入（no-op control 不混入实验组） | 天气消融实验组（qr 已移除） |
+| `add_decomposition` | 20 | 5 个 lgbm 方法 × {linear, STL7, quadratic, damped}，天气开启、conformal 关闭 | 目标分解消融实验组（qr 已移除；线性/ST 变体移出） |
+| `add_load_state` | 5 | weather-date 同名 lgbm 配置 + 15 列 origin-frozen 状态；decomposition=none，概率配置保留 conformal | 负荷状态的独立消融实验组（qr/st/USBR/线性 不进入） |
 
 ### 4.2 模型与方法选型理由
 
 | 模型 | 方法 | 为什么这样搭配 |
 |---|---|---|
-| LightGBM | USMD/USMDR/USMR/USMDP/USBR + horizon-feature | 主力非线性模型；五种方法覆盖 direct/recursive/blend 全谱系对比 |
-| Ridge/ElasticNet/Lasso | USMD point + `scale_features: true` | 线性基线；特征量纲差异大必须标准化；Lasso 兼做特征选择 |
-| SeasonalTemplate | USMR point | NNLS 学 lag 权重的季节模板，是 Naive 的可学习推广；单输出递归避免多输出 wrapper 不兼容 |
+| LightGBM | USMD/USMDR/USMR/USMDP/USBR + horizon-feature | 唯一主力非线性模型（2026-10-09 收敛）；五种方法覆盖 direct/recursive/blend 全谱系对比 |
+
+> 2026-10-09 前本组含 Ridge/ElasticNet/Lasso（USMD point + `scale_features: true`）与 SeasonalTemplate（USMR point）线性基线；估计器收敛后已移出活动集，历史结论仍可从 Git 与既有结果目录溯源。
 
 ### 4.3 训练增强与约束
 
 | 配置 | 取值 | 为什么 |
 |---|---|---|
-| `quantile_monotone: true` | A/B 合计 72 个 quantile 配置 | 消除 q50 > q90 的 quantile crossing（月频实测曾大量出现） |
+| `quantile_monotone: true` | 全部 quantile 配置 | 消除 q50 > q90 的 quantile crossing（月频实测曾大量出现） |
 | 时间衰减样本权重 | halflife 60 天；多输出 quantile / USBR 显式关闭 | 近期样本更重要；不支持的路径不得"假启用" |
 | Conformal（CQR） | baseline/weather/load_state 概率组开启，取最近 5 窗 score | 6 fold × ~30 天 ≈ 150 个校准分，超过 min_scores=30 可真实生效；各组保持可比 |
 | 分解实验隔离 | decomposition 组全部关闭 conformal | 避免把分解效果与区间校准一次改变混在一起 |
@@ -157,7 +158,7 @@ inference_columns: {rt_tt2: pred_tt2, cal_rh: pred_rh, rt_ssr: pred_ssrd, rt_ws1
 
 ## 6. 当前状态与注意
 
-- 自然月版本（124 配置）已完成 P0/P1 修复（严格天气、目标日外生对齐、origin-frozen 状态、quantile 单调化、setting 命名），代表链路冒烟通过，但**全量回测尚未运行**，`results_test` 下暂无正式结果。
+- 自然月版本已完成 P0/P1 修复（严格天气、目标日外生对齐、origin-frozen 状态、quantile 单调化、setting 命名），代表链路冒烟通过，但**全量回测尚未运行**，`results_test` 下暂无正式结果。
 - horizon=1 的月频实验已证明 LightGBM 类在小样本上劣于 naive；日频 120 天训练窗样本量充足，结论可能不同，以回测为准。
-- weather/load_state 组只保留真实消费天气/状态的 8 个模型；ST/USBR 对照统一读取 baseline 同名配置。
+- weather/load_state 组只保留真实消费天气/状态的 lgbm 五方法；USBR/st 对照统一读取 baseline 同名配置（2026-10-09 起 st baseline 配置已移出活动集）。
 - 概率区间是**逐日**的；逐日 P10/P90 直接求和不等于月总量区间（日误差相关），月总量区间需另行评估。

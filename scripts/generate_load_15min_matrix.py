@@ -1,14 +1,15 @@
 # -*- coding: utf-8 -*-
-"""确定性生成并校验三个 AIDC 15min 负荷场景的全因子配置矩阵。
+"""确定性生成并校验三个 AIDC 15min 负荷场景的 LightGBM 配置矩阵。
 
 默认模式只报告配置漂移；传 ``--write`` 才会重建预期 YAML。生成范围限于
-route_A/route_B 的五个单路组和独立 ``add_ensemble``，以及 route_AB 的联合组。
+route_A/route_B 的五个单路组，以及 route_AB 的联合组；2026-10-09 起估计器
+轴收敛为 LightGBM 单模型，不再生成 add_ensemble 拉丁融合组（其引用成员已
+移出活动集，历史形态从 Git 溯源）。
 本脚本不运行模型训练、回测或预测。
 """
 from __future__ import annotations
 
 import argparse
-import copy
 import json
 import sys
 from pathlib import Path
@@ -25,16 +26,9 @@ from forecasting_core.specs import ForecastConfigSpec  # noqa: E402
 from model_ensemble.specs import EnsembleConfigSpec  # noqa: E402
 
 
+# 2026-10-09 起估计器轴收敛为 LightGBM；其余估计器的全因子历史从 Git 溯源。
 MODEL_TYPES = {
-    "st": "st",
-    "ridge": "ridge",
-    "lasso": "lasso",
-    "enet": "enet",
     "lgbm": "lightgbm",
-    "xgb": "xgboost",
-    "cab": "catboost",
-    "rf": "randomforest",
-    "histgb": "histgb",
 }
 STRATEGY_VARIANTS = (
     "direct-pointwise",
@@ -49,12 +43,6 @@ STRATEGY_VARIANTS = (
 )
 EXOGENOUS_VARIANTS = ("holiday", "weather", "holiday-weather")
 DECOMPOSITION_VARIANTS = ("linear", "mstl96-672", "stl96")
-ENSEMBLE_METHODS = ("averaging", "weighted", "linear_blending", "stacking")
-LATIN_GROUPS = {
-    "latin-a": ("st_recursive", "lgbm_mimo", "ridge_direct"),
-    "latin-b": ("st_direct", "lgbm_recursive", "ridge_mimo"),
-    "latin-c": ("st_mimo", "lgbm_direct", "ridge_recursive"),
-}
 ROUTES = ("route_A", "route_B")
 SINGLE_ROUTE_GROUPS = (
     "baseline",
@@ -97,7 +85,6 @@ SCENARIO_SPECS: dict[str, dict[str, Any]] = {
         "forecast_origin": "2026-07-31T23:45:00",
         "schedule_mode": "daily",
         "history_steps": 6336,
-        "train_window_steps": 2784,
         "fold_count": 31,
         "stride_steps": 96,
         "target_lags": (96, 192, 288, 384, 480, 576, 672),
@@ -112,7 +99,6 @@ SCENARIO_SPECS: dict[str, dict[str, Any]] = {
         "forecast_origin": "2026-07-31T14:00:00",
         "schedule_mode": "intraday",
         "history_steps": 6336,
-        "train_window_steps": 2784,
         "fold_count": 31,
         "stride_steps": 96,
         "target_lags": (96, 192, 288, 384, 480, 576, 672),
@@ -127,7 +113,6 @@ SCENARIO_SPECS: dict[str, dict[str, Any]] = {
         "forecast_origin": "2026-07-31T14:00:00",
         "schedule_mode": "intraday",
         "history_steps": 5072,
-        "train_window_steps": 1424,
         "fold_count": 31,
         "stride_steps": 96,
         "target_lags": (1, 2, 3, 4, 8, 12, 16, 96, 192, 672),
@@ -402,29 +387,117 @@ def _validation(scenario: str, group: str, strategy_variant: str) -> dict[str, A
         "schedule_mode": spec["schedule_mode"],
         "horizon_mode": "fixed_steps",
         "history_steps": spec["history_steps"],
-        "train_window_steps": spec["train_window_steps"],
         "fold_count": spec["fold_count"],
         "stride_steps": spec["stride_steps"],
     }
-    # 融合引用的基线及分解组保留原合同；其余已审核组直接生成显式窗口。
-    if group in {"add_exogenous", "add_endogenous_cross_route",
-                 "add_endogenous_state", "add_endogenous_joint"}:
-        validation.pop("train_window_steps")
+    # 全组使用 training_window；baseline/分解组不额外写 forecast_window/refit_every。
+    # 窗长按策略分化：direct/dirmo/mimo 用整窗，其余策略少一步；
+    # 迁移组统一整窗并叠加 forecast_window/refit_every/origin_sampling。
+    migrated = group in {
+        "add_exogenous",
+        "add_endogenous_cross_route",
+        "add_endogenous_state",
+        "add_endogenous_joint",
+    }
+    short = scenario == "aidc_load_15min_short"
+    if migrated:
+        window_steps = 2112 if short else 3552
+    else:
+        full_window = strategy_variant in {"direct", "dirmo", "mimo"}
+        window_steps = (2112 if short else 3552) if full_window else (2111 if short else 3551)
+    validation["training_window"] = {
+        "kind": "rolling",
+        "history_steps": window_steps,
+    }
+    if migrated:
         validation.update({
-            "training_window": {
-                "kind": "rolling",
-                "history_steps": 2112 if scenario == "aidc_load_15min_short" else 3552,
-            },
             "forecast_window": {"start": "after_origin"},
             "refit_every": 1,
         })
-        # 只有跨调用共享模型的布局才按日采样；独立模型保留密集原点。
-        if strategy_variant in {"direct-pointwise", "direct-pointwise-horizon", "recursive", "recmo"}:
-            validation["training"] = {"origin_sampling": {
-                "stride_steps": spec["stride_steps"],
-                "anchor_time": spec["forecast_origin"],
-            }}
+    # 统一布局采样是单独批准的新实验语义，覆盖 baseline 与分解组。
+    if strategy_variant in {"direct-pointwise", "direct-pointwise-horizon", "recursive", "recmo"}:
+        validation["training"] = {"origin_sampling": {
+            "stride_steps": spec["stride_steps"],
+            "anchor_time": spec["forecast_origin"],
+        }}
     return validation
+
+
+def _performance(
+    scenario: str,
+    output_route: str,
+    group: str,
+    strategy_variant: str,
+    sources: list[dict[str, Any]],
+) -> dict[str, Any] | None:
+    """按已审核的性能档返回 validation.performance；无档返回 None。
+
+    档位常量：WINDOW_WORKERS=4窗口×2线程；OUTPUT_WORKERS=1窗口×8输出×1线程；
+    MO_ONLY_* 仅声明多输出并发。规则与磁盘现役 lgbm 配置一一对应。
+    """
+    window_workers = {"window_parallel_workers": 4, "model_thread_count": 2}
+    output_workers = {
+        "window_parallel_workers": 1,
+        "multi_output_n_jobs": 8,
+        "model_thread_count": 1,
+    }
+    mo_8 = {"multi_output_n_jobs": 8}
+    mo_4 = {"multi_output_n_jobs": 4}
+    mo_2 = {"multi_output_n_jobs": 2}
+    short = scenario == "aidc_load_15min_short"
+    daily_route_a = scenario == "aidc_load_15min_daily" and output_route == "route_A"
+    source_names = {str(source.get("name", "")) for source in sources}
+
+    if group == "baseline":
+        if strategy_variant in {
+            "recursive", "direct-pointwise", "direct-pointwise-horizon",
+        }:
+            return window_workers
+        if strategy_variant in {"direct", "mimo"}:
+            return output_workers
+        # 其余四策略（dirrec/dirmo/dirrecmo/recmo）
+        if short:
+            return mo_4 if strategy_variant == "recmo" else output_workers
+        if daily_route_a:
+            return output_workers
+        return mo_8
+    if group == "add_decomposition":
+        if strategy_variant in {"direct", "dirmo", "mimo", "dirrec", "dirrecmo"}:
+            return mo_8
+        if strategy_variant == "recmo":
+            return mo_4 if short else mo_8
+        return None
+    if group in {
+        "add_exogenous", "add_endogenous_cross_route", "add_endogenous_state",
+    }:
+        if (
+            daily_route_a
+            and group == "add_endogenous_cross_route"
+            and strategy_variant == "recursive"
+        ):
+            return {"window_parallel_workers": 2, "model_thread_count": 4}
+        if daily_route_a and strategy_variant == "direct" and (
+            group == "add_endogenous_state"
+            or (
+                group == "add_exogenous"
+                and {"chinese_holiday", "weather"}.issubset(source_names)
+            )
+        ):
+            return output_workers
+        if strategy_variant in {"direct", "dirmo", "dirrec", "dirrecmo", "mimo"}:
+            return mo_8
+        if strategy_variant == "recmo":
+            return mo_4 if short else mo_8
+        return None
+    if group == "add_endogenous_joint":
+        if strategy_variant in {
+            "direct-pointwise", "direct-pointwise-horizon", "recursive",
+        }:
+            return mo_2
+        if scenario == "aidc_load_15min_daily" and strategy_variant == "direct":
+            return output_workers
+        return mo_8
+    return None
 
 
 def _payload(
@@ -441,72 +514,26 @@ def _payload(
 ) -> dict[str, Any]:
     strategy, _ = _strategy_spec(scenario, strategy_variant)
     validation = _validation(scenario, group, strategy_variant)
-    is_lgbm = model == "lgbm"
-    is_profiled_baseline = group == "baseline" and is_lgbm
-    source_names = {str(source.get("name", "")) for source in sources}
-    if is_profiled_baseline and strategy_variant in {
-        "recursive",
-        "direct-pointwise",
-        "direct-pointwise-horizon",
+    performance = _performance(scenario, output_route, group, strategy_variant, sources)
+    if performance is not None:
+        validation["performance"] = performance
+    features = _features(
+        scenario=scenario,
+        strategy_variant=strategy_variant,
+        model=model,
+        targets=targets,
+        observed_columns=observed_columns,
+        decomposition=decomposition,
+    )
+    # direct-pointwise（非 -horizon 变体）在 baseline/跨路/状态/联合组显式关闭
+    # horizon_feature（2026-09 direct-pointwise 合同补齐；exogenous/分解组沿用缺省）。
+    if strategy_variant == "direct-pointwise" and group in {
+        "baseline",
+        "add_endogenous_cross_route",
+        "add_endogenous_state",
+        "add_endogenous_joint",
     }:
-        validation["performance"] = {
-            "window_parallel_workers": 4,
-            "model_thread_count": 2,
-        }
-    elif is_profiled_baseline and (
-        strategy_variant in {"direct", "mimo"}
-        or (
-            scenario == "aidc_load_15min_short"
-            and strategy_variant in {"dirrec", "dirmo", "dirrecmo"}
-        )
-        or (
-            scenario == "aidc_load_15min_daily"
-            and output_route == "route_A"
-            and strategy_variant in {"dirrec", "dirmo", "dirrecmo", "recmo"}
-        )
-    ):
-        validation["performance"] = {
-            "window_parallel_workers": 1,
-            "multi_output_n_jobs": 8,
-            "model_thread_count": 1,
-        }
-    elif (
-        is_lgbm
-        and scenario == "aidc_load_15min_daily"
-        and output_route == "route_A"
-        and group == "add_endogenous_cross_route"
-        and strategy_variant == "recursive"
-    ):
-        validation["performance"] = {
-            "window_parallel_workers": 2,
-            "model_thread_count": 4,
-        }
-    elif is_lgbm and (
-        (
-            scenario == "aidc_load_15min_daily"
-            and output_route == "route_A"
-            and group == "add_exogenous"
-            and strategy_variant == "direct"
-            and {"chinese_holiday", "weather"}.issubset(source_names)
-        )
-        or (
-            scenario == "aidc_load_15min_daily"
-            and output_route == "route_A"
-            and group == "add_endogenous_state"
-            and strategy_variant == "direct"
-        )
-        or (
-            scenario == "aidc_load_15min_daily"
-            and output_route == "route_AB"
-            and group == "add_endogenous_joint"
-            and strategy_variant == "direct"
-        )
-    ):
-        validation["performance"] = {
-            "window_parallel_workers": 1,
-            "multi_output_n_jobs": 8,
-            "model_thread_count": 1,
-        }
+        features["transformations"]["direct"]["horizon_feature"]["enabled"] = False
     return {
         "schema_version": 2,
         "problem": {
@@ -518,14 +545,7 @@ def _payload(
             "series_id_cols": [],
         },
         "data": {"sources": sources},
-        "features": _features(
-            scenario=scenario,
-            strategy_variant=strategy_variant,
-            model=model,
-            targets=targets,
-            observed_columns=observed_columns,
-            decomposition=decomposition,
-        ),
+        "features": features,
         "strategy": strategy,
         "estimator": {
             "model_type": MODEL_TYPES[model],
@@ -546,50 +566,8 @@ def _payload(
     }
 
 
-def _ensemble_payload(
-    *,
-    scenario: str,
-    route: str,
-    latin_group: str,
-    method: str,
-    baseline: dict[str, Any],
-) -> dict[str, Any]:
-    spec = SCENARIO_SPECS[scenario]
-    return {
-        "schema_version": 2,
-        "problem": copy.deepcopy(baseline["problem"]),
-        "data": copy.deepcopy(baseline["data"]),
-        "probabilistic": copy.deepcopy(baseline["probabilistic"]),
-        "ensemble": {
-            "members": [
-                {
-                    "name": member,
-                    "config_ref": f"../baseline/{member}.yaml",
-                }
-                for member in LATIN_GROUPS[latin_group]
-            ],
-            "oof": {
-                "train_window_steps": spec["train_window_steps"],
-                "fold_count": spec["oof_fold_count"],
-                "stride_steps": spec["stride_steps"],
-            },
-            "method": {"name": method},
-        },
-        "validation": copy.deepcopy(baseline["validation"]),
-        "output": {
-            "scenario_subpath": f"{scenario}/{route}/add_ensemble",
-            "results_root": "results",
-            "directories": {
-                "checkpoints": "./results/pretrained_models/",
-                "tests": "./results/results_test/",
-                "forecast": "./results/results_forecast/",
-            },
-        },
-    }
-
-
 def build_expected_configs(scenario: str) -> dict[Path, dict[str, Any]]:
-    """构造一个场景的 1,539 单模型 + 24 Ensemble 映射。"""
+    """构造一个场景的 171 份 LightGBM 单模型映射（无 add_ensemble）。"""
     if scenario not in SCENARIO_SPECS:
         raise ValueError(f"unknown scenario: {scenario}")
     root = ROOT / "config" / scenario
@@ -676,21 +654,6 @@ def build_expected_configs(scenario: str) -> dict[Path, dict[str, Any]]:
                         decomposition=decomposition,
                     )
 
-        baseline = configs[root / route / "baseline/st_recursive.yaml"]
-        for latin_group in LATIN_GROUPS:
-            for method in ENSEMBLE_METHODS:
-                method_slug = method.replace("_", "-")
-                filename = f"ensemble_{latin_group}_{method_slug}.yaml"
-                configs[root / route / "add_ensemble" / filename] = (
-                    _ensemble_payload(
-                        scenario=scenario,
-                        route=route,
-                        latin_group=latin_group,
-                        method=method,
-                        baseline=baseline,
-                    )
-                )
-
     for model in MODEL_TYPES:
         for strategy_variant in STRATEGY_VARIANTS:
             filename = f"{model}_{strategy_variant}.yaml"
@@ -706,9 +669,9 @@ def build_expected_configs(scenario: str) -> dict[Path, dict[str, Any]]:
                 sources=_joint_target_sources(scenario),
             )
 
-    if len(configs) != 1563:
+    if len(configs) != 171:
         raise AssertionError(
-            f"{scenario}: expected 1563 configs, built {len(configs)}"
+            f"{scenario}: expected 171 configs, built {len(configs)}"
         )
     return configs
 
@@ -717,8 +680,8 @@ def _all_expected_configs() -> dict[Path, dict[str, Any]]:
     configs: dict[Path, dict[str, Any]] = {}
     for scenario in SCENARIOS:
         configs.update(build_expected_configs(scenario))
-    if len(configs) != 4689:
-        raise AssertionError(f"expected 4689 configs, built {len(configs)}")
+    if len(configs) != 513:
+        raise AssertionError(f"expected 513 configs, built {len(configs)}")
     return configs
 
 
@@ -805,7 +768,7 @@ def validate_matrix() -> dict[str, int]:
 
     return {
         "scenarios": len(SCENARIOS),
-        "per_scenario": 1563,
+        "per_scenario": 171,
         "forecast_configs": forecast_count,
         "ensemble_configs": ensemble_count,
     }
@@ -826,7 +789,7 @@ def main() -> int:
     parser.add_argument(
         "--write",
         action="store_true",
-        help="重建 4,617 份单模型与 72 份 AIDC Ensemble YAML",
+        help="重建三个场景共 513 份 LightGBM 单模型 YAML",
     )
     parser.add_argument(
         "--json",

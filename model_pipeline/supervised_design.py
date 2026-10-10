@@ -888,21 +888,7 @@ def supervised_candidate_origins(
             minimum_history - 1 : origin_position - builder.config.problem.horizon + 1
         ]
     )
-    backtest = builder.config.validation.backtest
-    if isinstance(backtest, FixedStepBacktestSpec):
-        if backtest.train_history_steps is not None:
-            expected = pd.date_range(end=origin, periods=backtest.train_history_steps, freq=builder.config.problem.freq)
-            if not timestamps.equals(expected):
-                raise ValueError("train_history_steps requires a complete regular history grid")
-            expected_samples = backtest.train_history_steps - minimum_history - builder.config.problem.horizon + 1
-            if expected_samples < 2 or backtest.train_window_steps != expected_samples:
-                raise ValueError(
-                    "train_window_steps must equal train_history_steps - minimum_history_rows - horizon + 1 "
-                    f"and provide at least two samples (expected {expected_samples})"
-                )
-        candidate_origins = available_origins[-backtest.history_steps:]
-    else:
-        candidate_origins = available_origins
+    candidate_origins = available_origins
     if len(candidate_origins) < 2:
         raise ValueError("canonical runtime requires at least two complete supervised samples")
     return candidate_origins
@@ -992,42 +978,6 @@ class _BacktestWindow:
     metadata: dict[str, Any]
 
 
-def raw_history_backtest_windows(
-    builder: SupervisedDesignBuilder,
-    origin: pd.Timestamp,
-) -> tuple[_BacktestWindow, ...]:
-    """只按时间覆盖调度；返回各折有界 runner 内的局部训练索引。"""
-    spec = builder.config.validation.backtest
-    if not isinstance(spec, FixedStepBacktestSpec) or spec.train_history_steps is None:
-        raise ValueError("raw history windows require train_history_steps")
-    coverage = builder.registry.target_history_coverage()
-    times = coverage[0].times
-    if any(not item.times.equals(times) for item in coverage[1:]):
-        raise ValueError("target sources must share the same history grid")
-    times = times[times <= origin]
-    if times.empty or times[-1] != origin or not times.equals(pd.date_range(times[0], origin, freq=builder.config.problem.freq)):
-        raise ValueError("raw history backtest requires a complete regular history grid")
-    minimum = minimum_history_rows(builder.config)
-    available = tuple(times[minimum - 1:len(times) - builder.config.problem.horizon])[-spec.history_steps:]
-    windows = _rolling_backtest_windows(
-        builder, available,
-        schedule_origin=origin if builder.config.validation.get("schedule_mode") == "intraday" else None,
-    )
-    if len(windows) != spec.fold_count:
-        raise ValueError("train_history_steps cannot provide requested fold_count")
-    result = []
-    for window in windows:
-        start = window.origin - (spec.train_history_steps - 1) * builder.offset
-        if start < times[0] or len(window.train_indices) != spec.train_window_steps:
-            raise ValueError("train_history_steps cannot provide the complete requested fold history")
-        result.append(_BacktestWindow(
-            window=window.window, origin_index=window.origin_index, origin=window.origin,
-            train_indices=tuple(range(spec.train_window_steps)),
-            metadata={**window.metadata, "raw_history_start": start.isoformat(),
-                      "raw_history_end": window.origin.isoformat(),
-                      "train_history_steps": spec.train_history_steps},
-        ))
-    return tuple(result)
 
 
 def temporal_backtest_windows(builder: SupervisedDesignBuilder, origin: pd.Timestamp) -> tuple[_BacktestWindow, ...]:
@@ -1071,7 +1021,7 @@ def temporal_backtest_windows(builder: SupervisedDesignBuilder, origin: pd.Times
             tuple(range(len(selected))), {
                 "window": number, "origin": current.isoformat(), "label_start": labels[0].isoformat(),
                 "label_end": labels[-1].isoformat(), "raw_history_start": start.isoformat(),
-                "raw_history_end": current.isoformat(), "train_history_steps": len(raw),
+                "raw_history_end": current.isoformat(), "raw_history_steps": len(raw),
                 "training_window_kind": config.validation["training_window"]["kind"],
                 "candidate_origins": len(origins), "training_sample_count": len(selected),
                 "training_label_end_max": forecast_times(config.problem, config.validation, origins[selected[-1]])[-1].isoformat(),
@@ -1079,38 +1029,6 @@ def temporal_backtest_windows(builder: SupervisedDesignBuilder, origin: pd.Times
     return tuple(result)
 
 
-def _rolling_backtest_windows(
-    builder: SupervisedDesignBuilder,
-    supervised_origins: tuple[pd.Timestamp, ...],
-    *,
-    schedule_origin: pd.Timestamp | None = None,
-) -> tuple[_BacktestWindow, ...]:
-    backtest = builder.config.validation.backtest
-    if not isinstance(backtest, FixedStepBacktestSpec):
-        raise TypeError("fixed-step backtest requires FixedStepBacktestSpec")
-    geometry = validation.TimeGeometry(
-        offset=builder.offset,
-        horizon=builder.config.problem.horizon,
-    )
-    folds = validation.rolling_origin_folds(
-        supervised_origins,
-        geometry,
-        history_steps=backtest.history_steps,
-        train_window_steps=backtest.train_window_steps,
-        fold_count=backtest.fold_count,
-        stride_steps=backtest.stride_steps,
-        schedule_origin=schedule_origin,
-    )
-    return tuple(
-        _BacktestWindow(
-            window=fold.window,
-            origin_index=fold.origin_index,
-            origin=fold.origin,
-            train_indices=fold.train_indices,
-            metadata=fold.metadata,
-        )
-        for fold in folds
-    )
 
 
 def _actual_at_origin(

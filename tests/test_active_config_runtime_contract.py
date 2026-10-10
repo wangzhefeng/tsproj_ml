@@ -81,27 +81,34 @@ class ActiveConfigRuntimeContractTest(unittest.TestCase):
         )
 
     def test_fixed_step_configs_store_explicit_origin_step_geometry(self):
+        # 2026-09 起迁移组改用 `training_window`（rolling）表达训练窗，
+        # 旧 `train_window_steps` 不再写出（解析为 None）；window_length_8
+        # 月频组保留旧显式步数字段。以下断言按当前 canonical 契约核对。
         cases = (
             (
-                "config/aidc_load_15min_short/route_A/baseline/st_recursive.yaml",
-                (5072, 1424, 31, 96),
+                "config/aidc_load_15min_short/route_A/baseline/lgbm_recursive.yaml",
+                (5072, 2111, 31, 96),
+                {"kind": "rolling", "history_steps": 2111},
             ),
             (
-                "config/aidc_load_15min_daily/route_A/baseline/enet_direct.yaml",
-                (6336, 2784, 31, 96),
+                "config/aidc_load_15min_daily/route_A/baseline/lgbm_direct.yaml",
+                (6336, 3552, 31, 96),
+                {"kind": "rolling", "history_steps": 3552},
             ),
             (
                 "config/aidc_electricity_computility/electricity_computility/"
                 "add_training_inference_pod/lgbm_usmr_a.yaml",
-                (8928, 4032, 17, 288),
+                (8928, 6335, 17, 288),
+                {"kind": "rolling", "history_steps": 6335},
             ),
             (
                 "config/aidc_power_month/route_A/freq_1month/window_length_8/"
                 "lgbm_usmd_prob_mean.yaml",
                 (10, 7, 3, 1),
+                {"kind": "rolling", "history_steps": 7},
             ),
         )
-        for relative, expected in cases:
+        for relative, expected, training_window in cases:
             with self.subTest(config=relative):
                 config = load_yaml_config(ROOT / relative)
                 validation = config.validation
@@ -109,11 +116,17 @@ class ActiveConfigRuntimeContractTest(unittest.TestCase):
                 geometry = cast(FixedStepBacktestSpec, validation.backtest)
                 actual = (
                     geometry.history_steps,
-                    geometry.train_window_steps,
+                    validation["training_window"]["history_steps"],
                     geometry.fold_count,
                     geometry.stride_steps,
                 )
                 self.assertEqual(actual, expected)
+                window = validation.get("training_window")
+                if training_window is None:
+                    self.assertIsNone(window)
+                else:
+                    assert window is not None
+                    self.assertEqual(dict(window), training_window)
 
     def test_calendar_month_config_uses_typed_day_month_geometry(self):
         path = (
@@ -136,7 +149,7 @@ class ActiveConfigRuntimeContractTest(unittest.TestCase):
     def test_legacy_geometry_fields_fail_during_parse(self):
         path = (
             ROOT
-            / "config/aidc_load_15min_short/route_A/baseline/st_recursive.yaml"
+            / "config/aidc_load_15min_short/route_A/baseline/lgbm_recursive.yaml"
         )
         config = load_yaml_config(path)
         payload = config.canonical_payload()
@@ -157,7 +170,7 @@ class ActiveConfigRuntimeContractTest(unittest.TestCase):
     def test_unknown_runtime_sections_fail_during_parse(self):
         path = (
             ROOT
-            / "config/aidc_load_15min_short/route_A/baseline/st_recursive.yaml"
+            / "config/aidc_load_15min_short/route_A/baseline/lgbm_recursive.yaml"
         )
         config = load_yaml_config(path)
         self.assertIsInstance(config, ForecastConfigSpec)
@@ -185,7 +198,7 @@ class ActiveConfigRuntimeContractTest(unittest.TestCase):
     def test_checker_accepts_visible_target_history_transformations(self):
         path = (
             ROOT
-            / "config/aidc_load_15min_short/route_A/baseline/enet_direct.yaml"
+            / "config/aidc_load_15min_short/route_A/baseline/lgbm_recursive.yaml"
         )
         _, problems = check_model_yaml(str(path))
         self.assertEqual(problems, [])

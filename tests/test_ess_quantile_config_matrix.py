@@ -60,15 +60,12 @@ class EssQuantileConfigMatrixTest(unittest.TestCase):
             if isinstance(cfg, EnsembleConfigSpec):
                 continue
             self.assertEqual(cfg.problem.freq, "5min", path)
-            n_per_day = 288
-            history_rows = int(cfg.validation["history_steps"] * n_per_day)
-            window_rows = int(cfg.validation["train_window_steps"] * n_per_day)
-            self.assertGreater(history_rows, window_rows, path)
-            self.assertGreater(
-                cfg.validation["history_steps"],
-                cfg.problem.horizon / n_per_day,
-                path,
-            )
+            window = cfg.validation["training_window"]
+            self.assertEqual(window["kind"], "rolling", path)
+            self.assertGreaterEqual(window["history_steps"], cfg.problem.horizon + 2, path)
+            self.assertGreaterEqual(cfg.validation["stride_steps"], cfg.problem.horizon, path)
+            self.assertGreaterEqual(cfg.validation["history_steps"],
+                                    cfg.validation["fold_count"] * cfg.validation["stride_steps"] + 1, path)
 
     def test_matrix_contains_only_expected_quantile_configs(self):
         expected_counts = {

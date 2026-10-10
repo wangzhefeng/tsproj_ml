@@ -76,28 +76,14 @@ def run_calendar_month_backtest(
             )
     calibration_audits: list[dict[str, Any]] = []
     raw_history_times = final_runner.builder.target_history_times(final_runner.origin)
-    dynamic_history_steps = len(final_runner.supervised_origins)
-
     def build_context(fold):
         dynamic_problem = replace(config.problem, horizon=fold.horizon)
+        # 月回测保留自己的原始日窗合同；只调整本折H，不借固定步数旧合同构造runner。
         dynamic_validation = {
-            key: value
-            for key, value in dict(config.validation).items()
-            if key not in {"train_window_days", "stride_months"}
+            **dict(config.validation),
+            'fold_count': 1,
+            'seasonal_naive_lag': max(fold.horizon, 1),
         }
-        dynamic_validation.update(
-            {
-                "horizon_mode": "fixed_steps",
-                "history_steps": dynamic_history_steps,
-                "train_window_steps": min(
-                    backtest.train_window_days,
-                    dynamic_history_steps - 1,
-                ),
-                "fold_count": 1,
-                "stride_steps": fold.horizon,
-                "seasonal_naive_lag": max(fold.horizon, 1),
-            }
-        )
         dynamic_config = replace(
             config,
             problem=dynamic_problem,

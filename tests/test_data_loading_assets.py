@@ -21,7 +21,7 @@ import test_ensemble_loader as fixtures
 def model_document(document):
     result = copy.deepcopy(document)
     if 'estimator' in result:
-        result['validation'].update(history_steps=32, train_window_steps=8, fold_count=2, stride_steps=2)
+        result['validation'].update(history_steps=32, training_window={'kind': 'rolling', 'history_steps': 8}, fold_count=2, stride_steps=2)
     return result
 
 

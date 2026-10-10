@@ -41,7 +41,7 @@ def _config(
     validation = {
         "forecast_origin": "2026-01-03T00:00:00",
         "history_steps": 24,
-        "train_window_steps": 12,
+        'training_window': {'kind': 'rolling', 'history_steps': 12},
         "fold_count": 1,
         "stride_steps": 2,
     }

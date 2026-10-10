@@ -47,7 +47,6 @@ ensemble:
   - name: recursive
     config_ref: ensemble_members/lgbm_usbr_prob_mean_conformal_recursive.yaml
   oof:
-    train_window_steps: 150
     fold_count: 1
     stride_steps: 1
   method:

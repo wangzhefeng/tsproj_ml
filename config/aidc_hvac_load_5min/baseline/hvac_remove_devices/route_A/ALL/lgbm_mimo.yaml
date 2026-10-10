@@ -83,12 +83,15 @@ estimator:
 probabilistic:
   mode: point
 validation:
+  performance:
+    multi_output_n_jobs: 8
+  training_window:
+    kind: rolling
+    history_steps: 2016
   forecast_origin: '2026-08-17T23:55:00'
   schedule_mode: daily
   horizon_mode: fixed_steps
   history_steps: 5760
-  train_history_steps: 2016
-  train_window_steps: 864
   fold_count: 17
   stride_steps: 288
 output:

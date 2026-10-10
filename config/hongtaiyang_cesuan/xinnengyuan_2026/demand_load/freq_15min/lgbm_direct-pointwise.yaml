@@ -107,14 +107,17 @@ estimator:
 probabilistic:
   mode: point
 validation:
+  performance:
+    model_thread_count: 1
   forecast_origin: '2026-08-31T23:45:00'
   horizon_mode: fixed_steps
   schedule_mode: daily
   history_steps: 35040
-  train_history_steps: 8832
-  train_window_steps: 8064
   fold_count: 1
   stride_steps: 96
+  training_window:
+    kind: rolling
+    history_steps: 8832
   training:
     sample_weight:
       method: exponential

@@ -172,15 +172,6 @@ def calendar_month_folds(
     return tuple(folds)
 
 
-@dataclass(frozen=True, slots=True)
-class RollingOriginFold:
-    """One rolling-origin split: origins before ``origin`` train the holdout."""
-
-    window: int
-    origin_index: int
-    origin: pd.Timestamp
-    train_indices: tuple[int, ...]
-    metadata: dict[str, Any]
 
 
 def _positive_int(source: dict[str, Any], field: str, default: int) -> int:
@@ -217,70 +208,6 @@ def scheduled_origin_indices(
     return tuple(selected)
 
 
-def rolling_origin_folds(
-    origins: tuple[pd.Timestamp, ...],
-    geometry: TimeGeometry,
-    *,
-    history_steps: int | None,
-    train_window_steps: int,
-    fold_count: int,
-    stride_steps: int,
-    schedule_origin: pd.Timestamp | None = None,
-) -> tuple[RollingOriginFold, ...]:
-    """Rolling-origin folds with an explicit supervised-origin-step contract.
-
-    The candidate set is the last ``history_steps`` origins; holdouts are the
-    last ``fold_count`` candidates spaced ``stride_steps`` apart, chronologically
-    ordered; each holdout trains on the last ``train_window_steps`` candidates
-    whose labels end strictly before the holdout label start.
-    """
-    if history_steps is None:
-        history_steps = len(origins)
-    history_steps = min(len(origins), history_steps)
-    history_start = len(origins) - history_steps
-    candidates = (
-        tuple(range(len(origins) - 1, history_start - 1, -stride_steps))
-        if schedule_origin is None
-        else tuple(index for index in scheduled_origin_indices(origins, geometry, schedule_origin, stride_steps)
-                   if index >= history_start)
-    )[:fold_count]
-    if not candidates:
-        raise ValueError("no complete supervised origin matches the forecast schedule")
-    folds = []
-    for window, origin_index in enumerate(reversed(candidates), start=1):
-        holdout_origin = origins[origin_index]
-        holdout_label_start = geometry.label_start(holdout_origin)
-        train_indices = tuple(
-            index
-            for index in range(history_start, origin_index)
-            if is_label_safe(origins[index], geometry.offset, geometry.horizon, holdout_label_start)
-        )[-train_window_steps:]
-        if not train_indices:
-            raise ValueError(
-                "canonical rolling backtest requires at least one non-overlapping "
-                f"training sample for window={window}"
-            )
-        training_label_end_max = max(
-            geometry.label_end(origins[index]) for index in train_indices
-        )
-        folds.append(
-            RollingOriginFold(
-                window=window,
-                origin_index=origin_index,
-                origin=holdout_origin,
-                train_indices=train_indices,
-                metadata={
-                    "window": window,
-                    "origin": holdout_origin.isoformat(),
-                    "label_start": holdout_label_start.isoformat(),
-                    "label_end": geometry.label_end(holdout_origin).isoformat(),
-                    "training_sample_count": len(train_indices),
-                    "training_label_end_max": training_label_end_max.isoformat(),
-                    "excluded_overlapping_samples": origin_index - len(train_indices),
-                },
-            )
-        )
-    return tuple(folds)
 
 
 def validate_no_overlap(

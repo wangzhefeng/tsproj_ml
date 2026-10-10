@@ -58,13 +58,14 @@ _SIGNATURE = {
         "random_seed": 42, "allow_writing_files": False,
     },
     "training_scope": "local",
-    "train_window_steps": 1424,
+    "training_window": None,  # 历史benchmark不包含新原始窗口合同，不据此认可新配置。
 }
 
 _PROVENANCE = {
     "evidence_root": "/tmp/tsproj-opt017-benchmark",
     "protocol": "three interleaved A/B rounds; isolated single-config 5-fold",
     "benchmark_fold_count": 5,
+    "benchmark_training_origins": 1424,
     "adopted_physical_fold_count": 31,
     "formal_benchmark_verified": False,
     "benchmark_raw_design_fingerprint": "94d60fc7b0af68397e3a74b5413b2566552298bd0ced47259debe859f6932fd7",
@@ -162,7 +163,7 @@ def build_performance_signature(
         "estimator_versions": {"catboost": version("catboost")},
         "estimator_defaults": defaults,
         "training_scope": config.problem.training_scope,
-        "train_window_steps": config.validation.get("train_window_steps"),
+        "training_window": config.validation.semantic_payload().get("training_window"),
     }
 
 

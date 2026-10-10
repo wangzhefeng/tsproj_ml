@@ -49,12 +49,10 @@ def validate_temporal_contract(problem, validation: Mapping) -> None:
         else:
             raise ValueError("training_window.kind must be rolling or expanding")
     if forecast is not None or training is not None:
-        if problem.freq not in {"5min", "15min", "1h", "1D"}:
-            raise ValueError("explicit temporal windows require fixed daily/intraday frequency")
+        if problem.freq not in {"5min", "15min", "1h", "1D", "1ME", "1MS"}:
+            raise ValueError("explicit temporal windows require a fixed frequency")
         if validation.get("horizon_mode", "fixed_steps") != "fixed_steps":
             raise ValueError("forecast_window/training_window require fixed_steps")
-        if validation.get("refit_every", 1) != 1:
-            raise ValueError("explicit temporal windows require refit_every=1")
 
 
 def forecast_times(problem, validation: Mapping, origin: pd.Timestamp) -> pd.DatetimeIndex:
@@ -82,12 +80,11 @@ def history_start(validation: Mapping, origin: pd.Timestamp, offset) -> pd.Times
         if start > origin:
             raise ValueError("training_window starts after forecast origin")
         return start
-    length = validation.get("train_history_steps")
-    return None if length is None else origin - (length - 1) * offset
+    return None
 
 
 def has_bounded_history(validation: Mapping) -> bool:
-    return validation.get("training_window") is not None or validation.get("train_history_steps") is not None
+    return validation.get("training_window") is not None
 
 
 def forecast_ends(problem, validation: Mapping, origins: pd.DatetimeIndex) -> pd.DatetimeIndex:

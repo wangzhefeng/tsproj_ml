@@ -21,10 +21,12 @@ class EnsembleConfigAuditTest(unittest.TestCase):
             / "config/aidc_load_15min_short/route_A/baseline/"
             / "lgbm_direct.yaml"
         )
+        # 三个 15min 场景的 add_ensemble 已于 2026-10-09 移出活动集；
+        # 现存引用式 Ensemble 只剩 power_month / ess 场景。
         ensemble = (
             ROOT
-            / "config/aidc_load_15min_short/route_A/add_ensemble/"
-            / "ensemble_latin-a_averaging.yaml"
+            / "config/aidc_power_month/route_A/freq_1day/baseline/"
+            / "lgbm_usbr_prob_mean_conformal.yaml"
         )
 
         self.assertTrue(MODULE._is_single_model_config(single))

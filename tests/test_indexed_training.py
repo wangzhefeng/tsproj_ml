@@ -42,8 +42,8 @@ class IndexedTrainingTest(unittest.TestCase):
             config = replace(config,
                 features=replace(config.features, target_lags={}, datetime_features=(), transformations={}),
                 estimator=replace(config.estimator, model_type="ets", params={"seasonal_periods": 12, "candidates": ["ANN"]}),
-                validation={**dict(config.validation), "history_steps": 90, "train_history_steps": 48,
-                            "train_window_steps": 44, "fold_count": 2})
+                validation={**dict(config.validation), "history_steps": 90, 'training_window': {'kind': 'rolling', 'history_steps': 48},
+                             "fold_count": 2})
             with patch("feature_engineering.FeatureCompiler.compile", side_effect=AssertionError("native model must not compile")), \
                  patch("feature_engineering.FeatureCompiler.compile_batch", side_effect=AssertionError("native model must not compile")):
                 runner = CanonicalBaseModelRunner(config, SourceRegistry(config.data, root), times[-1])

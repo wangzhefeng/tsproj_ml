@@ -32,7 +32,10 @@ SCENARIOS = (
     "aidc_load_15min_rolling",
     "aidc_load_15min_short",
 )
-EXPECTED_SINGLE_MODELS = 4617
+# 2026-10-09 估计器收敛为 LightGBM 后：每场景 171 份单模型（A/B 每路
+# baseline 9 + exogenous 27 + cross_route 9 + state 9 + decomposition 27
+# = 81，另 route_AB/add_endogenous_joint 9；add_ensemble 整组已移出活动集）。
+EXPECTED_SINGLE_MODELS = 513
 
 
 def _probe_origin(config: ForecastConfigSpec) -> pd.Timestamp:

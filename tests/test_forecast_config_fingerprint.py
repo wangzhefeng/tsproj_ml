@@ -108,7 +108,7 @@ class CanonicalConfigFingerprintTest(unittest.TestCase):
             probabilistic={"mode": "point"},
             validation=validation or {
                 "history_steps": 48,
-                "train_window_steps": 24,
+                'training_window': {'kind': 'rolling', 'history_steps': 24},
                 "fold_count": 3,
                 "stride_steps": 4,
             },
@@ -136,7 +136,7 @@ class CanonicalConfigFingerprintTest(unittest.TestCase):
         baseline = self.config()
         for field, value in (
             ("history_steps", 49),
-            ("train_window_steps", 25),
+            ("training_window", {"kind": "rolling", "history_steps": 25}),
             ("fold_count", 4),
             ("stride_steps", 5),
         ):
@@ -152,7 +152,7 @@ class CanonicalConfigFingerprintTest(unittest.TestCase):
         first = self.config(
             validation={
                 "history_steps": 48,
-                "train_window_steps": 24,
+                'training_window': {'kind': 'rolling', 'history_steps': 24},
                 "fold_count": 3,
                 "stride_steps": 4,
                 "performance": {
@@ -165,7 +165,7 @@ class CanonicalConfigFingerprintTest(unittest.TestCase):
             validation={
                 "stride_steps": 4,
                 "fold_count": 3,
-                "train_window_steps": 24,
+                'training_window': {'kind': 'rolling', 'history_steps': 24},
                 "history_steps": 48,
                 "performance": {
                     "window_parallel_workers": 8,
@@ -259,7 +259,7 @@ class CanonicalConfigFingerprintTest(unittest.TestCase):
                     {"name": "direct", "config_ref": "direct.yaml"},
                     {"name": "recursive", "config_ref": "recursive.yaml"},
                 ],
-                "oof": {"train_window_steps": 8, "fold_count": 2, "stride_steps": 1},
+                "oof": { "fold_count": 2, "stride_steps": 1},
                 "method": {"name": "averaging"},
             },
             "validation": {},

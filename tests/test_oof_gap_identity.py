@@ -39,7 +39,7 @@ class OOFGapIdentityTest(unittest.TestCase):
                 inputs = {
                     "members": {"a": "a-fp", "b": "b-fp"},
                     "ensemble_payload": {"horizon": 2},
-                    "oof_payload": {"train_window_steps": 6, "fold_count": 2, "stride_steps": 1, "gap_steps": gap},
+                    "oof_payload": { "fold_count": 2, "stride_steps": 1, "gap_steps": gap},
                     "source_hashes": {"a:targets:history": "source-hash"},
                 }
                 legacy_payload = {

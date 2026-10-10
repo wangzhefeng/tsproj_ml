@@ -88,7 +88,7 @@ def _member_doc(
         "validation": {
             "forecast_origin": "2026-01-03T23:00:00",
             "history_steps": 10_000,
-            "train_window_steps": 9_999,
+            'training_window': {'kind': 'expanding', 'start_time': '2026-01-01T00:00:00'},
             "fold_count": 1,
             "stride_steps": 2,
         },
@@ -116,13 +116,13 @@ def _ensemble_doc(method: str, mode: str = "point") -> dict:
                 {"name": "m_direct", "config_ref": "member_direct.yaml"},
                 {"name": "m_recursive", "config_ref": "member_recursive.yaml"},
             ],
-            "oof": {"train_window_steps": 6, "fold_count": 2, "stride_steps": 1},
+            "oof": { "fold_count": 2, "stride_steps": 1},
             "method": {"name": method},
         },
         "validation": {
             "forecast_origin": "2026-01-03T23:00:00",
             "history_steps": 10_000,
-            "train_window_steps": 9_999,
+            'training_window': {'kind': 'expanding', 'start_time': '2026-01-01T00:00:00'},
             "fold_count": 1,
             "stride_steps": 2,
         },
@@ -169,14 +169,14 @@ class EnsembleRuntimeMatrixTest(EnsembleRuntimeTestBase):
         doc["validation"]["train_history_steps"] = 20
         path = self.root / "unsupported.yaml"
         path.write_text(yaml.safe_dump(doc))
-        with self.assertRaisesRegex(EnsembleSpecError, "train_history_steps"):
+        with self.assertRaisesRegex(ValueError, "Unknown fields.*train_history_steps"):
             load_ensemble_config(path)
 
     def test_raw_history_member_is_rejected_before_fitting(self):
         doc = _member_doc("direct", "ridge", "direct")
         doc["validation"].update(train_history_steps=20, train_window_steps=16)
         (self.root / "member_direct.yaml").write_text(yaml.safe_dump(doc))
-        with self.assertRaisesRegex(EnsembleSpecError, "train_history_steps"):
+        with self.assertRaisesRegex(ValueError, "Unknown fields.*train_history_steps"):
             self._run("averaging")
 
     def test_oof_cache_miss_runs_inside_process_thread_limit(self):

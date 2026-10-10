@@ -140,10 +140,11 @@ validation:
   schedule_mode: daily
   horizon_mode: fixed_steps
   history_steps: 14401
-  train_history_steps: 4032
-  train_window_steps: 1729
   fold_count: 44
   stride_steps: 288
+  training_window:
+    kind: rolling
+    history_steps: 4032
 output:
   scenario_subpath: aidc_hvac_load_5min/add_weather/hvac_remove_devices/route_B/A1
   results_root: results

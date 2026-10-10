@@ -240,7 +240,7 @@ class TestCrossFreqDayShift(unittest.TestCase):
         project_root = Path(__file__).resolve().parents[1]
         if str(project_root) not in sys.path:
             sys.path.insert(0, str(project_root))
-        from config.aidc_load_15min_daily.load_event_analysis import (  # noqa: E402
+        from config.aidc_load_15min_daily.scripts.load_event_analysis import (  # noqa: E402
             build_cross_freq_day_features,
             load_series_as_daily,
         )

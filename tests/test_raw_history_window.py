@@ -27,8 +27,8 @@ def make_config(path, *, strategy="recursive", workers=1):
     base = replace(base, features=replace(base.features, transformations=features["transformations"]))
     return replace(base, validation={
         "forecast_origin": "2026-01-02T23:00:00", "schedule_mode": "intraday",
-        "history_steps": 44, "train_history_steps": 20,
-        "train_window_steps": 20 - minimum_history_rows(base) - 2 + 1,
+        "history_steps": 44, 'training_window': {'kind': 'rolling', 'history_steps': 20},
+
         "fold_count": 3, "stride_steps": 2, "seasonal_naive_lag": 2,
         "performance": {"window_parallel_workers": workers, "total_thread_limit": 2},
     })
@@ -78,7 +78,7 @@ class RawHistoryWindowTest(unittest.TestCase):
             RuntimeValidationSpec.from_mapping({"train_history_steps": 20})
         with self.assertRaises(ValueError):
             RuntimeValidationSpec.from_mapping({"horizon_mode": "calendar_month", "train_window_days": 20,
-                                                "fold_count": 2, "stride_months": 1, "train_history_steps": 20})
+                                                "fold_count": 2, "stride_months": 1, 'training_window': {'kind': 'rolling', 'history_steps': 20}})
         for changes in ({"train_window_steps": 2}, {"train_history_steps": 4}):
             with self.assertRaisesRegex(ValueError, "train_window_steps|train_history_steps"):
                 self.runner(replace(config, validation={**dict(config.validation), **changes}))
@@ -89,26 +89,25 @@ class RawHistoryWindowTest(unittest.TestCase):
 
     def test_identity_is_semantic_and_unsupported_modes_raise(self):
         config = make_config(self.path)
-        plain = {k: v for k, v in dict(config.validation).items() if k != "train_history_steps"}
-        baseline = replace(config, validation=plain)
+        baseline = replace(config, validation={**dict(config.validation),
+                            "training_window": {"kind": "rolling", "history_steps": 21}})
         self.assertNotEqual(config.fingerprint(), baseline.fingerprint())
         self.assertEqual(baseline.fingerprint(), replace(baseline, validation=dict(baseline.validation)).fingerprint())
-        with self.assertRaisesRegex(ValueError, "train_history_steps"):
-            replace(config, probabilistic={"mode": "quantile", "quantiles": [0.1, 0.5, 0.9]})
-        with self.assertRaisesRegex(ValueError, "train_history_steps"):
-            replace(config, features=replace(config.features, transformations={"target": {"scaling": {"method": "standard"}}}))
+        # 新合同覆盖概率与目标变换；旧字段本身仍必须在源IO前拒绝。
+        replace(config, probabilistic={"mode": "quantile", "quantiles": [0.1, 0.5, 0.9]})
+        replace(config, features=replace(config.features, transformations={"target": {"scaling": {"method": "standard"}}}))
         with patch("model_pipeline.runner.SourceRegistry", side_effect=AssertionError("must reject before source IO")):
-            with self.assertRaisesRegex(ValueError, "backtest.only"):
-                run_canonical_config(config)
+            with self.assertRaisesRegex(ValueError, "Unknown fields"):
+                replace(config, validation={**dict(config.validation), "train_history_steps": 20})
         runner = self.runner(config)
-        with self.assertRaisesRegex(ValueError, "backtest.only"):
-            runner.final_bundle_inputs()
+        inputs = runner.final_bundle_inputs()
+        self.assertEqual(len(inputs[3]), len(runner.supervised_origins))
 
     def test_outside_window_perturbation_leaves_features_and_prediction_unchanged(self):
         config = make_config(self.path)
         baseline = self.runner(config)
         self.assertEqual(baseline.builder.history_start, self.times[28])
-        n = config.validation.backtest.train_window_steps
+        n = 20 - minimum_history_rows(config) - config.problem.horizon + 1
         self.assertEqual(len(baseline.supervised_origins), n)
         fit = baseline.fit(tuple(range(n)))
         designs, provider = baseline.forecast_designs(baseline.origin, fit[0], fit[1])
@@ -141,7 +140,7 @@ class RawHistoryWindowTest(unittest.TestCase):
             self.assertEqual(context.builder.history_start, start)
             self.assertEqual(window.metadata["raw_history_start"], start.isoformat())
             self.assertEqual(window.metadata["raw_history_end"], window.origin.isoformat())
-            self.assertEqual(window.metadata["train_history_steps"], 20)
+            self.assertEqual(window.metadata["raw_history_steps"], 20)
             self.assertEqual(context.geometry.label_end(context.supervised_origins[-1]), window.origin)
             mean_columns = [i for i, name in enumerate(context.feature_schema) if "expanding" in name and "mean" in name]
             self.assertEqual(len(mean_columns), 1, context.feature_schema)

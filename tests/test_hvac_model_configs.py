@@ -14,7 +14,7 @@ from config.config_loader import load_yaml_config
 from config.aidc_hvac_load_5min.scripts.forecast_data.build_model_configs import publish
 from data_loading import BUILTIN_GENERATORS, SourceRegistry
 from model_pipeline.supervised_design import (
-    SupervisedDesignBuilder, minimum_history_rows, raw_history_backtest_windows,
+    SupervisedDesignBuilder, minimum_history_rows, temporal_backtest_windows,
 )
 from scripts.check_model_configs import check_model_yaml
 
@@ -120,25 +120,26 @@ class HvacModelConfigsTest(unittest.TestCase):
                     self.assertTrue(ts.equals(pd.date_range(ts[0], periods=len(ts), freq='5min')))
                     cols = [c.name for c in s.columns]
                     self.assertTrue(np.isfinite(frame[cols].to_numpy(dtype=float)).all())
-                self.assertEqual(config.validation['train_history_steps'], train_days * 288)
+                self.assertEqual(config.validation['training_window']['history_steps'], train_days * 288)
                 n_train = train_days * 288 - minimum_history_rows(config) - 288 + 1
                 self.assertGreater(n_train, 0)
-                self.assertEqual(config.validation['train_window_steps'], n_train)
+                self.assertNotIn('train_window_steps', config.validation)
                 self.assertEqual(config.validation['history_steps'], n_train + fold_count * 288)
                 self.assertEqual(config.validation['fold_count'], fold_count)
                 self.assertEqual(config.validation['stride_steps'], 288)
                 ts = pd.DatetimeIndex(pd.to_datetime(frames[source.history_path]['time']))
                 cutoff = pd.Timestamp(config.validation['forecast_origin'])
                 self.assertEqual(cutoff, ts[-1])
-                folds = raw_history_backtest_windows(builder_for(config, None), cutoff)
+                folds = temporal_backtest_windows(builder_for(config, None), cutoff)
                 self.assertEqual(len(folds), fold_count)
                 self.assertEqual(folds[0].origin, ts[0] + pd.Timedelta(days=train_days, minutes=-5))
                 self.assertEqual(folds[-1].origin, ts[-1] - pd.Timedelta(days=1))
                 for i, fold in enumerate(folds):
+                    self.assertEqual(len(fold.train_indices), n_train)
                     self.assertEqual(fold.origin, folds[0].origin + pd.Timedelta(days=i))
                     self.assertEqual(pd.Timestamp(fold.metadata['raw_history_start']),
                                      ts[0] + pd.Timedelta(days=i))
-                    self.assertEqual(fold.metadata['train_history_steps'], train_days * 288)
+                    self.assertEqual(fold.metadata['raw_history_steps'], train_days * 288)
 
     def test_group_projection_and_template_feature_contract(self):
         for path in self.paths():
@@ -199,7 +200,7 @@ class HvacModelConfigsTest(unittest.TestCase):
                 config = load_yaml_config(path)
                 end = pd.Timestamp(config.validation['forecast_origin'])
                 origin = end - pd.Timedelta(days=1)
-                start = origin - pd.Timedelta(minutes=5 * (config.validation['train_history_steps'] - 1))
+                start = origin - pd.Timedelta(minutes=5 * (config.validation['training_window']['history_steps'] - 1))
                 builder = builder_for(config, start)
                 designs, labels = builder.training_row(origin - pd.Timedelta(days=1))
                 self.assertTrue(designs)
@@ -230,7 +231,7 @@ class HvacModelConfigsTest(unittest.TestCase):
                 path = DIRECTORY / group / 'hvac_all_devices/route_A/ALL' / f'lgbm_{variant}.yaml'
                 config = load_yaml_config(path)
                 origin = pd.Timestamp(config.validation['forecast_origin']) - pd.Timedelta(days=1)
-                start = origin - pd.Timedelta(minutes=5 * (config.validation['train_history_steps'] - 1))
+                start = origin - pd.Timedelta(minutes=5 * (config.validation['training_window']['history_steps'] - 1))
                 builder = builder_for(config, start)
                 request = builder.request(origin)
                 before = builder.compiler.compile(builder.registry.materialize(request), request,

@@ -33,7 +33,8 @@ class BacktestLifecycleSplitTest(unittest.TestCase):
     def test_running_completed_and_failed_order_with_base_exception(self):
         with tempfile.TemporaryDirectory() as directory:
             model_dir = Path(directory)
-            config = SimpleNamespace(fingerprint=lambda: "fixture", validation={})
+            config = SimpleNamespace(fingerprint=lambda: "fixture", validation={},
+                                     features=SimpleNamespace(transformations={}))
             runner = SimpleNamespace(config=config)
             state_path = model_dir / "run_state.json"
 
@@ -57,13 +58,13 @@ class BacktestLifecycleSplitTest(unittest.TestCase):
         for workers in (1, 2):
             with self.subTest(workers=workers), tempfile.TemporaryDirectory() as directory:
                 backtest = FixedStepBacktestSpec(
-                    history_steps=10, train_window_steps=3, fold_count=2, stride_steps=2,
+                    history_steps=10, fold_count=2, stride_steps=2,
                 )
-                validation = dict(aggregate_weighting=None)
+                validation = dict(aggregate_weighting=None, training_window={"kind": "rolling", "history_steps": 6})
                 validation = type("Validation", (dict,), {"backtest": backtest})(validation)
                 method_metadata = {"strategy": "recursive", "method_label": "recursive"}
                 config = SimpleNamespace(
-                    problem=SimpleNamespace(targets=("load",)), validation=validation,
+                    problem=SimpleNamespace(targets=("load",), freq='1h', horizon=2), validation=validation,
                     result_method=Mock(return_value=method_metadata),
                 )
                 windows = tuple(SimpleNamespace(
@@ -80,12 +81,15 @@ class BacktestLifecycleSplitTest(unittest.TestCase):
                     runtime_resources_payload=lambda: {},
                 )
                 scored = []
+                runner.for_backtest_window.side_effect = lambda window: SimpleNamespace(
+                    builder=builder, stage_wall_seconds={}, fit=runner.fit)
 
                 def score(**kwargs):
                     scored.append(kwargs)
                     return FoldScoreResult(
                         window=kwargs["window"], origin=kwargs["origin"],
-                        frame=pd.DataFrame({"window": [kwargs["window"]]}),
+                        frame=pd.DataFrame({"window": [kwargs["window"]],
+                                            "time": [kwargs['origin'] + pd.Timedelta(hours=1)]}),
                         point_scores=pd.DataFrame({"score": [1.0]}),
                     )
 
@@ -104,8 +108,8 @@ class BacktestLifecycleSplitTest(unittest.TestCase):
                 for i, item in enumerate(scored):
                     self.assertEqual(item["fit_result"][0], (i,))
                     self.assertEqual(item["fit_result"][1],
-                                     {"target_history": f"history{i}", "force_serial": True} if workers > 1 else {})
-                self.assertEqual(runner.backtest_target_histories.call_count, int(workers > 1))
+                                     {"force_serial": workers > 1})
+                self.assertEqual(runner.backtest_target_histories.call_count, 0)
                 self.assertGreaterEqual(runner.stage_wall_seconds['backtest_result_write'], 0.0)
 
 

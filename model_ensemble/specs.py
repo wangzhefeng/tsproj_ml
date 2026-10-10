@@ -34,7 +34,7 @@ ENSEMBLE_ALLOWED_TOP_LEVEL = frozenset(
 ENSEMBLE_FORBIDDEN_TOP_LEVEL = frozenset({"features", "strategy", "estimator"})
 ENSEMBLE_ALLOWED_FIELDS = frozenset({"members", "oof", "method"})
 OOF_ALLOWED_FIELDS = frozenset(
-    {"train_window_steps", "fold_count", "stride_steps", "gap_steps"}
+    {"fold_count", "stride_steps", "gap_steps"}
 )
 # 内部算法语义标识，不是可配置字段；仅正 gap 改变历史执行语义。
 OOF_GAP_SEMANTICS = "label_embargo_v1"
@@ -86,14 +86,12 @@ class MemberRef:
 class OOFSpec:
     """Shared rolling-origin fold geometry for the fuser (v4 §7.1)."""
 
-    train_window_steps: int
     fold_count: int
     stride_steps: int
     gap_steps: int = 0
     calendar_month: bool = False
 
     def __post_init__(self) -> None:
-        _positive_int(self.train_window_steps, "train_window_steps")
         _positive_int(self.fold_count, "fold_count")
         _positive_int(self.stride_steps, "stride_steps")
         _non_negative_int(self.gap_steps, "gap_steps")
@@ -108,7 +106,6 @@ class OOFSpec:
 
     def payload(self) -> dict[str, int | bool]:
         return {
-            "train_window_steps": self.train_window_steps,
             "fold_count": self.fold_count,
             "stride_steps": self.stride_steps,
             "gap_steps": self.gap_steps,
@@ -171,13 +168,11 @@ class EnsembleConfigSpec:
                 "problem.targets must exactly match data.target_columns in the same order"
             )
         self.data.validate_weather_frequency(self.problem.freq)
-        if self.validation.get("training_window") is not None or self.validation.get("forecast_window") is not None:
-            raise EnsembleSpecError("Ensemble does not yet support explicit training_window/forecast_window")
+        if self.validation.get("forecast_window") is not None:
+            raise EnsembleSpecError("Ensemble does not yet support explicit forecast_window")
         if (self.validation.get("refit_every", 1) > 1
                 or self.validation.get("training", {}).get("origin_sampling") is not None):
             raise EnsembleSpecError("Ensemble top-level does not support refit_every/origin_sampling")
-        if self.validation.get("train_history_steps") is not None:
-            raise EnsembleSpecError("Ensemble does not support train_history_steps")
         if not isinstance(self.members, tuple) or len(self.members) < 2:
             raise EnsembleSpecError("ensemble requires at least two members")
         names = [member.name for member in self.members]
@@ -270,7 +265,6 @@ def parse_oof_spec(payload: Any, *, calendar_month: bool) -> OOFSpec:
             f"model_ensemble.oof has unknown fields: {sorted(unknown)}"
         )
     missing = {
-        "train_window_steps",
         "fold_count",
         "stride_steps",
     } - set(payload)
@@ -279,7 +273,6 @@ def parse_oof_spec(payload: Any, *, calendar_month: bool) -> OOFSpec:
             f"model_ensemble.oof missing fields: {sorted(missing)}"
         )
     return OOFSpec(
-        train_window_steps=payload["train_window_steps"],
         fold_count=payload["fold_count"],
         stride_steps=payload["stride_steps"],
         gap_steps=payload.get("gap_steps", 0),

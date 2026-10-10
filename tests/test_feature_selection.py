@@ -176,7 +176,7 @@ def _config_doc(data_path: Path, *, mode: str, selection: dict | None) -> dict:
         "validation": {
             "forecast_origin": "2026-01-03T23:00:00",
             "history_steps": 10_000,
-            "train_window_steps": 9_999,
+            'training_window': {'kind': 'expanding', 'start_time': '2026-01-01T00:00:00'},
             "fold_count": 1,
             "stride_steps": 2,
         },

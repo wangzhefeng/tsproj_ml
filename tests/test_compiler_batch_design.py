@@ -246,7 +246,7 @@ class CompilerBatchDesignTest(unittest.TestCase):
                     pd.Timestamp(self.times.to_numpy()[-4]),
                 ).isoformat(),
                 "history_steps": 20,
-                "train_window_steps": 10,
+                'training_window': {'kind': 'rolling', 'history_steps': 10},
                 "fold_count": 1,
                 "stride_steps": horizon,
             },
@@ -306,7 +306,7 @@ class CompilerBatchDesignTest(unittest.TestCase):
                     pd.Timestamp(self.times.to_numpy()[-5]),
                 ).isoformat(),
                 "history_steps": 20,
-                "train_window_steps": 10,
+                'training_window': {'kind': 'rolling', 'history_steps': 10},
                 "fold_count": 1,
                 "stride_steps": 4,
                 "training_scope": {

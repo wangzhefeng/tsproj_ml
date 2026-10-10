@@ -216,7 +216,7 @@ class CalendarMonthRuntimeGeometryTest(unittest.TestCase):
         config_path = (
             ROOT
             / "config/aidc_power_month/route_A/freq_1month/window_length_7"
-            / "st_usmd_mean.yaml"
+            / "lgbm_usmd_prob_mean.yaml"
         )
         config = load_yaml_config(config_path)
         assert isinstance(config, ForecastConfigSpec)

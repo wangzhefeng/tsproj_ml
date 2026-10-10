@@ -336,6 +336,8 @@ probabilistic:
     min_windows: 3
     min_scores: 30
 validation:
+  performance:
+    multi_output_n_jobs: 8
   forecast_origin: '2026-07-31T00:00:00'
   schedule_mode: daily
   horizon_mode: calendar_month

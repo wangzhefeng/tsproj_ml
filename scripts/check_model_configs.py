@@ -126,8 +126,7 @@ _CANONICAL_NESTED_FIELDS = {
         "schedule_mode",
         "horizon_mode",
         "history_steps",
-        "train_window_steps",
-        "train_history_steps",
+
         "fold_count",
         "stride_steps",
         "train_window_days",

@@ -31,7 +31,7 @@ class TrainingWorkloadTest(unittest.TestCase):
 
     def test_clock_sampling_reaches_real_fit(self):
         config = replace(self.base, validation={**dict(self.base.validation),
-            "train_history_steps": 44, "train_window_steps": 39,
+            'training_window': {'kind': 'rolling', 'history_steps': 44},
             "training": {"origin_sampling": {"time_of_day": "12:00"}}})
         runner = self.runner(config)
         fit = runner.fit(tuple(range(len(runner.supervised_origins))))
@@ -41,7 +41,7 @@ class TrainingWorkloadTest(unittest.TestCase):
         self.assertEqual(audit["last_training_origin"], "2026-01-02T12:00:00")
 
     def test_sampling_full_lifecycle_persists_bundle(self):
-        validation = {k: v for k, v in dict(self.base.validation).items() if k != "train_history_steps"}
+        validation = dict(self.base.validation)
         config = replace(self.base, validation={**validation,
             "training": {"origin_sampling": {"stride_steps": 3}}})
         result = self.runner(config).run(self.root / "full")
@@ -63,13 +63,13 @@ class TrainingWorkloadTest(unittest.TestCase):
             "training": {"origin_sampling": {"stride_steps": 3}}})
         runner = self.runner(config)
         inputs = runner.final_bundle_inputs()
-        indices = tuple(range(max(0, len(runner.supervised_origins) - config.validation.backtest.train_window_steps),
-                              len(runner.supervised_origins)))
+        indices = tuple(range(len(runner.supervised_origins)))
         fitted = runner.fit(indices)
         np.testing.assert_array_equal(inputs[3], fitted[3])
         _, artifact, _ = runner.fit_final(inputs[2], inputs[3])
         self.assertEqual(artifact.training_workload["selected_origins"], len(inputs[3]))
-        self.assertEqual(artifact.training_workload["candidate_origins"], len(indices))
+        dense = self.runner(base)
+        self.assertEqual(artifact.training_workload["candidate_origins"], len(dense.supervised_origins))
         self.assertGreaterEqual(artifact.training_workload["stage_wall_seconds"]["fit_total"], 0)
         designs, provider = runner.forecast_designs(runner.origin, inputs[0], inputs[1])
         prediction = runner.predict(artifact, designs, provider, runner.forecast_times(runner.origin), inputs[1])
@@ -141,7 +141,7 @@ class TrainingWorkloadTest(unittest.TestCase):
         for value in (True, 0, -1, 2.5, None):
             with self.subTest(value=value), self.assertRaises(ValueError):
                 replace(self.base, validation={**dict(self.base.validation), "refit_every": value})
-        plain = {k: v for k, v in dict(self.base.validation).items() if k != "train_history_steps"}
+        plain = dict(self.base.validation)
         with self.assertRaisesRegex(ValueError, "refit_every"):
             replace(self.base, validation={**plain, "refit_every": 2},
                     features=replace(self.base.features, transformations={"target": {"scaling": {"method": "standard"}}}))
@@ -170,11 +170,12 @@ class TrainingWorkloadTest(unittest.TestCase):
         config = replace(self.base, validation={**dict(self.base.validation),
             "training": {"origin_sampling": {"stride_steps": 3}}})
         runner = self.runner(config)
-        indices = tuple(range(len(runner.supervised_origins)))
-        expected = indices[::-3][::-1]
-        fit = runner.fit(indices)
+        dense = self.runner(self.base)
+        expected = tuple(range(len(dense.supervised_origins)))[::-3][::-1]
+        self.assertEqual(runner.supervised_origins, tuple(dense.supervised_origins[i] for i in expected))
+        fit = runner.fit(tuple(range(len(runner.supervised_origins))))
         self.assertEqual(len(fit[3]), len(expected))
-        np.testing.assert_array_equal(fit[3], runner.Y_all[list(expected)])
+        np.testing.assert_array_equal(fit[3], dense.Y_all[list(expected)])
         self.assertEqual([w.origin for w in runner.backtest_windows()],
                          [w.origin for w in self.runner(self.base).backtest_windows()])
         self.assertNotEqual(config.fingerprint(), self.base.fingerprint())

@@ -2,7 +2,7 @@ import unittest
 
 import pandas as pd
 
-from config.aidc_ess_selfuse_load.strategy_features.states import (
+from config.aidc_ess_selfuse_load.scripts.strategy_features.states import (
     OperatingThresholds,
     encode_actual_operating_state,
     encode_plan_direction,

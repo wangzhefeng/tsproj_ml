@@ -78,7 +78,6 @@ validation:
   schedule_mode: daily
   horizon_mode: fixed_steps
   history_steps: 8928
-  train_window_steps: 4032
   training_scope:
     incomplete_series_policy: raise
     unknown_series_policy: raise
@@ -110,6 +109,9 @@ validation:
     multi_output_n_jobs: 1
     quantile_parallel_workers: 1
     model_thread_count: 1
+  training_window:
+    kind: rolling
+    history_steps: 4320
   fold_count: 17
   stride_steps: 288
 output:

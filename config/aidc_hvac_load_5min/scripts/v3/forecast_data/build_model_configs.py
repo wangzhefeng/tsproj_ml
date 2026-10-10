@@ -89,6 +89,9 @@ def build_documents():
                     })
                     payload['features']['observed_past_lags'] = {
                         c: [d * DAY for d in COVARIATE_LAG_DAYS] for c in columns}
+                payload['validation'].pop('training', None)
+                if payload['estimator']['model_type'] in ('lightgbm', 'xgboost'):
+                    payload['estimator']['params']['n_estimators'] = 100
                 config = parse_model_config(payload, source=relative)
                 train_window = train_days * DAY - minimum_history_rows(config) - DAY + 1
                 if train_window < 1:
@@ -96,16 +99,23 @@ def build_documents():
                 folds = len(times) // DAY - train_days
                 if folds < 1:
                     raise ValueError(f'不足一个完整训练+预测窗口: {relative}')
-                payload['validation'].update({
-                    'forecast_origin': times[-1].isoformat(), 'train_history_steps': train_days * DAY,
-                    'train_window_steps': train_window, 'fold_count': folds, 'stride_steps': DAY,
+                performance = payload['validation'].get('performance')
+                payload['validation'] = {
+                    'forecast_origin': times[-1].isoformat(),
+                    'schedule_mode': 'daily', 'horizon_mode': 'fixed_steps',
                     'history_steps': train_window + folds * DAY,
-                })
+                    'fold_count': folds, 'stride_steps': DAY,
+                    **({'performance': performance} if performance else {}),
+                    'training_window': {'kind': 'rolling', 'history_steps': train_days * DAY},
+                }
+                # 保留既有物理YAML的并行参数前置顺序；不改变语义或放宽发布保护。
+                if performance and 'multi_output_n_jobs' in performance:
+                    validation = payload['validation']
+                    payload['validation'] = {'performance': validation.pop('performance'),
+                                             'training_window': validation.pop('training_window'), **validation}
                 payload['output']['scenario_subpath'] = 'aidc_hvac_load_5min/' + str(relative.parent)
-                # 仅迁移已验证的样例；不改变其他模型/消融组的训练语义。
+                # 保留先行样例的次日区间和采样，其余场景保持原密集训练。
                 if relative == TEMPORAL_BASELINE:
-                    payload['validation'].pop('train_history_steps')
-                    payload['validation'].pop('train_window_steps')
                     payload['validation'].update({
                         'training_window': {'kind': 'rolling', 'history_steps': train_days * DAY},
                         'forecast_window': {'start': 'next_day'}, 'refit_every': 1,

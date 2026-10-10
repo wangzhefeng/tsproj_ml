@@ -3,7 +3,7 @@ import unittest
 import numpy as np
 import pandas as pd
 
-from config.aidc_ess_selfuse_load.strategy_features.similar_day import (
+from config.aidc_ess_selfuse_load.scripts.strategy_features.similar_day import (
     NaturalDayPlan,
     SimilarDayConfig,
     build_natural_day_plan,

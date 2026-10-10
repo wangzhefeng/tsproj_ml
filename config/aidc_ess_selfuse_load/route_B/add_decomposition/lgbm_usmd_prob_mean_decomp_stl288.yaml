@@ -88,11 +88,15 @@ probabilistic:
     method: median_preserving_isotonic
     report_raw: true
 validation:
+  performance:
+    multi_output_n_jobs: 8
+  training_window:
+    kind: rolling
+    history_steps: 16704
   forecast_origin: '2026-07-28T23:55:00'
   schedule_mode: daily
   horizon_mode: fixed_steps
   history_steps: 9792
-  train_window_steps: 8352
   fold_count: 5
   stride_steps: 288
 output:

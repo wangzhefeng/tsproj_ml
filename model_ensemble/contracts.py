@@ -27,6 +27,10 @@ class BaseModelRunner(OriginTimeline, Protocol):
     resource_budget: Any
     execution_plan: Any
 
+    def for_forecast_origin(self, origin: pd.Timestamp) -> BaseModelRunner:
+        """New bounded-history context at the OOF origin; preserve resource budget."""
+        ...
+
     def fit(
         self,
         train_indices: tuple[int, ...],

@@ -8,7 +8,7 @@ import numpy as np
 import pandas as pd
 
 ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / 'config/hongtaiyang_cesuan'))
+sys.path.insert(0, str(ROOT / 'config/hongtaiyang_cesuan/scripts'))
 from annual_backtest import schedule, forecast_window, assemble_year
 from annual_reporting import write_annual_results
 from prepare import validate_frame

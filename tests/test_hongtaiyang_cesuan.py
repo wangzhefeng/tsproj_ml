@@ -9,7 +9,7 @@ import numpy as np
 import pandas as pd
 
 ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "config/hongtaiyang_cesuan"))
+sys.path.insert(0, str(ROOT / "config/hongtaiyang_cesuan/scripts"))
 
 from prepare import validate_frame, aggregate_daily
 from generate_configs import model_document, STRATEGIES
@@ -21,7 +21,7 @@ from forecasting_core.specs.config import parse_model_config
 class HongtaiyangTest(unittest.TestCase):
     def test_standalone_entrypoint(self):
         completed = subprocess.run([str(ROOT / ".venv/bin/python"),
-                                    str(ROOT / "config/hongtaiyang_cesuan/annual_backtest.py"), "--help"],
+                                    str(ROOT / "config/hongtaiyang_cesuan/scripts/annual_backtest.py"), "--help"],
                                    cwd=ROOT, capture_output=True, text=True, check=True)
         self.assertIn("--config-yaml", completed.stdout)
 

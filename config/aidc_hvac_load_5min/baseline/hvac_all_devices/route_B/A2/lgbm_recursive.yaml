@@ -90,10 +90,11 @@ validation:
   schedule_mode: daily
   horizon_mode: fixed_steps
   history_steps: 13249
-  train_history_steps: 4032
-  train_window_steps: 1729
   fold_count: 40
   stride_steps: 288
+  training_window:
+    kind: rolling
+    history_steps: 4032
 output:
   scenario_subpath: aidc_hvac_load_5min/baseline/hvac_all_devices/route_B/A2
   results_root: results

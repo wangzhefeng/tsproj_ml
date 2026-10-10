@@ -7,12 +7,12 @@ import numpy as np
 import pandas as pd
 import yaml
 
-from config.aidc_ess_selfuse_load.strategy_features.contracts import (
+from config.aidc_ess_selfuse_load.scripts.strategy_features.contracts import (
     FORBIDDEN_FUTURE_PATTERNS,
     JOINT_CLUSTER_FEATURE_COLUMNS,
     MODEL_FEATURE_COLUMNS,
 )
-from config.aidc_ess_selfuse_load.strategy_features.pipeline import (
+from config.aidc_ess_selfuse_load.scripts.strategy_features.pipeline import (
     build_strategy_features,
 )
 
@@ -279,7 +279,7 @@ class EssStrategyPipelineTest(unittest.TestCase):
             )
 
     def test_package_exports_phase_one_and_pipeline_apis(self):
-        import config.aidc_ess_selfuse_load.strategy_features as package
+        import config.aidc_ess_selfuse_load.scripts.strategy_features as package
 
         for name in (
             "encode_plan_direction",

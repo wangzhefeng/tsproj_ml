@@ -39,7 +39,7 @@ class MemberRefSpecTest(unittest.TestCase):
                         {"name": "a", "config_ref": "a.yaml", "extra": 1},
                         {"name": "b", "config_ref": "b.yaml"},
                     ],
-                    "oof": {"train_window_steps": 4, "fold_count": 2, "stride_steps": 1},
+                    "oof": { "fold_count": 2, "stride_steps": 1},
                     "method": "averaging",
                 },
                 calendar_month=False,
@@ -48,7 +48,7 @@ class MemberRefSpecTest(unittest.TestCase):
 
 class OOFSpecTest(unittest.TestCase):
     def test_valid_oof_parses(self):
-        oof = OOFSpec(train_window_steps=8, fold_count=3, stride_steps=2, gap_steps=1)
+        oof = OOFSpec( fold_count=3, stride_steps=2, gap_steps=1)
         self.assertEqual(oof.fold_count, 3)
         self.assertEqual(oof.gap_steps, 1)
 
@@ -56,7 +56,7 @@ class OOFSpecTest(unittest.TestCase):
         with self.assertRaises(EnsembleSpecError):
             parse_oof_spec(
                 {
-                    "train_window_steps": 8,
+
                     "fold_count": 3,
                     "stride_steps": 2,
                     "extra": 1,
@@ -65,24 +65,24 @@ class OOFSpecTest(unittest.TestCase):
             )
 
     def test_non_positive_values_raise(self):
-        with self.assertRaises(EnsembleSpecError):
+        with self.assertRaises(TypeError):
             OOFSpec(train_window_steps=0, fold_count=2, stride_steps=1)
         with self.assertRaises(EnsembleSpecError):
-            OOFSpec(train_window_steps=4, fold_count=0, stride_steps=1)
+            OOFSpec( fold_count=0, stride_steps=1)
         with self.assertRaises(EnsembleSpecError):
-            OOFSpec(train_window_steps=4, fold_count=2, stride_steps=-1)
+            OOFSpec( fold_count=2, stride_steps=-1)
         with self.assertRaises(EnsembleSpecError):
-            OOFSpec(train_window_steps=4, fold_count=2, stride_steps=1, gap_steps=-1)
+            OOFSpec( fold_count=2, stride_steps=1, gap_steps=-1)
 
     def test_calendar_month_multi_fold_raises(self):
         with self.assertRaises(EnsembleSpecError):
             OOFSpec(
-                train_window_steps=8, fold_count=2, stride_steps=1, calendar_month=True
+                 fold_count=2, stride_steps=1, calendar_month=True
             )
 
     def test_calendar_month_single_fold_allowed(self):
         oof = OOFSpec(
-            train_window_steps=8, fold_count=1, stride_steps=1, calendar_month=True
+             fold_count=1, stride_steps=1, calendar_month=True
         )
         self.assertEqual(oof.fold_count, 1)
 
@@ -100,7 +100,7 @@ class MethodSpecTest(unittest.TestCase):
         method = parse_ensemble_section(
             {
                 "members": _members_payload(),
-                "oof": {"train_window_steps": 4, "fold_count": 2, "stride_steps": 1},
+                "oof": { "fold_count": 2, "stride_steps": 1},
                 "method": "averaging",
             },
             calendar_month=False,
@@ -142,7 +142,7 @@ class EnsembleSectionTest(unittest.TestCase):
                         {"name": "same", "config_ref": "a.yaml"},
                         {"name": "same", "config_ref": "b.yaml"},
                     ],
-                    "oof": {"train_window_steps": 4, "fold_count": 2, "stride_steps": 1},
+                    "oof": { "fold_count": 2, "stride_steps": 1},
                     "method": "averaging",
                 },
                 calendar_month=False,
@@ -156,7 +156,7 @@ class EnsembleSectionTest(unittest.TestCase):
                         {"name": "a", "config_ref": "same.yaml"},
                         {"name": "b", "config_ref": "same.yaml"},
                     ],
-                    "oof": {"train_window_steps": 4, "fold_count": 2, "stride_steps": 1},
+                    "oof": { "fold_count": 2, "stride_steps": 1},
                     "method": "averaging",
                 },
                 calendar_month=False,
@@ -167,7 +167,7 @@ class EnsembleSectionTest(unittest.TestCase):
             parse_ensemble_section(
                 {
                     "members": [{"name": "a", "config_ref": "a.yaml"}],
-                    "oof": {"train_window_steps": 4, "fold_count": 2, "stride_steps": 1},
+                    "oof": { "fold_count": 2, "stride_steps": 1},
                     "method": "averaging",
                 },
                 calendar_month=False,

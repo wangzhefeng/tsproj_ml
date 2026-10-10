@@ -27,7 +27,6 @@ def oof_fold_origins(
     *,
     fold_count: int,
     stride_steps: int,
-    train_window_steps: int,
     gap_steps: int = 0,
     outer_cutoff_origin: pd.Timestamp | None = None,
     schedule_origin: pd.Timestamp | None = None,
@@ -45,7 +44,9 @@ def oof_fold_origins(
     geometry = runner.geometry
     origins = runner.supervised_origins
     runner_config = getattr(runner, "config", None)
-    if schedule_origin is None and getattr(runner_config, "validation", {}).get("schedule_mode") == "intraday":
+    member_validation = getattr(runner_config, "validation", {})
+    calendar_days = member_validation.get("train_window_days")
+    if schedule_origin is None and member_validation.get("schedule_mode") == "intraday":
         schedule_origin = pd.Timestamp(getattr(runner, "origin"))
     scheduled = (
         set(scheduled_origin_indices(origins, geometry, schedule_origin, stride_steps))
@@ -66,11 +67,12 @@ def oof_fold_origins(
         train_indices = tuple(
             candidate
             for candidate in range(0, index)
-            if is_label_safe(
+            if (calendar_days is None or origins[candidate] >= holdout_origin - pd.Timedelta(days=calendar_days - 1))
+            and is_label_safe(
                 origins[candidate], geometry.offset, geometry.horizon,
                 holdout_label_start, gap_steps=gap_steps,
             )
-        )[-train_window_steps:]
+        )
         if not train_indices:
             continue
         if outer_cutoff_origin is not None:
@@ -104,7 +106,6 @@ def generate_oof(
     *,
     fold_count: int,
     stride_steps: int,
-    train_window_steps: int,
     gap_steps: int = 0,
     quantile_levels: tuple[float, ...] | None = None,
     outer_cutoff_origin: pd.Timestamp | None = None,
@@ -130,7 +131,6 @@ def generate_oof(
         first,
         fold_count=fold_count,
         stride_steps=stride_steps,
-        train_window_steps=train_window_steps,
         gap_steps=gap_steps,
         outer_cutoff_origin=outer_cutoff_origin,
     )
@@ -138,7 +138,8 @@ def generate_oof(
     # every member must share the supervised origin timeline (guaranteed by
     # the loader's problem contract; double-check the geometry explicitly)
     for name, runner in runners.items():
-        if runner.supervised_origins != first.supervised_origins:
+        if (runner.config.validation.get("training_window") is None
+                and runner.supervised_origins != first.supervised_origins):
             raise ValueError(
                 f"member {name!r} supervised origin timeline differs from "
                 f"{names[0]!r}; OOF folds must be shared"
@@ -151,14 +152,24 @@ def generate_oof(
         times = first.forecast_times(fold["origin"])
         def fit_member(name: str) -> tuple[np.ndarray, dict[str, Any]]:
             runner = runners[name]
+            train_indices = fold["train_indices"]
+            if runner.config.validation.get("training_window") is not None:
+                runner = runner.for_forecast_origin(fold["origin"])
+                train_indices = tuple(
+                    i for i, candidate in enumerate(runner.supervised_origins)
+                    if is_label_safe(candidate, runner.geometry.offset, runner.geometry.horizon,
+                                     times[0], gap_steps=gap_steps)
+                )
+                if len(train_indices) < 2:
+                    raise ValueError(f"OOF member {name!r} requires two label-safe training origins")
             try:
                 if member_workers > 1:
                     fit_result = runner.fit(
-                        fold["train_indices"],
+                        train_indices,
                         force_serial=True,
                     )
                 else:
-                    fit_result = runner.fit(fold["train_indices"])
+                    fit_result = runner.fit(train_indices)
                 scaler, transform, _X, _Y, artifact = fit_result
                 designs, provider = runner.forecast_designs(
                     fold["origin"], scaler, transform
@@ -179,7 +190,9 @@ def generate_oof(
                         "OOF generation expects Local members (N=1); Global "
                         "panel members must be split per series before OOF"
                     )
-                return values[0], member_execution_evidence(runner, artifact, transform)
+                evidence = member_execution_evidence(runner, artifact, transform)
+                evidence["training_sample_count"] = len(train_indices)
+                return values[0], evidence
             except Exception as exc:
                 raise RuntimeError(
                     f"OOF fold={fold['fold']} member={name!r} failed"
@@ -202,7 +215,11 @@ def generate_oof(
                 "origin": fold["origin"].isoformat(),
                 "label_start": first.geometry.label_start(fold["origin"]).isoformat(),
                 "label_end": first.geometry.label_end(fold["origin"]).isoformat(),
-                "training_sample_count": len(fold["train_indices"]),
+                "training_sample_count": fold_values[0][1]["training_sample_count"],
+                "member_training_sample_count": {
+                    name: evidence["training_sample_count"]
+                    for name, (_values, evidence) in zip(names, fold_values)
+                },
             }
         )
         if gap_steps > 0:
@@ -263,7 +280,11 @@ def actual_for_folds(
     chunks = []
     for fold in folds:
         times = runner.forecast_times(fold["origin"])
-        actual = runner.actual(fold["origin_index"], times)
+        if runner.config.validation.get("training_window") is not None:
+            context = runner.for_forecast_origin(fold["origin"])
+            actual = context.actual(0, times)
+        else:
+            actual = runner.actual(fold["origin_index"], times)
         chunks.append(actual.values[0])  # Local members: drop the N axis
     return np.stack(chunks, axis=0)
 

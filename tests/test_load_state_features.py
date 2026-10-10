@@ -9,7 +9,7 @@ import pandas as pd
 
 class LoadStateFeatureDerivationTest(unittest.TestCase):
     def test_build_load_state_features_excludes_target_and_future_labels(self):
-        module = importlib.import_module("config.aidc_power_month.derive_load_state_features")
+        module = importlib.import_module("config.aidc_power_month.scripts.derive_load_state_features")
         build = module.build_load_state_features
         frame = pd.DataFrame(
             {

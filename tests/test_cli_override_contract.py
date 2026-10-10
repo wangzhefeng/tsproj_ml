@@ -72,7 +72,7 @@ class CliContractTest(unittest.TestCase):
                     "validation": {
                         "forecast_origin": "2026-01-03T22:00:00",
                         "history_steps": 48,
-                        "train_window_steps": 24,
+                        'training_window': {'kind': 'rolling', 'history_steps': 24},
                         "fold_count": 2,
                         "stride_steps": 2,
                     },

@@ -3,10 +3,10 @@ import unittest
 
 import pandas as pd
 
-from config.aidc_ess_selfuse_load.strategy_features.profiles import (
+from config.aidc_ess_selfuse_load.scripts.strategy_features.profiles import (
     summarize_dispatch_profiles,
 )
-from config.aidc_ess_selfuse_load.strategy_features.states import (
+from config.aidc_ess_selfuse_load.scripts.strategy_features.states import (
     encode_actual_operating_state,
 )
 

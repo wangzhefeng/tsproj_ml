@@ -131,7 +131,7 @@ def build_runtime_workload(
         scalar_estimators = 0
         physical_fits = len(config.estimator.params.get("candidates", ("ANA", "AAA", "AAdA")))
         parallel_output_tasks = 1
-        training_rows = config.validation["train_history_steps"]
+        training_rows = config.validation["training_window"]["history_steps"]
     direct_layout = (
         str(direct.get("layout"))
         if isinstance(direct, Mapping) and direct.get("layout") is not None

@@ -12,7 +12,7 @@ import numpy as np
 import pandas as pd
 
 ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "config/hongtaiyang_cesuan"))
+sys.path.insert(0, str(ROOT / "config/hongtaiyang_cesuan/scripts"))
 
 from prepare import SOURCES
 from plot_raw_data import build_raw_figures, plot_raw_data
@@ -77,7 +77,7 @@ class HongtaiyangVisualizationTest(unittest.TestCase):
 
     def test_standalone_cli(self):
         result = subprocess.run([str(ROOT / ".venv/bin/python"),
-                                 str(ROOT / "config/hongtaiyang_cesuan/plot_raw_data.py"), "--help"],
+                                 str(ROOT / "config/hongtaiyang_cesuan/scripts/plot_raw_data.py"), "--help"],
                                 cwd=ROOT, capture_output=True, text=True, check=True)
         self.assertIn("--data-root", result.stdout)
 

@@ -106,18 +106,26 @@ def build_documents():
                             })
                             # safe-lag 不请求预测区间真值，provider 不参与这些设计请求。
                             features['observed_past_lags'] = {col: [DAY, 2 * DAY] for col in columns}
+                        # HVAC保持自身密集训练口径，不继承联通模板的训练采样。
+                        payload['validation'].pop('training', None)
                         config = parse_model_config(payload, source=relative)
                         train_window = train_days * DAY - minimum_history_rows(config) - DAY + 1
                         if train_window < 1:
                             raise ValueError(f'无有效训练样本: {relative}')
-                        payload['validation'].update({
+                        performance = payload['validation'].get('performance')
+                        payload['validation'] = {
                             'forecast_origin': times[-1].isoformat(),
-                            'train_history_steps': train_days * DAY,
-                            'train_window_steps': train_window,
-                            'fold_count': fold_count, 'stride_steps': DAY,
-                            # 训练origin与首个holdout origin须相距H步，避免标签重叠；不跳过测试日。
+                            'schedule_mode': 'daily', 'horizon_mode': 'fixed_steps',
                             'history_steps': train_window + DAY + (fold_count - 1) * DAY,
-                        })
+                            'fold_count': fold_count, 'stride_steps': DAY,
+                            **({'performance': performance} if performance else {}),
+                            'training_window': {'kind': 'rolling', 'history_steps': train_days * DAY},
+                        }
+                        # 保留既有物理YAML的并行参数前置顺序；不改变语义或放宽发布保护。
+                        if performance and 'multi_output_n_jobs' in performance:
+                            validation = payload['validation']
+                            payload['validation'] = {'performance': validation.pop('performance'),
+                                                     'training_window': validation.pop('training_window'), **validation}
                         payload['output']['scenario_subpath'] = 'aidc_hvac_load_5min/' + str(relative.parent)
                         config = parse_model_config(payload, source=relative)
                         FeatureCompiler(config)

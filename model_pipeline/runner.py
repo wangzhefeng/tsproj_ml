@@ -58,13 +58,11 @@ from model_testing.contracts import BacktestWindow
 from model_pipeline.supervised_design import (
     _BacktestWindow,
     SupervisedDesignBuilder,
-    raw_history_backtest_windows,
     temporal_backtest_windows,
     minimum_history_rows,
     supervised_candidate_origins,
     _actual_at_origin,
     _label_end,
-    _rolling_backtest_windows,
     _sample_indices,
     _supervised_arrays,
 )
@@ -451,21 +449,22 @@ class CanonicalBaseModelRunner:
     def backtest_windows(self) -> tuple[_BacktestWindow, ...]:
         if self.config.validation.get("training_window") is not None:
             return temporal_backtest_windows(self.builder, self.origin)
-        if self.config.validation.get("train_history_steps") is not None:
-            return raw_history_backtest_windows(self.builder, self.origin)
         if isinstance(self.config.validation.backtest, CalendarMonthBacktestSpec):
             return ()
-        return _rolling_backtest_windows(
-            self.builder, self.supervised_origins,
-            schedule_origin=(self.origin if self.config.validation.get("schedule_mode") == "intraday" else None),
-        )
+        raise ValueError("fixed-step backtest requires explicit training_window")
 
     def for_backtest_window(self, window: BacktestWindow) -> CanonicalBaseModelRunner:
         """每折独立设计与审计状态；原点和 W 同时进入缓存/checkpoint 身份。"""
         if not has_bounded_history(self.config.validation):
             return self
+        return self.for_forecast_origin(window.origin)
+
+    def for_forecast_origin(self, origin: pd.Timestamp) -> CanonicalBaseModelRunner:
+        """重建同一显式训练窗的 as-of 上下文，供回测与融合 OOF 共用。"""
+        if not has_bounded_history(self.config.validation):
+            raise ValueError("for_forecast_origin requires bounded training history")
         runner = CanonicalBaseModelRunner(
-            self.config, self.registry, window.origin,
+            self.config, self.registry, origin,
             resource_budget=self.resource_budget,
             checkpoint_root=self.checkpoint_root,
         )
@@ -766,22 +765,16 @@ class CanonicalBaseModelRunner:
         np.ndarray,
     ]:
         """Fit final transforms under the same explicit window as backtesting."""
+        if self.config.features.transformations.get("seasonal_baseline") is not None:
+            raise ValueError("seasonal_baseline final fit/bundle is unsupported; use backtest-only")
+        if self.config.estimator.model_type.lower() == "ets":
+            raise ValueError("ETS final fit/bundle is unsupported; use backtest-only")
         preparation_started = perf_counter()
         self.prepare_training()
         self._final_training_workload = None
-        if self.config.validation.get("train_history_steps") is not None:
-            raise ValueError("train_history_steps currently requires backtest-only; final fit/bundle unsupported")
         backtest = self.config.validation.backtest
         if self.config.validation.get("training_window") is not None:
             origin_indices = tuple(range(len(self.supervised_origins)))
-        elif isinstance(backtest, FixedStepBacktestSpec):
-            first_origin_index = max(
-                0,
-                len(self.supervised_origins) - backtest.train_window_steps,
-            )
-            origin_indices = tuple(
-                range(first_origin_index, len(self.supervised_origins))
-            )
         elif isinstance(backtest, CalendarMonthBacktestSpec):
             raw_history_times = self.builder.target_history_times(self.origin)
             if len(raw_history_times) < backtest.train_window_days:
@@ -858,9 +851,9 @@ class CanonicalBaseModelRunner:
         Y_transformed: np.ndarray,
     ) -> tuple[Any, Any, Any]:
         """Train the final artifact and return (trainer, artifact, capabilities)."""
+        if self.config.features.transformations.get("seasonal_baseline") is not None:
+            raise ValueError("seasonal_baseline final fit/bundle is unsupported; use backtest-only")
         fit_started = perf_counter()
-        if self.config.validation.get("train_history_steps") is not None:
-            raise ValueError("train_history_steps currently requires backtest-only; final fit unsupported")
         mode = self._mode()
         X_transformed, feature_schema = self._apply_feature_selection(
             X_transformed, Y_transformed
@@ -918,9 +911,10 @@ class CanonicalBaseModelRunner:
         ``source_lineage``、``calibration_state``。ensemble 成员路径不传，
         行为与迁移前逐字一致。
         """
+        if self.config.features.transformations.get("seasonal_baseline") is not None:
+            raise ValueError("seasonal_baseline final fit/bundle is unsupported; use backtest-only")
         extras = dict(extras or {})
-        if self.config.validation.get("train_history_steps") is not None:
-            raise ValueError("train_history_steps currently requires backtest-only; bundle unsupported")
+
         mode = self._mode()
         if mode == "point":
             bundle_builder = trainer
@@ -1085,8 +1079,11 @@ def run_canonical_config(
         raise TypeError("config must be a ForecastConfigSpec")
     if config.strategy is None:
         raise ValueError("run_canonical_config requires a strategy or ensemble")
-    if config.validation.get("train_history_steps") is not None and not backtest_only:
-        raise ValueError("train_history_steps currently requires backtest-only")
+    if config.features.transformations.get("seasonal_baseline") is not None and not backtest_only:
+        raise ValueError("seasonal_baseline final fit/bundle is unsupported; use backtest-only")
+    if config.estimator.model_type.lower() == "ets" and not backtest_only:
+        raise ValueError("ETS final fit/bundle is unsupported; use backtest-only")
+
     # builtin generators（chinese_holiday）默认可用；调用方同名注入时覆盖。
     merged_generators: dict[str, Any] = {**BUILTIN_GENERATORS, **(generators or {})}
     registry = SourceRegistry(config.data, Path.cwd(), generators=merged_generators)

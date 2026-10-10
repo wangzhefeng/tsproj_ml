@@ -49,7 +49,7 @@ class OOFFoldOriginsTest(unittest.TestCase):
             runner,
             fold_count=3,
             stride_steps=1,
-            train_window_steps=6,
+
         )
         self.assertEqual(len(folds), 3)
         origins_seq = [fold["origin"] for fold in folds]
@@ -69,7 +69,7 @@ class OOFFoldOriginsTest(unittest.TestCase):
             runner,
             fold_count=2,
             stride_steps=3,
-            train_window_steps=6,
+
         )
         self.assertEqual(len(folds), 2)
         self.assertNotEqual(folds[0]["origin"], folds[1]["origin"])
@@ -84,7 +84,7 @@ class OOFFoldOriginsTest(unittest.TestCase):
             runner,
             fold_count=3,
             stride_steps=1,
-            train_window_steps=6,
+
             outer_cutoff_origin=cutoff_origin,
         )
         geometry = runner.geometry
@@ -100,7 +100,7 @@ class OOFFoldOriginsTest(unittest.TestCase):
                 runner,
                 fold_count=1,
                 stride_steps=1,
-                train_window_steps=4,
+
             )
 
 

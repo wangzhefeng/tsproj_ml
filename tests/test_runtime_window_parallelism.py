@@ -9,6 +9,7 @@ import time
 import unittest
 from pathlib import Path
 from typing import Any, cast
+from unittest.mock import patch
 
 import numpy as np
 import pandas as pd
@@ -28,6 +29,9 @@ from fixtures.runtime_planning import plan_for_config
 from model_pipeline.runner import CanonicalBaseModelRunner
 
 
+_ORIGINAL_FIT = CanonicalBaseModelRunner.fit
+
+
 class _TrackingRunner(CanonicalBaseModelRunner):
     lock = threading.Lock()
     active = 0
@@ -40,15 +44,15 @@ class _TrackingRunner(CanonicalBaseModelRunner):
             cls.max_active = 0
 
     def fit(self, train_indices, **kwargs):
-        with type(self).lock:
-            type(self).active += 1
-            type(self).max_active = max(type(self).max_active, type(self).active)
+        with _TrackingRunner.lock:
+            _TrackingRunner.active += 1
+            _TrackingRunner.max_active = max(_TrackingRunner.max_active, _TrackingRunner.active)
         try:
             time.sleep(0.03)
-            return super().fit(train_indices, **kwargs)
+            return _ORIGINAL_FIT(self, train_indices, **kwargs)
         finally:
-            with type(self).lock:
-                type(self).active -= 1
+            with _TrackingRunner.lock:
+                _TrackingRunner.active -= 1
 
 
 class RuntimeWindowParallelismTest(unittest.TestCase):
@@ -139,7 +143,7 @@ class RuntimeWindowParallelismTest(unittest.TestCase):
             validation={
                 "forecast_origin": self.origin.isoformat(),
                 "history_steps": 50,
-                "train_window_steps": 20,
+                'training_window': {'kind': 'rolling', 'history_steps': 26},
                 "fold_count": 3,
                 "stride_steps": 2,
                 "performance": {
@@ -168,7 +172,8 @@ class RuntimeWindowParallelismTest(unittest.TestCase):
 
         _TrackingRunner.reset()
         parallel = self._runner(2)
-        parallel_result = parallel.run(self.root / "parallel")
+        with patch.object(CanonicalBaseModelRunner, 'fit', _TrackingRunner.fit):
+            parallel_result = parallel.run(self.root / "parallel")
         parallel_cv = pd.read_csv(parallel_result.test_dir / "cv_plot_df.csv")
 
         self.assertGreaterEqual(_TrackingRunner.max_active, 2)
@@ -206,7 +211,7 @@ class RuntimeWindowParallelismTest(unittest.TestCase):
 
         self.assertEqual(
             target_history_calls,
-            len(runner.backtest_windows()) + 1,
+            1,  # 主runner仅final取历史，各折使用独立有界runner
         )
 
 

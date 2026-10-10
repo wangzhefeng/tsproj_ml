@@ -47,7 +47,7 @@ def synthetic_config(root, variant='mimo', weather=False):
         strategy=replace(config.strategy, output_chunk_length=2) if config.strategy.output_chunk_length else config.strategy,
         estimator=replace(config.estimator, params={'n_estimators': 3, 'num_leaves': 3, 'min_child_samples': 2, 'verbosity': -1}),
         validation={'forecast_origin': str(times[-1]), 'schedule_mode': 'intraday',
-                    'history_steps': 60, 'train_window_steps': 9, 'fold_count': 2, 'stride_steps': 4,
+                    'history_steps': 60, 'training_window': {'kind': 'rolling', 'history_steps': 9}, 'fold_count': 2, 'stride_steps': 4,
                     'performance': {'total_thread_limit': 1}}), times
 
 
@@ -79,7 +79,7 @@ class OptimizationCompilerTest(unittest.TestCase):
             root = Path(directory)
             config, times = synthetic_config(root)
             arguments = dict(base_dir=root, origin=times[67], generators={})
-            config = replace(config, validation={**dict(config.validation), 'train_history_steps': 48})
+            config = replace(config, validation={**dict(config.validation), 'training_window': {'kind': 'rolling', 'history_steps': 48}})
             before = compute_raw_design_fingerprint(config, **arguments)
             transforms = config.features.canonical_payload()['transformations']
             transforms['advanced']['recent_state']['windows'] = [3, 6, 12]
@@ -182,13 +182,11 @@ class OptimizationCompilerTest(unittest.TestCase):
                 config = replace(config,
                     features=replace(config.features, transformations=transforms),
                     validation={**dict(config.validation), 'forecast_origin': str(times[-1]),
-                                'history_steps': 90, 'fold_count': 2, 'train_history_steps': 48})
+                                'history_steps': 90, 'fold_count': 2, 'training_window': {'kind': 'rolling', 'history_steps': 48}})
                 if native:
                     config = replace(config,
                         features=replace(config.features, target_lags={}, datetime_features=(), transformations={}),
                         estimator=replace(config.estimator, model_type='ets', params={'seasonal_periods': 12, 'candidates': ['ANN', 'ANA']}))
-                config = replace(config, validation={**dict(config.validation),
-                    'train_window_steps': 48 - minimum_history_rows(config) - 4 + 1})
                 result = run_canonical_config(config, output_root=root / ('ets' if native else 'optimized'), backtest_only=True)
                 scores = pd.read_csv(result.test_dir / 'test_scores_df.csv')
                 self.assertFalse(scores.empty)
@@ -218,7 +216,7 @@ class OptimizationCompilerTest(unittest.TestCase):
             config = replace(config, problem=replace(config.problem, targets=('value', 'other')),
                              data=replace(config.data, sources=(source,)),
                              features=replace(config.features, target_lags={'value': [1], 'other': [1]}, transformations=transforms),
-                             validation={**dict(config.validation), 'train_history_steps': 48})
+                             validation={**dict(config.validation), 'training_window': {'kind': 'rolling', 'history_steps': 48}})
             builder = SupervisedDesignBuilder(config, SourceRegistry(config.data, root), history_start=times[20])
             baseline = builder.seasonal_baseline(times[67])
             np.testing.assert_allclose(baseline[0, :, 0], np.arange(44, 48))
@@ -261,7 +259,7 @@ class OptimizationCompilerTest(unittest.TestCase):
             config = replace(config, features=replace(config.features, transformations={}),
                              estimator=replace(config.estimator, model_type='ets',
                                                params={'seasonal_periods': 12, 'candidates': ['ANN']}),
-                             validation={**dict(config.validation), 'train_history_steps': 48, 'train_window_steps': 44})
+                             validation={**dict(config.validation), 'training_window': {'kind': 'rolling', 'history_steps': 48}, })
             runner = CanonicalBaseModelRunner(config, SourceRegistry(config.data, root), times[67])
             with patch.object(CanonicalTrainer, 'train', side_effect=AssertionError('ETS cannot train from Y')):
                 scaler, transform, _, _, model = runner.fit(tuple(range(44)))
@@ -290,7 +288,7 @@ class OptimizationCompilerTest(unittest.TestCase):
                     if weather and variant in ('mimo', 'dirmo', 'recmo', 'dirrecmo'):
                         transforms['advanced']['block_weather'] = {'columns': ['rt_tt2'], 'stats': ['mean', 'min', 'max']}
                     config = replace(config, features=replace(config.features, transformations=transforms),
-                                     validation={**dict(config.validation), 'train_history_steps': 48})
+                                     validation={**dict(config.validation), 'training_window': {'kind': 'rolling', 'history_steps': 48}})
                     runner = CanonicalBaseModelRunner(config, SourceRegistry(config.data, root), times[67])
                     scaler, transform, X, residual, artifact = runner.fit(tuple(range(9)))
                     # y(t+h) - mean(y(t+h-12), y(t+h-24), y(t+h-36)) = 24.

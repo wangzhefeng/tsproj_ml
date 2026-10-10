@@ -61,8 +61,6 @@ class LiantongComputeConfigsTest(unittest.TestCase):
                 payload["output"] = baseline.canonical_payload()["output"]
                 # 独立核验显式训练迁移，不把新旧采样差异误当算力特征收益。
                 expected_validation = baseline.validation.canonical_payload()
-                expected_validation.pop('train_history_steps')
-                expected_validation.pop('train_window_steps')
                 expected_validation.update({
                     'training_window': {'kind': 'rolling', 'history_steps': 4032},
                     'forecast_window': {'start': 'after_origin'}, 'refit_every': 1,

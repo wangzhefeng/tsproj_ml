@@ -50,7 +50,7 @@ class ValidationGeometryManifestTest(unittest.TestCase):
             )
             if "ensemble" in raw:
                 oof = raw["ensemble"]["oof"]
-                self.assertIn("train_window_steps", oof, relative)
+                self.assertNotIn("train_window_steps", oof, relative)
                 self.assertIn("stride_steps", oof, relative)
                 self.assertNotIn("train_window_length", oof, relative)
                 self.assertNotIn("stride", oof, relative)
@@ -67,11 +67,9 @@ class ValidationGeometryManifestTest(unittest.TestCase):
             assert isinstance(geometry, FixedStepBacktestSpec)
             actual = self._actual_final_training_count(config, timeline_cache)
 
-            if config.validation.get('training_window') is not None:
-                self.assertGreaterEqual(actual, 2, relative)
-                self.assertIsNone(geometry.train_window_steps, relative)
-            else:
-                self.assertEqual(actual, geometry.train_window_steps, relative)
+            self.assertIn('training_window', config.validation, relative)
+            self.assertGreaterEqual(actual, 2, relative)
+            self.assertFalse(hasattr(geometry, 'train_window_steps'), relative)
         self.assertGreater(checked_subday, 0)
 
     @staticmethod
@@ -114,19 +112,7 @@ class ValidationGeometryManifestTest(unittest.TestCase):
             origins = tuple(origins[forecast_ends(config.problem, config.validation, origins) <= origin])
             return len(select_training_origins(origins, tuple(range(len(origins))),
                 config.validation.get('training', {}).get('origin_sampling'), freq=config.problem.freq))
-        available = max(
-            0,
-            (
-                int(positions[0])
-                - config.problem.horizon
-                + 1
-                - (minimum_history_rows(config) - 1)
-            ),
-        )
-        geometry = config.validation.backtest
-        assert isinstance(geometry, FixedStepBacktestSpec)
-        candidate_count = min(available, geometry.history_steps)
-        return min(candidate_count, geometry.train_window_steps)
+        raise AssertionError('fixed-step requires explicit training_window')
 
 
 if __name__ == "__main__":

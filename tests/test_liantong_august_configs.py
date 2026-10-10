@@ -64,11 +64,11 @@ class LiantongAugustConfigsTest(unittest.TestCase):
                         strategy=replace(config.strategy, output_chunk_length=2) if config.strategy.output_chunk_length else config.strategy,
                         estimator=replace(config.estimator, params={"n_estimators": 5, "num_leaves": 4, "min_child_samples": 2, "verbosity": -1}),
                         validation={"forecast_origin": str(times[-1]), "schedule_mode": "intraday",
-                                    "history_steps": 40, "train_window_steps": 13, "fold_count": 2, "stride_steps": 4},
+                                    "history_steps": 40, 'training_window': {'kind': 'rolling', 'history_steps': 13}, "fold_count": 2, "stride_steps": 4},
                     )
                     config = replace(config, validation={**dict(config.validation),
-                        "train_history_steps": 56,
-                        "train_window_steps": 56 - minimum_history_rows(config) - 4 + 1,
+                        'training_window': {'kind': 'rolling', 'history_steps': 56},
+
                     })
                     with patch.object(CanonicalBaseModelRunner, "final_bundle_inputs", side_effect=AssertionError("final fit forbidden")):
                         result = run_canonical_config(config, output_root=root / variant, backtest_only=True)
@@ -139,7 +139,7 @@ class LiantongAugustConfigsTest(unittest.TestCase):
                 spec = config.validation.backtest
                 assert isinstance(spec, FixedStepBacktestSpec)
                 self.assertEqual(dict(config.validation['training_window']), {'kind': 'rolling', 'history_steps': 4032})
-                self.assertIsNone(spec.train_window_steps)
+                self.assertFalse(hasattr(spec, 'train_window_steps'))
                 self.assertEqual(spec.stride_steps, 288)
                 self.assertEqual(spec.fold_count, 17)
                 origin = pd.Timestamp(config.validation["forecast_origin"])

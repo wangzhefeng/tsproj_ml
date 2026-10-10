@@ -3,11 +3,12 @@
 
 Checks, over every ensemble YAML under config/:
 - config_refs resolve, are single-model configs, unique, acyclic;
-- every AIDC Latin filename resolves to its exact three-member rotation;
-- method distribution matches the active four-method contract;
-- exact model-YAML accounting: 5,066 ordinary single + 6 member + 78 ensemble == 5,150;
+- every AIDC Latin filename resolves to its exact three-member rotation
+  (2026-10-09 起 AIDC 15min add_ensemble 已移出活动集，该校验暂无适用对象);
+- method distribution matches the active contract;
+- exact model-YAML accounting: 1,698 ordinary single + 6 member + 6 ensemble == 1,710;
 - duplicate ``ensemble_members/`` files are forbidden in the three AIDC 15min
-  scenarios, whose 72 ensemble configs directly reuse baseline Latin members;
+  scenarios;
 - reports orphan OOF cache directories under results/_ensemble_oof.
 
 Exit code 0 only when every check passes (orphan report is informational).
@@ -28,27 +29,23 @@ from model_ensemble.specs import EnsembleConfigSpec, EnsembleSpecError
 from config.config_loader import load_yaml_config
 from forecasting_core.specs import ForecastConfigSpec
 
-EXPECTED_TOTAL = 5150
-EXPECTED_SINGLE = 5066
+EXPECTED_TOTAL = 1710
+EXPECTED_SINGLE = 1698
 EXPECTED_MEMBER = 6
-EXPECTED_ENSEMBLE = 78
-EXPECTED_MEMBER_REFERENCES = 228
+EXPECTED_ENSEMBLE = 6
+EXPECTED_MEMBER_REFERENCES = 12
+# 2026-10-09 三个 AIDC 15min 场景收敛为 LightGBM 单估计器：其 add_ensemble
+# （72 份，每场景每路 12 份 Latin 融合）与非 LightGBM 单模型一并移出活动集，
+# 故 NO_MEMBER_SCENARIOS 内已无 ensemble/member 文件，Latin 轮换校验暂无对象。
 NO_MEMBER_SCENARIOS = {
     "aidc_load_15min_daily",
     "aidc_load_15min_rolling",
     "aidc_load_15min_short",
 }
 EXPECTED_METHOD_DISTRIBUTION = {
-    "averaging": 18,
-    "weighted": 18,
-    "linear_blending": 24,
-    "stacking": 18,
+    "linear_blending": 6,
 }
-AIDC_LATIN_GROUPS = {
-    "latin-a": ["st_recursive", "lgbm_mimo", "ridge_direct"],
-    "latin-b": ["st_direct", "lgbm_recursive", "ridge_mimo"],
-    "latin-c": ["st_mimo", "lgbm_direct", "ridge_recursive"],
-}
+AIDC_LATIN_GROUPS: dict[str, tuple[str, ...]] = {}
 
 
 def _mapping(value):

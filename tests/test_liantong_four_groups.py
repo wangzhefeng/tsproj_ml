@@ -8,7 +8,7 @@ from config.config_loader import load_yaml_config
 from data_loading import SourceRegistry
 from feature_engineering.compiler import FeatureCompiler
 from forecasting_core.specs import ForecastConfigSpec
-from model_pipeline.supervised_design import minimum_history_rows, SupervisedDesignBuilder, raw_history_backtest_windows, temporal_backtest_windows
+from model_pipeline.supervised_design import minimum_history_rows, SupervisedDesignBuilder, temporal_backtest_windows
 
 from models.factory import ModelFactory
 from scripts.check_model_configs import check_model_yaml
@@ -57,22 +57,18 @@ class LiantongFourGroupsTest(unittest.TestCase):
                 migrated = config.validation.get('training_window') is not None
                 if migrated:
                     self.assertEqual(dict(config.validation['training_window']), {'kind': 'rolling', 'history_steps': 4032})
-                    if path.stem.removeprefix('lgbm_') in DENSE_VARIANTS:
+                    if path.stem.removeprefix('lgbm_') in DENSE_VARIANTS or config.estimator.model_type == 'ets':
                         self.assertNotIn('origin_sampling', config.validation.get('training', {}))
                     else:
                         self.assertEqual(config.validation['training']['origin_sampling']['stride_steps'], 288)
-                    self.assertEqual(config.validation['refit_every'], 1)
-                else:
-                    self.assertEqual(config.validation['train_history_steps'], 4032)
-                    self.assertEqual(config.validation['train_window_steps'], 4032 - minimum_history_rows(config) - 288 + 1)
+                    self.assertEqual(config.validation.get('refit_every', 1), 1)
+                self.assertTrue(migrated)
                 output_group = path.parent.name
                 if output_group == 'accuracy_ablation':
                     variant, model_type = ACCURACY_ABLATIONS[path.name]
                     output_group += '/' + variant
                     self.assertEqual(config.estimator.model_type, model_type)
                     self.assertEqual(config.result_method()['method_label'], 'direct-pointwise')
-                    if not migrated:
-                        self.assertEqual(config.validation['train_window_steps'], 1729)
                     self.assertNotIn('seasonal_baseline', config.features.transformations)
                 self.assertTrue(config.output['scenario_subpath'].endswith('/' + output_group))
                 source_names = {s.name for s in config.data.sources}
@@ -81,7 +77,7 @@ class LiantongFourGroupsTest(unittest.TestCase):
                 if path.parent.name.endswith('_opt'):
                     self.assertEqual(config.features.transformations['seasonal_baseline']['days'], 7)
                     self.assertEqual(minimum_history_rows(config), 2016)
-                window_builder = temporal_backtest_windows if migrated else raw_history_backtest_windows
+                window_builder = temporal_backtest_windows
                 folds = window_builder(SupervisedDesignBuilder(config, SourceRegistry(config.data, ROOT)),
                                                     pd.Timestamp(config.validation['forecast_origin']))
                 self.assertEqual(len(folds), 17)
@@ -100,8 +96,6 @@ class LiantongFourGroupsTest(unittest.TestCase):
             baseline_validation = baseline['validation']
             assert isinstance(baseline_validation, dict)
             expected_validation = dict(baseline_validation)
-            expected_validation.pop('train_history_steps')
-            expected_validation.pop('train_window_steps')
             expected_validation.update({
                 'training_window': {'kind': 'rolling', 'history_steps': 4032},
                 'forecast_window': {'start': 'after_origin'}, 'refit_every': 1,

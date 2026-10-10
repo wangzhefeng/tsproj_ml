@@ -50,7 +50,7 @@ class WeatherEnsembleRuntimeTest(EnsembleRuntimeTestBase):
             doc['data']['sources'].append(weather)
             path.write_text(yaml.safe_dump(doc))
         doc = {key:doc[key] for key in ('schema_version','problem','data','probabilistic','validation')}
-        doc['ensemble'] = {'members':[{'name':f'm_{name}','config_ref':f'member_{name}.yaml'} for name in ('direct','recursive')], 'oof':{'train_window_steps':6,'fold_count':2,'stride_steps':1}, 'method':{'name':'averaging'}}
+        doc['ensemble'] = {'members':[{'name':f'm_{name}','config_ref':f'member_{name}.yaml'} for name in ('direct','recursive')], 'oof':{'fold_count':2,'stride_steps':1}, 'method':{'name':'averaging'}}
         doc['output'] = {'scenario_subpath':'synthetic-weather-ensemble'}
         path = self.root/'ensemble.yaml'
         path.write_text(yaml.safe_dump(doc))

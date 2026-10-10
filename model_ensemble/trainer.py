@@ -58,7 +58,6 @@ def generate_oof_for_config(
         runners,
         fold_count=config.oof.fold_count,
         stride_steps=config.oof.stride_steps,
-        train_window_steps=config.oof.train_window_steps,
         gap_steps=config.oof.gap_steps,
         quantile_levels=_quantile_levels_for_config(config),
         outer_cutoff_origin=outer_cutoff_origin,

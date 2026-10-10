@@ -36,7 +36,6 @@ ensemble:
   - name: recursive
     config_ref: ensemble_members/lgbm_usbr_prob_mean_recursive.yaml
   oof:
-    train_window_steps: 30
     fold_count: 1
     stride_steps: 1
   method:
@@ -46,7 +45,9 @@ validation:
   schedule_mode: daily
   horizon_mode: fixed_steps
   history_steps: 9792
-  train_window_steps: 8352
+  training_window:
+    kind: rolling
+    history_steps: 16704
   fold_count: 5
   stride_steps: 288
 output:

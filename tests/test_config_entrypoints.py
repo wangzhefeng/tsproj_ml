@@ -109,7 +109,7 @@ estimator:
 probabilistic: {mode: point}
 validation:
   history_steps: 60
-  train_window_steps: 30
+  training_window: {kind: rolling, history_steps: 222}
   fold_count: 1
   stride_steps: 1
 output: {}
@@ -162,7 +162,7 @@ estimator:
 probabilistic: {mode: point}
 validation:
   history_steps: 12
-  train_window_steps: 10
+  training_window: {kind: rolling, history_steps: 14}
   fold_count: 1
   stride_steps: 1
 output: {}
@@ -211,7 +211,7 @@ estimator:
 probabilistic: {mode: point}
 validation:
   history_steps: 60
-  train_window_steps: 30
+  training_window: {kind: rolling, history_steps: 894}
   fold_count: 1
   stride_steps: 1
 output: {}
@@ -263,7 +263,7 @@ estimator:
 probabilistic: {mode: point}
 validation:
   history_steps: 60
-  train_window_steps: 30
+  training_window: {kind: rolling, history_steps: 606}
   fold_count: 1
   stride_steps: 1
 output: {}
@@ -321,7 +321,7 @@ estimator:
 probabilistic: {mode: point}
 validation:
   history_steps: 60
-  train_window_steps: 30
+  training_window: {kind: rolling, history_steps: 8382}
   fold_count: 1
   stride_steps: 1
 output: {}
@@ -582,7 +582,7 @@ class Task27ExecutionMatrixTest(unittest.TestCase):
             validation={
                 "forecast_origin": "2026-01-03T23:00:00",
                 "history_steps": 10_000,
-                "train_window_steps": 9_999,
+                'training_window': {'kind': 'expanding', 'start_time': '2026-01-01T00:00:00'},
                 "fold_count": 1,
                 "stride_steps": 4,
                 "training_scope": {
@@ -623,7 +623,7 @@ class Task27ExecutionMatrixTest(unittest.TestCase):
                     {"name": "m_direct", "config_ref": "member_direct.yaml"},
                     {"name": "m_recursive", "config_ref": "member_recursive.yaml"},
                 ],
-                "oof": {"train_window_steps": 6, "fold_count": 2, "stride_steps": 1},
+                "oof": { "fold_count": 2, "stride_steps": 1},
                 "method": {"name": method},
             },
             "validation": payload["validation"],

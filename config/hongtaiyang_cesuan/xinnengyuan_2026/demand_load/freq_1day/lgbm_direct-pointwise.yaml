@@ -102,6 +102,8 @@ estimator:
 probabilistic:
   mode: point
 validation:
+  performance:
+    model_thread_count: 1
   forecast_origin: '2026-08-31T00:00:00'
   horizon_mode: calendar_month
   train_window_days: 92

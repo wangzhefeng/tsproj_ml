@@ -5,7 +5,9 @@ import unittest
 from pathlib import Path
 
 import yaml
+import pandas as pd
 
+from model_pipeline.supervised_design import minimum_history_rows
 from config.config_loader import load_yaml_config
 
 
@@ -152,8 +154,11 @@ class AidcDateWindowModelConfigTest(unittest.TestCase):
                     # 固定步长几何统一按监督 origin steps 保存：32 天历史、
                     # 15 天窗口扣除 H=288 后得到 4032 个训练 origins。
                     self.assertEqual(cfg.validation["history_steps"], 32 * 288)
-                    self.assertEqual(cfg.validation["train_window_steps"], 15 * 288 - 288)
-                    self.assertEqual(cfg.validation["fold_count"], 18)
+                    expected_window = 4032 + minimum_history_rows(cfg) + 288 - 1
+                    self.assertEqual(cfg.validation["training_window"]["history_steps"], expected_window)
+                    times = pd.to_datetime(pd.read_csv(target.history_path)[target.time_col])
+                    available_rows = int((times <= pd.Timestamp(cfg.validation["forecast_origin"])).sum())
+                    self.assertEqual(cfg.validation["fold_count"], min(18, (available_rows - expected_window) // 288))
                     self.assertEqual(cfg.validation["stride_steps"], 288)
                     self.assertEqual(Path(target.history_path).name, "df_power.csv")
                     self.assertEqual(cfg.problem.time_col, "time")
@@ -173,8 +178,8 @@ class AidcDateWindowModelConfigTest(unittest.TestCase):
         for config_path in config_paths:
             raw = yaml.safe_load(config_path.read_text(encoding="utf-8"))
             self.assertEqual(
-                raw["validation"]["train_window_steps"],
-                15 * 288 - 288,
+                raw["validation"]["training_window"]["history_steps"],
+                4032 + minimum_history_rows(load_yaml_config(config_path)) + 288 - 1,
                 config_path,
             )
             sources = {source["name"]: source for source in raw["data"]["sources"]}

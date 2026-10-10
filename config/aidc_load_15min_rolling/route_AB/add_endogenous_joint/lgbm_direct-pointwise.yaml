@@ -92,6 +92,8 @@ estimator:
 probabilistic:
   mode: point
 validation:
+  performance:
+    multi_output_n_jobs: 2
   forecast_origin: '2026-07-31T14:00:00'
   schedule_mode: intraday
   horizon_mode: fixed_steps

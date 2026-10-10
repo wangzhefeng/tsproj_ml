@@ -20,10 +20,11 @@ class ModelYamlDetectionTest(unittest.TestCase):
     def test_cli_rejects_unsupported_decomposition_trend_forecast(self):
         source = (
             ROOT
-            / "config/aidc_load_15min_short/route_A/add_decomposition/"
-            / "ridge_direct_decomp-linear.yaml"
+            / "tests/fixtures/configs/ridge_direct_decomp-linear_short.yaml"
         )
         payload = yaml.safe_load(source.read_text(encoding="utf-8"))
+        payload['validation'].pop('train_window_steps')
+        payload['validation']['training_window'] = {'kind': 'rolling', 'history_steps': 2112}
         payload["features"]["transformations"]["target"]["decomposition"] = {
             "method": "stl",
             "periods": [96],

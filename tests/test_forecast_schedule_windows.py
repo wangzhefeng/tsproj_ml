@@ -13,6 +13,7 @@ from feature_engineering.design_identity import compute_raw_design_fingerprint
 from model_pipeline.batch_artifacts import artifact_paths, validate_artifacts
 from model_pipeline.runner import CanonicalBaseModelRunner
 from tests.test_raw_history_window import make_config
+import test_canonical_runtime_smoke as smoke
 
 
 class ForecastScheduleWindowsTest(unittest.TestCase):
@@ -152,6 +153,239 @@ class ForecastScheduleWindowsTest(unittest.TestCase):
                         {"training_window": {"kind": "rolling", "history_steps": True}},
                         {"training_window": {"kind": "expanding"}},
                         {"training_window": {"kind": "expanding", "start_time": "bad"}},
-                        {"train_window_steps": 3}, {"refit_every": 2}):
+                        {"train_window_steps": 3}, {"refit_every": 0}):
             with self.subTest(changes=changes), self.assertRaises((ValueError, TypeError)):
                 replace(config, validation={**dict(config.validation), **changes})
+
+
+class NativeHistoryTrainingWindowTest(unittest.TestCase):
+    """ETS native_history + rolling training_window 合同（旧字段退役 P0-1）。"""
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+        self.path = self.root / "target.csv"
+        self.times = pd.date_range("2026-01-01", periods=360, freq="1h")
+        pd.DataFrame({"time": self.times,
+                      "load": 100 + np.sin(np.arange(360) * 2 * np.pi / 24)}
+                     ).to_csv(self.path, index=False)
+
+    def config(self):
+        base = smoke.CanonicalRuntimeSmokeTest().build_config(
+            self.path, mode="point", strategy="mimo", horizon=24)
+        validation = {k: v for k, v in dict(base.validation).items()
+                      if k not in {"train_history_steps", "train_window_steps",
+                                   "seasonal_naive_lag"}}
+        validation.update(forecast_origin=self.times[302].isoformat(), history_steps=300,
+                          fold_count=2, stride_steps=24,
+                          training_window={"kind": "rolling", "history_steps": 120})
+        # 单次 replace：ETS 合同校验在构造期执行，validation 必须同批进入。
+        return replace(base,
+            estimator=replace(base.estimator, model_type="ets",
+                              params={"seasonal_periods": 24, "candidates": ["ANN"]}),
+            features=replace(base.features, target_lags={}, observed_past_lags={},
+                             datetime_features=[], transformations={}),
+            validation=validation)
+
+    def test_ets_rolling_training_window_bounds_fold_history(self):
+        config = self.config()
+        runner = CanonicalBaseModelRunner(
+            config, SourceRegistry(config.data, self.root), self.times[302])
+        windows = runner.backtest_windows()
+        self.assertEqual(len(windows), 2)
+        # 各折 raw 历史起点 = origin 前含 origin 恰好 120 点（rolling 有界窗）。
+        for window in windows:
+            expected_start = window.origin - pd.Timedelta(hours=119)
+            self.assertEqual(window.metadata["raw_history_start"],
+                             expected_start.isoformat())
+        from models.wrappers.ets import ETSModel
+        from model_testing.fixed_step import run_fixed_step_backtest
+        histories = []
+        original = ETSModel.fit_history
+        def traced(model, history, **kwargs):
+            histories.append((len(history), kwargs.get("as_of")))
+            return original(model, history, **kwargs)
+        with patch.object(ETSModel, "fit_history", traced):
+            with tempfile.TemporaryDirectory() as directory:
+                run_fixed_step_backtest(runner, Path(directory), mode="point")
+        self.assertEqual([h[0] for h in histories], [120, 120])
+        self.assertEqual([h[1] for h in histories], [w.origin for w in windows])
+
+
+class QuantileTrainingWindowTest(unittest.TestCase):
+    """quantile + rolling training_window 合同（旧字段退役 P0-4）。"""
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+        self.path = self.root / "target.csv"
+        self.times = pd.date_range("2026-01-01", periods=360, freq="1h")
+        pd.DataFrame({"time": self.times,
+                      "load": 100 + np.sin(np.arange(360) * 2 * np.pi / 24)}
+                     ).to_csv(self.path, index=False)
+
+    def config(self, strategy="direct"):
+        base = smoke.CanonicalRuntimeSmokeTest().build_config(
+            self.path, mode="quantile", strategy=strategy, horizon=24)
+        validation = {k: v for k, v in dict(base.validation).items()
+                      if k not in {"train_history_steps", "train_window_steps",
+                                   "seasonal_naive_lag"}}
+        validation.update(forecast_origin=self.times[302].isoformat(), history_steps=300,
+                          fold_count=2, stride_steps=24,
+                          training_window={"kind": "rolling", "history_steps": 120})
+        return replace(base, validation=validation)
+
+    def test_quantile_direct_rolling_training_window_runs_backtest(self):
+        config = self.config("direct")
+        runner = CanonicalBaseModelRunner(
+            config, SourceRegistry(config.data, self.root), self.times[302])
+        windows = runner.backtest_windows()
+        self.assertEqual(len(windows), 2)
+        with tempfile.TemporaryDirectory() as directory:
+            _, _, audits = __import__(
+                "model_testing.fixed_step", fromlist=["run_fixed_step_backtest"]
+            ).run_fixed_step_backtest(runner, Path(directory), mode="quantile")
+        self.assertEqual(len(audits), 2)
+
+    def test_quantile_recursive_median_path_runs_under_training_window(self):
+        # median_path：递归依赖经 point(中位)水平逐级喂特征（predictor.py:169-217），
+        # 在 rolling 有界窗下逐折重拟合后仍应产出有限分位张量。
+        from forecasting_core.artifacts import MarginalForecastDistribution
+        config = self.config("recursive")
+        runner = CanonicalBaseModelRunner(
+            config, SourceRegistry(config.data, self.root), self.times[302])
+        windows = runner.backtest_windows()
+        self.assertEqual(len(windows), 2)
+        fold_runner = runner.for_backtest_window(windows[0])
+        _, _, _, _, artifact = fold_runner.fit(windows[0].train_indices)
+        inputs = fold_runner.final_bundle_inputs()
+        designs, provider = fold_runner.forecast_designs(
+            fold_runner.origin, inputs[0], inputs[1])
+        prediction = fold_runner.predict(
+            artifact, designs, provider, fold_runner.forecast_times(fold_runner.origin),
+            inputs[1])
+        self.assertIsInstance(prediction, MarginalForecastDistribution)
+        quantile_values = prediction.quantiles.values
+        self.assertTrue(np.isfinite(quantile_values).all())
+        # 分位单调性：median_preserving_isotonic 交叉修复后 q10 <= q90。
+        levels = list(prediction.quantiles.levels)
+        q10 = quantile_values[..., levels.index(0.1)]
+        q90 = quantile_values[..., levels.index(0.9)]
+        self.assertTrue((q10 <= q90 + 1e-9).all())
+
+    def test_shifted_forecast_window_with_quantile_is_rejected(self):
+        config = self.config("direct")
+        with self.assertRaisesRegex(ValueError, "shifted forecast_window with quantile"):
+            replace(config, validation={**dict(config.validation),
+                "forecast_window": {"start": "next_day"}})
+
+
+class TargetTransformTrainingWindowTest(unittest.TestCase):
+    """target transform + rolling training_window 合同（旧字段退役 D9）。"""
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+        self.path = self.root / "target.csv"
+        self.times = pd.date_range("2026-01-01", periods=360, freq="1h")
+        pd.DataFrame({"time": self.times,
+                      "load": 100 + np.sin(np.arange(360) * 2 * np.pi / 24)}
+                     ).to_csv(self.path, index=False)
+
+    def config(self):
+        base = smoke.CanonicalRuntimeSmokeTest().build_config(
+            self.path, mode="point", strategy="direct", horizon=24)
+        validation = {k: v for k, v in dict(base.validation).items()
+                      if k not in {"train_history_steps", "train_window_steps",
+                                   "seasonal_naive_lag"}}
+        validation.update(forecast_origin=self.times[302].isoformat(), history_steps=300,
+                          fold_count=2, stride_steps=24,
+                          training_window={"kind": "rolling", "history_steps": 120})
+        # 与现役 decomp 配置同形的 target transform（scaling 用 standard 以覆盖状态拟合）
+        return replace(base,
+            features=replace(base.features, transformations={
+                **base.features.canonical_payload()["transformations"],
+                "target": {
+                    "calendar_normalization": {"method": "none"},
+                    "decomposition": {"method": "linear", "trend_degree": 1,
+                                      "trend_forecast": "polynomial", "damping": 0.98,
+                                      "trend_lookback": 4},
+                    "scaling": {"method": "standard", "inverse": True},
+                },
+            }),
+            validation=validation)
+
+    def _fold1_prediction(self):
+        config = self.config()
+        runner = CanonicalBaseModelRunner(
+            config, SourceRegistry(config.data, self.root), self.times[302])
+        windows = runner.backtest_windows()
+        fold_runner = runner.for_backtest_window(windows[0])
+        _, _, _, _, artifact = fold_runner.fit(windows[0].train_indices)
+        inputs = fold_runner.final_bundle_inputs()
+        designs, provider = fold_runner.forecast_designs(
+            fold_runner.origin, inputs[0], inputs[1])
+        prediction = fold_runner.predict(
+            artifact, designs, provider, fold_runner.forecast_times(fold_runner.origin),
+            inputs[1])
+        return windows[0], prediction.values.reshape(-1)
+
+    def test_target_transform_runs_under_training_window(self):
+        windows_first, prediction = self._fold1_prediction()
+        self.assertTrue(np.isfinite(prediction).all())
+        self.assertEqual(len(prediction), 24)
+
+    def test_transform_state_is_bounded_by_window(self):
+        # 泄漏探针：污染窗口起点之前的历史，折 1 的变换态与预测必须不变。
+        windows_first, before = self._fold1_prediction()
+        start = pd.Timestamp(windows_first.metadata["raw_history_start"])
+        frame = pd.read_csv(self.path, parse_dates=["time"])
+        frame.loc[frame.time < start, "load"] += 1e6
+        frame.to_csv(self.path, index=False)
+        _, after = self._fold1_prediction()
+        np.testing.assert_array_equal(before, after)
+
+
+class MonthlyTrainingWindowTest(unittest.TestCase):
+    """月度频率（1ME）+ rolling training_window 合同（旧字段退役 D7）。"""
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+        self.path = self.root / "target.csv"
+        self.times = pd.date_range("2023-01-31", periods=48, freq="1ME")
+        pd.DataFrame({"time": self.times,
+                      "load": 100 + np.arange(48, dtype=float) * 2}
+                     ).to_csv(self.path, index=False)
+
+    def config(self):
+        base = smoke.CanonicalRuntimeSmokeTest().build_config(
+            self.path, mode="point", strategy="direct", horizon=3)
+        features = {
+            "target_lags": {"load": (1, 2, 3, 4, 5, 6)},
+            "observed_past_lags": {},
+            "datetime_features": (),
+            "transformations": {"direct": {"layout": "independent_models",
+                                           "align_to_target": False}},
+            "selection": None,
+        }
+        return replace(base,
+            problem=replace(base.problem, freq="1ME", horizon=3),
+            features=replace(base.features, **features),
+            validation={"forecast_origin": self.times[-1].isoformat(),
+                        "history_steps": 36, "fold_count": 2, "stride_steps": 2,
+                        "training_window": {"kind": "rolling", "history_steps": 24}})
+
+    def test_monthly_rolling_training_window_builds_folds(self):
+        config = self.config()
+        runner = CanonicalBaseModelRunner(
+            config, SourceRegistry(config.data, self.root), self.times[-1])
+        windows = runner.backtest_windows()
+        self.assertEqual(len(windows), 2)
+        for window in windows:
+            self.assertLess(window.origin, self.times[-1])
+            self.assertGreater(len(window.train_indices), 0)

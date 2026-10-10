@@ -48,7 +48,7 @@ class DesignIdentityTest(unittest.TestCase):
         validation = {
             "forecast_origin": str(self.origin),
             "history_steps": 32,
-            "train_window_steps": 16,
+            'training_window': {'kind': 'rolling', 'history_steps': 16},
             "fold_count": 1,
             "stride_steps": 2,
         }

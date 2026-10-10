@@ -132,7 +132,7 @@ class CanonicalRuntimeSmokeTest(unittest.TestCase):
             validation={
                 "forecast_origin": "2026-01-02T23:00:00",
                 "history_steps": 10_000,
-                "train_window_steps": 9_999,
+                'training_window': {'kind': 'expanding', 'start_time': '2026-01-01T00:00:00'},
                 "fold_count": 1,
                 "stride_steps": horizon,
             },
@@ -218,7 +218,7 @@ class CanonicalRuntimeSmokeTest(unittest.TestCase):
             validation={
                 "forecast_origin": "2026-01-04T11:00:00",
                 "history_steps": 10_000,
-                "train_window_steps": 9_999,
+                'training_window': {'kind': 'expanding', 'start_time': '2026-01-01T00:00:00'},
                 "fold_count": 1,
                 "stride_steps": 2,
             },
@@ -383,7 +383,7 @@ class CanonicalRuntimeSmokeTest(unittest.TestCase):
                 validation={
                     "forecast_origin": "2026-01-04T23:00:00",
                     "history_steps": 48,
-                    "train_window_steps": 24,
+                    'training_window': {'kind': 'rolling', 'history_steps': 24},
                     "fold_count": 3,
                     "stride_steps": 4,
                 },
@@ -561,7 +561,8 @@ class CanonicalRuntimeSmokeTest(unittest.TestCase):
                 pd.Timestamp(holdout["training_label_end_max"]),
                 pd.Timestamp(holdout["label_start"]),
             )
-            self.assertEqual(holdout["excluded_overlapping_samples"], 3)
+            self.assertEqual(pd.Timestamp(holdout["training_label_end_max"]),
+                             pd.Timestamp(holdout["label_start"]) - pd.Timedelta(hours=1))
 
     def test_runtime_materializes_role_sources_and_persists_visibility_audit(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -689,7 +690,7 @@ class CanonicalRuntimeSmokeTest(unittest.TestCase):
                 validation={
                     "forecast_origin": origin.isoformat(),
                     "history_steps": 10_000,
-                    "train_window_steps": 9_999,
+                    'training_window': {'kind': 'expanding', 'start_time': '2026-01-01T00:00:00'},
                     "fold_count": 1,
                     "stride_steps": 2,
                 },
@@ -1015,7 +1016,7 @@ class CanonicalRuntimeSmokeTest(unittest.TestCase):
                         validation={
                             "forecast_origin": "2026-01-03T23:00:00",
                             "history_steps": 10_000,
-                            "train_window_steps": 9_999,
+                            'training_window': {'kind': 'expanding', 'start_time': '2026-01-01T00:00:00'},
                             "fold_count": 1,
                             "stride_steps": 4,
                         },

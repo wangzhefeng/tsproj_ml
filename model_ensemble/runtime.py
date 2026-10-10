@@ -154,7 +154,9 @@ def _fused_oof_long(
         origin_index = origin_to_index[str(fold["origin"])]
         origin = runner.supervised_origins[origin_index]
         forecast_times = runner.forecast_times(origin)
-        actual = runner.actual(origin_index, forecast_times)
+        context = (runner.for_forecast_origin(origin)
+                   if runner.config.validation.get("training_window") is not None else runner)
+        actual = context.actual(origin_index, forecast_times)
         prediction = _combined_forecast(
             config,
             combined[sample_index : sample_index + 1],
@@ -226,12 +228,12 @@ def run_ensemble_config(
     for member in config.members:
         member_raw = resolved[member.name]
         member_config = parse_model_config(member_raw, source=member.config_ref)
-        if member_config.validation.get("training_window") is not None or member_config.validation.get("forecast_window") is not None:
-            raise EnsembleSpecError("Ensemble members do not yet support explicit temporal windows")
+        if member_config.validation.get("forecast_window") is not None:
+            raise EnsembleSpecError("Ensemble members do not yet support explicit forecast_window")
+        if member_config.validation.get("training_window") != config.validation.get("training_window"):
+            raise EnsembleSpecError("Ensemble members must share the top-level training_window")
         if member_config.validation.get("refit_every", 1) > 1:
             raise EnsembleSpecError("Ensemble members do not support refit_every > 1")
-        if member_config.validation.get("train_history_steps") is not None:
-            raise EnsembleSpecError("Ensemble members do not support train_history_steps")
         member_configs[member.name] = member_config
         member_fingerprints[member.name] = member_config.fingerprint()
         registry = SourceRegistry(member_config.data, source_root)

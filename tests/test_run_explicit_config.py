@@ -21,7 +21,7 @@ class RunExplicitConfigTest(unittest.TestCase):
         environment.assert_not_called()
 
     def test_explicit_config_reaches_single_model_runtime(self):
-        path = "config/aidc_load_15min_short/route_A/baseline/st_recursive.yaml"
+        path = "config/aidc_load_15min_short/route_A/baseline/lgbm_recursive.yaml"
         expected = load_yaml_config(path)
         with patch.object(sys, "argv", ["run.py", "--config-yaml", path]), \
                 patch.object(run, "ensure_runtime_environment"), \

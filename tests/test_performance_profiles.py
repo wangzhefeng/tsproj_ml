@@ -6,18 +6,24 @@ from copy import deepcopy
 from dataclasses import replace
 from pathlib import Path
 from typing import Any
+import yaml
 
 from config.config_loader import load_yaml_config
 from forecasting_core.specs.config import parse_model_config
 
 ROOT = Path(__file__).resolve().parents[1]
-CONFIG = ROOT / "config/aidc_load_15min_short/route_A/baseline/cab_direct-pointwise.yaml"
+# catboost 配置已随 2026-10-09 估计器收敛移出活动集；profile 合同测试改用
+# 从 Git 历史冻结的 fixture（内容与原活动 YAML 一致）。
+CONFIG = ROOT / "tests/fixtures/configs/cab_direct-pointwise_short_baseline.yaml"
 PROFILE_REF = "opt017-catboost-short-a-pointwise-v1"
 
 
 class PerformanceProfileTest(unittest.TestCase):
     def _profiled_config(self, folds=31):
-        payload: Any = load_yaml_config(CONFIG).canonical_payload()
+        # 历史fixture原字节保留；仅迁移测试候选，不把新窗口冒称旧profile。
+        payload: Any = yaml.safe_load(CONFIG.read_text())
+        old_origins = payload['validation'].pop('train_window_steps')
+        payload['validation']['training_window'] = {'kind': 'rolling', 'history_steps': old_origins + 672 + 16 - 1}
         payload["validation"]["fold_count"] = folds
         payload["validation"]["performance"] = {"profile_ref": PROFILE_REF}
         return parse_model_config(payload, CONFIG)
@@ -77,7 +83,7 @@ class PerformanceProfileTest(unittest.TestCase):
         original: Any = self._profiled_config().canonical_payload()
         mutations = [
             ("problem", "training_scope", "global"),
-            ("validation", "train_window_steps", 1425),
+            ("validation", "training_window", {"kind": "rolling", "history_steps": 2112}),
             ("validation", "forecast_origin", "2026-07-30T14:00:00"),
             ("estimator", "params", {"depth": 7}),
         ]
@@ -181,7 +187,7 @@ class PerformanceProfileTest(unittest.TestCase):
             plan_runtime_execution(config, workload, **context)
 
     def test_typed_profile_reference_is_nonsemantic(self):
-        config = load_yaml_config(CONFIG)
+        config = self._profiled_config()
         payload: Any = config.canonical_payload()
         payload["validation"]["performance"] = {"profile_ref": PROFILE_REF}
         profiled = parse_model_config(payload, CONFIG)

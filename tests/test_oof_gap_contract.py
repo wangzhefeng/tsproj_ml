@@ -31,13 +31,13 @@ class OOFGapContractTest(unittest.TestCase):
             origins = runner.supervised_origins
             geometry = runner.geometry
             baseline = oof_fold_origins(
-                runner, fold_count=3, stride_steps=1, train_window_steps=6,
+                runner, fold_count=3, stride_steps=1,
             )
             for gap in (1, 3):
                 with self.subTest(freq=freq, gap=gap):
                     folds = oof_fold_origins(
                         runner, fold_count=3, stride_steps=1,
-                        train_window_steps=6, gap_steps=gap,
+                         gap_steps=gap,
                     )
                     self.assertEqual(
                         [fold["origin"] for fold in folds],
@@ -47,23 +47,23 @@ class OOFGapContractTest(unittest.TestCase):
                         end = max(geometry.label_end(origins[i]) for i in fold["train_indices"])
                         boundary = geometry.label_start(fold["origin"]) - gap * geometry.offset
                         self.assertLess(end, boundary)
-                        self.assertEqual(len(fold["train_indices"]), 6)
+                        self.assertEqual(len(fold["train_indices"]), len(old["train_indices"]) - gap)
                         self.assertEqual(max(fold["train_indices"]), max(old["train_indices"]) - gap)
 
     def test_zero_gap_keeps_existing_stride_selection(self):
         folds = oof_fold_origins(
-            self.runner(), fold_count=3, stride_steps=3, train_window_steps=6,
+            self.runner(), fold_count=3, stride_steps=3,
         )
         self.assertEqual([fold["origin_index"] for fold in folds], [21, 24, 27])
         for fold in folds:
             index = fold["origin_index"]
-            self.assertEqual(fold["train_indices"], tuple(range(index - 7, index - 1)))
+            self.assertEqual(fold["train_indices"], tuple(range(index - 1)))
 
     def test_positive_gap_and_outer_cutoff_both_hold(self):
         runner = self.runner()
         cutoff = runner.supervised_origins[24]
         folds = oof_fold_origins(
-            runner, fold_count=3, stride_steps=1, train_window_steps=6,
+            runner, fold_count=3, stride_steps=1,
             gap_steps=2, outer_cutoff_origin=cutoff,
         )
         for fold in folds:
@@ -79,7 +79,7 @@ class OOFGapContractTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "non-overlapping"):
             oof_fold_origins(
                 self.runner(count=5), fold_count=1, stride_steps=1,
-                train_window_steps=2, gap_steps=5,
+                 gap_steps=5,
             )
 
     def test_shared_predicate_excludes_equal_boundary(self):
@@ -104,7 +104,7 @@ class OOFGapContractTest(unittest.TestCase):
                 self.assertRaisesRegex(
                     ValueError, "non-negative integer", oof_fold_origins,
                     runner, fold_count=1, stride_steps=1,
-                    train_window_steps=2, gap_steps=gap,
+                    gap_steps=gap,
                 )
 
 

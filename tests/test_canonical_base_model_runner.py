@@ -25,56 +25,38 @@ def _geometry(horizon: int = 2) -> validation.TimeGeometry:
 
 
 class RollingOriginFoldContractTest(unittest.TestCase):
+    @staticmethod
+    def folds(origins, raw_steps, fold_count, stride_steps):
+        from types import SimpleNamespace
+        from forecasting_core.specs.config import parse_model_config
+        from model_pipeline.supervised_design import temporal_backtest_windows
+        from tests.test_ensemble_runtime import _member_doc
+        document = _member_doc("direct", "ridge", "geometry")
+        document["validation"] = {
+            "history_steps": len(origins), "fold_count": fold_count, "stride_steps": stride_steps,
+            "training_window": {"kind": "rolling", "history_steps": raw_steps},
+        }
+        config = parse_model_config(document, source="geometry-test")
+        builder = SimpleNamespace(config=config, offset=_geometry().offset,
+            registry=SimpleNamespace(target_history_coverage=lambda: (SimpleNamespace(times=pd.DatetimeIndex(origins)),)))
+        return temporal_backtest_windows(builder, origins[-1])
+
     def test_folds_exclude_overlapping_training_samples(self):
-        origins = _origins(24)
-        folds = validation.rolling_origin_folds(
-            origins,
-            _geometry(horizon=2),
-            history_steps=None,
-            train_window_steps=10,
-            fold_count=3,
-            stride_steps=2,
-        )
+        folds = self.folds(_origins(24), 14, 3, 2)
         self.assertEqual(len(folds), 3)
         self.assertEqual(folds[-1].window, 3)
         for fold in folds:
-            holdout_label_start = fold.origin + pd.Timedelta(hours=1)
-            for index in fold.train_indices:
-                self.assertLess(
-                    origins[index] + pd.Timedelta(hours=2),
-                    holdout_label_start,
-                )
-            self.assertLess(
-                max(origins[i] for i in fold.train_indices) + pd.Timedelta(hours=2),
-                holdout_label_start,
-            )
+            self.assertLess(pd.Timestamp(fold.metadata["training_label_end_max"]),
+                            pd.Timestamp(fold.metadata["label_start"]))
+            self.assertEqual(fold.train_indices, tuple(range(10)))
 
     def test_folds_are_chronologically_ordered(self):
-        origins = _origins(24)
-        folds = validation.rolling_origin_folds(
-            origins,
-            _geometry(),
-            history_steps=None,
-            train_window_steps=5,
-            fold_count=4,
-            stride_steps=3,
-        )
-        origins_seq = [fold.origin for fold in folds]
-        self.assertEqual(origins_seq, sorted(origins_seq))
+        folds = self.folds(_origins(24), 9, 4, 3)
+        self.assertEqual([f.origin for f in folds], sorted(f.origin for f in folds))
 
     def test_no_training_samples_raises(self):
-        # H=2 hourly: the only candidate (immediate predecessor) has
-        # label_end == holdout label_start -> excluded -> empty train set
-        origins = _origins(2)
         with self.assertRaises(ValueError):
-            validation.rolling_origin_folds(
-                origins,
-                _geometry(),
-                history_steps=None,
-                train_window_steps=10,
-                fold_count=1,
-                stride_steps=1,
-            )
+            self.folds(_origins(2), 14, 1, 1)
 
     def test_validate_no_overlap_rejects_overlap(self):
         origins = _origins(6)
@@ -123,7 +105,7 @@ class CanonicalBaseModelRunnerTest(unittest.TestCase):
             _X,
             _Y,
             artifact,
-        ) = runner.fit(window.train_indices)
+        ) = runner.for_backtest_window(window).fit(window.train_indices)
         designs, provider = runner.forecast_designs(
             window.origin, scaler, transform
         )
@@ -141,7 +123,7 @@ class CanonicalBaseModelRunnerTest(unittest.TestCase):
 
         runner = self._runner("recursive")
         validation_payload = dict(runner.config.validation)
-        validation_payload["train_window_steps"] = 5
+        validation_payload["training_window"] = {"kind": "rolling", "history_steps": 10}
         config = replace(runner.config, validation=validation_payload)
         registry = SourceRegistry(config.data, self.root)
         windowed = CanonicalBaseModelRunner(config, registry, runner.origin)
@@ -159,7 +141,7 @@ class CanonicalBaseModelRunnerTest(unittest.TestCase):
         validation_payload = {
             **dict(runner.config.validation),
             "history_steps": 8,
-            "train_window_steps": 5,
+            'training_window': {'kind': 'rolling', 'history_steps': 13},
             "fold_count": 1,
             "stride_steps": 2,
         }

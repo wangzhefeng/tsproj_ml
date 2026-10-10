@@ -265,7 +265,8 @@ class CanonicalBatchRuntimeTest(unittest.TestCase):
             validation={
                 "forecast_origin": self.origin.isoformat(),
                 "history_steps": 48,
-                "train_window_steps": 16,
+                'training_window': {'kind': 'rolling', 'history_steps': 22},  # 16 origins + 5 warm-up + H - 1
+                'seasonal_naive_lag': 2,
                 "fold_count": 2,
                 "stride_steps": 2,
                 "performance": {"total_thread_limit": 2},
@@ -321,11 +322,12 @@ class CanonicalBatchRuntimeTest(unittest.TestCase):
         self.assertEqual(report.completed_count, 2)
         self.assertEqual(report.failed_count, 0)
         self.assertEqual(report.group_count, 1)
-        self.assertEqual(compile_calls, 1)
-        self.assertEqual(transform_calls, 3)
+        # final设计共享一次；两个模型各自重建两折严格原始窗口，不能切final设计代替。
+        self.assertEqual(compile_calls, 1 + 2 * 2)
+        self.assertEqual(transform_calls, 1 + 2 * 2)
         self.assertEqual(report.raw_payload_load_count, 1)
-        self.assertEqual(report.transform_cache["misses"], 3)
-        self.assertEqual(report.transform_cache["hits"], 3)
+        self.assertEqual(report.transform_cache["misses"], 1)
+        self.assertEqual(report.transform_cache["hits"], 1)
         verified = verify_batch_results(report.state_path)
         self.assertEqual(verified["completed_count"], 2)
         self.assertEqual(verified["verified_count"], 2)

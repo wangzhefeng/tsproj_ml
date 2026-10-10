@@ -69,16 +69,20 @@ strategy:
 estimator:
   model_type: lightgbm
   target_adapter: independent
-  params: {}
+  params:
+    n_estimators: 100
 probabilistic:
   mode: point
 validation:
+  performance:
+    multi_output_n_jobs: 8
+  training_window:
+    kind: rolling
+    history_steps: 43200
   forecast_origin: '2026-09-16T23:55:00'
   schedule_mode: daily
   horizon_mode: fixed_steps
   history_steps: 38304
-  train_history_steps: 43200
-  train_window_steps: 34848
   fold_count: 12
   stride_steps: 288
 output:

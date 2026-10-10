@@ -73,10 +73,11 @@ validation:
   schedule_mode: daily
   horizon_mode: fixed_steps
   history_steps: 38305
-  train_history_steps: 43200
-  train_window_steps: 34849
   fold_count: 12
   stride_steps: 288
+  training_window:
+    kind: rolling
+    history_steps: 43200
 output:
   scenario_subpath: aidc_hvac_load_5min/add_context/A1_all/hvac_remove_devices
   results_root: results

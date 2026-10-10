@@ -22,7 +22,13 @@ class BacktestOnlyTest(unittest.TestCase):
     def test_cli_rejects_ensemble_before_execution(self):
         root = Path(__file__).resolve().parents[1]
         # 读取现役融合配置，仅验证 CLI 分派，不拟合成员。
-        path = next((root / "config/aidc_load_15min_daily/route_A/add_ensemble").glob("*.yaml"))
+        # 2026-10-09 起 15min 场景 add_ensemble 已移出活动集，现役引用式
+        # Ensemble 只在 power_month / ess 场景。
+        path = next(
+            (root / "config/aidc_power_month/route_A/freq_1day/baseline").glob(
+                "lgbm_usbr_prob_mean_conformal.yaml"
+            )
+        )
         args = SimpleNamespace(config_yaml=str(path), output_root=None, backtest_only=True)
         with patch.object(entrypoint, "run_ensemble_config_file") as execute:
             with self.assertRaisesRegex(ValueError, "not Ensemble"):
@@ -69,7 +75,8 @@ class BacktestOnlyTest(unittest.TestCase):
             paths[1].mkdir()
             model_state = paths[1] / "run_state.json"
             model_state.write_text('{"status":"completed","existing":true}')
-            runner = SimpleNamespace(config=SimpleNamespace(fingerprint=lambda: "fixture"))
+            runner = SimpleNamespace(config=SimpleNamespace(
+                fingerprint=lambda: "fixture", features=SimpleNamespace(transformations={})))
             for error in (RuntimeError("fixture failure"), KeyboardInterrupt("fixture cancellation")):
                 with patch("model_pipeline.lifecycle._output_paths", return_value=paths), patch(
                     "model_pipeline.lifecycle.execute_lifecycle", side_effect=error

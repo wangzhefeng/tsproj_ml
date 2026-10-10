@@ -14,7 +14,7 @@ from forecasting_core.specs.output import OutputSpec
 from forecasting_core.specs.problem import ForecastProblemSpec
 from forecasting_core.specs.probabilistic import ProbabilisticConfigSpec
 from forecasting_core.specs.strategy import ForecastStrategySpec
-from forecasting_core.specs.temporal import validate_temporal_contract
+from forecasting_core.specs.temporal import has_bounded_history, validate_temporal_contract
 from forecasting_core.specs.validation import (
     CalendarMonthBacktestSpec,
     RuntimeValidationSpec,
@@ -206,9 +206,12 @@ class ForecastConfigSpec:
         if forecast_window is not None and validation_spec.get("training_window") is None:
             raise ValueError("forecast_window requires explicit training_window")
         if validation_spec.get("training_window") is not None:
-            if (problem.is_global or probabilistic_spec.get("mode", "point") != "point"
-                    or features.transformations.get("target") or estimator.model_type.lower() == "ets"):
-                raise ValueError("training_window currently requires Local point, no target transforms, supervised estimator")
+            if (probabilistic_spec.get("mode", "point") == "quantile"
+                    and forecast_window is not None
+                    and (forecast_window.get("start") == "next_day"
+                         or forecast_window.get("gap_steps", 0))):
+                # median_path 递归在 shifted 窗口下的语义未验证，先拒绝。
+                raise ValueError("shifted forecast_window with quantile mode is not yet supported under training_window")
         if forecast_window and (forecast_window.get("start") == "next_day" or forecast_window.get("gap_steps", 0)):
             if strategy.resolve(problem.horizon).consumes_previous or features.transformations.get("seasonal_baseline"):
                 raise ValueError("shifted forecast_window requires non-recursive strategy without seasonal_baseline")
@@ -223,11 +226,13 @@ class ForecastConfigSpec:
             if (problem.is_global or len(problem.targets) != 1 or strategy.name.value != "mimo"
                     or estimator.target_adapter.value != "independent"
                     or probabilistic_spec.get("mode", "point") != "point"
-                    or validation_spec.get("train_history_steps") is None
+                    or not has_bounded_history(validation_spec)
+                    or (validation_spec.get("training_window") is not None
+                        and validation_spec["training_window"].get("kind") != "rolling")
                     or features.target_lags or features.observed_past_lags or features.datetime_features
                     or features.transformations or features.selection
                     or len(data.sources) != 1):
-                raise ValueError("ETS requires Local single-target native-history point backtest: mimo geometry, no features or external sources")
+                raise ValueError("ETS requires Local single-target native-history point backtest with rolling bounded history: mimo geometry, no features or external sources")
         sampling = validation_spec.get("training", {}).get("origin_sampling")
         if sampling is not None and estimator.model_type.lower() == "ets":
             raise ValueError("origin_sampling requires a supervised estimator, not ETS")
@@ -239,13 +244,8 @@ class ForecastConfigSpec:
         _validate_global_source_keys(problem, data)
         _validate_feature_columns(data, features)
         _validate_time_geometry(problem, validation_spec)
-        if validation_spec.get("train_history_steps") is not None:
-            if problem.is_global or probabilistic_spec.get("mode", "point") != "point" or features.transformations.get("target"):
-                raise ValueError(
-                    "train_history_steps supports Local point without target transforms only"
-                )
         if features.transformations.get("seasonal_baseline") is not None:
-            if (validation_spec.get("train_history_steps") is None or problem.is_global
+            if (not has_bounded_history(validation_spec) or problem.is_global
                     or probabilistic_spec.get("mode", "point") != "point"
                     or features.transformations.get("target")):
                 raise ValueError("seasonal_baseline currently requires Local raw-history point backtest without target transforms")

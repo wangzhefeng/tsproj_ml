@@ -170,8 +170,12 @@ def run_fixed_step_backtest(
         )
         if config.validation.get("training_window") is not None:
             fold.frame["forecast_origin"] = backtest_window.origin.isoformat()
-            fold.frame["lead_steps"] = ((pd.to_datetime(fold.frame["time"]) - backtest_window.origin)
-                                        / pd.Timedelta(to_offset(config.problem.freq))).astype(int)
+            times = pd.DatetimeIndex(pd.to_datetime(fold.frame["time"]))
+            grid = pd.date_range(backtest_window.origin, times.max(), freq=config.problem.freq)
+            lead_steps = grid.get_indexer(times)
+            if (lead_steps <= 0).any():
+                raise ValueError("forecast times must follow origin on the configured frequency grid")
+            fold.frame["lead_steps"] = lead_steps
             first_lead = int(fold.frame["lead_steps"].min())
             fold.point_scores["forecast_origin"] = backtest_window.origin.isoformat()
             if "horizon" in fold.point_scores:
@@ -207,7 +211,7 @@ def run_fixed_step_backtest(
             **windows[-1].metadata,
             "mode": "fixed_steps",
             "history_steps": backtest.history_steps,
-            "train_window_steps": backtest.train_window_steps,
+            "training_window": dict(config.validation["training_window"]),
             "fold_count": backtest.fold_count,
             "stride_steps": backtest.stride_steps,
             "windows": [window.metadata for window in windows],

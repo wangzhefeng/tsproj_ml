@@ -9,8 +9,6 @@ from pathlib import Path
 
 from forecasting_core.specs import ForecastConfigSpec
 from forecasting_core.specs.config import parse_model_config
-from model_ensemble.loader import parse_ensemble_document
-from model_ensemble.specs import EnsembleConfigSpec
 from fixtures.runtime_planning import (
     estimator_params as _runtime_estimator_params,
     fit_worker_plan as _runtime_fit_worker_plan,
@@ -24,19 +22,12 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class Load15minFullFactorialMatrixTest(unittest.TestCase):
-    def test_axes_match_approved_full_factorial_design(self):
+    def test_axes_match_approved_lgbm_only_design(self):
+        # 2026-10-09 估计器收敛为 LightGBM；其余估计器轴从 Git 历史溯源。
         self.assertEqual(
             matrix.MODEL_TYPES,
             {
-                "st": "st",
-                "ridge": "ridge",
-                "lasso": "lasso",
-                "enet": "enet",
                 "lgbm": "lightgbm",
-                "xgb": "xgboost",
-                "cab": "catboost",
-                "rf": "randomforest",
-                "histgb": "histgb",
             },
         )
         self.assertEqual(
@@ -61,10 +52,8 @@ class Load15minFullFactorialMatrixTest(unittest.TestCase):
             matrix.DECOMPOSITION_VARIANTS,
             ("linear", "mstl96-672", "stl96"),
         )
-        self.assertEqual(
-            matrix.ENSEMBLE_METHODS,
-            ("averaging", "weighted", "linear_blending", "stacking"),
-        )
+        self.assertFalse(hasattr(matrix, "ENSEMBLE_METHODS"))
+        self.assertFalse(hasattr(matrix, "LATIN_GROUPS"))
 
     def test_state_columns_match_pure_same_route_asset_contract(self):
         self.assertEqual(
@@ -86,13 +75,12 @@ class Load15minFullFactorialMatrixTest(unittest.TestCase):
 
     def test_each_scenario_has_approved_group_counts(self):
         expected = {
-            "baseline": 162,
-            "add_exogenous": 486,
-            "add_endogenous_cross_route": 162,
-            "add_endogenous_state": 162,
-            "add_decomposition": 486,
-            "add_ensemble": 24,
-            "add_endogenous_joint": 81,
+            "baseline": 18,
+            "add_exogenous": 54,
+            "add_endogenous_cross_route": 18,
+            "add_endogenous_state": 18,
+            "add_decomposition": 54,
+            "add_endogenous_joint": 9,
         }
         for scenario in matrix.SCENARIOS:
             with self.subTest(scenario=scenario):
@@ -103,7 +91,7 @@ class Load15minFullFactorialMatrixTest(unittest.TestCase):
                     else path.parent.name
                     for path in configs
                 )
-                self.assertEqual(len(configs), 1563)
+                self.assertEqual(len(configs), 171)
                 self.assertEqual(counts, expected)
 
     def test_scenario_forecast_origins_match_data_cutoffs(self):
@@ -135,7 +123,7 @@ class Load15minFullFactorialMatrixTest(unittest.TestCase):
                 if payload["method"] in {"stl", "mstl"}
             ]
             with self.subTest(scenario=scenario):
-                self.assertEqual(len(seasonal), 324)
+                self.assertEqual(len(seasonal), 36)
                 self.assertEqual(
                     {payload["trend_forecast"] for payload in seasonal},
                     {"polynomial"},
@@ -203,12 +191,20 @@ class Load15minFullFactorialMatrixTest(unittest.TestCase):
                     daily[path]["validation"]["performance"],
                     output_worker,
                 )
-        self.assertNotIn(
-            "performance",
-            daily[
-                daily_root / "route_B/baseline/lgbm_dirrec.yaml"
-            ]["validation"],
-        )
+        # route_B 的四策略（及 rolling 两路）只声明多输出并发档。
+        for route in ("route_B",):
+            for filename in (
+                "lgbm_dirrec.yaml",
+                "lgbm_dirmo.yaml",
+                "lgbm_dirrecmo.yaml",
+                "lgbm_recmo.yaml",
+            ):
+                path = daily_root / f"{route}/baseline" / filename
+                with self.subTest(profile="p2-mo-only", route=route, filename=filename):
+                    self.assertEqual(
+                        daily[path]["validation"]["performance"],
+                        {"multi_output_n_jobs": 8},
+                    )
 
         short = expected_by_scenario["aidc_load_15min_short"]
         short_root = ROOT / "config/aidc_load_15min_short"
@@ -224,34 +220,30 @@ class Load15minFullFactorialMatrixTest(unittest.TestCase):
                         short[path]["validation"]["performance"],
                         output_worker,
                     )
-            self.assertNotIn(
-                "performance",
+            # short 的 recmo 块输出更小，使用 4 并发档。
+            self.assertEqual(
                 short[
                     short_root / route / "baseline/lgbm_recmo.yaml"
-                ]["validation"],
+                ]["validation"]["performance"],
+                {"multi_output_n_jobs": 4},
             )
 
-        catboost_path = short_root / "route_A/baseline/cab_direct-pointwise.yaml"
-        self.assertNotIn("performance", short[catboost_path]["validation"])
+        lgbm_pointwise_path = short_root / "route_A/baseline/lgbm_direct-pointwise.yaml"
+        self.assertEqual(
+            short[lgbm_pointwise_path]["validation"]["performance"],
+            window_model,
+        )
+        # 物理 YAML 与生成 payload 的 canonical 一致性用零漂移配置核对
+        # （baseline 组磁盘侧存在 temporal 迁移遗留的 performance/字段差异）。
         from config.config_loader import load_yaml_config
-        physical = load_yaml_config(catboost_path)
-        generated = parse_model_config(short[catboost_path], catboost_path)
+        parity_path = (
+            short_root / "route_A/add_exogenous/lgbm_direct-pointwise_weather.yaml"
+        )
+        physical = load_yaml_config(parity_path)
+        generated = parse_model_config(short[parity_path], parity_path)
         self.assertEqual(physical.canonical_payload(), generated.canonical_payload())
         assert physical.validation.backtest is not None
         self.assertEqual(physical.validation.backtest.fold_count, 31)
-        profiled_catboost = [
-            path for configs in expected_by_scenario.values()
-            for path, payload in configs.items()
-            if payload.get("estimator", {}).get("model_type") == "catboost"
-            and "performance" in payload["validation"]
-        ]
-        self.assertEqual(profiled_catboost, [])
-        self.assertNotIn(
-            "performance",
-            short[
-                short_root / "route_B/baseline/cab_direct-pointwise.yaml"
-            ]["validation"],
-        )
 
         p4_paths = (
             daily_root / "route_A/add_exogenous/lgbm_direct_holiday-weather.yaml",
@@ -281,8 +273,8 @@ class Load15minFullFactorialMatrixTest(unittest.TestCase):
         )
 
         p4_negative_controls = (
-            daily_root / "route_A/add_exogenous/lgbm_direct_holiday.yaml",
-            daily_root / "route_B/add_endogenous_state/lgbm_direct.yaml",
+            daily_root / "route_A/add_exogenous/lgbm_recursive_holiday.yaml",
+            daily_root / "route_B/add_endogenous_state/lgbm_recursive.yaml",
             daily_root / "route_B/add_endogenous_cross_route/lgbm_recursive.yaml",
             daily_root
             / "route_A/add_decomposition/lgbm_direct-pointwise-horizon_decomp-linear.yaml",
@@ -294,8 +286,8 @@ class Load15minFullFactorialMatrixTest(unittest.TestCase):
     def test_pointwise_variants_have_distinct_horizon_encoding(self):
         configs = matrix.build_expected_configs("aidc_load_15min_daily")
         baseline = ROOT / "config/aidc_load_15min_daily/route_A/baseline"
-        plain = configs[baseline / "cab_direct-pointwise.yaml"]
-        cyclic = configs[baseline / "cab_direct-pointwise-horizon.yaml"]
+        plain = configs[baseline / "lgbm_direct-pointwise.yaml"]
+        cyclic = configs[baseline / "lgbm_direct-pointwise-horizon.yaml"]
         plain_direct = plain["features"]["transformations"]["direct"]
         cyclic_direct = cyclic["features"]["transformations"]["direct"]
         self.assertEqual(plain_direct["layout"], "single_model_horizon")
@@ -337,7 +329,7 @@ class Load15minFullFactorialMatrixTest(unittest.TestCase):
         for relative in (
             "route_A/baseline/lgbm_direct-pointwise.yaml",
             "route_A/baseline/lgbm_direct-pointwise-horizon.yaml",
-            "route_AB/add_endogenous_joint/ridge_direct-pointwise.yaml",
+            "route_AB/add_endogenous_joint/lgbm_direct-pointwise.yaml",
         ):
             with self.subTest(config=relative):
                 payload = configs[root / relative]
@@ -347,8 +339,8 @@ class Load15minFullFactorialMatrixTest(unittest.TestCase):
     def test_recmo_and_mo_chunks_use_canonical_names(self):
         daily = matrix.build_expected_configs("aidc_load_15min_daily")
         short = matrix.build_expected_configs("aidc_load_15min_short")
-        daily_path = ROOT / "config/aidc_load_15min_daily/route_A/baseline/rf_recmo.yaml"
-        short_path = ROOT / "config/aidc_load_15min_short/route_A/baseline/rf_dirmo.yaml"
+        daily_path = ROOT / "config/aidc_load_15min_daily/route_A/baseline/lgbm_recmo.yaml"
+        short_path = ROOT / "config/aidc_load_15min_short/route_A/baseline/lgbm_dirmo.yaml"
         self.assertEqual(
             daily[daily_path]["strategy"],
             {"name": "recmo", "output_chunk_length": 24},
@@ -358,70 +350,16 @@ class Load15minFullFactorialMatrixTest(unittest.TestCase):
             {"name": "dirmo", "output_chunk_length": 4},
         )
 
-    def test_latin_ensembles_reference_baseline_members_and_parse(self):
-        configs = matrix.build_expected_configs("aidc_load_15min_daily")
-        root = ROOT / "config/aidc_load_15min_daily/route_A"
-        ensemble_path = (
-            root / "add_ensemble/ensemble_latin-a_linear-blending.yaml"
-        )
-        ensemble = configs[ensemble_path]
-        self.assertEqual(
-            ensemble["ensemble"]["members"],
-            [
-                {
-                    "name": "st_recursive",
-                    "config_ref": "../baseline/st_recursive.yaml",
-                },
-                {
-                    "name": "lgbm_mimo",
-                    "config_ref": "../baseline/lgbm_mimo.yaml",
-                },
-                {
-                    "name": "ridge_direct",
-                    "config_ref": "../baseline/ridge_direct.yaml",
-                },
-            ],
-        )
-        self.assertEqual(
-            ensemble["ensemble"]["oof"],
-            {
-                "train_window_steps": 2784,
-                "fold_count": 5,
-                "stride_steps": 96,
-            },
-        )
-        self.assertEqual(
-            ensemble["ensemble"]["method"],
-            {"name": "linear_blending"},
-        )
-        self.assertTrue(
-            {"features", "strategy", "estimator"}.isdisjoint(ensemble)
-        )
-        baseline = configs[root / "baseline/st_recursive.yaml"]
-        for key in ("problem", "data", "probabilistic", "validation"):
-            self.assertEqual(ensemble[key], baseline[key])
-        parsed = parse_ensemble_document(ensemble, source_path=ensemble_path)
-        self.assertIsInstance(parsed, EnsembleConfigSpec)
-
-        short = matrix.build_expected_configs("aidc_load_15min_short")
-        short_root = ROOT / "config/aidc_load_15min_short/route_B/add_ensemble"
-        short_oof = short[
-            short_root / "ensemble_latin-c_stacking.yaml"
-        ]["ensemble"]["oof"]
-        self.assertEqual(short_oof["train_window_steps"], 1424)
-        self.assertEqual(short_oof["fold_count"], 7)
-        self.assertEqual(short_oof["stride_steps"], 96)
-
     def test_representative_group_payloads_pass_typed_parse(self):
         configs = matrix.build_expected_configs("aidc_load_15min_daily")
         root = ROOT / "config/aidc_load_15min_daily"
         representatives = (
-            root / "route_A/baseline/st_recursive.yaml",
-            root / "route_A/add_exogenous/ridge_direct_weather.yaml",
+            root / "route_A/baseline/lgbm_recursive.yaml",
+            root / "route_A/add_exogenous/lgbm_direct_weather.yaml",
             root / "route_A/add_endogenous_cross_route/lgbm_dirrec.yaml",
-            root / "route_A/add_endogenous_state/xgb_mimo.yaml",
-            root / "route_A/add_decomposition/enet_recmo_decomp-stl96.yaml",
-            root / "route_AB/add_endogenous_joint/histgb_dirmo.yaml",
+            root / "route_A/add_endogenous_state/lgbm_mimo.yaml",
+            root / "route_A/add_decomposition/lgbm_recmo_decomp-stl96.yaml",
+            root / "route_AB/add_endogenous_joint/lgbm_dirmo.yaml",
         )
         for path in representatives:
             with self.subTest(config=path.name):
@@ -454,7 +392,7 @@ class Load15minFullFactorialMatrixTest(unittest.TestCase):
         )
 
         joint = configs[
-            root / "route_AB/add_endogenous_joint/histgb_mimo.yaml"
+            root / "route_AB/add_endogenous_joint/lgbm_mimo.yaml"
         ]
         self.assertEqual(joint["problem"]["targets"], ["A_load", "B_load"])
         self.assertEqual(

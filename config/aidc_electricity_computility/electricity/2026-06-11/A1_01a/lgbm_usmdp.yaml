@@ -88,9 +88,11 @@ validation:
   schedule_mode: daily
   horizon_mode: fixed_steps
   history_steps: 8640
-  train_window_steps: 288
   fold_count: 29
   stride_steps: 288
+  training_window:
+    kind: rolling
+    history_steps: 1248
 output:
   scenario_subpath: ''
   results_root: results

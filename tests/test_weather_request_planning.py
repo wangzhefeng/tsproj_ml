@@ -10,6 +10,28 @@ from test_weather_compiler import config_fixture
 
 
 class WeatherRequestPlanningTest(unittest.TestCase):
+    def test_shifted_final_output_envelope_matches_temporal_grid(self):
+        from forecasting_core.specs.temporal import forecast_times
+        from scripts.plan_weather_requests import plan_single_model
+        for window, horizon in (({'start': 'after_origin', 'gap_steps': 2}, 2),
+                                ({'start': 'next_day'}, 24)):
+            with self.subTest(window=window), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                config = config_fixture(root)
+                times = pd.date_range('2026-01-01', periods=240, freq='h')
+                pd.DataFrame({'time': times, 'load': range(len(times))}).to_csv(root / 'target.csv', index=False)
+                origin = pd.Timestamp('2026-01-10T14:00:00')
+                config = replace(config,
+                    problem=replace(config.problem, horizon=horizon),
+                    features=replace(config.features, target_lags={'load': (48,)}),
+                    validation={**dict(config.validation), 'forecast_window': window,
+                                'training_window': {'kind': 'rolling', 'history_steps': 120}})
+                result = plan_single_model(config, root, origin=origin)
+                first = pd.Timestamp(result['groups'][0]['supervised_origins'][0])
+                self.assertEqual(result['label_start'], forecast_times(config.problem, config.validation, first)[0].isoformat())
+                self.assertEqual(result['label_end'], forecast_times(config.problem, config.validation, origin)[-1].isoformat())
+                self.assertFalse(result['backtest_windows_verified'])
+
     def test_fixed_origins_match_real_runtime_without_fitting(self):
         from data_loading import SourceRegistry
         from model_pipeline.runner import CanonicalBaseModelRunner

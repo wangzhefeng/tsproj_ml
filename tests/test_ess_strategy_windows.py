@@ -2,7 +2,7 @@ import unittest
 
 import pandas as pd
 
-from config.aidc_ess_selfuse_load.strategy_features.windows import (
+from config.aidc_ess_selfuse_load.scripts.strategy_features.windows import (
     audit_history_timestamps,
     calendar_day_slot,
     dispatch_cycle_slot,

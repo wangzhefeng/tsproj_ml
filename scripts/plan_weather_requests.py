@@ -19,6 +19,8 @@ from data_loading import SourceRegistry
 from forecasting_core.specs import CalendarMonthBacktestSpec, FixedStepBacktestSpec, ForecastConfigSpec
 from model_ensemble.loader import resolve_members, validate_member_sources
 from model_pipeline.supervised_design import minimum_history_rows
+from model_pipeline.training_origins import select_training_origins
+from forecasting_core.specs.temporal import history_start, forecast_ends, forecast_times
 from model_testing.geometry import calendar_month_folds
 
 
@@ -41,6 +43,8 @@ def plan_single_model(config, root, *, origin=None, coverage_cache=None):
             raise ValueError('target series must have identical complete timelines for this planner')
     raw_origin = origin if origin is not None else config.validation.get('forecast_origin')
     origin = pd.Timestamp(raw_origin) if raw_origin is not None else times[-1]
+    if not isinstance(origin, pd.Timestamp):
+        raise ValueError('forecast origin must be a valid timestamp')
     times = times[times <= origin]
     if times.empty or origin not in times:
         raise ValueError('forecast origin missing from target timeline')
@@ -48,6 +52,18 @@ def plan_single_model(config, root, *, origin=None, coverage_cache=None):
     offset = pd.tseries.frequencies.to_offset(config.problem.freq)
 
     def candidates(current):
+        if current.validation.get('training_window') is not None:
+            start_time = history_start(current.validation, origin, offset)
+            relevant = times[times >= start_time]
+            if not relevant.equals(pd.date_range(start_time, origin, freq=current.problem.freq)):
+                raise ValueError('requested target timeline must be regular at problem frequency')
+            values = relevant[minimum_history_rows(current) - 1:]
+            values = values[forecast_ends(current.problem, current.validation, values) <= origin]
+            selected = select_training_origins(tuple(values), tuple(range(len(values))),
+                current.validation.get('training', {}).get('origin_sampling'), freq=current.problem.freq)
+            if len(selected) < 2:
+                raise ValueError('at least two actual supervised origins required')
+            return values[list(selected)]
         # 与supervised_design._supervised_arrays的切片合同一致；不导入私有函数。
         start = minimum_history_rows(current) - 1
         stop = position - current.problem.horizon + 1
@@ -73,8 +89,8 @@ def plan_single_model(config, root, *, origin=None, coverage_cache=None):
         if not folds:
             raise ValueError('no complete calendar-month folds')
         for fold in folds:
-            validation = {k: v for k, v in dict(config.validation).items() if k not in {'train_window_days', 'stride_months'}}
-            validation.update(horizon_mode='fixed_steps', history_steps=len(main_origins), train_window_steps=min(backtest.train_window_days, len(main_origins) - 1), fold_count=1, stride_steps=fold.horizon, seasonal_naive_lag=max(fold.horizon, 1))
+            validation = dict(config.validation)
+            validation.update(fold_count=1, seasonal_naive_lag=max(fold.horizon, 1))
             current = replace(config, problem=replace(config.problem, horizon=fold.horizon), validation=validation)
             values = candidates(current)
             if fold.origin not in values:
@@ -84,9 +100,11 @@ def plan_single_model(config, root, *, origin=None, coverage_cache=None):
                 values = values.union(variants[fold.horizon][1]).sort_values()
             variants[fold.horizon] = (current, values)
     groups = []
-    for horizon, (_, values) in sorted(variants.items()):
-        groups.append({'freq': config.problem.freq, 'horizon': horizon, 'supervised_origins': [t.isoformat() for t in values], 'final_origin': origin.isoformat(), 'label_start': (values[0] + offset).isoformat(), 'label_end': (origin + horizon * offset).isoformat()})
-    return {'groups': groups, 'label_start': min(g['label_start'] for g in groups), 'label_end': max(g['label_end'] for g in groups), 'runtime_requests_verified': False, 'weather_values_verified': False, 'scope': 'supervised_and_final_output_envelope_not_exact_request_trace'}
+    for horizon, (current, values) in sorted(variants.items()):
+        first_labels = forecast_times(current.problem, current.validation, values[0])
+        final_labels = forecast_times(current.problem, current.validation, origin)
+        groups.append({'freq': config.problem.freq, 'horizon': horizon, 'supervised_origins': [t.isoformat() for t in values], 'final_origin': origin.isoformat(), 'label_start': first_labels[0].isoformat(), 'label_end': final_labels[-1].isoformat()})
+    return {'groups': groups, 'label_start': min(g['label_start'] for g in groups), 'label_end': max(g['label_end'] for g in groups), 'runtime_requests_verified': False, 'weather_values_verified': False, 'backtest_windows_verified': False, 'scope': 'main_runner_supervised_and_final_output_envelope_not_all_backtest_windows'}
 
 
 def main():

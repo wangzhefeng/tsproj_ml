@@ -4,7 +4,7 @@ import warnings
 import numpy as np
 import pandas as pd
 
-from config.aidc_ess_selfuse_load.strategy_features.joint_clustering import (
+from config.aidc_ess_selfuse_load.scripts.strategy_features.joint_clustering import (
     JointClusteringConfig,
     build_joint_lag_features,
     fit_joint_cluster_artifact,

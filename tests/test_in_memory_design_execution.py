@@ -95,7 +95,7 @@ class InMemoryDesignExecutionTest(unittest.TestCase):
                           side_effect=original) as compile_design:
             result = run_canonical_batch(f.paths, output_root=f.root / 'batch')
             self.assertEqual(result.completed_count, 2)
-            self.assertEqual(compile_design.call_count, 1)
+            self.assertEqual(compile_design.call_count, 1 + 2 * 2)  # final共享，严格折独立
         self.assertFalse(list(f.root.rglob('_compiled_features')))
 
     def test_single_lifecycle_avoids_disk_cache_and_matches_explicit_preparation(self):

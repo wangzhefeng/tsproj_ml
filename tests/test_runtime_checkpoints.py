@@ -1,6 +1,7 @@
 """Small completed-fit checkpoint tests; no formal configuration runs."""
 import tempfile
 import unittest
+from model_pipeline.supervised_design import minimum_history_rows
 from pathlib import Path
 
 import numpy as np
@@ -196,7 +197,7 @@ class RuntimeCheckpointTest(unittest.TestCase):
                 with self.subTest(mode=mode, strategy=strategy):
                     config = case.build_config(strategy, chunk, mode=mode)
                     config = replace(config, validation={**dict(config.validation),
-                        "history_steps": 24, "train_window_steps": 12, "fold_count": 1})
+                        "history_steps": 24, 'training_window': {'kind': 'rolling', 'history_steps': 12 + minimum_history_rows(config) + config.problem.horizon - 1}, 'seasonal_naive_lag': config.problem.horizon, "fold_count": 1})
                     calls = []
                     def counted(estimator, *args, **kwargs):
                         calls.append(1)
@@ -260,7 +261,7 @@ class RuntimeCheckpointTest(unittest.TestCase):
                             "train_window_days": 90, "fold_count": 2, "stride_months": 1})
                 else:
                     config = replace(config, validation={**dict(config.validation),
-                        "history_steps": 30, "train_window_steps": 12, "fold_count": 2})
+                        "history_steps": 30, 'training_window': {'kind': 'rolling', 'history_steps': 12 + minimum_history_rows(config) + config.problem.horizon - 1}, 'seasonal_naive_lag': config.problem.horizon, "fold_count": 2})
                 config = replace(config, probabilistic=prob)
                 calls, events, interrupt = [], [], [not calendar]
                 def counted(estimator, *args, **kwargs):
@@ -357,7 +358,7 @@ class RuntimeCheckpointTest(unittest.TestCase):
                               "load": np.sin(np.arange(48)) + 10}).to_csv(data, index=False)
                 config = fixture.CanonicalRuntimeSmokeTest().build_config(data, mode=mode, strategy="direct")
                 config = replace(config, validation={**dict(config.validation),
-                    "history_steps": 30, "train_window_steps": 12, "fold_count": 2})
+                    "history_steps": 30, 'training_window': {'kind': 'rolling', 'history_steps': 12 + minimum_history_rows(config) + config.problem.horizon - 1}, 'seasonal_naive_lag': config.problem.horizon, "fold_count": 2})
                 calls = []
                 def counted(estimator, *args, **kwargs):
                     calls.append(1)

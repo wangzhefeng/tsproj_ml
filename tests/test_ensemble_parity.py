@@ -18,6 +18,7 @@ These tests are the regression gate for E1-E6 (v4 B3 fixture lifecycle).
 from __future__ import annotations
 
 import unittest
+from tempfile import TemporaryDirectory
 from pathlib import Path
 
 import numpy as np
@@ -55,7 +56,8 @@ GOLDEN_WINDOW1_ACTUAL = [55.0, 55.5]
 GOLDEN_WINDOW1_PREDICT = [54.99999999999561, 55.49999999999552]
 GOLDEN_WINDOW1_MAE = 4.437339384821826e-12
 GOLDEN_WINDOW1_RMSE = float("4.437579734041818e-12")
-GOLDEN_FINGERPRINT = "31ff73529e2f"
+# 显式 expanding 窗口改变身份；上面的数值黄金值保持不变。
+GOLDEN_FINGERPRINT = "1e51fd1d83bd"
 GOLDEN_IDENTITY = "recursive-ridge-local-k1"
 
 # ---------------------------------------------------------------------------
@@ -143,7 +145,7 @@ def _single_model_config(data_path: Path) -> ForecastConfigSpec:
         validation={
             "forecast_origin": "2026-01-03T23:00:00",
             "history_steps": 10_000,
-            "train_window_steps": 9_999,
+            'training_window': {'kind': 'expanding', 'start_time': '2026-01-01T00:00:00'},
             "fold_count": 1,
             "stride_steps": 2,
         },
@@ -184,7 +186,7 @@ def _weighted_ensemble_config(
         "validation": {
             "forecast_origin": "2026-01-03T23:00:00",
             "history_steps": 10_000,
-            "train_window_steps": 9_999,
+            'training_window': {'kind': 'expanding', 'start_time': '2026-01-01T00:00:00'},
             "fold_count": 1,
             "stride_steps": 2,
         },
@@ -208,13 +210,13 @@ def _weighted_ensemble_config(
                 {"name": "direct", "config_ref": "ensemble_members/member_direct.yaml"},
                 {"name": "recursive", "config_ref": "ensemble_members/member_recursive.yaml"},
             ],
-            "oof": {"train_window_steps": 6, "fold_count": 2, "stride_steps": 1},
+            "oof": { "fold_count": 2, "stride_steps": 1},
             "method": {"name": "averaging"},
         },
         "validation": {
             "forecast_origin": "2026-01-03T23:00:00",
             "history_steps": 10_000,
-            "train_window_steps": 9_999,
+            'training_window': {'kind': 'expanding', 'start_time': '2026-01-01T00:00:00'},
             "fold_count": 1,
             "stride_steps": 2,
         },
@@ -235,12 +237,14 @@ def _run_config(config: ForecastConfigSpec):
 
 
 def _run_ensemble(config):
-    result = run_ensemble_config(
-        config,
-        output_root=PARITY_ROOT / "out",
-        base_dir=PARITY_ROOT,
-        services=RUNTIME_SERVICES,
-    )
+    # 固定源路径用于身份黄金值，输出与OOF缓存不共享跨次测试的磁盘状态。
+    with TemporaryDirectory(prefix='tsproj-ensemble-parity-') as output:
+        result = run_ensemble_config(
+            config,
+            output_root=Path(output),
+            base_dir=PARITY_ROOT,
+            services=RUNTIME_SERVICES,
+        )
     return result, None, None, None
 
 

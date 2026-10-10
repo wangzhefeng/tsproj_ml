@@ -11,7 +11,7 @@ from data_process.load_event_detection import EventDetectionConfig
 
 class PowerMonthEventFeatureTest(unittest.TestCase):
     def test_energy_feature_frame_preserves_energy_target_and_power_shape_units(self):
-        module = importlib.import_module("config.aidc_power_month.load_event_analysis_1day")
+        module = importlib.import_module("config.aidc_power_month.scripts.load_event_analysis_1day")
         build_energy_feature_frame = module.build_energy_feature_frame
         days = 70
         idx15 = pd.date_range("2025-01-01", periods=days * 96, freq="15min")

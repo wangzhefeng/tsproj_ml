@@ -55,7 +55,7 @@ class WeatherCacheTest(unittest.TestCase):
                 data=global_data,
                 features=FeatureSpec(target_lags={'load': (1,)}, observed_past_lags={}, datetime_features=(), transformations={}),
                 strategy=ForecastStrategySpec('direct'), estimator=EstimatorSpec(model_type='ridge', target_adapter='independent'),
-                probabilistic={}, validation={'history_steps': 4, 'train_window_steps': 2, 'fold_count': 1, 'stride_steps': 1}, output={},
+                probabilistic={}, validation={'history_steps': 4, 'training_window': {'kind': 'rolling', 'history_steps': 2}, 'fold_count': 1, 'stride_steps': 1}, output={},
             )
             compiler = FeatureCompiler(config)
             infos, requests = [], []

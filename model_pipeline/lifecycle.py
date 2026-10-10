@@ -295,9 +295,9 @@ def _output_paths(
 def run_lifecycle(
     runner: Any, output_root: str | Path | None = None, *, backtest_only: bool = False,
 ) -> CanonicalRuntimeResult | BacktestRuntimeResult:
+    if runner.config.features.transformations.get("seasonal_baseline") is not None and not backtest_only:
+        raise ValueError("seasonal_baseline final fit/bundle is unsupported; use backtest-only")
     fingerprint = runner.config.fingerprint()
-    if not backtest_only and runner.config.validation.get("train_history_steps") is not None:
-        raise ValueError("train_history_steps currently requires backtest-only")
     _, model_dir, test_dir, _ = _output_paths(runner.config, fingerprint, output_root)
     # 回测状态与完整模型状态隔离，不能用回测 completed 宣称 bundle 可部署。
     state_dir = test_dir / "backtest_only" if backtest_only else model_dir

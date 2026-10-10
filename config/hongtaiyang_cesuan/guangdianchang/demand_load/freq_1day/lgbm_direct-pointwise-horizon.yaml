@@ -1,4 +1,4 @@
-# 年度入口：config/hongtaiyang_cesuan/annual_backtest.py；扩展窗口及2月例外见场景 README。
+# 年度入口：config/hongtaiyang_cesuan/scripts/annual_backtest.py；扩展窗口及2月例外见场景模型测试说明。
 schema_version: 2
 problem:
   time_col: time
@@ -102,6 +102,8 @@ estimator:
 probabilistic:
   mode: point
 validation:
+  performance:
+    model_thread_count: 1
   forecast_origin: '2025-12-31T00:00:00'
   horizon_mode: calendar_month
   train_window_days: 59

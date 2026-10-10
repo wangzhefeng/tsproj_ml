@@ -17,39 +17,17 @@ from forecasting_core.specs._mapping import (
 
 @dataclass(frozen=True, slots=True)
 class FixedStepBacktestSpec:
-    """Rolling-origin geometry measured only in supervised origin steps."""
+    """Backtest issue-time grid; the raw training window is declared separately."""
 
     history_steps: int
-    train_window_steps: int | None
     fold_count: int
     stride_steps: int
-    train_history_steps: int | None = None
-    explicit_training_window: bool = False
 
     def __post_init__(self) -> None:
-        for field_name in (
-            "history_steps",
-            "fold_count",
-            "stride_steps",
-        ):
+        for field_name in ("history_steps", "fold_count", "stride_steps"):
             value = getattr(self, field_name)
             if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
                 raise ValueError(f"validation.{field_name} must be a positive integer")
-        if self.train_window_steps is None and not self.explicit_training_window:
-            raise ValueError("validation.train_window_steps must be a positive integer")
-        if self.train_window_steps is not None and (isinstance(self.train_window_steps, bool)
-                or not isinstance(self.train_window_steps, int) or self.train_window_steps <= 0):
-            raise ValueError("validation.train_window_steps must be a positive integer")
-        if self.train_window_steps is not None and self.train_window_steps >= self.history_steps:
-            raise ValueError(
-                "validation.train_window_steps must be smaller than history_steps"
-            )
-        if self.train_history_steps is not None and (
-            isinstance(self.train_history_steps, bool)
-            or not isinstance(self.train_history_steps, int)
-            or self.train_history_steps <= 0
-        ):
-            raise ValueError("validation.train_history_steps must be a positive integer")
 
 
 @dataclass(frozen=True, slots=True)
@@ -144,7 +122,6 @@ VALIDATION_FIELDS = frozenset(
         "schedule_mode",
         "horizon_mode",
         "history_steps",
-        "train_window_steps",
         "fold_count",
         "stride_steps",
         "train_window_days",
@@ -156,7 +133,6 @@ VALIDATION_FIELDS = frozenset(
         "performance",
         "aggregate_weighting",
         "seasonal_naive_lag",
-        "train_history_steps",
     }
 )
 
@@ -310,43 +286,28 @@ def _parse_backtest_geometry(
     source: str,
     required: bool,
 ) -> BacktestSpec | None:
-    fixed_fields = frozenset(
-        {"history_steps", "train_window_steps", "fold_count", "stride_steps"}
-    )
+    fixed_fields = frozenset({"history_steps", "training_window", "fold_count", "stride_steps"})
     calendar_fields = frozenset({"train_window_days", "fold_count", "stride_months"})
     keys = set(payload)
     if horizon_mode == "fixed_steps":
-        if "training_window" in payload:
-            if payload["training_window"] is None:
-                raise ValueError("training_window must be a mapping")
-            if keys & {"train_history_steps", "train_window_steps"}:
-                raise ValueError("training_window replaces train_history_steps/train_window_steps")
-            fixed_fields = fixed_fields - {"train_window_steps"}
         forbidden = sorted(keys & {"train_window_days", "stride_months"})
         if forbidden:
-            raise ValueError(
-                f"fixed_steps validation forbids calendar fields in {source}: {forbidden}"
-            )
+            raise ValueError(f"fixed_steps validation forbids calendar fields in {source}: {forbidden}")
         present = keys & fixed_fields
-        if not present and not required and "train_history_steps" not in keys:
+        if not present and not required:
             return None
         missing = sorted(fixed_fields - keys)
         if missing:
-            raise ValueError(
-                f"fixed_steps validation missing geometry fields in {source}: {missing}"
-            )
-        if "train_history_steps" in payload and payload["train_history_steps"] is None:
-            raise ValueError("validation.train_history_steps must be a positive integer")
+            raise ValueError(f"fixed_steps validation missing geometry fields in {source}: {missing}")
+        if not isinstance(payload["training_window"], Mapping):
+            raise ValueError("training_window must be a mapping")
         return FixedStepBacktestSpec(
             history_steps=payload["history_steps"],
-            train_window_steps=payload.get("train_window_steps"),
             fold_count=payload["fold_count"],
             stride_steps=payload["stride_steps"],
-            train_history_steps=payload.get("train_history_steps"),
-            explicit_training_window="training_window" in payload,
         )
 
-    forbidden = sorted(keys & {"history_steps", "train_window_steps", "stride_steps", "train_history_steps"})
+    forbidden = sorted(keys & {"history_steps", "training_window", "stride_steps"})
     if forbidden:
         raise ValueError(
             f"calendar_month validation forbids fixed-step fields in {source}: {forbidden}"

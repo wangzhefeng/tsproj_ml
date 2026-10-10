@@ -27,8 +27,8 @@ class AidcLoad15minDesignAuditTest(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr or result.stdout)
         payload = json.loads(result.stdout)
         self.assertEqual(payload["scenario_count"], 3)
-        self.assertEqual(payload["single_model_count"], 4617)
-        self.assertEqual(payload["compiled_count"], 4617)
+        self.assertEqual(payload["single_model_count"], 513)
+        self.assertEqual(payload["compiled_count"], 513)
         self.assertEqual(payload["failure_count"], 0)
         self.assertEqual(payload["failures"], [])
 

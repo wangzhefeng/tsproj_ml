@@ -8,7 +8,7 @@ import numpy as np
 import pandas as pd
 
 ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / 'config/hongtaiyang_cesuan'))
+sys.path.insert(0, str(ROOT / 'config/hongtaiyang_cesuan/scripts'))
 
 from data_loading.calendar_generator.named_holidays import named_holiday_frame
 from model_training.sample_weight import temporal_sample_weight
@@ -66,7 +66,7 @@ class HongtaiyangOptimizationTest(unittest.TestCase):
         doc = model_document('xinnengyuan', 'demand_load', True, 'direct-pointwise')
         doc['validation']['training'] = {'sample_weight': {'method': 'exponential', 'halflife_days': 30}}
         config = parse_model_config(doc, source='test')
-        dynamic = window_config(config, 30, 'direct')
+        dynamic = window_config(config, 30, 'direct', raw_history_steps=90)
         self.assertEqual(dynamic.validation['training']['sample_weight']['halflife_days'], 30)
 
     def test_real_weighted_named_calendar_training(self):

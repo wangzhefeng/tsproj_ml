@@ -72,7 +72,7 @@ ENSEMBLE_DOC = {
             {"name": "direct", "config_ref": "direct.yaml"},
             {"name": "recursive", "config_ref": "recursive.yaml"},
         ],
-        "oof": {"train_window_steps": 8, "fold_count": 2, "stride_steps": 1},
+        "oof": { "fold_count": 2, "stride_steps": 1},
         "method": {"name": "averaging"},
     },
     "validation": {"forecast_origin": "2026-01-03T23:00:00"},

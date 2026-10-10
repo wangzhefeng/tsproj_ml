@@ -38,7 +38,7 @@
 
 ### 结果身份与 Direct 方法
 
-单模型 identity 为 `<method_label>-<model_type>-<training_scope>-k<target_count>-<fingerprint前12位>`。
+单模型 identity 为 `<model_type>-<method_label>-<training_scope>-k<target_count>-<fingerprint前12位>`（模型在前、方法在后）。
 `ForecastConfigSpec.result_method()` 是路径及结果元数据的方法描述唯一入口；标签来自实际配置，不来自 YAML 文件名。
 
 | Direct 有效配置 | method_label |

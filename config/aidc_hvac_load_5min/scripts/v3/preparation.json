@@ -298,9 +298,9 @@
   "it_semantics": "fixed observed-point subset, not whole-building IT load",
   "input_sha256": {
     "raw_data/IT_load/A1_data.csv": "3cb65e462036a8f63eb0fda2539777751c323f75b989dfc61d913bc61209da66",
-    "raw_data/hvac_all_devices/route_A/A1_data.csv": "f173710abda0e531d0138cfe7aef675707847092199a2c6227d473193aab5dbe",
-    "raw_data/hvac_all_devices/route_B/A1_data.csv": "6acff234a7974793e8008b975003e0e2ff7af34a55cdfdf15711c2fd10be304c",
-    "raw_data/hvac_remove_devices/route_A/A1_data.csv": "32ecd8b36bf5b2672c4933a4987dd4631182cb59de77c48cbde51184d695ac39",
-    "raw_data/hvac_remove_devices/route_B/A1_data.csv": "f6ec34b185107cde15f4f088e839b80cd456d3539a179ca9ec5d04d4789fd3d3"
+    "raw_data/hvac_all_devices/route_A/A1_data.csv": "f7c0bb1dcbbe19f5bdb813a75d0ff157573926c724f6f93c04b1b19ec9a65a40",
+    "raw_data/hvac_all_devices/route_B/A1_data.csv": "d6623fbcd8b8fcc081e387cc54622cb005b2ac3788af795894ad9d1c32a65ebb",
+    "raw_data/hvac_remove_devices/route_A/A1_data.csv": "5e4549f086c39253fd1e859f87e0bc835b1b01c1e10859e5fd1cbd911da96b5c",
+    "raw_data/hvac_remove_devices/route_B/A1_data.csv": "a78a95e67c3260192d8554db9d2c6a84e3a64cc94f3939764ce11fa78054e47a"
   }
 }

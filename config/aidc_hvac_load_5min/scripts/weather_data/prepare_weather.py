@@ -22,7 +22,9 @@ def build_hvac_weather(hourly, metadata, *, data_version=None):
     weather_dir = artifact_path(scenario_dir, 'weather_data', data_version)
     mapping = {'rt_tt2': 'pred_tt2', 'cal_rh': 'pred_rh', 'rt_ssr': 'pred_ssrd',
                'rt_ws10': 'pred_ws10', 'rt_ps': 'pred_ps', 'rt_rain': 'pred_rain'}
-    paths = sorted(target_dir.glob('*/*/*.csv'))
+    # v3原目标与具名研究派生可同目录共存；默认不把派生自动纳入天气绑定。
+    pattern = '*/A1_all/data.csv' if data_version == 'data_v3' else '*/*/*.csv'
+    paths = sorted(target_dir.glob(pattern))
     if not paths:
         raise FileNotFoundError(f'{target_dir} 下无预测 CSV')
     sources = metadata['sources']

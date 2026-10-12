@@ -29,6 +29,9 @@ class WeatherHvacWindowsTest(unittest.TestCase):
                 path = root / 'dataset/aidc_hvac_load_5min/forecast_data/data_v3' / devices / 'A1_all/data.csv'
                 path.parent.mkdir(parents=True)
                 pd.DataFrame({'time': times, 'hvac_total_load_AB': 3.}).to_csv(path, index=False)
+                # 同目录反事实派生不是原天气绑定的自动消费目标。
+                pd.DataFrame({'time': times, 'hvac_total_load_AB': 4.}).to_csv(
+                    path.with_name('data_dr_adjusted.csv'), index=False)
             hourly = pd.DataFrame({c: 1. for c in list(MAPPING) + list(MAPPING.values())},
                                   index=pd.date_range(times[0], periods=24, freq='1h'))
             with patch.object(scenario, 'ROOT', root), patch.object(builder, 'ROOT', root):
@@ -39,6 +42,7 @@ class WeatherHvacWindowsTest(unittest.TestCase):
             for row in outputs:
                 self.assertIn('/data_v3/', row['file'])
                 self.assertNotIn('/route_', row['file'])
+                self.assertTrue(row['target_file'].endswith('/data.csv'))
                 self.assertEqual(len(pd.read_csv(root / row['file'])), len(times))
 
     def test_authorized_tail_interpolation_is_local_and_audited(self):

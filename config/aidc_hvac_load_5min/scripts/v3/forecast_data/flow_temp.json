@@ -1,0 +1,12 @@
+{
+  "start": "2026-04-08 00:00:00",
+  "end": "2026-09-16 23:55:00",
+  "input_sha256": {
+    "raw_data/hvac_flow_temp/data_temp.csv": "cfa9ed30132e610af411e855849e92a62f8313939a68942dae9f211383017e8c",
+    "raw_data/hvac_flow_temp/data_flow.csv": "852b445e53a1f2192b562163a0f98c57c325985a8ffb7a1e98fc238ded1df72f",
+    "forecast_data/data_v3/hvac_all_devices/A1_all/data.csv": "93b71a3675881e05498e21f012007a3ab8f3987a694d60a83bdae7e8dc3306e2",
+    "forecast_data/data_v3/hvac_all_devices/A1_all/data_dr_adjusted.csv": "7b9266ae2ad2fba1729951df0145372543a6bafdaf89d52f439454351e3160e4",
+    "forecast_data/data_v3/hvac_remove_devices/A1_all/data.csv": "bd6f4d2904557b6715fb95ec496f95ee1dc68d984b0d94e6c30594a9dae17794",
+    "forecast_data/data_v3/hvac_remove_devices/A1_all/data_dr_adjusted.csv": "4f5596ba6290b3897355785197f4d65277a72eac590103115316ba4cb9df4e71"
+  }
+}

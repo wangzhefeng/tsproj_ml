@@ -1,0 +1,44 @@
+{
+  "kind": "hvac_demand_response_v1",
+  "purpose": "offline normal-operation counterfactual; user-confirmed demand-response events including recovery",
+  "events": [
+    {
+      "event_id": "dr_20260710",
+      "start": "2026-07-10 15:10:00",
+      "rebound_start": "2026-07-10 16:05:00",
+      "end_exclusive": "2026-07-10 17:30:00"
+    },
+    {
+      "event_id": "dr_20260716",
+      "start": "2026-07-16 15:15:00",
+      "rebound_start": "2026-07-16 16:05:00",
+      "end_exclusive": "2026-07-16 16:50:00"
+    },
+    {
+      "event_id": "dr_20260717",
+      "start": "2026-07-17 15:15:00",
+      "rebound_start": "2026-07-17 16:05:00",
+      "end_exclusive": "2026-07-17 17:00:00"
+    },
+    {
+      "event_id": "dr_20260806",
+      "start": "2026-08-06 19:10:00",
+      "rebound_start": "2026-08-06 20:05:00",
+      "end_exclusive": "2026-08-06 23:05:00"
+    }
+  ],
+  "input_sha256": {
+    "raw_data/hvac_all_devices/route_A/A1_data.csv": "f7c0bb1dcbbe19f5bdb813a75d0ff157573926c724f6f93c04b1b19ec9a65a40",
+    "imputed_data/data_v3/hvac_all_devices/route_A/A1_data.csv": "b3c67ac97224806de56b17a9bba55567989adc489f8d2f3340b4ebf8ddff0357",
+    "raw_data/hvac_all_devices/route_B/A1_data.csv": "d6623fbcd8b8fcc081e387cc54622cb005b2ac3788af795894ad9d1c32a65ebb",
+    "imputed_data/data_v3/hvac_all_devices/route_B/A1_data.csv": "4dcf8bd38b0ae433fbc0b8b5a798da3a4e50ddaa8d5797ea63a3d59ccd2966f8",
+    "forecast_data/data_v3/hvac_all_devices/A1_all/data.csv": "93b71a3675881e05498e21f012007a3ab8f3987a694d60a83bdae7e8dc3306e2",
+    "analysis/data_v3/forecast_windows/hvac_all_devices/A1_all/mask.csv": "3fe869a9c24f48ea803d0908c45d9651ea87d9b206207ffb42c354fcd9c90ca6",
+    "raw_data/hvac_remove_devices/route_A/A1_data.csv": "5e4549f086c39253fd1e859f87e0bc835b1b01c1e10859e5fd1cbd911da96b5c",
+    "imputed_data/data_v3/hvac_remove_devices/route_A/A1_data.csv": "e4c49c478ce899aaff50b319202349eb9c45ac65dbd862f04c680cc8476b880f",
+    "raw_data/hvac_remove_devices/route_B/A1_data.csv": "a78a95e67c3260192d8554db9d2c6a84e3a64cc94f3939764ce11fa78054e47a",
+    "imputed_data/data_v3/hvac_remove_devices/route_B/A1_data.csv": "51259c49faabcfd00d0dec8ea8d113331954f5bf518ea5d929ce9c96d76b0040",
+    "forecast_data/data_v3/hvac_remove_devices/A1_all/data.csv": "bd6f4d2904557b6715fb95ec496f95ee1dc68d984b0d94e6c30594a9dae17794",
+    "analysis/data_v3/forecast_windows/hvac_remove_devices/A1_all/mask.csv": "1c5dee393f3e07c5a6e7a5ecda419b691469ae3b24bfbcde0852a8965bccff44"
+  }
+}

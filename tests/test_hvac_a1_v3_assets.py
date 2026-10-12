@@ -91,7 +91,15 @@ def verify_assets():
         pd.testing.assert_frame_equal(whole[points], subset[points])
     expected_targets = {f'forecast_data/data_v3/{d}/A1_all/data.csv'
                         for d in ('hvac_all_devices', 'hvac_remove_devices')}
-    assert {str(p.relative_to(DATA)) for p in (DATA / 'forecast_data/data_v3').rglob('*.csv')} == expected_targets
+    adjusted_targets = {str(Path(p).with_name('data_dr_adjusted.csv')) for p in expected_targets}
+    flow_temp_targets = {str(Path(p).with_name(name)) for p in expected_targets
+                         for name in ('data_with_flow_temp.csv', 'data_dr_adjusted_with_flow_temp.csv')}
+    flow_temp_targets.add('forecast_data/data_v3/hvac_flow_temp/features.csv')
+    switch_targets = {str(Path(p).with_name(name)) for p in expected_targets
+                      for name in ('data_with_flow_temp_switch.csv', 'data_dr_adjusted_with_flow_temp_switch.csv')}
+    switch_targets.add('forecast_data/data_v3/hvac_switch/features.csv')
+    assert {str(p.relative_to(DATA)) for p in (DATA / 'forecast_data/data_v3').rglob('*.csv')} == (
+        expected_targets | adjusted_targets | flow_temp_targets | switch_targets)
     assert {r['path'] for r in manifest['targets']} == expected_targets
     weather_manifest = pd.read_csv(DATA / 'weather_data/data_v3/manifest.csv')
     assert set(weather_manifest.target_file) == {'dataset/aidc_hvac_load_5min/' + p for p in expected_targets}

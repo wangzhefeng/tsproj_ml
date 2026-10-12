@@ -24,7 +24,17 @@
 
 `test_seasonal_training_window` 与 `test_ensemble_temporal_windows` 默认 integration：显式原始历史窗的季节残差逐折拟合与窗口外污染隔离；融合 OOF 独立预热、正 gap、真值对齐、扰动隔离和真实 pickle 部署回放。`test_retired_temporal_contract` 默认 integration，验证单模型与 OOF 旧字段解析拒绝；自然月与月频真实产物继续由 `test_calendar_month_runtime` 验证。
 
+`test_hvac_demand_response` 默认 integration：原 data.csv 与具名派生共存、固定事件范围外保真、IT保真、两设备口径共享点位、只用过去原观测选型、此前事件不进入校准/参考、校准不足与源SHA漂移拒绝、非仓库cwd真实CLI和拒绝覆盖；真实产物独立回读核对来源/产物SHA、点位重建、方法评分及mask。旧v3资产测试核对两原表+两派生表的完整集合；天气v3只绑定原 data.csv，新增派生不触发自动扩展。不训练模型。定向 `integration --match test_hvac_demand_response`。
+
+需求响应点位归档回归 `test_hvac_demand_response_relocation` 默认integration：四表原字节迁移、旧目录退出、目标冲突与源SHA损坏前置拒绝、旧生成manifest保留；生成入口CLI同时断言点位进入 `outlier_remove_data/data_v3/demand_response/`，真实资产验收区分迁移记录和历史builder身份。
+
 ## 执行集合
+
+`test_hvac_switch_features` 默认integration：三槽确认延迟、缺口重置且不捏造启停、未来前缀不变、跨两条边的接替确认、负/无限值屏蔽而真实需求响应保留；真实临时构建覆盖共享点填补、两设备口径×两父版原字段保真、四个新文件相同特征、离线标签不混入预测字段与拒绝覆盖。`prepare_switch.py --verify-only`另独立回读真实逐缺口数值/掩码、所有旧文件SHA及逐列可得时间；不训练模型。
+
+`test_hvac_flow_temp` 默认integration：58点位→76基础变量→两口径双目标版本的真实临时构建，公式黄金值、缺失审计、源SHA/全空/重复列/时间网格拒绝、覆盖保护、产物损坏检测、非仓库cwd CLI。`test_hvac_flow_temp_assets` 独立回读正式产物，逐缺口核验历史评分、方法、补值、依赖和闭合资格时间，核对原值保真、公式及四表拼接；不训练模型。原v3资产测试将5份新CSV纳入完整集合，不放宽旧目标/天气合同。定向 `integration --match test_hvac_flow_temp`。
+
+`test_hvac_equipment_regroup` 默认 integration：整套冷机归路、原电气route保留、点位/NaN保真、逐点缺口重建路线mask、非法组成拒绝；不训练模型。真实迁移另外逐点比对旧/新raw、填补、异常派生与需求响应点位表，并验证36份分套表、IT及天气值不变。
 
 外层 `validation.history_steps` 退役：`test_retired_temporal_contract` 验证无旧键可解析、旧键显式拒绝；`test_forecast_schedule_windows` 验证普通/gap/次日最近完整折黄金日期及历史不足不减折、不缩窗。训练窗口同名内层键仍有效，现有月频、融合、真实回测/final/bundle测试继续覆盖，不改变发现规则。
 

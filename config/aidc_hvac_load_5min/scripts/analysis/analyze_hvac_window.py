@@ -22,6 +22,7 @@
 """
 
 from pathlib import Path
+import argparse
 import sys
 
 _REPO = Path(__file__).resolve().parents[4]
@@ -41,7 +42,9 @@ plt.rcParams['axes.unicode_minus'] = False
 
 # ---------------------------------------------------------------- 路径与常量
 REPO = Path(__file__).resolve().parents[4]
-DATA = REPO / 'dataset' / 'aidc_hvac_load_5min' / 'raw_data'
+parser = argparse.ArgumentParser(description=__doc__)
+parser.add_argument('--root', type=Path, default=REPO / 'dataset/aidc_hvac_load_5min')
+DATA = parser.parse_args().root.resolve() / 'raw_data'
 OUT = DATA.parent / 'analysis/data_v1/raw_diagnostics/hvac'
 TOTAL_COL = 'total_load'
 

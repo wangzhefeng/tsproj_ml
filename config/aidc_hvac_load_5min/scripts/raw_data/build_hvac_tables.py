@@ -5,7 +5,7 @@
 
 - spot_id:   从 dataset/aidc_load_5min/A1_A2_A3_points/<data_type>/ 提取点位 CSV
 - 备注:      设备版本区分 —— hvac_all_devices(全部设备) / hvac_remove_devices(剔除冷冻水二次泵)
-- route:     A / B 两路分别成表
+- group_route: A / B 按整套冷水机组归属成表；原route保留于映射，不冒充电气馈线总量
 - data_type: A1 / A2 / A3 楼区分
 
 时间网格(缺失不填补, 保留 NaN):
@@ -32,6 +32,7 @@ if str(_REPO) not in sys.path:
 import pandas as pd
 
 from config.aidc_hvac_load_5min.scripts.raw_data.migrate_hvac_data import require_new_files
+from config.aidc_hvac_load_5min.scripts.raw_data.equipment_mapping import load_mapping
 
 # ---------------------------------------------------------------- 路径
 REPO = Path(__file__).resolve().parents[4]                    # 仓库根目录
@@ -66,7 +67,7 @@ require_new_files([
     for version in VERSIONS for route in ['A', 'B']
     for name in ['A1_data.csv', 'A2_data.csv', 'A3_data.csv', 'data.csv']
 ])
-meta = pd.read_excel(XLSX, sheet_name=SHEET)
+meta = load_mapping(XLSX)
 need_cols = {'data_type', 'spot_id', '备注', 'route'}
 assert need_cols <= set(meta.columns), f'sheet 缺少必要列: {need_cols - set(meta.columns)}'
 assert meta['spot_id'].is_unique, 'sheet 内 spot_id 存在重复'
@@ -115,7 +116,7 @@ for version, keep in VERSIONS.items():
 
         building_dfs: dict[str, pd.DataFrame] = {}
         for b in BUILDINGS:
-            sub = meta[(meta['data_type'] == DATA_TYPE_OF[b]) & (meta['route'] == route)]
+            sub = meta[(meta['data_type'] == DATA_TYPE_OF[b]) & (meta['group_route'] == route)]
             sub = keep(sub)
             assert sub['spot_id'].is_unique, f'{b} route_{route} spot_id 重复'
             df_b = build_building_table(b, sub)

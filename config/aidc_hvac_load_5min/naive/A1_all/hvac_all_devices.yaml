@@ -2,7 +2,7 @@
 # 实现：seasonaltemplate + recursive + 单一滞后 288 + equal_weight=true → 权重恒 [1.0]；
 # recursive 且 horizon<=288 时滞后列全程引用实测值，逐步得「昨日同时刻」。
 # 数据为 A1 双路合计 data_v3 hvac_all_devices；几何对齐非 add_context 场景 A1_all 配置
-# （90 天训练窗 history_steps=25920、72 折、stride=288），供跨场景对比。
+# （150 天训练窗 history_steps=43200、12 折、stride=288，与 add_context 一致），供跨场景对比。
 # 仅支持 --backtest-only，未执行正式模型。
 schema_version: 2
 problem:
@@ -46,14 +46,14 @@ validation:
   forecast_origin: '2026-09-16T23:55:00'
   schedule_mode: daily
   horizon_mode: fixed_steps
-  fold_count: 72
+  fold_count: 12
   stride_steps: 288
   performance:
     window_parallel_workers: 1
     total_thread_limit: 1
   training_window:
     kind: rolling
-    history_steps: 25920
+    history_steps: 43200
 output:
   scenario_subpath: aidc_hvac_load_5min/naive/A1_all
   results_root: results

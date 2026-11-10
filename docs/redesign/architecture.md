@@ -967,8 +967,8 @@ git diff --check
 
 | 类别 | 配置/来源 | Fresh 产物证据 |
 |---|---|---|
-| fixed-step point | `config/aidc_load_month/route_A/lgbm_usmr_mean.yaml` | `(1,34,1)`；prediction=34；cv=170/5 windows |
-| fixed-step quantile | `config/aidc_load_month/route_A/lgbm_usmr_prob_mean.yaml` | `(1,34,1)`；q10/q50/q90；probabilistic scores；cv=170/5 windows |
+| fixed-step point | `config/aidc_load_month/route_A/lgbm_usmr_mean.yaml` | `(1,34,1)`；prediction=34；cv=170/5 windows（该配置 2026-11-09 已迁 calendar_month+origin_day，现名 `lgbm_recursive.yaml`，本行为迁移前历史证据） |
+| fixed-step quantile | `config/aidc_load_month/route_A/lgbm_usmr_prob_mean.yaml` | `(1,34,1)`；q10/q50/q90；probabilistic scores；cv=170/5 windows（同上，迁移前历史证据；现名 `lgbm_recursive_prob.yaml`） |
 | calendar-month quantile | `config/aidc_power_month/route_B/freq_1day/baseline/lgbm_usmr_prob_mean_conformal.yaml` | 2026-08-01..31；prediction=31；cv=181/6 windows |
 | `1ME` point | `config/aidc_power_month/route_B/freq_1month/window_length_8/st_usmd_mean.yaml` | `(1,1,1)`；forecast=2026-08-31；cv=3/3 windows |
 | point Ensemble | `config/aidc_load_15min_short/route_B/add_endogenous_cross_route_weather_date/lgbm_usbr_mean.yaml` | averaging；2 self-contained members；prediction/cv=16；OOF `2eed336d...` |

@@ -36,12 +36,19 @@ class CalendarMonthBacktestSpec:
     train_window_days: int
     fold_count: int
     stride_months: int
+    origin_day: int | None = None
 
     def __post_init__(self) -> None:
         for field_name in ("train_window_days", "fold_count", "stride_months"):
             value = getattr(self, field_name)
             if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
                 raise ValueError(f"validation.{field_name} must be a positive integer")
+        if self.origin_day is not None and (
+            isinstance(self.origin_day, bool)
+            or not isinstance(self.origin_day, int)
+            or not 1 <= self.origin_day <= 28
+        ):
+            raise ValueError("validation.origin_day must be an integer in 1..28")
 
 
 BacktestSpec = FixedStepBacktestSpec | CalendarMonthBacktestSpec
@@ -124,6 +131,7 @@ VALIDATION_FIELDS = frozenset(
         "stride_steps",
         "train_window_days",
         "stride_months",
+        "origin_day",
         "training_scope",
         "training",
         "train_outlier",
@@ -288,7 +296,7 @@ def _parse_backtest_geometry(
     calendar_fields = frozenset({"train_window_days", "fold_count", "stride_months"})
     keys = set(payload)
     if horizon_mode == "fixed_steps":
-        forbidden = sorted(keys & {"train_window_days", "stride_months"})
+        forbidden = sorted(keys & {"train_window_days", "stride_months", "origin_day"})
         if forbidden:
             raise ValueError(f"fixed_steps validation forbids calendar fields in {source}: {forbidden}")
         present = keys & fixed_fields
@@ -321,6 +329,7 @@ def _parse_backtest_geometry(
         train_window_days=payload["train_window_days"],
         fold_count=payload["fold_count"],
         stride_months=payload["stride_months"],
+        origin_day=payload.get("origin_day"),
     )
 
 

@@ -82,6 +82,7 @@ class CalendarMonthFold:
     train_indices: tuple[int, ...]
     forecast_times: pd.DatetimeIndex
     horizon: int
+    lead: int
     metadata: dict[str, Any]
 
 
@@ -91,12 +92,20 @@ def calendar_month_folds(
     train_window_days: int,
     fold_count: int,
     stride_months: int,
+    origin_day: int | None = None,
 ) -> tuple[CalendarMonthFold, ...]:
     """Build complete month-aligned folds in chronological order.
 
     Each fold predicts one whole month and trains on exactly the preceding
-    ``train_window_days`` daily rows. The newest complete month anchors the
-    sequence; preceding folds are spaced by ``stride_months`` calendar months.
+    ``train_window_days`` daily rows ending at the fold origin. The newest
+    complete month anchors the sequence; preceding folds are spaced by
+    ``stride_months`` calendar months.
+
+    ``origin_day=None`` keeps the origin on the day before the target month
+    (``lead=1``). An integer ``origin_day`` in 1..28 moves each origin to that
+    day of the preceding month: the runner must then also bridge
+    ``lead-1`` unscored gap steps before the month starts, where
+    ``lead`` equals ``days_in_month(origin month) - origin_day + 1``.
     """
     if (
         isinstance(train_window_days, bool)
@@ -110,6 +119,12 @@ def calendar_month_folds(
     ):
         if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
             raise ValueError(f"{field_name} must be a positive integer")
+    if origin_day is not None and (
+        isinstance(origin_day, bool)
+        or not isinstance(origin_day, int)
+        or not 1 <= origin_day <= 28
+    ):
+        raise ValueError("origin_day must be an integer in 1..28")
 
     times = pd.DatetimeIndex(pd.to_datetime(tuple(timestamps)))
     if times.empty:
@@ -123,7 +138,7 @@ def calendar_month_folds(
     if not times.equals(expected):
         raise ValueError("calendar-month folds require a complete regular 1D index")
 
-    candidates: list[tuple[pd.Timestamp, int, int]] = []
+    candidates: list[tuple[pd.Timestamp, int, int, int, int]] = []
     current = times[-1].to_period("M")
     while len(candidates) < fold_count * stride_months:
         month_start = current.to_timestamp()
@@ -131,25 +146,31 @@ def calendar_month_folds(
         test_start = int(times.searchsorted(month_start, side="left"))
         test_end = int(times.searchsorted(month_end, side="left"))
         horizon = int(month_start.days_in_month)
+        lead = 1
+        if origin_day is not None:
+            previous_month_days = int((month_start - pd.Timedelta(days=1)).days_in_month)
+            lead = previous_month_days - origin_day + 1
+        origin_index = test_start - lead
         complete = (
             test_start < len(times)
             and times[test_start] == month_start
             and test_end - test_start == horizon
+            and origin_index >= 0
+            and origin_index + 1 >= train_window_days
         )
-        if complete and test_start >= train_window_days:
-            candidates.append((month_start, test_start, test_end))
+        if complete:
+            candidates.append((month_start, test_start, test_end, origin_index, lead))
         if month_start <= times[0]:
             break
         current -= 1
 
     ordered = list(reversed(candidates[::stride_months][:fold_count]))
     folds = []
-    for window, (month_start, test_start, test_end) in enumerate(
+    for window, (month_start, test_start, test_end, origin_index, lead) in enumerate(
         ordered, start=1
     ):
-        train_indices = tuple(range(test_start - train_window_days, test_start))
+        train_indices = tuple(range(origin_index + 1 - train_window_days, origin_index + 1))
         forecast_times = times[test_start:test_end]
-        origin_index = test_start - 1
         origin = pd.Timestamp(times[origin_index])
         folds.append(
             CalendarMonthFold(
@@ -159,10 +180,12 @@ def calendar_month_folds(
                 train_indices=train_indices,
                 forecast_times=forecast_times,
                 horizon=len(forecast_times),
+                lead=lead,
                 metadata={
                     "window": window,
                     "origin": origin.isoformat(),
                     "calendar_month": month_start.strftime("%Y-%m"),
+                    "lead_steps": lead,
                     "label_start": forecast_times[0].isoformat(),
                     "label_end": forecast_times[-1].isoformat(),
                     "training_sample_count": len(train_indices),

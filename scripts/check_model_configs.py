@@ -129,6 +129,7 @@ _CANONICAL_NESTED_FIELDS = {
         "stride_steps",
         "train_window_days",
         "stride_months",
+        "origin_day",
         "training_scope",
         "training",
         "train_outlier",

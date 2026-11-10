@@ -59,7 +59,7 @@ schema_version/problem/data/probabilistic/ensemble/validation/output
 
 `features.transformations.seasonal_baseline`（column/period/days）是独立残差通路：训练按各自监督原点 as-of 减同槽基线，预测原位恢复，递归 provider 始终用原始单位。要求 Local、point、显式 training_window、无目标变换；不是 target transform。仅支持 `--backtest-only`；完整生命周期、独立 final fit 和 bundle 构造均显式拒绝，避免残差标签准备与部署恢复尚未贯通时输出错误预测。逐折拟合及窗口外污染隔离由定向测试覆盖，不扩大为残差部署验收。
 
-Fixed-step 的 fold_count/stride_steps 与截止原点、预测区间共同定义发报原点几何，training_window 定义原始训练历史；calendar-month 使用 train_window_days/fold_count/stride_months 并动态解析每月 H。两类训练窗不混写。退役外层 history_steps 会产生新 fingerprint；存量结果不自动重跑、迁移或删除。
+Fixed-step 的 fold_count/stride_steps 与截止原点、预测区间共同定义发报原点几何，training_window 定义原始训练历史；calendar-month 使用 train_window_days/fold_count/stride_months 并动态解析每月 H；`origin_day`（可选，1..28）把每折原点从「目标月开始前一天」移到上月该日：runner 按完整跨度（`lead-1+当月天数`）预测并逐折穿越未评分 gap 天，评分只保留目标自然月，训练标签末端不越过折原点，seasonal-naive 回看完整跨度；不声明时行为与月末原点完全一致。两类训练窗不混写。退役外层 history_steps 会产生新 fingerprint；存量结果不自动重跑、迁移或删除。
 
 经用户裁决（2026-09-07 全量清除），全仓配置不再使用 `date_type` file source，`date_*.csv`/`df_date*.csv` 数据资产已删除，不生成伪标签；节假日特征唯一载体为 `chinese_holiday` generated source。
 

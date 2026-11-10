@@ -45,6 +45,7 @@ def run_calendar_month_backtest(
         train_window_days=backtest.train_window_days,
         fold_count=backtest.fold_count,
         stride_months=backtest.stride_months,
+        origin_day=backtest.origin_day,
     )
     if not folds:
         raise ValueError("calendar-month runtime requires at least one complete fold")
@@ -77,12 +78,15 @@ def run_calendar_month_backtest(
     calibration_audits: list[dict[str, Any]] = []
     raw_history_times = final_runner.builder.target_history_times(final_runner.origin)
     def build_context(fold):
-        dynamic_problem = replace(config.problem, horizon=fold.horizon)
+        # origin_day>1 时原点在目标月中旬之前，runner 需先穿越 lead-1 个
+        # 不评分的 gap 步再覆盖整月；评分切片只保留当月。
+        runner_horizon = fold.lead - 1 + fold.horizon
+        dynamic_problem = replace(config.problem, horizon=runner_horizon)
         # 月回测保留自己的原始日窗合同；只调整本折H，不借固定步数旧合同构造runner。
         dynamic_validation = {
             **dict(config.validation),
             'fold_count': 1,
-            'seasonal_naive_lag': max(fold.horizon, 1),
+            'seasonal_naive_lag': max(fold.lead - 1 + fold.horizon, 1),
         }
         dynamic_config = replace(
             config,
@@ -154,6 +158,11 @@ def run_calendar_month_backtest(
             calibration_tracker=calibration_tracker,
             aggregate_weights=aggregate_weights,
             eval_mask_config=eval_mask_config,
+            score_slice=(
+                slice(fold_ctx.lead - 1, fold_ctx.lead - 1 + fold_ctx.horizon)
+                if fold_ctx.lead > 1
+                else None
+            ),
         )
         cv_frames.append(fold.frame)
         if fold.calibration_audit is not None:

@@ -82,13 +82,13 @@ def plan_single_model(config, root, *, origin=None, coverage_cache=None):
     variants = {config.problem.horizon: (config, main_origins)}
     backtest = config.validation.backtest
     if isinstance(backtest, CalendarMonthBacktestSpec):
-        folds = calendar_month_folds(times, train_window_days=backtest.train_window_days, fold_count=backtest.fold_count, stride_months=backtest.stride_months)
+        folds = calendar_month_folds(times, train_window_days=backtest.train_window_days, fold_count=backtest.fold_count, stride_months=backtest.stride_months, origin_day=backtest.origin_day)
         if not folds:
             raise ValueError('no complete calendar-month folds')
         for fold in folds:
             validation = dict(config.validation)
-            validation.update(fold_count=1, seasonal_naive_lag=max(fold.horizon, 1))
-            current = replace(config, problem=replace(config.problem, horizon=fold.horizon), validation=validation)
+            validation.update(fold_count=1, seasonal_naive_lag=max(fold.lead - 1 + fold.horizon, 1))
+            current = replace(config, problem=replace(config.problem, horizon=fold.lead - 1 + fold.horizon), validation=validation)
             values = candidates(current)
             if fold.origin not in values:
                 raise ValueError('calendar holdout absent from dynamic supervised timeline')

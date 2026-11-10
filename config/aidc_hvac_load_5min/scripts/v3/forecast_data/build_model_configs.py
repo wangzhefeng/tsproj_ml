@@ -51,9 +51,9 @@ def build_documents():
     grid = pd.date_range('2026-04-08', '2026-09-16 23:55', freq='5min')
     documents, cache = {}, {}
     for group in GROUPS:
-        train_days = 150 if group == 'add_context' else 90
+        train_days = 150
         for devices in VERSIONS:
-            target_path = DATA / 'forecast_data/data_v3' / devices / 'A1_all/data.csv'
+            target_path = DATA / 'forecast_data/data_v3' / devices / 'A1_all/data_dr_adjusted.csv'
             _, times = read_frame(target_path, 'time', cache)
             if not times.equals(grid):
                 raise ValueError(f'v3 目标偏离固定窗口: {target_path}')
@@ -134,8 +134,8 @@ def build_documents():
                 documents[relative] = (
                     '# A1 双路合计 data_v3；IT 为固定204点子集，不是全楼IT总负荷。\n'
                     '# 无异常清洗；离线补值/天气可得性假设不构成实盘证据。\n'
-                    + ('# 90天固定训练窗、预测次日；23:55采样，每折重训；支持final/bundle。\n'
-                       '# 正式72折未重跑；两折派生验证不代表长期精度或实盘可用性。\n'
+                    + ('# 150天固定训练窗、预测次日；23:55采样，每折重训；支持final/bundle。\n'
+                       '# 正式回测未重跑；两折派生验证不代表长期精度或实盘可用性。\n'
                        if relative == TEMPORAL_BASELINE else
                        f'# {train_days}天训练、1天预测；仅支持 --backtest-only，未执行正式模型。\n')
                     + yaml.safe_dump(payload, sort_keys=False, allow_unicode=True)

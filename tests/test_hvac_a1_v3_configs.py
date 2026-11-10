@@ -24,6 +24,8 @@ DEVICES = ('hvac_all_devices', 'hvac_remove_devices')
 METHODS = ('direct', 'direct-pointwise', 'direct-pointwise-horizon', 'recursive',
            'mimo', 'recmo', 'dirrec', 'dirmo', 'dirrecmo')
 MIGRATED_BASELINE = Path('baseline/A1_all/hvac_all_devices/lgbm_direct-pointwise.yaml')
+NAIVE_PATHS = {Path('naive') / variant / f'{device}.yaml'
+               for variant in ('A1_all', 'A1_all_old') for device in DEVICES}
 
 
 def expected_paths():
@@ -41,11 +43,11 @@ def expected_paths():
 class A1V3ConfigsTest(unittest.TestCase):
     def test_temporal_baseline_schema_only(self):
         config = load_yaml_config(DIRECTORY / MIGRATED_BASELINE)
-        self.assertEqual(dict(config.validation['training_window']), {'kind': 'rolling', 'history_steps': 25920})
+        self.assertEqual(dict(config.validation['training_window']), {'kind': 'rolling', 'history_steps': 43200})
         self.assertEqual(dict(config.validation['forecast_window']), {'start': 'next_day'})
         self.assertEqual(dict(config.validation['training']['origin_sampling']), {'time_of_day': '23:55'})
         self.assertEqual(config.validation['refit_every'], 1)
-        self.assertEqual(config.validation['fold_count'], 72)
+        self.assertEqual(config.validation['fold_count'], 12)
         self.assertNotIn('train_window_steps', config.validation)
         self.assertNotIn('train_history_steps', config.validation)
 
@@ -96,7 +98,7 @@ class A1V3ConfigsTest(unittest.TestCase):
 
     def test_real_matrix_and_production_designs(self):
         physical = {p.relative_to(DIRECTORY) for p in DIRECTORY.rglob('*.yaml')}
-        self.assertEqual(physical, legacy_paths() | expected_paths())
+        self.assertEqual(physical, legacy_paths() | expected_paths() | NAIVE_PATHS)
         frames = {}
         for relative in sorted(expected_paths()):
             with self.subTest(path=relative):
@@ -105,7 +107,7 @@ class A1V3ConfigsTest(unittest.TestCase):
                 group = relative.parts[0]
                 self.assertEqual(config.problem.targets, ('hvac_total_load_AB',))
                 self.assertEqual((config.problem.freq, config.problem.horizon), ('5min', 288))
-                train_days, fold_count = (150, 12) if group == 'add_context' else (90, 72)
+                train_days, fold_count = 150, 12
                 migrated = relative == MIGRATED_BASELINE
                 if migrated:
                     self.assertEqual(config.validation['training_window']['history_steps'], train_days * 288)
@@ -152,8 +154,7 @@ class A1V3ConfigsTest(unittest.TestCase):
                 window_builder = temporal_backtest_windows
                 folds = window_builder(builder_for(config, None), pd.Timestamp('2026-09-16 23:55'))
                 self.assertEqual(len(folds), fold_count)
-                self.assertEqual(folds[0].origin, pd.Timestamp('2026-09-04 23:55')
-                                 if group == 'add_context' else pd.Timestamp('2026-07-06 23:55'))
+                self.assertEqual(folds[0].origin, pd.Timestamp('2026-09-04 23:55'))
                 self.assertEqual(folds[-1].origin, pd.Timestamp('2026-09-15 23:55'))
                 for previous, current in zip(folds, folds[1:]):
                     self.assertEqual(current.origin - previous.origin, pd.Timedelta(days=1))

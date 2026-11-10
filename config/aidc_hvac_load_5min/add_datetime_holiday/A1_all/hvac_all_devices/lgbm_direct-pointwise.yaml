@@ -1,6 +1,6 @@
 # A1 双路合计 data_v3；IT 为固定204点子集，不是全楼IT总负荷。
 # 无异常清洗；离线补值/天气可得性假设不构成实盘证据。
-# 90天训练、1天预测；仅支持 --backtest-only，未执行正式模型。
+# 150天训练、1天预测；仅支持 --backtest-only，未执行正式模型。
 schema_version: 2
 problem:
   time_col: time

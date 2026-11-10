@@ -72,12 +72,13 @@ def _ensemble_output_paths(
         scenario = str(config.output.get("scenario_subpath", "canonical"))
     scenario = scenario.strip("/") or "canonical"
     if output_root is not None:
-        run_dir = Path(output_root) / scenario / config.result_identity()
+        root = Path(output_root)
+        forecast_dir = root / "results_forecast" / scenario / config.result_identity()
         return (
-            run_dir,
-            run_dir / "pretrained_models",
-            run_dir / "results_test",
-            run_dir / "results_forecast",
+            forecast_dir,
+            root / "pretrained_models" / scenario / config.result_identity(),
+            root / "results_test" / scenario / config.result_identity(),
+            forecast_dir,
         )
     directories = config.output.get("directories", {})
     if isinstance(directories, Mapping) and {
@@ -90,12 +91,12 @@ def _ensemble_output_paths(
         forecast_dir = Path(str(directories["forecast"])) / scenario / config.result_identity()
         return forecast_dir, model_dir, test_dir, forecast_dir
     root = Path(str(config.output.get("results_root", "results")))
-    run_dir = root / scenario / config.result_identity()
+    forecast_dir = root / "results_forecast" / scenario / config.result_identity()
     return (
-        run_dir,
-        run_dir / "pretrained_models",
-        run_dir / "results_test",
-        run_dir / "results_forecast",
+        forecast_dir,
+        root / "pretrained_models" / scenario / config.result_identity(),
+        root / "results_test" / scenario / config.result_identity(),
+        forecast_dir,
     )
 
 

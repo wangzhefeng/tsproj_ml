@@ -339,12 +339,14 @@ class ForecastConfigSpec:
         if hash_length < 8 or hash_length > 64:
             raise ValueError("hash_length must be between 8 and 64")
         strategy_label = str(self.result_method()["method_label"])
+        probabilistic_label = "prob" if self.probabilistic.get("mode", "point") == "quantile" else "point"
         return "-".join(
             (
                 self.estimator.model_type,
                 strategy_label,
                 self.problem.training_scope,
                 f"k{len(self.problem.targets)}",
+                probabilistic_label,
                 self.fingerprint()[:hash_length],
             )
         )

@@ -254,12 +254,13 @@ def _output_paths(
     ).strip("/") or "canonical"
     result_identity = config.result_identity()
     if output_root is not None:
-        run_dir = Path(output_root) / scenario / result_identity
+        root = Path(output_root)
+        forecast_dir = root / "results_forecast" / scenario / result_identity
         return (
-            run_dir,
-            run_dir / "pretrained_models",
-            run_dir / "results_test",
-            run_dir / "results_forecast",
+            forecast_dir,
+            root / "pretrained_models" / scenario / result_identity,
+            root / "results_test" / scenario / result_identity,
+            forecast_dir,
         )
     directories = output.get("directories", {})
     if isinstance(directories, Mapping) and {
@@ -281,14 +282,13 @@ def _output_paths(
         test_dir = Path(str(output["test_results_dir"])) / scenario / result_identity
         forecast_dir = Path(str(output["pred_results_dir"])) / scenario / result_identity
         return forecast_dir, model_dir, test_dir, forecast_dir
-    legacy_scenario = str(output.get("scenario_subpath", scenario)).strip("/") or scenario
-    legacy_root = Path(str(output.get("results_root", "results")))
-    run_dir = legacy_root / legacy_scenario / result_identity
+    root = Path(str(output.get("results_root", "results")))
+    forecast_dir = root / "results_forecast" / scenario / result_identity
     return (
-        run_dir,
-        run_dir / "pretrained_models",
-        run_dir / "results_test",
-        run_dir / "results_forecast",
+        forecast_dir,
+        root / "pretrained_models" / scenario / result_identity,
+        root / "results_test" / scenario / result_identity,
+        forecast_dir,
     )
 
 

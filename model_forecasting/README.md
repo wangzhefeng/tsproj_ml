@@ -32,13 +32,13 @@
 
 `model_pipeline.runner.run_canonical_config()` 组织完整生命周期。fixed-step 和 calendar-month 各自使用配置训练窗口；自然月折按真实月份长度构造。底层 trainer/forecaster 不拥有这个生命周期。
 
-活动配置通常写入 `results/{pretrained_models,results_test,results_forecast}/<scenario>/<identity>/`，未声明目录时才采用 runtime 回退布局。`prediction.csv` 与 `cv_plot_df.csv` 分别使用 `(series_id,time,target)` 和追加 `window` 的 long 唯一键；quantile 评估另写概率评分文件。
+活动配置统一写入 `results/{pretrained_models,results_test,results_forecast}/<scenario>/<identity>/`。单模型、批量与 Ensemble 的 `output_root` 仅替换 `results` 根，不改变目录层级；显式自定义目录仍按 checkpoints/tests/forecast 三个角色分别定位。`prediction.csv` 与 `cv_plot_df.csv` 分别使用 `(series_id,time,target)` 和追加 `window` 的 long 唯一键；quantile 评估另写概率评分文件。
 
 测试临时产物不替代正式模型验收。
 
 ### 结果身份与 Direct 方法
 
-单模型 identity 为 `<model_type>-<method_label>-<training_scope>-k<target_count>-<fingerprint前12位>`（模型在前、方法在后）。
+单模型 identity 为 `<model_type>-<method_label>-<training_scope>-k<target_count>-<point|prob>-<fingerprint前12位>`（模型在前、方法在后）；`point` 对应点预测，`prob` 对应 quantile 概率预测。该可读模式段不改变语义 fingerprint，存量旧目录不自动迁移。
 `ForecastConfigSpec.result_method()` 是路径及结果元数据的方法描述唯一入口；标签来自实际配置，不来自 YAML 文件名。
 
 | Direct 有效配置 | method_label |

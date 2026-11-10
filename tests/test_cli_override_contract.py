@@ -129,6 +129,10 @@ class CliContractTest(unittest.TestCase):
             )
 
             self.assertTrue(result.run_dir.is_relative_to(output_root))
+            relative = result.run_dir.relative_to(output_root / "results_forecast")
+            self.assertEqual(result.run_dir, result.forecast_dir)
+            self.assertEqual(result.model_dir, output_root / "pretrained_models" / relative)
+            self.assertEqual(result.test_dir, output_root / "results_test" / relative)
             self.assertTrue((result.model_dir / "model.pkl").exists())
             self.assertTrue((result.test_dir / "cv_plot_df.csv").exists())
             self.assertTrue((result.forecast_dir / "prediction.csv").exists())

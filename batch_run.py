@@ -21,7 +21,11 @@ def args_parse() -> argparse.Namespace:
         required=True,
         help="Physical canonical model YAML; repeat for every config.",
     )
-    parser.add_argument("--output-root", required=True)
+    parser.add_argument(
+        "--output-root",
+        required=True,
+        help="Root for pretrained_models/results_test/results_forecast and _batch_state.",
+    )
     parser.add_argument("--config-workers", type=int, default=1)
     parser.add_argument("--no-resume", action="store_true")
     return parser.parse_args()

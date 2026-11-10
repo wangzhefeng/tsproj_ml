@@ -330,6 +330,14 @@ class CanonicalBatchRuntimeTest(unittest.TestCase):
         verified = verify_batch_results(report.state_path)
         self.assertEqual(verified["completed_count"], 2)
         self.assertEqual(verified["verified_count"], 2)
+        state = json.loads(report.state_path.read_text(encoding="utf-8"))
+        for task in state["tasks"].values():
+            for kind, key in (
+                ("pretrained_models", "model"),
+                ("results_test", "backtest"),
+                ("results_forecast", "forecast"),
+            ):
+                self.assertTrue(Path(task["artifacts"][key]).is_relative_to((output_root / kind).resolve()))
 
     def test_failed_task_resumes_without_rerunning_completed_task(self) -> None:
         output_root = self.root / "resume-results"

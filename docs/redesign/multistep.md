@@ -281,11 +281,11 @@ git diff --check
 ## 8. 结果与产物合同
 
 ```text
-results/<scenario>/<result_identity>/
-├── pretrained_models/
+results/
+├── pretrained_models/<scenario>/<result_identity>/
 │   ├── model.pkl
 │   └── resolved_model.json
-├── results_test/
+├── results_test/<scenario>/<result_identity>/
 │   ├── cv_plot_df.csv
 │   ├── test_scores_df.csv                  # 每窗汇总：scope ∈ {target, aggregate}
 │   ├── test_scores_horizon_df.csv          # per-horizon 明细：scope ∈ {horizon, aggregate_horizon}
@@ -295,11 +295,13 @@ results/<scenario>/<result_identity>/
 │   ├── target_plots/                       # 多 target 拼接总图（per target 一张）
 │   ├── windows_results/                    # per-window 图（window_<w>.png，多 target 子图）
 │   └── result_metadata.json
-└── results_forecast/
+└── results_forecast/<scenario>/<result_identity>/
     ├── prediction.csv
     ├── forecast_prediction.png            # 预测图（单 target；多 target 在 prediction_plots/）
     └── resolved_config.json
 ```
+
+`output_root` 只替换上述 `results` 根；单模型、批量与 Ensemble 均不得改成 `<scenario>/<identity>/` 下嵌套三类产物。
 
 - `prediction.csv` 唯一键：`(series_id,time,target)`。
 - `cv_plot_df.csv` 唯一键：`(series_id,time,target,window)`。

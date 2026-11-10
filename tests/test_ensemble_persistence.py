@@ -56,10 +56,14 @@ class EnsemblePersistenceTest(unittest.TestCase):
             self.assertIn("run_dir", result)
             self.assertIn("bundle", result)
             run_dir = Path(result["run_dir"])
-            self.assertTrue((run_dir / "pretrained_models/model.pkl").is_file())
-            self.assertTrue((run_dir / "pretrained_models/resolved_model.json").is_file())
-            self.assertTrue((run_dir / "results_forecast/prediction.csv").is_file())
-            self.assertTrue((run_dir / "results_forecast/resolved_config.json").is_file())
+            relative = run_dir.relative_to(root / "results" / "results_forecast")
+            model_dir = Path(result["model_dir"])
+            self.assertEqual(model_dir, root / "results" / "pretrained_models" / relative)
+            self.assertEqual(Path(result["test_dir"]), root / "results" / "results_test" / relative)
+            self.assertTrue((model_dir / "model.pkl").is_file())
+            self.assertTrue((model_dir / "resolved_model.json").is_file())
+            self.assertTrue((run_dir / "prediction.csv").is_file())
+            self.assertTrue((run_dir / "resolved_config.json").is_file())
 
     def test_config_file_separates_member_ref_root_from_source_asset_root(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -91,9 +95,9 @@ class EnsemblePersistenceTest(unittest.TestCase):
                     services=RUNTIME_SERVICES,
                 )
 
-            run_dir = Path(result["run_dir"])
-            self.assertTrue((run_dir / "pretrained_models/model.pkl").is_file())
-            with (run_dir / "pretrained_models/model.pkl").open("rb") as file:
+            model_dir = Path(result["model_dir"])
+            self.assertTrue((model_dir / "model.pkl").is_file())
+            with (model_dir / "model.pkl").open("rb") as file:
                 restored = pickle.load(file)
             self.assertEqual(set(restored.model["member_bundles"]), {"m_direct", "m_recursive"})
 

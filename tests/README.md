@@ -56,6 +56,8 @@
 
 `test_direct_result_identity` 默认 integration：三类 Direct 方法（含 horizon 的有/无周期编码两种特征变体）的真实小样本训练/回测/预测落盘及元数据、原始语义 hash、文件别名不变性和非法配置拒绝；`test_forecast_config_fingerprint` 在 fast 中覆盖三类前缀及 cyclical 仅影响特征元数据和语义 hash、不新增方法类型。迁移清单只读，不移动存量结果。
 
+`test_aidc_load_month_parameter_experiments` 默认 integration：核对两路各 20 份参数实验的精确文件集合、point/分解身份、逐变体语义修改、路线输出路径和 fingerprint 唯一性；含路线专项组合实验及路线根目录最优副本的字节/身份一致性，不拟合正式模型。定向 `integration --match test_aidc_load_month_parameter_experiments`。
+
 天气阶段隔离定向测试：`test_inference_columns` 验证历史训练实测/测试预报、future 不参与历史请求及未来实测列忽略；`test_weather_phase_runtime` 用真实编译、Ridge 生命周期验证文件隔离和缓存不依赖 future；`test_weather_history_coverage` 与联通准备测试验证完整 history 覆盖。均默认纳入 integration，不自动运行正式业务模型。
 
 共享源治理定向：`test_weather_shared_preparation` 默认integration，覆盖公共脚本不含场景、非仓库cwd真实CLI、源补值/审计、原始写入路径拒绝、共享CSV哈希校验与重复构建一致性。`test_weather_hvac_windows` 核对32份场景资产和生产信息集阶段映射；`test_weather_history_coverage` 从各场景入口检查既有历史边界。命令分别为 `tests/run_suite.py integration --match test_weather_shared_preparation` 与 `--match test_weather_hvac_windows`，不修改发现规则，不训练模型。

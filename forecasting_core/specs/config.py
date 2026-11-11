@@ -333,6 +333,21 @@ class ForecastConfigSpec:
             "align_to_target": direct.get("align_to_target") is not False,
         }
 
+    def result_decomposition_label(self) -> str:
+        target = self.features.transformations.get("target", {})
+        decomposition = target.get("decomposition", {})
+        method = decomposition.get("method", "none")
+        if method == "none":
+            return "decomp-none"
+        if method == "linear":
+            if decomposition.get("trend_forecast", "polynomial") == "damped":
+                return "decomp-damped"
+            if decomposition.get("trend_degree", 1) == 2:
+                return "decomp-quadratic"
+            return "decomp-linear"
+        periods = "".join(str(period) for period in decomposition.get("periods", ()))
+        return f"decomp-{method}{periods}"
+
     def result_identity(self, hash_length: int = 12) -> str:
         if isinstance(hash_length, bool) or not isinstance(hash_length, int):
             raise TypeError("hash_length must be an integer")
@@ -347,6 +362,7 @@ class ForecastConfigSpec:
                 self.problem.training_scope,
                 f"k{len(self.problem.targets)}",
                 probabilistic_label,
+                self.result_decomposition_label(),
                 self.fingerprint()[:hash_length],
             )
         )

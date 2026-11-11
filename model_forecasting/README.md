@@ -38,7 +38,7 @@
 
 ### 结果身份与 Direct 方法
 
-单模型 identity 为 `<model_type>-<method_label>-<training_scope>-k<target_count>-<point|prob>-<fingerprint前12位>`（模型在前、方法在后）；`point` 对应点预测，`prob` 对应 quantile 概率预测。该可读模式段不改变语义 fingerprint，存量旧目录不自动迁移。
+单模型 identity 为 `<model_type>-<method_label>-<training_scope>-k<target_count>-<point|prob>-<decomposition_label>-<fingerprint前12位>`（模型在前、方法在后）；`point` 对应点预测，`prob` 对应 quantile 概率预测。`decomposition_label` 从归一化后的实际分解配置生成，覆盖 `decomp-none/linear/quadratic/damped`，STL/MSTL 追加周期（如 `decomp-stl7`、`decomp-mstl730`）；不是读取 YAML 文件名。可读模式及分解段不改变语义 fingerprint，存量旧目录不自动迁移。
 `ForecastConfigSpec.result_method()` 是路径及结果元数据的方法描述唯一入口；标签来自实际配置，不来自 YAML 文件名。
 
 | Direct 有效配置 | method_label |

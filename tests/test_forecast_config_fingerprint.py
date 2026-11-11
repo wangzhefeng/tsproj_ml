@@ -32,7 +32,7 @@ class CanonicalConfigFingerprintTest(unittest.TestCase):
             with self.subTest(label=label, direct=direct):
                 features = replace(baseline.features, transformations={"direct": direct} if direct else {})
                 config = replace(baseline, features=features)
-                self.assertEqual(config.result_identity(), f"ridge-{label}-local-k1-point-{config.fingerprint()[:12]}")
+                self.assertEqual(config.result_identity(), f"ridge-{label}-local-k1-point-decomp-none-{config.fingerprint()[:12]}")
 
     def test_result_identity_distinguishes_point_and_prob(self):
         point = self.config()
@@ -41,8 +41,26 @@ class CanonicalConfigFingerprintTest(unittest.TestCase):
             "quantiles": [0.1, 0.5, 0.9],
             "point_quantile": 0.5,
         })
-        self.assertEqual(point.result_identity(), f"ridge-direct-local-k1-point-{point.fingerprint()[:12]}")
-        self.assertEqual(prob.result_identity(), f"ridge-direct-local-k1-prob-{prob.fingerprint()[:12]}")
+        self.assertEqual(point.result_identity(), f"ridge-direct-local-k1-point-decomp-none-{point.fingerprint()[:12]}")
+        self.assertEqual(prob.result_identity(), f"ridge-direct-local-k1-prob-decomp-none-{prob.fingerprint()[:12]}")
+
+    def test_result_identity_labels_effective_decomposition(self):
+        baseline = self.config()
+        cases = (
+            ({"method": "linear"}, "decomp-linear"),
+            ({"method": "quadratic"}, "decomp-quadratic"),
+            ({"method": "damped"}, "decomp-damped"),
+            ({"method": "stl", "periods": [7]}, "decomp-stl7"),
+            ({"method": "mstl", "periods": [7, 30]}, "decomp-mstl730"),
+        )
+        for decomposition, label in cases:
+            with self.subTest(label=label):
+                features = replace(baseline.features, transformations={
+                    "target": {"decomposition": decomposition},
+                })
+                config = replace(baseline, features=features)
+                self.assertEqual(config.result_decomposition_label(), label)
+                self.assertIn(f"-{label}-{config.fingerprint()[:12]}", config.result_identity())
 
     def test_cyclical_is_a_feature_variant_not_a_direct_method(self):
         baseline = self.config()
@@ -181,7 +199,7 @@ class CanonicalConfigFingerprintTest(unittest.TestCase):
         )
 
         self.assertEqual(first.fingerprint(), second.fingerprint())
-        self.assertRegex(first.result_identity(), r"^ridge-direct-local-k1-point-[0-9a-f]{12}$")
+        self.assertRegex(first.result_identity(), r"^ridge-direct-local-k1-point-decomp-none-[0-9a-f]{12}$")
 
     def test_omitted_and_only_nonsemantic_performance_have_same_fingerprint(self):
         baseline = self.config()

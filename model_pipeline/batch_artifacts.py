@@ -123,7 +123,26 @@ def validate_artifacts(task: Mapping[str, Any], *, require_digests: bool = True)
         prediction_columns = [col for col in frame if col.startswith("predict_")]
         if not np.isfinite(frame[prediction_columns].to_numpy(dtype=float)).all():
             raise ValueError("batch prediction CSV contains nonfinite predictions")
-    if len(forecast) != n_series * horizon * n_targets:
+    formal_origin = runtime.get("forecast_origin", resolved["validation"].get("forecast_origin"))
+    production = runtime.get("production")
+    target_month = (
+        production.get("target_month")
+        if isinstance(production, dict)
+        else None
+    )
+    if (
+        target_month is None
+        and formal_origin is not None
+        and resolved["validation"].get("horizon_mode") == "calendar_month"
+        and resolved["problem"]["freq"] == "1D"
+    ):
+        target_month = str(pd.Timestamp(formal_origin).to_period("M") + 1)
+    expected_forecast_days = (
+        pd.Period(target_month, freq="M").days_in_month
+        if target_month is not None
+        else horizon
+    )
+    if len(forecast) != n_series * expected_forecast_days * n_targets:
         raise ValueError("batch forecast row count mismatch")
     if "actual_value" not in backtest or not np.isfinite(backtest["actual_value"]).all():
         raise ValueError("batch backtest actuals missing/nonfinite")
@@ -131,11 +150,19 @@ def validate_artifacts(task: Mapping[str, Any], *, require_digests: bool = True)
         raise ValueError("batch backtest CSV fold count mismatch")
     expected_counts = {}
     offset = pd.tseries.frequencies.to_offset(resolved["problem"]["freq"])
-    formal_origin = runtime.get("forecast_origin", resolved["validation"].get("forecast_origin"))
     if formal_origin is not None:
         formal_origin = pd.Timestamp(formal_origin)
+        expected_forecast_times = forecast_times(
+            ForecastProblemSpec(**resolved["problem"]), resolved["validation"], formal_origin,
+        )
+        if target_month is not None:
+            period = pd.Period(target_month, freq="M")
+            expected_forecast_times = expected_forecast_times[
+                (expected_forecast_times >= period.start_time)
+                & (expected_forecast_times <= period.end_time.normalize())
+            ]
         validate_time_grid(
-            forecast, forecast_times(ForecastProblemSpec(**resolved["problem"]), resolved["validation"], formal_origin),
+            forecast, expected_forecast_times,
             rows_per_time=n_series * n_targets,
         )
     for window in windows:

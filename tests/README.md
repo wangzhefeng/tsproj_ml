@@ -58,6 +58,8 @@
 
 `test_aidc_load_month_parameter_experiments` 默认 integration：核对两路各 20 份参数实验的精确文件集合、point/分解身份、逐变体语义修改、路线输出路径和 fingerprint 唯一性；含路线专项组合实验及路线根目录最优副本的字节/身份一致性，不拟合正式模型。定向 `integration --match test_aidc_load_month_parameter_experiments`。
 
+`test_production_dynamic_origin` 默认 integration：覆盖生产发报日期跨年、最后完整目标网格、来源内容证据、多序列共同原点、延迟进入目标月拒绝，以及真实生产 final fit/forecast 的目标月切片、运行子目录和元数据。定向 `integration --match test_production_dynamic_origin`。
+
 天气阶段隔离定向测试：`test_inference_columns` 验证历史训练实测/测试预报、future 不参与历史请求及未来实测列忽略；`test_weather_phase_runtime` 用真实编译、Ridge 生命周期验证文件隔离和缓存不依赖 future；`test_weather_history_coverage` 与联通准备测试验证完整 history 覆盖。均默认纳入 integration，不自动运行正式业务模型。
 
 共享源治理定向：`test_weather_shared_preparation` 默认integration，覆盖公共脚本不含场景、非仓库cwd真实CLI、源补值/审计、原始写入路径拒绝、共享CSV哈希校验与重复构建一致性。`test_weather_hvac_windows` 核对32份场景资产和生产信息集阶段映射；`test_weather_history_coverage` 从各场景入口检查既有历史边界。命令分别为 `tests/run_suite.py integration --match test_weather_shared_preparation` 与 `--match test_weather_hvac_windows`，不修改发现规则，不训练模型。

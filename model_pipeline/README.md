@@ -11,8 +11,9 @@ runner构造只做候选原点几何、一个真实原点的schema探测和资�
 - `supervised_design.py`：`SupervisedDesignBuilder`、information set、训练/预测设计、监督标签窗口、`probe_training_design()`、`minimum_history_rows()`；批编译不支持的设计保留 single 路径，不隐式替换 provider。
 - `fold_fit.py`：fold/final 特征选择、变换与训练服务；回测和 final fit 共用配置训练窗口。
 - `run_state.py`：running/completed/failed 状态写入和 completed 校验；状态不是跨目录事务，外部直接加载 pickle 不自动消费状态。
-- `batch_runtime.py`：`run_canonical_batch()`、`verify_batch_results()` 与报告，负责跨配置 preflight、调度、恢复和验收。
+- `batch_runtime.py`：`run_canonical_batch()`、`verify_batch_results()` 与报告，负责跨配置 preflight、调度、恢复和验收。对同 fingerprint 且同输出场景的纯别名复用同一组已验收产物，不重复拟合或覆盖摘要；恢复时也能用已完成身份修复别名清单。
 - `batch_artifacts.py`：产物路径、摘要、时间网格、维度与 bundle 身份验收；只看文件存在不能判 completed。
+- `production.py`：生产发报请求与动态数据原点。`issue_date` 决定下一目标月，`last_complete_target` 根据权威 target history 的完整时间网格解析实际原点；记录来源内容 SHA256、逐序列覆盖和运行作用域。原点进入原定目标月时拒绝完整月预测。
 
 ## 训练原点选择
 

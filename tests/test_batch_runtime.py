@@ -287,6 +287,25 @@ class CanonicalBatchRuntimeTest(unittest.TestCase):
         path.write_text(yaml.safe_dump(payload, sort_keys=False), encoding="utf-8")
         return path
 
+    def test_exact_result_aliases_share_verified_artifacts(self) -> None:
+        output_root = self.root / "alias-results"
+        alias = self.root / "alias.yaml"
+        alias.write_bytes(self.paths[0].read_bytes())
+        report = run_canonical_batch(
+            (self.paths[0], alias), output_root=output_root,
+        )
+        self.assertEqual(report.completed_count, 2)
+        self.assertEqual(report.failed_count, 0)
+        self.assertEqual(verify_batch_results(report.state_path)["verified_count"], 2)
+        state = json.loads(report.state_path.read_text(encoding="utf-8"))
+        tasks = list(state["tasks"].values())
+        self.assertEqual(sorted(task["attempts"] for task in tasks), [0, 1])
+        self.assertEqual(
+            len({tuple(sorted(task["artifacts"].items())) for task in tasks}),
+            1,
+        )
+        self.assertEqual(sum("alias_of" in task for task in tasks), 1)
+
     def test_shared_group_materializes_raw_and_each_transform_branch_once(self) -> None:
         output_root = self.root / "batch-results"
         compile_calls = 0

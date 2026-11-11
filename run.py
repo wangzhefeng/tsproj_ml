@@ -22,6 +22,7 @@ from forecasting_core.specs import ForecastConfigSpec
 from model_ensemble.contracts import EnsembleRuntimeServices
 from model_ensemble.runtime import run_ensemble_config_file
 from model_ensemble.specs import EnsembleConfigSpec
+from model_pipeline.production import ProductionForecastRequest
 from model_pipeline.runner import (
     CanonicalBaseModelRunner,
     persist_model_bundle,
@@ -116,16 +117,40 @@ def args_parse():
         default=None,
         help="Unified root directory for model, test, and forecast artifacts.",
     )
-
-    return parser.parse_args()
+    parser.add_argument(
+        "--production",
+        action="store_true",
+        help="Single-model production fit/forecast with a dynamically resolved data origin.",
+    )
+    parser.add_argument(
+        "--issue-date",
+        type=str,
+        default=None,
+        help="Production scheduled issue date in YYYY-MM-DD; its next month is the delivery month.",
+    )
+    args = parser.parse_args()
+    if args.production and args.issue_date is None:
+        parser.error("--production requires --issue-date")
+    if args.issue_date is not None and not args.production:
+        parser.error("--issue-date requires --production")
+    if args.production and args.backtest_only:
+        parser.error("--production is incompatible with --backtest-only")
+    return args
 
 def run(args):
     cfg = _load_config(args.config_yaml)
     backtest_only = getattr(args, "backtest_only", False)
+    production_request = (
+        ProductionForecastRequest(args.issue_date)
+        if getattr(args, "production", False)
+        else None
+    )
 
     if isinstance(cfg, EnsembleConfigSpec):
         if backtest_only:
             raise ValueError("--backtest-only supports single-model configs, not Ensemble")
+        if production_request is not None:
+            raise ValueError("--production currently supports single-model configs only")
         logger.info(
             "[run.py] config=%s schema=2 kind=ensemble method=%s",
             args.config_yaml,
@@ -168,6 +193,19 @@ def run(args):
         cfg.estimator.model_type,
         identity,
     )
+
+    if production_request is not None:
+        result = run_canonical_config(
+            cfg,
+            output_root=args.output_root,
+            production_request=production_request,
+        )
+        logger.info(
+            "[run.py] 生产预测完成；issue_date=%s target_month=%s",
+            production_request.issue_date,
+            production_request.target_month,
+        )
+        return result
 
     if backtest_only:
         result = run_canonical_config(

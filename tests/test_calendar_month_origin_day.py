@@ -191,6 +191,14 @@ class CalendarMonthOriginDaySpecTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             parse_model_config(payload, source="<origin-day-spec>")
 
+    def test_target_month_field_is_retired(self):
+        for value in ("2026-08", "2026-13", 202608, True):
+            with self.assertRaises(ValueError):
+                parse_model_config(
+                    _payload(self.history_path, target_month=value),
+                    source="<origin-day-spec>",
+                )
+
 
 class CalendarMonthOriginDayRuntimeTest(unittest.TestCase):
     def test_origin_day_backtest_scores_only_target_months(self):
@@ -234,10 +242,10 @@ class CalendarMonthOriginDayRuntimeTest(unittest.TestCase):
 
             prediction = pd.read_csv(result.forecast_dir / "prediction.csv")
             forecast_times = pd.to_datetime(prediction["time"])
-            # 最终预测保持 origin+1..origin+H 全跨度（37 步），月内交付按当月筛选。
-            self.assertEqual(len(forecast_times), 37)
+            # 最终预测由实际原点自动推导下一自然月；当前原点为 7 月 31 日。
+            self.assertEqual(len(forecast_times), 31)
             self.assertEqual(forecast_times.min(), pd.Timestamp("2026-08-01"))
-            self.assertEqual(forecast_times.max(), pd.Timestamp("2026-09-06"))
+            self.assertEqual(forecast_times.max(), pd.Timestamp("2026-08-31"))
 
 
 if __name__ == "__main__":

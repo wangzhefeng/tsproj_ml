@@ -14,6 +14,7 @@ from model_forecasting.results import (
     backtest_tensors_to_long,
     distribution_to_long,
     point_tensor_to_long,
+    slice_forecast_target_month,
     write_forecast_results,
 )
 from model_testing.reporting import write_backtest_results
@@ -33,6 +34,37 @@ class ForecastResultSchemaTest(unittest.TestCase):
             forecast_times=self.times,
             targets=("load", "power"),
         )
+
+    def test_target_month_slices_distribution_and_extra_columns(self):
+        times = pd.date_range("2026-08-01", periods=37, freq="1D")
+        point = PointForecastTensor(
+            values=np.arange(37.0).reshape(1, 37, 1),
+            series_ids=("A",),
+            forecast_times=times,
+            targets=("load",),
+        )
+        quantiles = MarginalQuantileForecastTensor(
+            values=np.stack((point.values - 1, point.values, point.values + 1), axis=-1),
+            levels=(0.1, 0.5, 0.9),
+            point_level=0.5,
+            series_ids=("A",),
+            forecast_times=times,
+            targets=("load",),
+        )
+        distribution = MarginalForecastDistribution(point=point, quantiles=quantiles)
+        sliced, extra = slice_forecast_target_month(
+            distribution,
+            "2026-08",
+            extra_columns={"predict_pi80_lower": np.arange(37.0)},
+        )
+        self.assertEqual(sliced.point.values.shape, (1, 31, 1))
+        self.assertEqual(sliced.quantiles.values.shape, (1, 31, 1, 3))
+        self.assertEqual(sliced.point.forecast_times[0], pd.Timestamp("2026-08-01"))
+        self.assertEqual(sliced.point.forecast_times[-1], pd.Timestamp("2026-08-31"))
+        self.assertEqual(extra["predict_pi80_lower"][0], 0.0)
+        self.assertEqual(extra["predict_pi80_lower"][-1], 30.0)
+        with self.assertRaisesRegex(ValueError, "complete target_month"):
+            slice_forecast_target_month(point, "2026-09")
 
     def test_point_long_schema_has_one_unique_row_per_series_time_target(self):
         frame = point_tensor_to_long(self.point)

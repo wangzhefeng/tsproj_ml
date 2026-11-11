@@ -107,12 +107,31 @@ class CliContractTest(unittest.TestCase):
                 "seed": 7,
                 "output_root": "/tmp/forecast-results",
                 "backtest_only": False,
+                "production": False,
+                "issue_date": None,
             },
         )
 
     def test_parser_accepts_explicit_backtest_only(self):
         with patch.object(sys, "argv", ["run.py", "--config-yaml", "config/model.yaml", "--backtest-only"]):
             self.assertTrue(run.args_parse().backtest_only)
+
+    def test_parser_production_requires_issue_date_and_compatible_modes(self):
+        valid = [
+            "run.py", "--config-yaml", "config/model.yaml",
+            "--production", "--issue-date", "2026-07-25",
+        ]
+        with patch.object(sys, "argv", valid):
+            args = run.args_parse()
+        self.assertTrue(args.production)
+        self.assertEqual(args.issue_date, "2026-07-25")
+        for argv in (
+            ["run.py", "--config-yaml", "config/model.yaml", "--production"],
+            ["run.py", "--config-yaml", "config/model.yaml", "--issue-date", "2026-07-25"],
+            ["run.py", "--config-yaml", "config/model.yaml", "--production", "--issue-date", "2026-07-25", "--backtest-only"],
+        ):
+            with patch.object(sys, "argv", argv), self.assertRaises(SystemExit):
+                run.args_parse()
 
     def test_output_root_is_used_by_single_model_runtime(self):
         with tempfile.TemporaryDirectory() as tmp_dir:

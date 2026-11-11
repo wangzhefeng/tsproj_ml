@@ -14,7 +14,7 @@ from forecasting_core.artifacts import ForecastModelBundle, MarginalForecastDist
 from forecasting_core.specs import ForecastConfigSpec, TargetAdapter
 from forecasting_core.tensors import PointForecastTensor
 from model_forecasting.persistence import persist_model_bundle
-from model_forecasting.results import write_forecast_results
+from model_forecasting.results import slice_forecast_target_month, write_forecast_results
 from model_pipeline.run_state import write_run_state
 from model_testing.calendar_month import run_calendar_month_backtest
 from model_testing.fixed_step import run_fixed_step_backtest
@@ -244,6 +244,7 @@ def _output_paths(
     config: ForecastConfigSpec,
     fingerprint: str,
     output_root: str | Path | None,
+    run_scope: str | None = None,
 ) -> tuple[Path, Path, Path, Path]:
     output = config.output
     identity = output.get("identity", {})
@@ -252,6 +253,8 @@ def _output_paths(
         if isinstance(identity, Mapping)
         else output.get("scenario_subpath", "canonical")
     ).strip("/") or "canonical"
+    if run_scope is not None:
+        scenario = f"{scenario}/{run_scope}"
     result_identity = config.result_identity()
     if output_root is not None:
         root = Path(output_root)
@@ -298,7 +301,9 @@ def run_lifecycle(
     if runner.config.features.transformations.get("seasonal_baseline") is not None and not backtest_only:
         raise ValueError("seasonal_baseline final fit/bundle is unsupported; use backtest-only")
     fingerprint = runner.config.fingerprint()
-    _, model_dir, test_dir, _ = _output_paths(runner.config, fingerprint, output_root)
+    _, model_dir, test_dir, _ = _output_paths(
+        runner.config, fingerprint, output_root, getattr(runner, "run_scope", None),
+    )
     # 回测状态与完整模型状态隔离，不能用回测 completed 宣称 bundle 可部署。
     state_dir = test_dir / "backtest_only" if backtest_only else model_dir
     write_run_state(state_dir, fingerprint, "running")
@@ -329,6 +334,7 @@ def execute_lifecycle(
         config,
         fingerprint,
         output_root,
+        getattr(runner, "run_scope", None),
     )
     if backtest_only:
         test_dir = test_dir / "backtest_only"
@@ -372,6 +378,7 @@ def execute_lifecycle(
         origin,
         final_feature_scaler,
         final_target_transform,
+        data_phase=getattr(runner, "data_phase", "historical"),
     )
     forecast_times = runner.forecast_times(origin)
     forecast = runner.predict(
@@ -418,6 +425,18 @@ def execute_lifecycle(
             final_calibration_audit["selected_windows"],
             final_calibration_audit["selected_scores"],
         )
+    target_month = getattr(runner, "target_month", None)
+    if (
+        target_month is None
+        and config.validation.get("horizon_mode") == "calendar_month"
+        and config.problem.freq == "1D"
+    ):
+        target_month = str(origin.to_period("M") + 1)
+    forecast, forecast_extra_columns = slice_forecast_target_month(
+        forecast,
+        target_month,
+        extra_columns=forecast_extra_columns,
+    )
     visibility_proof = _proof_payload(final_audit)
     holdout_visibility_proof = _holdout_proof_summary(holdout_audit)
     source_lineage = _source_lineage_payload(final_audit)
@@ -494,6 +513,8 @@ def execute_lifecycle(
                 "lifecycle_schema_version": 1,
                 "result_method": config.result_method(),
                 "forecast_origin": origin.isoformat(),
+                "forecast_target_month": target_month,
+                "production": getattr(runner, "production_evidence", None),
                 "run_evidence": run_evidence,
                 "resources": runner.runtime_resources_payload(),
                 "series_order": [

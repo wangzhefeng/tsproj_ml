@@ -24,6 +24,8 @@
 
 部署只使用已保存的模型、变换和校准状态；不会重新选择训练窗口或读取训练期缓存来重建模型。
 
+生产需要每月重新 final fit 时，使用 `run.py --production --issue-date YYYY-MM-DD`：发报日期决定目标月，权威目标数据的最后完整覆盖决定实际原点，模型语义 fingerprint 不随动态原点改写，结果在 `<scenario>/target_month=YYYY-MM/<identity>/` 下隔离。该模式执行完整单模型生命周期，与这里的 bundle-only 部署不同；训练读历史实测，生产预测使用 future 数据阶段。
+
 `seasonal_baseline` 残差目前仅支持回测，不支持 final fit/bundle；旧训练窗口字段退役不解除此能力限制。监督模型的一般部署支持不包含该残差通路。
 
 显式training_window已贯通单模型final fit和bundle；forecast_window时间网格由公共temporal合同生成，批产物验收使用同一网格。部署调用方仍须按该合同提供raw设计和forecast_times，加载bundle本身不触发重新训练。新合同限制见config/README.md，不能据一个Local point配置通过推断全部模型模式支持。
@@ -32,7 +34,7 @@
 
 `model_pipeline.runner.run_canonical_config()` 组织完整生命周期。fixed-step 和 calendar-month 各自使用配置训练窗口；自然月折按真实月份长度构造。底层 trainer/forecaster 不拥有这个生命周期。
 
-活动配置统一写入 `results/{pretrained_models,results_test,results_forecast}/<scenario>/<identity>/`。单模型、批量与 Ensemble 的 `output_root` 仅替换 `results` 根，不改变目录层级；显式自定义目录仍按 checkpoints/tests/forecast 三个角色分别定位。`prediction.csv` 与 `cv_plot_df.csv` 分别使用 `(series_id,time,target)` 和追加 `window` 的 long 唯一键；quantile 评估另写概率评分文件。
+活动配置统一写入 `results/{pretrained_models,results_test,results_forecast}/<scenario>/<identity>/`。单模型、批量与 Ensemble 的 `output_root` 仅替换 `results` 根，不改变目录层级；显式自定义目录仍按 checkpoints/tests/forecast 三个角色分别定位。`prediction.csv` 与 `cv_plot_df.csv` 分别使用 `(series_id,time,target)` 和追加 `window` 的 long 唯一键；quantile 评估另写概率评分文件。日频 calendar-month 的最终 forecast 自动以实际 `forecast_origin` 的下一自然月为交付月，point/quantile 与附加列同步切片，未完整覆盖直接拒绝；不再需要独立 `target_month` 配置。其他频率及 fixed-step 保持原输出行为。
 
 测试临时产物不替代正式模型验收。
 

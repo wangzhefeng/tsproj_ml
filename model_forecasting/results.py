@@ -11,7 +11,7 @@ import matplotlib
 
 matplotlib.use("Agg")
 
-from forecasting_core.tensors import PointForecastTensor
+from forecasting_core.tensors import MarginalQuantileForecastTensor, PointForecastTensor
 from forecasting_core.artifacts import MarginalForecastDistribution
 
 # 预测图复用回测侧的时间轴与文件名格式工具，不再导出未使用的绘图入口。
@@ -32,6 +32,65 @@ from model_testing.tensor_frames import (  # noqa: F401,E402
     distribution_to_long,
     point_tensor_to_long,
 )
+
+
+def slice_forecast_target_month(
+    forecast: PointForecastTensor | MarginalForecastDistribution,
+    target_month: str | None,
+    *,
+    extra_columns: Mapping[str, np.ndarray] | None = None,
+) -> tuple[
+    PointForecastTensor | MarginalForecastDistribution,
+    Mapping[str, np.ndarray] | None,
+]:
+    if target_month is None:
+        return forecast, extra_columns
+    period = pd.Period(target_month, freq="M")
+    point = forecast.point if isinstance(forecast, MarginalForecastDistribution) else forecast
+    times = point.forecast_times
+    start = period.start_time
+    end = period.end_time.normalize()
+    positions = np.flatnonzero((times >= start) & (times <= end))
+    selected_times = times[positions]
+    expected_times = pd.date_range(start, end, freq="1D")
+    if not selected_times.equals(expected_times):
+        raise ValueError(
+            f"forecast does not cover complete target_month={target_month}"
+        )
+    sliced_point = PointForecastTensor(
+        values=point.values[:, positions, :],
+        series_ids=point.series_ids,
+        forecast_times=selected_times,
+        targets=point.targets,
+    )
+    sliced_extra = None
+    if extra_columns is not None:
+        n_series, _, n_targets = point.values.shape
+        sliced_extra = {
+            name: np.asarray(values, dtype=float)
+            .reshape(n_series, len(times), n_targets)[:, positions, :]
+            .reshape(-1)
+            for name, values in extra_columns.items()
+        }
+    if not isinstance(forecast, MarginalForecastDistribution):
+        return sliced_point, sliced_extra
+    quantiles = forecast.quantiles
+    sliced_quantiles = MarginalQuantileForecastTensor(
+        values=quantiles.values[:, positions, :, :],
+        levels=quantiles.levels,
+        point_level=quantiles.point_level,
+        series_ids=quantiles.series_ids,
+        forecast_times=selected_times,
+        targets=quantiles.targets,
+    )
+    return (
+        MarginalForecastDistribution(
+            point=sliced_point,
+            quantiles=sliced_quantiles,
+            metadata=forecast.metadata,
+        ),
+        sliced_extra,
+    )
 
 
 def write_forecast_results(

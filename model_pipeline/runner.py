@@ -54,6 +54,7 @@ from forecasting_core.runtime_resources import (
 )
 from model_forecasting.evidence import collect_model_evidence, dependency_versions, json_evidence
 from model_pipeline.lifecycle import BacktestRuntimeResult, CanonicalRuntimeResult, run_lifecycle
+from model_pipeline.production import ProductionForecastRequest, resolve_production_origin
 from model_testing.contracts import BacktestWindow
 from model_pipeline.supervised_design import (
     _BacktestWindow,
@@ -160,6 +161,10 @@ class CanonicalBaseModelRunner:
         self._final_training_workload = None
         self.design_status = "not_prepared"
         self.design_stage_wall_seconds = {"compile": 0.0, "share": 0.0}
+        self.target_month = None
+        self.run_scope = None
+        self.production_evidence = None
+        self.data_phase = "historical"
         # 计划只探测一个原点的真实schema；不构造全训练设计，不写缓存。
         self.supervised_origins = supervised_candidate_origins(self.builder, self.origin)
         if precompiled_payload is not None:
@@ -1073,12 +1078,15 @@ def run_canonical_config(
     generators: Mapping[str, Any] | None = None,
     checkpoint_root: str | Path | None = None,
     backtest_only: bool = False,
+    production_request: ProductionForecastRequest | None = None,
 ) -> CanonicalRuntimeResult | BacktestRuntimeResult:
     """Execute a canonical config, optionally stopping after rolling backtest."""
     if not isinstance(config, ForecastConfigSpec):
         raise TypeError("config must be a ForecastConfigSpec")
     if config.strategy is None:
         raise ValueError("run_canonical_config requires a strategy or ensemble")
+    if production_request is not None and backtest_only:
+        raise ValueError("production mode is incompatible with backtest-only")
     if config.features.transformations.get("seasonal_baseline") is not None and not backtest_only:
         raise ValueError("seasonal_baseline final fit/bundle is unsupported; use backtest-only")
     if config.estimator.model_type.lower() == "ets" and not backtest_only:
@@ -1087,13 +1095,24 @@ def run_canonical_config(
     # builtin generators（chinese_holiday）默认可用；调用方同名注入时覆盖。
     merged_generators: dict[str, Any] = {**BUILTIN_GENERATORS, **(generators or {})}
     registry = SourceRegistry(config.data, Path.cwd(), generators=merged_generators)
-    origin = resolve_origin(registry, config.validation.get("forecast_origin"))
+    production_evidence = None
+    if production_request is None:
+        origin = resolve_origin(registry, config.validation.get("forecast_origin"))
+    else:
+        origin, production_evidence = resolve_production_origin(
+            config, registry, production_request,
+        )
     runner = CanonicalBaseModelRunner(
         config,
         registry,
         origin,
         checkpoint_root=checkpoint_root,
     )
+    if production_request is not None:
+        runner.target_month = production_request.target_month
+        runner.run_scope = production_request.run_scope
+        runner.production_evidence = production_evidence
+        runner.data_phase = "future"
     if backtest_only:
         return runner.run(output_root, backtest_only=True)
     return runner.run(output_root)

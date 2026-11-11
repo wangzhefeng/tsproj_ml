@@ -353,6 +353,31 @@ def _artifacts_complete(task_state: Mapping[str, Any]) -> bool:
     return artifacts_complete(task_state)
 
 
+def _result_alias_key(task: _BatchTask) -> tuple[str, str]:
+    return (
+        task.config.fingerprint(),
+        str(task.config.output.get("scenario_subpath", "canonical")),
+    )
+
+
+def _copy_alias_result(
+    state: dict[str, Any],
+    task: _BatchTask,
+    source: _BatchTask,
+) -> None:
+    source_state = state["tasks"][source.task_id]
+    target_state = state["tasks"][task.task_id]
+    target_state.update({
+        "status": source_state["status"],
+        "artifacts": dict(source_state.get("artifacts", {})),
+        "artifact_sha256": dict(source_state.get("artifact_sha256", {})),
+        "result_identity": source_state.get("result_identity"),
+        "alias_of": source.task_id,
+    })
+    if "error" in source_state:
+        target_state["error"] = source_state["error"]
+
+
 def _annotate_batch_metadata(
     task_state: Mapping[str, Any],
     *,
@@ -482,16 +507,34 @@ def _run_canonical_batch_locked(
 
     for group_key, group_tasks in groups.items():
         group_runnable: list[tuple[_BatchTask, CanonicalBaseModelRunner]] = []
-        pending = [
-            task
-            for task in group_tasks
-            if not (
-                state["tasks"][task.task_id].get("status") == "completed"
-                and _artifacts_complete(state["tasks"][task.task_id])
-            )
-        ]
+        completed_aliases = {}
+        for task in group_tasks:
+            task_state = state["tasks"][task.task_id]
+            if task_state.get("status") == "completed" and _artifacts_complete(task_state):
+                completed_aliases[_result_alias_key(task)] = task
+        pending = []
+        for task in group_tasks:
+            task_state = state["tasks"][task.task_id]
+            if task_state.get("status") == "completed" and _artifacts_complete(task_state):
+                continue
+            completed_alias = completed_aliases.get(_result_alias_key(task))
+            if completed_alias is not None:
+                _copy_alias_result(state, task, completed_alias)
+                _write_state(state_path, state)
+            else:
+                pending.append(task)
         if not pending:
             continue
+        alias_groups = {}
+        unique_pending = []
+        for task in pending:
+            aliases = alias_groups.setdefault(_result_alias_key(task), [])
+            if aliases:
+                aliases.append(task)
+            else:
+                aliases.append(task)
+                unique_pending.append(task)
+        pending = unique_pending
         transform_cache = FoldTransformCache(max_bytes=max(1, budget.memory_limit_bytes // 8))
         raw_payload = None
         group_started = perf_counter()
@@ -655,6 +698,9 @@ def _run_canonical_batch_locked(
                         "type": type(exc).__name__, "message": str(exc),
                         "phase": "artifact_verification", "config": str(task.path),
                     }})
+        for aliases in alias_groups.values():
+            for alias in aliases[1:]:
+                _copy_alias_result(state, alias, aliases[0])
         _write_state(state_path, state)
 
         # Drop strong ownership before constructing the next design group.

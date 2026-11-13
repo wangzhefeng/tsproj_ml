@@ -15,7 +15,7 @@ data:
     - name: value
       role: target
       categorical: false
-    history_path: dataset/aidc_ess_selfuse_load/forecasting_data/B_GateEnergys_5min_20251001_20260728_remove_outlier.csv
+    history_path: dataset/aidc_ess_selfuse_load/EnergyStorages_PCSs_5min/outlier_analysis_output/B_GateEnergys_5min_20251001_20260728_remove_outlier.csv
     time_col: time
     series_id_cols: []
     availability: source_time

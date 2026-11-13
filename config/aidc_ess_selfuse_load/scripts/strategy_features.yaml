@@ -41,10 +41,10 @@ joint_clustering:
 
 routes:
   A:
-    target_path: forecasting_data/A_GateEnergys_5min_20251001_20260728_remove_outlier.csv
+    target_path: EnergyStorages_PCSs_5min/outlier_analysis_output/A_GateEnergys_5min_20251001_20260728_remove_outlier.csv
     endogenous_path: forecasting_data/A_ESS_PCS_merged_5min_20251001_20260728.csv
     plan_path: exogenous_strategy_plan/up_sampled/A_PCS_plan_5min_20251001_20260731.csv
   B:
-    target_path: forecasting_data/B_GateEnergys_5min_20251001_20260728_remove_outlier.csv
+    target_path: EnergyStorages_PCSs_5min/outlier_analysis_output/B_GateEnergys_5min_20251001_20260728_remove_outlier.csv
     endogenous_path: forecasting_data/B_ESS_PCS_merged_5min_20251001_20260728.csv
     plan_path: exogenous_strategy_plan/up_sampled/B_PCS_plan_5min_20251001_20260731.csv

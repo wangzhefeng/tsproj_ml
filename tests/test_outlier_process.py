@@ -3,9 +3,10 @@
 
 被测模块已从 data_provider/outlier_process.py 重写迁移为
 data_process/outlier_process.py（CLI 工具化），本测试针对新 API：
-detect_anomalies / build_cleaned_series / process_outlier。
+detect_anomalies / build_cleaned_series / complete_time_grid / process_outlier。
 """
 
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -17,9 +18,11 @@ from data_process.outlier_process import (
     ANOMALY_SCORE_COL,
     ANOMALY_TYPE_COL,
     AUTO_CLEAN_COL,
+    GridCompletionSpec,
     OutlierParams,
     OutlierSpec,
     build_cleaned_series,
+    complete_time_grid,
     detect_anomalies,
     process_outlier,
 )
@@ -89,6 +92,7 @@ class OutlierProcessTest(unittest.TestCase):
             self.assertEqual(result.cleaned_csv, cleaned_path)
             self.assertTrue(marked_path.exists())
             self.assertTrue(cleaned_path.exists())
+            self.assertFalse(out_dir.joinpath("df_power_remove_outlier_grid_completion.json").exists())
             self.assertEqual(result.total_rows, 8)
             self.assertEqual(result.anomaly_count, 1)
 
@@ -98,6 +102,98 @@ class OutlierProcessTest(unittest.TestCase):
             self.assertIn(ANOMALY_COL, marked.columns)
             self.assertIn(ANOMALY_TYPE_COL, marked.columns)
             self.assertIn(ANOMALY_SCORE_COL, marked.columns)
+
+    def test_complete_time_grid_interpolates_inserted_internal_point(self):
+        cleaned = pd.DataFrame(
+            {
+                TIME_COL: pd.to_datetime(["2026-06-01 00:00", "2026-06-01 00:05", "2026-06-01 00:15"]),
+                TARGET_COL: [10.0, 20.0, 40.0],
+            }
+        )
+        spec = GridCompletionSpec(
+            freq="5min",
+            start=pd.Timestamp("2026-06-01 00:00"),
+            end=pd.Timestamp("2026-06-01 00:15"),
+        )
+
+        completed, filled = complete_time_grid(
+            cleaned, TIME_COL, TARGET_COL, spec, OutlierParams(abs_low_threshold=0.0)
+        )
+
+        self.assertEqual(completed[TARGET_COL].tolist(), [10.0, 20.0, 30.0, 40.0])
+        self.assertEqual(len(completed), 4)
+        self.assertEqual(len(filled), 1)
+        self.assertEqual(filled.loc[0, TIME_COL], pd.Timestamp("2026-06-01 00:10"))
+        self.assertEqual(filled.loc[0, TARGET_COL], 30.0)
+
+    def test_complete_time_grid_rejects_edge_gap(self):
+        cleaned = pd.DataFrame(
+            {
+                TIME_COL: pd.to_datetime(["2026-06-01 00:05", "2026-06-01 00:10"]),
+                TARGET_COL: [20.0, 30.0],
+            }
+        )
+        spec = GridCompletionSpec(
+            freq="5min",
+            start=pd.Timestamp("2026-06-01 00:00"),
+            end=pd.Timestamp("2026-06-01 00:15"),
+        )
+
+        with self.assertRaisesRegex(ValueError, "leading/trailing"):
+            complete_time_grid(cleaned, TIME_COL, TARGET_COL, spec, OutlierParams())
+
+    def test_complete_time_grid_rejects_duplicate_and_unsorted_timestamps(self):
+        spec = GridCompletionSpec(
+            freq="5min",
+            start=pd.Timestamp("2026-06-01 00:00"),
+            end=pd.Timestamp("2026-06-01 00:10"),
+        )
+        duplicate = pd.DataFrame(
+            {TIME_COL: pd.to_datetime(["2026-06-01 00:00", "2026-06-01 00:00"]), TARGET_COL: [10.0, 20.0]}
+        )
+        unsorted = pd.DataFrame(
+            {TIME_COL: pd.to_datetime(["2026-06-01 00:05", "2026-06-01 00:00"]), TARGET_COL: [20.0, 10.0]}
+        )
+
+        with self.assertRaisesRegex(ValueError, "unique"):
+            complete_time_grid(duplicate, TIME_COL, TARGET_COL, spec, OutlierParams())
+        with self.assertRaisesRegex(ValueError, "increasing"):
+            complete_time_grid(unsorted, TIME_COL, TARGET_COL, spec, OutlierParams())
+
+    def test_process_outlier_writes_grid_completion_audit(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            source_path = Path(tmpdir).joinpath("df_power.csv")
+            source = self._sample_power_frame().drop(index=3).reset_index(drop=True)
+            source.to_csv(source_path, index=False)
+            spec = GridCompletionSpec(
+                freq="5min",
+                start=pd.Timestamp("2026-06-01 00:00"),
+                end=pd.Timestamp("2026-06-01 00:35"),
+            )
+
+            result = process_outlier(
+                OutlierSpec(
+                    source_path=source_path,
+                    time_col=TIME_COL,
+                    target_col=TARGET_COL,
+                    params=OutlierParams(abs_low_threshold=1000.0, auto_clean_statistical=False),
+                    plot=False,
+                    route="unit",
+                    grid_completion=spec,
+                )
+            )
+
+            cleaned = pd.read_csv(result.cleaned_csv)
+            audit_path = result.cleaned_csv.with_name("df_power_remove_outlier_grid_completion.json")
+            audit = json.loads(audit_path.read_text(encoding="utf-8"))
+            self.assertEqual(len(cleaned), 8)
+            self.assertFalse(cleaned.isna().any().any())
+            self.assertEqual(audit["input_rows"], 7)
+            self.assertEqual(audit["filled_rows"], 1)
+            self.assertEqual(audit["output_rows"], 8)
+            self.assertEqual(audit["filled_points"][0]["count_data_time"], "2026-06-01T00:15:00")
+            self.assertEqual(len(audit["source_sha256"]), 64)
+            self.assertEqual(len(audit["output_sha256"]), 64)
 
 
 if __name__ == "__main__":

@@ -12,6 +12,7 @@ local/periodic Z-score 支持 run-length 过滤（短段保留、长段提高阈
 输出（默认源文件同级的 outlier_analysis/ 子目录，文件名从源文件名派生；可在任务中配置 output_dir 覆盖输出目录）：
   outlier_analysis/<stem>_outlier_detection.csv  异常标记（含是否清洗/审核状态）
   outlier_analysis/<stem>_remove_outlier.csv     清洗后数据（异常点 time 插值 + ffill/bfill）
+  outlier_analysis/<stem>_remove_outlier_grid_completion.json  可选网格补齐审计
   outlier_analysis/<stem>_anomalies.png          原始/清洗后对比图 + 异常标记
   outlier_analysis/review_days/<stem>/<date>_review.png  统计可疑点的逐日审核图
 
@@ -48,11 +49,15 @@ local/periodic Z-score 支持 run-length 过滤（短段保留、长段提高阈
     review_daily_plots:         对待审核统计点生成逐日全量数据图，默认 false
     auto_clean_statistical:     统计候选是否自动清洗，默认 true（兼容既有场景）
     plot:                       是否生成图片，默认 true
+    grid_completion:            可选完整时间网格补齐，配置 freq/start/end/method=time；
+                                仅内部缺口时间插值，不做边缘外推
 """
 
 from __future__ import annotations
 
 import argparse
+import hashlib
+import json
 import os
 import tempfile
 from dataclasses import dataclass
@@ -116,6 +121,14 @@ class OutlierParams:
 
 
 @dataclass(frozen=True)
+class GridCompletionSpec:
+    freq: str
+    start: pd.Timestamp
+    end: pd.Timestamp
+    method: str = "time"
+
+
+@dataclass(frozen=True)
 class OutlierSpec:
     """单个异常检测任务规格。"""
     source_path: Path
@@ -126,6 +139,7 @@ class OutlierSpec:
     review_daily_plots: bool = False
     route: str = ""
     output_dir: Optional[Path] = None
+    grid_completion: Optional[GridCompletionSpec] = None
 
 
 @dataclass(frozen=True)
@@ -407,6 +421,57 @@ def build_cleaned_series(
     return cleaned[[time_col, target_col]]
 
 
+def complete_time_grid(
+    cleaned: pd.DataFrame,
+    time_col: str,
+    target_col: str,
+    spec: GridCompletionSpec,
+    params: OutlierParams,
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """补齐显式时间网格的内部缺口，返回完整数据及新增点审计明细。"""
+    if spec.method != "time":
+        raise ValueError(f"Unsupported grid completion method: {spec.method!r}.")
+
+    result = cleaned[[time_col, target_col]].copy()
+    time_values = pd.to_datetime(result[time_col], errors="raise")
+    if time_values.duplicated().any():
+        raise ValueError("Grid completion requires unique timestamps.")
+    if not time_values.is_monotonic_increasing:
+        raise ValueError("Grid completion requires strictly increasing timestamps.")
+
+    grid = pd.date_range(start=spec.start, end=spec.end, freq=spec.freq)
+    if grid.empty:
+        raise ValueError("Grid completion produced an empty time grid.")
+    off_grid = ~time_values.isin(grid)
+    if off_grid.any():
+        raise ValueError(
+            f"Grid completion found {int(off_grid.sum())} source timestamps outside the explicit grid."
+        )
+
+    result[time_col] = time_values
+    result[target_col] = pd.to_numeric(result[target_col], errors="coerce")
+    result = result.set_index(time_col).reindex(grid)
+    result.index.name = time_col
+    inserted_mask = ~grid.isin(time_values)
+    observed = result.loc[~inserted_mask, target_col].copy()
+
+    result[target_col] = result[target_col].interpolate(method="time", limit_area="inside")
+    if result[target_col].isna().any():
+        raise ValueError("Grid completion cannot fill leading/trailing or non-numeric gaps.")
+    if not observed.equals(result.loc[~inserted_mask, target_col]):
+        raise ValueError("Grid completion changed an observed value.")
+
+    final_invalid = _physical_boundary_mask(result[target_col], params)
+    if final_invalid.any():
+        raise ValueError(
+            "Unable to produce a physical-boundary-compliant completed grid: "
+            f"{int(final_invalid.sum())} invalid rows remain."
+        )
+
+    filled = result.loc[inserted_mask].reset_index()[[time_col, target_col]]
+    return result.reset_index()[[time_col, target_col]], filled
+
+
 # ---------------------------------------------------------------------------
 # 可视化
 # ---------------------------------------------------------------------------
@@ -554,6 +619,7 @@ def _output_paths(source_path: Path, output_dir: Optional[Path] = None) -> Dict[
     return {
         "marked": out_dir / f"{stem}_outlier_detection.csv",
         "cleaned": out_dir / f"{stem}_remove_outlier.csv",
+        "grid_completion_audit": out_dir / f"{stem}_remove_outlier_grid_completion.json",
         "plot": out_dir / f"{stem}_anomalies.png",
         "review_dir": out_dir / "review_days" / stem,
     }
@@ -579,13 +645,45 @@ def process_outlier(spec: OutlierSpec) -> OutlierResult:
 
     # 写清洗 CSV
     cleaned = build_cleaned_series(marked, spec.time_col, spec.target_col, spec.params)
+    anomaly_cleaned = cleaned
+    grid_filled = None
+    if spec.grid_completion is not None:
+        cleaned, grid_filled = complete_time_grid(
+            cleaned, spec.time_col, spec.target_col, spec.grid_completion, spec.params
+        )
     cleaned.to_csv(paths["cleaned"], index=False, encoding="utf-8")
+
+    if spec.grid_completion is not None and grid_filled is not None:
+        grid_spec = spec.grid_completion
+        audit = {
+            "source_path": str(spec.source_path),
+            "source_sha256": hashlib.sha256(spec.source_path.read_bytes()).hexdigest(),
+            "output_sha256": hashlib.sha256(paths["cleaned"].read_bytes()).hexdigest(),
+            "freq": grid_spec.freq,
+            "start": grid_spec.start.isoformat(),
+            "end": grid_spec.end.isoformat(),
+            "method": grid_spec.method,
+            "input_rows": len(anomaly_cleaned),
+            "filled_rows": len(grid_filled),
+            "output_rows": len(cleaned),
+            "filled_points": [
+                {
+                    spec.time_col: row[spec.time_col].isoformat(),
+                    spec.target_col: float(row[spec.target_col]),
+                }
+                for _, row in grid_filled.iterrows()
+            ],
+        }
+        paths["grid_completion_audit"].write_text(
+            json.dumps(audit, ensure_ascii=False, indent=2, allow_nan=False) + "\n",
+            encoding="utf-8",
+        )
 
     # 写图片
     plot_path = None
     if spec.plot:
         plot_path = plot_anomalies(
-            marked, cleaned, spec.time_col, spec.target_col, route, paths["plot"]
+            marked, anomaly_cleaned, spec.time_col, spec.target_col, route, paths["plot"]
         )
 
     review_plots: List[Path] = []
@@ -602,6 +700,8 @@ def process_outlier(spec: OutlierSpec) -> OutlierResult:
     print(f"{route}: total={len(df)}, anomalies={anomaly_count}, type_counts={type_counts}")
     print(f"  -> {paths['marked']}")
     print(f"  -> {paths['cleaned']}")
+    if grid_filled is not None:
+        print(f"  -> {paths['grid_completion_audit']} (filled={len(grid_filled)})")
     if plot_path:
         print(f"  -> {plot_path}")
     if review_plots:
@@ -654,6 +754,36 @@ def _build_params(raw: dict[str, Any]) -> OutlierParams:
     )
 
 
+def _build_grid_completion(raw: Any) -> Optional[GridCompletionSpec]:
+    if raw is None:
+        return None
+    if not isinstance(raw, Mapping):
+        raise ValueError("grid_completion must be a mapping.")
+    allowed = {"freq", "start", "end", "method"}
+    unknown = set(raw) - allowed
+    if unknown:
+        raise ValueError(f"Unknown grid_completion fields: {sorted(unknown)}")
+    missing = [key for key in ("freq", "start", "end") if key not in raw]
+    if missing:
+        raise ValueError(f"grid_completion missing required fields: {missing}")
+
+    freq = str(raw["freq"])
+    if not freq:
+        raise ValueError("grid_completion.freq must be non-empty.")
+    try:
+        pd.tseries.frequencies.to_offset(freq)
+        start = pd.Timestamp(raw["start"])
+        end = pd.Timestamp(raw["end"])
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"Invalid grid_completion specification: {raw}") from exc
+    if pd.isna(start) or pd.isna(end) or start > end:
+        raise ValueError("grid_completion requires valid start <= end.")
+    method = str(raw.get("method", "time"))
+    if method != "time":
+        raise ValueError("grid_completion.method only supports 'time'.")
+    return GridCompletionSpec(freq=freq, start=start, end=end, method=method)
+
+
 def _build_spec(raw: dict[str, Any], config_path: Path) -> OutlierSpec:
     missing = [k for k in ("source_path", "time_col", "target_col") if k not in raw]
     if missing:
@@ -667,6 +797,7 @@ def _build_spec(raw: dict[str, Any], config_path: Path) -> OutlierSpec:
         review_daily_plots=bool(raw.get("review_daily_plots", False)),
         route=raw.get("route", ""),
         output_dir=_resolve_path(raw["output_dir"]) if raw.get("output_dir") else None,
+        grid_completion=_build_grid_completion(raw.get("grid_completion")),
     )
 
 

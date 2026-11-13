@@ -9,13 +9,18 @@
 # 统计可疑点不自动清洗；review_daily_plots 为其所在日期输出完整 5min 曲线供人工审核。
 
 tasks:
-  - source_path: dataset/aidc_ess_selfuse_load/EnergyStorages_PCSs_5min/A_GateEnergys_5min_20251001_20260728.csv
-    output_dir: dataset/aidc_ess_selfuse_load/EnergyStorages_PCSs_5min/outlier_analysis
+  - source_path: dataset/aidc_ess_selfuse_load/EnergyStorages_PCSs_5min/input/A_GateEnergys_5min_20251001_20260728.csv
+    output_dir: dataset/aidc_ess_selfuse_load/EnergyStorages_PCSs_5min/outlier_analysis_output
     time_col: time
     target_col: value
     route: ESS_A
     review_daily_plots: true
     auto_clean_statistical: false
+    grid_completion:
+      freq: 5min
+      start: '2025-10-01 00:00:00'
+      end: '2026-07-28 23:55:00'
+      method: time
     abs_low_threshold: 0.0
     abs_high_threshold: 200.0
     spike_window: 2
@@ -26,13 +31,18 @@ tasks:
     max_short_run_points: 0
     long_run_score_multiplier: 10.0
 
-  - source_path: dataset/aidc_ess_selfuse_load/EnergyStorages_PCSs_5min/B_GateEnergys_5min_20251001_20260728.csv
-    output_dir: dataset/aidc_ess_selfuse_load/EnergyStorages_PCSs_5min/outlier_analysis
+  - source_path: dataset/aidc_ess_selfuse_load/EnergyStorages_PCSs_5min/input/B_GateEnergys_5min_20251001_20260728.csv
+    output_dir: dataset/aidc_ess_selfuse_load/EnergyStorages_PCSs_5min/outlier_analysis_output
     time_col: time
     target_col: value
     route: ESS_B
     review_daily_plots: true
     auto_clean_statistical: false
+    grid_completion:
+      freq: 5min
+      start: '2025-10-01 00:00:00'
+      end: '2026-07-28 23:55:00'
+      method: time
     abs_low_threshold: 0.0
     abs_high_threshold: 200.0
     spike_window: 2

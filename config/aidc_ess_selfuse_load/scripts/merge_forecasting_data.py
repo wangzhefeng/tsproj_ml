@@ -1,15 +1,15 @@
 # -*- coding: utf-8 -*-
 """forecasting_data/ 下 ESS+PCS 拼接数据生成。
 
-将站用电清洗数据（forecasting_data/{A,B}_GateEnergys_5min_*_remove_outlier.csv）
-与 PCS 实际充放电清洗数据（endogenous_strategy_actual/outlier_analysis/{A,B}_PCSMerged_5min_*_remove_outlier.csv）
+将站用电清洗数据（EnergyStorages_PCSs_5min/outlier_analysis_output/{A,B}_GateEnergys_5min_*_remove_outlier.csv）
+与 PCS 实际充放电清洗数据（endogenous_strategy_actual/outlier_analysis_output/{A,B}_PCSMerged_5min_*_remove_outlier.csv）
 按时间列内连接拼接，输出多变量预测的目标+内生特征文件。
 
 输出: dataset/aidc_ess_selfuse_load/forecasting_data/{A,B}_ESS_PCS_merged_5min_20251001_20260728.csv
 列: time, ess_power（站用电 kW）, pcs_power（PCS 充放电功率 kW，负=充电，正=放电）
 
 用法（仓库根目录）：
-    env -u PYTHONPATH .venv/bin/python config/aidc_ess_selfuse_load/merge_forecasting_data.py
+    env -u PYTHONPATH .venv/bin/python config/aidc_ess_selfuse_load/scripts/merge_forecasting_data.py
 """
 from pathlib import Path
 
@@ -20,8 +20,8 @@ DATA_DIR = PROJECT_ROOT / "dataset/aidc_ess_selfuse_load"
 
 
 def merge_route(gate: str) -> None:
-    ess_path = DATA_DIR / f"forecasting_data/{gate}_GateEnergys_5min_20251001_20260728_remove_outlier.csv"
-    pcs_path = DATA_DIR / f"endogenous_strategy_actual/outlier_analysis/{gate}_PCSMerged_5min_20251001_20260728_remove_outlier.csv"
+    ess_path = DATA_DIR / f"EnergyStorages_PCSs_5min/outlier_analysis_output/{gate}_GateEnergys_5min_20251001_20260728_remove_outlier.csv"
+    pcs_path = DATA_DIR / f"endogenous_strategy_actual/outlier_analysis_output/{gate}_PCSMerged_5min_20251001_20260728_remove_outlier.csv"
 
     ess = pd.read_csv(ess_path)
     ess.columns = ess.columns.str.strip("﻿")

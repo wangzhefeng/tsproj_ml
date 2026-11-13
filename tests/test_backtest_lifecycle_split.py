@@ -34,11 +34,12 @@ class BacktestLifecycleSplitTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             model_dir = Path(directory)
             config = SimpleNamespace(fingerprint=lambda: "fixture", validation={},
-                                     features=SimpleNamespace(transformations={}))
+                                     features=SimpleNamespace(transformations={}),
+                                     estimator=SimpleNamespace(model_type="ridge"))
             runner = SimpleNamespace(config=config)
             state_path = model_dir / "run_state.json"
 
-            def execute(*args):
+            def execute(*args, **kwargs):
                 self.assertEqual(json.loads(state_path.read_text())["status"], "running")
                 return "result"
 

@@ -127,6 +127,32 @@ env -u PYTHONPATH .venv/bin/python run.py --config-yaml config/<scenario>/<model
 
 必须显式指定配置；`run.py` 不提供硬编码默认值。模型语义以 YAML 为唯一来源；CLI 不支持模型、数据和训练参数的静默覆盖。
 
+### 单模型生命周期
+
+| `--mode` | 回测 | final fit / 最终预测 | 默认保存 bundle |
+|---|---|---|---|
+| `backtest-only` | 是 | 否 | 否 |
+| `backtest-fit-forecast`（默认） | 是 | 是 | 是 |
+| `production` | 否 | 是 | 是 |
+
+- `--issue-date YYYY-MM-DD` 三模式均可用，production 必填；不传保持配置原点解析。传入后忽略 YAML 历史原点，由 target 完整网格（多序列共同覆盖）解析实际原点；日期只决定下一请求目标月，不直接指定原点，也不按发报日截断数据。
+- 日频 calendar-month 交付完整请求目标月，区间未覆盖则报错；普通 fixed-step 保持配置预测区间，不强制整月。动态请求沿用 `target_month=YYYY-MM` 运行作用域与来源证据。
+- `--no-bundle` 仅禁止 bundle 写盘，仍 final fit、构建内存 bundle 并用本次模型预测；与 backtest-only 冲突。已有 bundle 不删除、不读取、不更新，其模型目录状态也不更新；本次状态写预测目录。
+- production 不生成本次回测产物，也不删除或回写旧回测目录。`resolved_config.json.runtime` 的 `skip_backtest/persist_bundle/holdout` 描述本次执行，不能把旧文件存在当成本次证据。保存 bundle 时状态仍在模型目录，仅回测状态在测试目录的 `backtest_only/`。
+- 跳过回测不能生成 CQR 校准，声明 CQR 时前置拒绝；ETS/seasonal_baseline 的仅回测限制不变。训练与回测始终 historical；动态请求的最终预测使用 future。
+- Ensemble 仅默认全生命周期，拒绝其他模式、issue-date 和 no-bundle；批量入口不新增模式选项。production 是单次批式进程，不是常驻服务或调度器。
+
+CLI 不兼容迁移（下例须补上 `--config-yaml <path>`）：
+
+```text
+旧 --backtest-only                  → --mode backtest-only
+旧 --production --issue-date <日期> → --mode backtest-fit-forecast --issue-date <日期>
+新 跳过回测、拟合并预测             → --mode production --issue-date <日期>
+新 不保存模型但仍拟合预测           → --mode production --issue-date <日期> --no-bundle
+```
+
+正式 YAML 与生成器中保留的旧命令注释是历史文本，不是可执行 CLI 合同；本次不重写正式 YAML。模式和保存开关不进入 YAML 或语义 fingerprint。
+
 ## 结果合同
 
 ```text
@@ -146,7 +172,7 @@ results/
 
 - `prediction.csv` 唯一键：`(series_id,time,target)`。
 - `cv_plot_df.csv` 唯一键：`(series_id,time,target,window)`。
-- 单模型和 Ensemble 都保存 schema-2 `ForecastModelBundle`。
+- 默认全生命周期的单模型和 Ensemble 都保存 schema-2 `ForecastModelBundle`；单模型 `--no-bundle` 仅保留本次内存 bundle。
 - wrappers 模块迁移后，旧 `models.ModelFactory` 路径 bundle 不再兼容，不提供 shim；需重新训练，现有结果不自动删除。见 `models/README.md`。
 - Ensemble bundle 自包含成员 bundle 和融合器，部署预测不读取成员 YAML 或 OOF cache。
 

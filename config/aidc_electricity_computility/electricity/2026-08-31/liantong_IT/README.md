@@ -120,7 +120,7 @@ env -u PYTHONPATH .venv/bin/python config/aidc_electricity_computility/electrici
 - 当前使用`validation.training_window: {kind: rolling, history_steps: 4032}`，预测窗口为`after_origin`：每折先截取连续14天5min数据，再构造训练和预测特征；expanding从该折起点重置。旧train_history_steps/train_window_steps不与新合同混写。
 - 预测长度 288 点，每日滚动；回测日期 8.15—8.31，共 17 折，包含正常计分的 8.19。
 - 特征预热和标签均位于窗口内。Direct/DIRMO/MIMO的安全候选原点数为1728，其余变体为1729；这是lag锚点差异。Direct独立模型、MIMO、DIRMO、DirRec、DirRecMO使用全部候选；共享horizon、Recursive、RecMO再按每日23:55锚点采样，不能把候选数写成采样后的训练原点数。
-- 天气组不再强制`--backtest-only`，新合同支持final fit/bundle；完成正式预测仍须满足预测区间的外生资产覆盖与可得性要求。baseline、baseline_opt、add_weather_opt保留旧原始历史合同及backtest-only限制；框架支持不等于当前资产已具备实盘资格。
+- 天气组不再强制`--mode backtest-only`，新合同支持final fit/bundle；完成正式预测仍须满足预测区间的外生资产覆盖与可得性要求。baseline、baseline_opt、add_weather_opt保留旧原始历史合同及backtest-only限制；框架支持不等于当前资产已具备实盘资格。
 - 验收包括九策略合成 LightGBM 回测及窗口外扰动不变性、真实数据首折/8.19/末折特征设计探针；不表示九份正式配置已经完成大规模拟合，也不提供部署资格或实测缺失日误差证明。
 
 ## 算力消融组

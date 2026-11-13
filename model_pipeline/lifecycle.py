@@ -295,22 +295,42 @@ def _output_paths(
     )
 
 
+def validate_lifecycle_options(
+    config: ForecastConfigSpec, *, backtest_only: bool = False,
+    skip_backtest: bool = False, persist_bundle: bool = True,
+) -> None:
+    """在训练和产物写入之前校验；直接生命周期调用也不能绕过。"""
+    if backtest_only and skip_backtest:
+        raise ValueError("backtest-only cannot be combined with skip_backtest")
+    if backtest_only and not persist_bundle:
+        raise ValueError("persist_bundle=False requires a mode that runs final fit")
+    if skip_backtest and config.probabilistic.get("calibration") is not None:
+        raise ValueError("skip_backtest cannot construct CQR calibration from holdout folds")
+    if not backtest_only:
+        if config.features.transformations.get("seasonal_baseline") is not None:
+            raise ValueError("seasonal_baseline final fit/bundle is unsupported; use backtest-only")
+        if config.estimator.model_type.lower() == "ets":
+            raise ValueError("ETS final fit/bundle is unsupported; use backtest-only")
+
+
 def run_lifecycle(
     runner: Any, output_root: str | Path | None = None, *, backtest_only: bool = False,
+    skip_backtest: bool = False, persist_bundle: bool = True,
 ) -> CanonicalRuntimeResult | BacktestRuntimeResult:
-    if runner.config.features.transformations.get("seasonal_baseline") is not None and not backtest_only:
-        raise ValueError("seasonal_baseline final fit/bundle is unsupported; use backtest-only")
+    validate_lifecycle_options(runner.config, backtest_only=backtest_only,
+                               skip_backtest=skip_backtest, persist_bundle=persist_bundle)
     fingerprint = runner.config.fingerprint()
-    _, model_dir, test_dir, _ = _output_paths(
+    _, model_dir, test_dir, forecast_dir = _output_paths(
         runner.config, fingerprint, output_root, getattr(runner, "run_scope", None),
     )
-    # 回测状态与完整模型状态隔离，不能用回测 completed 宣称 bundle 可部署。
-    state_dir = test_dir / "backtest_only" if backtest_only else model_dir
+    # 仅回测和不保存模型的状态不能冒充本次可部署 bundle 的完成证据。
+    state_dir = (test_dir / "backtest_only" if backtest_only
+                 else model_dir if persist_bundle else forecast_dir)
     write_run_state(state_dir, fingerprint, "running")
     try:
-        result = (
-            execute_lifecycle(runner, output_root, backtest_only=True)
-            if backtest_only else execute_lifecycle(runner, output_root)
+        result = execute_lifecycle(
+            runner, output_root, backtest_only=backtest_only,
+            skip_backtest=skip_backtest, persist_bundle=persist_bundle,
         )
         write_run_state(state_dir, fingerprint, "completed")
         return result
@@ -321,8 +341,11 @@ def run_lifecycle(
 
 def execute_lifecycle(
     runner: Any, output_root: str | Path | None = None, *, backtest_only: bool = False,
+    skip_backtest: bool = False, persist_bundle: bool = True,
 ) -> CanonicalRuntimeResult | BacktestRuntimeResult:
     """复用回测阶段；仅回测模式在 final fit 之前退出。"""
+    validate_lifecycle_options(runner.config, backtest_only=backtest_only,
+                               skip_backtest=skip_backtest, persist_bundle=persist_bundle)
     builder = runner.builder
     config = runner.config
     origin = runner.origin
@@ -338,16 +361,18 @@ def execute_lifecycle(
     )
     if backtest_only:
         test_dir = test_dir / "backtest_only"
-    holdout_metadata, calibration_tracker, holdout_audit = run_fixed_step_backtest(
-        runner, test_dir, mode=mode,
-    )
-    if holdout_metadata is None:
-        holdout_metadata, calibration_tracker = run_calendar_month_backtest(
-            config, runner.registry, runner, test_dir,
-            runner_factory=runner.calendar_runner_factory,
+    holdout_metadata, calibration_tracker, holdout_audit = None, None, ()
+    runner.stage_wall_seconds["backtest"] = 0.0
+    if not skip_backtest:
+        holdout_metadata, calibration_tracker, holdout_audit = run_fixed_step_backtest(
+            runner, test_dir, mode=mode,
         )
-
-    runner.stage_wall_seconds["backtest"] = perf_counter() - backtest_started
+        if holdout_metadata is None:
+            holdout_metadata, calibration_tracker = run_calendar_month_backtest(
+                config, runner.registry, runner, test_dir,
+                runner_factory=runner.calendar_runner_factory,
+            )
+        runner.stage_wall_seconds["backtest"] = perf_counter() - backtest_started
     if backtest_only:
         if holdout_metadata is None:
             raise ValueError("backtest-only requires configured backtest geometry")
@@ -468,7 +493,8 @@ def execute_lifecycle(
         },
     )
 
-    persist_model_bundle(bundle, model_dir)
+    if persist_bundle:
+        persist_model_bundle(bundle, model_dir)
 
     # 预测图历史参照段（2026-09-02）：as-of origin 的 target_history 末段
     # （5×horizon 步）随预测图绘制；历史段时间轴 <= origin，与预测段不重叠。
@@ -511,6 +537,8 @@ def execute_lifecycle(
             "config_fingerprint": fingerprint,
             "runtime": {
                 "lifecycle_schema_version": 1,
+                "skip_backtest": skip_backtest,
+                "persist_bundle": persist_bundle,
                 "result_method": config.result_method(),
                 "forecast_origin": origin.isoformat(),
                 "forecast_target_month": target_month,
@@ -551,7 +579,7 @@ def execute_lifecycle(
         },
     )
     metadata_path = test_dir / "result_metadata.json"
-    if metadata_path.exists():
+    if not skip_backtest and metadata_path.exists():
         result_metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
         result_metadata["runtime_resources"] = runner.runtime_resources_payload()
         result_metadata["run_evidence"] = run_evidence

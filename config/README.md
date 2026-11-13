@@ -57,7 +57,7 @@ schema_version/problem/data/probabilistic/ensemble/validation/output
 - `recent_state`：`columns/windows/stats`。原点前固定步数窗口（5min 下 6/12/36 = 30min/1h/3h）的水平（`level`）、均值、波动（`std`）、变化（`diff` 首末差）与斜率（`slope`，每步），特征名 `{col}_rs_{stat}_{window}`。始终锚定预测原点，不随 horizon 移动。
 - `block_weather`：`columns/stats`。用于块输出策略（MIMO/RecMO/DIRMO/DirRecMO），也支持单步退化；对当前调用块内全部目标时刻的 known_future 天气列聚合 `mean/min/max`，特征名 `{col}_blk_{stat}`。按真实块坐标聚合，禁止用块首值冒充；单步块退化为该步原值。训练读实测列、滑窗测试预测读预报列，沿用现有阶段切换；没有对应 known_future source 的声明直接 RAISE。沿用策略的整除合同，不引入不完整块的新策略语义。
 
-`features.transformations.seasonal_baseline`（column/period/days）是独立残差通路：训练按各自监督原点 as-of 减同槽基线，预测原位恢复，递归 provider 始终用原始单位。要求 Local、point、显式 training_window、无目标变换；不是 target transform。仅支持 `--backtest-only`；完整生命周期、独立 final fit 和 bundle 构造均显式拒绝，避免残差标签准备与部署恢复尚未贯通时输出错误预测。逐折拟合及窗口外污染隔离由定向测试覆盖，不扩大为残差部署验收。
+`features.transformations.seasonal_baseline`（column/period/days）是独立残差通路：训练按各自监督原点 as-of 减同槽基线，预测原位恢复，递归 provider 始终用原始单位。要求 Local、point、显式 training_window、无目标变换；不是 target transform。仅支持 `--mode backtest-only`；完整生命周期、独立 final fit 和 bundle 构造均显式拒绝，避免残差标签准备与部署恢复尚未贯通时输出错误预测。逐折拟合及窗口外污染隔离由定向测试覆盖，不扩大为残差部署验收。
 
 Fixed-step 的 fold_count/stride_steps 与截止原点、预测区间共同定义发报原点几何，training_window 定义原始训练历史；calendar-month 使用 train_window_days/fold_count/stride_months 并动态解析每月 H；`origin_day`（可选，1..28）把每折原点从「目标月开始前一天」移到上月该日：runner 按完整跨度（`lead-1+当月天数`）预测并逐折穿越未评分 gap 天，评分只保留目标自然月，训练标签末端不越过折原点，seasonal-naive 回看完整跨度；不声明时行为与月末原点完全一致。日频 calendar-month 的最终 forecast 自动把实际 `forecast_origin` 的下一自然月作为交付月，无需单独声明 target month：仍按原点与 H 构造完整跨度，再同步切片 point/quantile 及附加列；下一月未被逐日完整覆盖时 RAISE。独立 `target_month` 字段已退出，声明即拒绝。两类训练窗不混写。退役外层 history_steps 会产生新 fingerprint；存量结果不自动重跑、迁移或删除。
 
@@ -74,7 +74,7 @@ Fixed-step 的 fold_count/stride_steps 与截止原点、预测区间共同定�
 
 ## 时间边界
 
-- `validation.forecast_origin`为最后已知数据点，不等于目标预测区间起点。历史回测和可复现 final fit 保留固定锚点；生产完整生命周期使用 `run.py --production --issue-date YYYY-MM-DD`，忽略配置中的历史锚点，以权威目标数据的最后完整覆盖动态解析原点，并由发报日期推导目标月。日频聚合资产必须由上游保证最后一日完整，不能仅凭一行日均值宣称日内数据完整。
+- `validation.forecast_origin`为最后已知数据点，不等于目标预测区间起点。历史回测和可复现 final fit 保留固定锚点；动态原点完整生命周期使用 `run.py --mode backtest-fit-forecast --issue-date YYYY-MM-DD`（旧 `--production` 的等价迁移）；跳过回测使用 `--mode production --issue-date YYYY-MM-DD`，忽略配置中的历史锚点，以权威目标数据的最后完整覆盖动态解析原点，并由发报日期推导目标月。日频聚合资产必须由上游保证最后一日完整，不能仅凭一行日均值宣称日内数据完整。
 - canonical使用`forecast_origin`而非旧RuntimeConfig/now_time。旧路径的`schedule_mode`不自动将下午原点改为次日零点；未声明forecast_window时，目标始终为origin之后第1至H步。intraday回测按正式原点相位调度。
 - `problem.horizon`以`freq`计输出点数，可覆盖小时、一天或多天；自然日对齐必须显式声明`forecast_window.start=next_day`。
 - 区间以输出时间网格为准：5min自然日最后一点23:55；预测起点与信息截止时刻分离，不能读取中间间隔内尚未知的数据。

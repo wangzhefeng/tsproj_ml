@@ -24,7 +24,9 @@
 
 部署只使用已保存的模型、变换和校准状态；不会重新选择训练窗口或读取训练期缓存来重建模型。
 
-生产需要每月重新 final fit 时，使用 `run.py --production --issue-date YYYY-MM-DD`：发报日期决定目标月，权威目标数据的最后完整覆盖决定实际原点，模型语义 fingerprint 不随动态原点改写，结果在 `<scenario>/target_month=YYYY-MM/<identity>/` 下隔离。该模式执行完整单模型生命周期，与这里的 bundle-only 部署不同；训练读历史实测，生产预测使用 future 数据阶段。
+生产跳过回测重新 final fit 时，使用 `run.py --mode production --issue-date YYYY-MM-DD`（仍须显式 `--config-yaml`）；保留回测则用 `--mode backtest-fit-forecast --issue-date`，这也是旧 `--production` 的等价迁移。发报日期决定请求目标月，完整 target 网格决定实际原点（不按发报日截断），fingerprint 不变，结果沿用 `<scenario>/target_month=YYYY-MM/<identity>/`。日频 calendar-month 只交付完整目标月，普通 fixed-step 保留原预测区间。训练/回测读 historical，动态最终预测用 future；production 为单次进程，不是服务或 bundle-only 部署。
+
+`--no-bundle` 只禁止模型写盘，预测使用本次内存 final 模型；旧 bundle 不删除、不读取，旧模型状态不更新，本次 running/completed/failed 写预测目录。production 不生成本次回测文件，不修改旧回测 metadata；本次证据看预测 runtime 的 `skip_backtest/persist_bundle/holdout`，不能按目录存在判断。
 
 `seasonal_baseline` 残差目前仅支持回测，不支持 final fit/bundle；旧训练窗口字段退役不解除此能力限制。监督模型的一般部署支持不包含该残差通路。
 

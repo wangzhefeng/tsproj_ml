@@ -15,6 +15,14 @@ runner构造只做候选原点几何、一个真实原点的schema探测和资�
 - `batch_artifacts.py`：产物路径、摘要、时间网格、维度与 bundle 身份验收；只看文件存在不能判 completed。
 - `production.py`：生产发报请求与动态数据原点。`issue_date` 决定下一目标月，`last_complete_target` 根据权威 target history 的完整时间网格解析实际原点；记录来源内容 SHA256、逐序列覆盖和运行作用域。原点进入原定目标月时拒绝完整月预测。
 
+## 生命周期模式
+
+CLI 三模式与迁移示例见根 README。`run_canonical_config`、`runner.run`、`run_lifecycle`、`execute_lifecycle` 贯通 `backtest_only=False/skip_backtest=False/persist_bundle=True`；动态 `production_request` 与阶段独立，可用于仅回测。公共生命周期入口统一前置拒绝开关冲突、跳过回测的 CQR 和不支持 final fit 的 ETS/seasonal_baseline。
+
+`skip_backtest` 不调用两类回测或构造其窗口，holdout/calibration 为空、backtest 耗时为零；final fit/预测仍走原实现。`persist_bundle=False` 仍构建内存 bundle，只跳过持久化，不读旧模型。仅回测状态写 `test_dir/backtest_only`；不保存 bundle 的状态写 `forecast_dir`，避免覆盖旧模型完成状态；其他运行状态仍写 `model_dir`，执行异常写 failed 并传播。默认批量及 Ensemble 行为不变。
+
+不删除旧产物：跳过回测不读取/回写旧 `result_metadata.json`；no-bundle 不改旧 `model.pkl/resolved_model.json`。本次执行开关记录到预测 `resolved_config.json.runtime`，不进入语义 fingerprint。配置、identity、动态运行作用域及三类目录布局不变。
+
 ## 训练原点选择
 
 显式 training_window 经 temporal 合同统一历史下界和预测网格；temporal_backtest_windows 基于真实时间覆盖生成最近完整折，不再接受外层 history_steps 搜索上限。按截止原点相位和 stride_steps 后退，选满 fold_count；覆盖或训练窗不足直接报错。折 runner/final 共用标签截止和采样规则。采样前置，fit/final 不重复采样；窗口、预测区间、采样进入原始设计身份。旧字段及旧滚动切分器已退役。

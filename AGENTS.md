@@ -9,7 +9,7 @@
 ## 运行与验证
 
 - 运行与测试统一使用根目录 `.venv/`（`.venv/bin/python`）；依赖唯一来源为 `pyproject.toml` + `uv.lock`，依赖变更用 `uv add`；测试不调用 uv、不设置 `UV_CACHE_DIR`。
-- 统一入口：`env -u PYTHONPATH .venv/bin/python run.py --config-yaml <path>`（必须显式指定配置，无默认值）；单模型与引用式 Ensemble 按配置类型自动分派；批量执行用 `batch_run.py`。
+- 统一入口：`env -u PYTHONPATH .venv/bin/python run.py --config-yaml <path>`（必须显式指定配置）。单模型 `--mode` 为 `backtest-only`、默认 `backtest-fit-forecast`、跳过回测的 `production`；`--issue-date YYYY-MM-DD` 独立控制动态原点（production 必填），`--no-bundle` 仅用于含 final fit 的模式。旧 `--production --issue-date <日期>` 等价迁移为 `--mode backtest-fit-forecast --issue-date <日期>`；旧 `--backtest-only` 改为 `--mode backtest-only`。Ensemble 仅默认全生命周期，拒绝其他模式、issue-date 和 no-bundle；`batch_run.py` 保持原行为。
 - 常规修改运行 `env -u PYTHONPATH .venv/bin/python tests/run_suite.py fast` 并补相关定向测试；收口用 `all`。新测试默认纳入 integration，不得通过遗漏发现或 skip 提速；执行及覆盖映射见 `tests/README.md`。
 - 日志目录 `logs/main/`；`LOG_NAME` 由 `os.environ.get('LOG_NAME', 'main')` 提供默认值。
 

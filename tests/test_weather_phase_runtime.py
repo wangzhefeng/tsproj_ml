@@ -10,7 +10,9 @@ import pandas as pd
 from data_loading import SourceRegistry
 from forecasting_core.specs import ColumnSpec, DataSourceSpec
 from feature_engineering.design_identity import compute_raw_design_fingerprint
-from model_pipeline.runner import run_canonical_config
+from model_pipeline.production import ProductionForecastRequest
+from model_pipeline.runner import CanonicalBaseModelRunner, run_canonical_config
+from unittest.mock import patch
 from model_pipeline.supervised_design import SupervisedDesignBuilder
 from tests import test_canonical_runtime_smoke as smoke
 
@@ -54,6 +56,30 @@ class WeatherPhaseRuntimeTest(unittest.TestCase):
             result = run_canonical_config(config, output_root=root / 'results')
             self.assertTrue(result.bundle is not None)
             self.assertEqual(len(list((root / 'results').rglob('prediction.csv'))), 1)
+            # 动态原点与阶段开关组合：回测仍historical，末次预测才future。
+            future_times = pd.date_range(times[0], periods=54, freq='1h')
+            pd.DataFrame({'time': future_times, 'pred_tt2': 260.}).to_csv(future, index=False)
+            config = replace(config, data=replace(config.data, sources=(*base.data.sources, weather)))
+            original = CanonicalBaseModelRunner.forecast_designs
+            seen = []
+            def trace(runner, *args, **kwargs):
+                designs, provider = original(runner, *args, **kwargs)
+                indices = [i for i, name in enumerate(runner.feature_schema) if 'rt_tt2' in name]
+                seen.append((kwargs.get('data_phase', 'historical'), designs[0][..., indices].copy()))
+                return designs, provider
+            for skip in (False, True):
+                seen.clear()
+                with patch.object(CanonicalBaseModelRunner, 'forecast_designs', trace):
+                    dynamic = run_canonical_config(config, output_root=root / str(skip),
+                        production_request=ProductionForecastRequest('2026-01-01'), skip_backtest=skip)
+                self.assertEqual(seen[-1][0], 'future')
+                np.testing.assert_array_equal(seen[-1][1], 260.)
+                self.assertEqual(bool(seen[:-1]), not skip)
+                for phase, values in seen[:-1]:
+                    self.assertEqual(phase, 'historical')
+                    np.testing.assert_array_equal(values, 270.)
+                self.assertEqual(len(pd.read_csv(dynamic.forecast_dir / 'prediction.csv')), 2)
+
 
 
 if __name__ == '__main__':

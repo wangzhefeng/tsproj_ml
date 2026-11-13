@@ -29,11 +29,14 @@ class BacktestOnlyTest(unittest.TestCase):
                 "lgbm_usbr_prob_mean_conformal.yaml"
             )
         )
-        args = SimpleNamespace(config_yaml=str(path), output_root=None, backtest_only=True)
-        with patch.object(entrypoint, "run_ensemble_config_file") as execute:
-            with self.assertRaisesRegex(ValueError, "not Ensemble"):
-                entrypoint.run(args)
-            execute.assert_not_called()
+        for options in ({"mode": "backtest-only"},
+                        {"mode": "production", "issue_date": "2026-07-10"},
+                        {"issue_date": "2026-07-10"}, {"no_bundle": True}):
+            args = SimpleNamespace(config_yaml=str(path), output_root=None, **options)
+            with self.subTest(options=options), patch.object(entrypoint, "run_ensemble_config_file") as execute:
+                with self.assertRaisesRegex(ValueError, "not Ensemble"):
+                    entrypoint.run(args)
+                execute.assert_not_called()
 
     def test_cli_subprocess_writes_only_backtest_artifacts(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -48,7 +51,7 @@ class BacktestOnlyTest(unittest.TestCase):
             path.write_text(yaml.safe_dump(config.canonical_payload()))
             completed = subprocess.run([
                 sys.executable, "run.py", "--config-yaml", str(path),
-                "--backtest-only", "--output-root", str(root / "results"),
+                "--mode", "backtest-only", "--output-root", str(root / "results"),
             ], cwd=Path(__file__).resolve().parents[1], capture_output=True, text=True, timeout=60)
             self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
             self.assertEqual(len(list(root.rglob("test_scores_df.csv"))), 1)
@@ -56,17 +59,18 @@ class BacktestOnlyTest(unittest.TestCase):
             self.assertEqual(list(root.rglob("model.pkl")), [])
 
     def test_cli_parses_and_dispatches_backtest_only(self):
-        with patch("sys.argv", ["run.py", "--config-yaml", "fixture.yaml", "--backtest-only"]):
+        with patch("sys.argv", ["run.py", "--config-yaml", "fixture.yaml", "--mode", "backtest-only"]):
             args = entrypoint.args_parse()
-        self.assertTrue(args.backtest_only)
+        self.assertEqual(args.mode, "backtest-only")
         with patch("sys.argv", ["run.py", "--config-yaml", "fixture.yaml"]):
-            self.assertFalse(entrypoint.args_parse().backtest_only)
+            self.assertEqual(entrypoint.args_parse().mode, "backtest-fit-forecast")
         config = smoke.CanonicalRuntimeSmokeTest().build_config(Path("fixture.csv"), mode="point")
         with patch.object(entrypoint, "_load_config", return_value=config), patch.object(
             entrypoint, "run_canonical_config", return_value="backtest-result"
         ) as execute:
             self.assertEqual(entrypoint.run(args), "backtest-result")
-        execute.assert_called_once_with(config, output_root=None, backtest_only=True)
+        execute.assert_called_once_with(config, output_root=None, backtest_only=True,
+                                        skip_backtest=False, persist_bundle=True, production_request=None)
 
     def test_failure_and_cancellation_do_not_touch_model_state(self):
         with tempfile.TemporaryDirectory() as directory:

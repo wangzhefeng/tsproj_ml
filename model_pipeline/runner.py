@@ -53,7 +53,9 @@ from forecasting_core.runtime_resources import (
     RuntimeResourceBudget,
 )
 from model_forecasting.evidence import collect_model_evidence, dependency_versions, json_evidence
-from model_pipeline.lifecycle import BacktestRuntimeResult, CanonicalRuntimeResult, run_lifecycle
+from model_pipeline.lifecycle import (
+    BacktestRuntimeResult, CanonicalRuntimeResult, run_lifecycle, validate_lifecycle_options,
+)
 from model_pipeline.production import ProductionForecastRequest, resolve_production_origin
 from model_testing.contracts import BacktestWindow
 from model_pipeline.supervised_design import (
@@ -161,9 +163,9 @@ class CanonicalBaseModelRunner:
         self._final_training_workload = None
         self.design_status = "not_prepared"
         self.design_stage_wall_seconds = {"compile": 0.0, "share": 0.0}
-        self.target_month = None
-        self.run_scope = None
-        self.production_evidence = None
+        self.target_month: str | None = None
+        self.run_scope: str | None = None
+        self.production_evidence: dict[str, Any] | None = None
         self.data_phase = "historical"
         # 计划只探测一个原点的真实schema；不构造全训练设计，不写缓存。
         self.supervised_origins = supervised_candidate_origins(self.builder, self.origin)
@@ -1006,12 +1008,13 @@ class CanonicalBaseModelRunner:
         output_root: str | Path | None = None,
         *,
         backtest_only: bool = False,
+        skip_backtest: bool = False,
+        persist_bundle: bool = True,
     ) -> CanonicalRuntimeResult | BacktestRuntimeResult:
         """Execute with process-level BLAS/OpenMP limits set before any pool."""
         with threadpool_limits(limits=self.execution_plan.model_threads):
-            if backtest_only:
-                return run_lifecycle(self, output_root, backtest_only=True)
-            return run_lifecycle(self, output_root)
+            return run_lifecycle(self, output_root, backtest_only=backtest_only,
+                                 skip_backtest=skip_backtest, persist_bundle=persist_bundle)
 
     def run_prelimited(
         self,
@@ -1079,18 +1082,16 @@ def run_canonical_config(
     checkpoint_root: str | Path | None = None,
     backtest_only: bool = False,
     production_request: ProductionForecastRequest | None = None,
+    skip_backtest: bool = False,
+    persist_bundle: bool = True,
 ) -> CanonicalRuntimeResult | BacktestRuntimeResult:
     """Execute a canonical config, optionally stopping after rolling backtest."""
     if not isinstance(config, ForecastConfigSpec):
         raise TypeError("config must be a ForecastConfigSpec")
     if config.strategy is None:
         raise ValueError("run_canonical_config requires a strategy or ensemble")
-    if production_request is not None and backtest_only:
-        raise ValueError("production mode is incompatible with backtest-only")
-    if config.features.transformations.get("seasonal_baseline") is not None and not backtest_only:
-        raise ValueError("seasonal_baseline final fit/bundle is unsupported; use backtest-only")
-    if config.estimator.model_type.lower() == "ets" and not backtest_only:
-        raise ValueError("ETS final fit/bundle is unsupported; use backtest-only")
+    validate_lifecycle_options(config, backtest_only=backtest_only,
+                               skip_backtest=skip_backtest, persist_bundle=persist_bundle)
 
     # builtin generators（chinese_holiday）默认可用；调用方同名注入时覆盖。
     merged_generators: dict[str, Any] = {**BUILTIN_GENERATORS, **(generators or {})}
@@ -1109,13 +1110,13 @@ def run_canonical_config(
         checkpoint_root=checkpoint_root,
     )
     if production_request is not None:
-        runner.target_month = production_request.target_month
+        if config.validation.get("horizon_mode") == "calendar_month" and config.problem.freq == "1D":
+            runner.target_month = production_request.target_month
         runner.run_scope = production_request.run_scope
         runner.production_evidence = production_evidence
         runner.data_phase = "future"
-    if backtest_only:
-        return runner.run(output_root, backtest_only=True)
-    return runner.run(output_root)
+    return runner.run(output_root, backtest_only=backtest_only,
+                      skip_backtest=skip_backtest, persist_bundle=persist_bundle)
 
 
 __all__ = [

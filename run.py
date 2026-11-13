@@ -107,9 +107,10 @@ def args_parse():
 
     parser.add_argument("--seed", type=int, default=2025)
     parser.add_argument(
-        "--backtest-only",
-        action="store_true",
-        help="Single-model rolling backtest only; no final fit, bundle, or final forecast.",
+        "--mode",
+        choices=("backtest-only", "backtest-fit-forecast", "production"),
+        default="backtest-fit-forecast",
+        help="Select backtest only, full lifecycle (default), or final fit/forecast without backtest.",
     )
     parser.add_argument(
         "--output-root",
@@ -118,39 +119,46 @@ def args_parse():
         help="Unified root directory for model, test, and forecast artifacts.",
     )
     parser.add_argument(
-        "--production",
+        "--no-bundle",
         action="store_true",
-        help="Single-model production fit/forecast with a dynamically resolved data origin.",
+        help="Do not persist the bundle; forecast still uses this run's in-memory final model.",
     )
     parser.add_argument(
         "--issue-date",
         type=str,
         default=None,
-        help="Production scheduled issue date in YYYY-MM-DD; its next month is the delivery month.",
+        help="YYYY-MM-DD: resolve dynamic origin in any mode; required for production. Next month is requested.",
     )
     args = parser.parse_args()
-    if args.production and args.issue_date is None:
-        parser.error("--production requires --issue-date")
-    if args.issue_date is not None and not args.production:
-        parser.error("--issue-date requires --production")
-    if args.production and args.backtest_only:
-        parser.error("--production is incompatible with --backtest-only")
+    try:
+        _execution_options(args)
+    except ValueError as exc:
+        parser.error(str(exc))
     return args
 
+def _execution_options(args):
+    """CLI 与直接 run(args) 共用校验，先于配置读取及训练。"""
+    mode = getattr(args, "mode", "backtest-fit-forecast")
+    issue_date = getattr(args, "issue_date", None)
+    persist_bundle = not getattr(args, "no_bundle", False)
+    if mode not in {"backtest-only", "backtest-fit-forecast", "production"}:
+        raise ValueError(f"unsupported --mode: {mode!r}")
+    if mode == "production" and issue_date is None:
+        raise ValueError("--mode production requires --issue-date")
+    if mode == "backtest-only" and not persist_bundle:
+        raise ValueError("--no-bundle requires a mode that runs final fit")
+    request = ProductionForecastRequest(issue_date) if issue_date is not None else None
+    return mode, request, persist_bundle
+
+
 def run(args):
+    mode, production_request, persist_bundle = _execution_options(args)
+    backtest_only = mode == "backtest-only"
     cfg = _load_config(args.config_yaml)
-    backtest_only = getattr(args, "backtest_only", False)
-    production_request = (
-        ProductionForecastRequest(args.issue_date)
-        if getattr(args, "production", False)
-        else None
-    )
 
     if isinstance(cfg, EnsembleConfigSpec):
-        if backtest_only:
-            raise ValueError("--backtest-only supports single-model configs, not Ensemble")
-        if production_request is not None:
-            raise ValueError("--production currently supports single-model configs only")
+        if mode != "backtest-fit-forecast" or production_request is not None or not persist_bundle:
+            raise ValueError("--mode overrides, --issue-date and --no-bundle support single-model configs, not Ensemble")
         logger.info(
             "[run.py] config=%s schema=2 kind=ensemble method=%s",
             args.config_yaml,
@@ -194,24 +202,14 @@ def run(args):
         identity,
     )
 
-    if production_request is not None:
+    if mode != "backtest-fit-forecast" or production_request is not None or not persist_bundle:
         result = run_canonical_config(
-            cfg,
-            output_root=args.output_root,
+            cfg, output_root=args.output_root, backtest_only=backtest_only,
+            skip_backtest=mode == "production", persist_bundle=persist_bundle,
             production_request=production_request,
         )
-        logger.info(
-            "[run.py] 生产预测完成；issue_date=%s target_month=%s",
-            production_request.issue_date,
-            production_request.target_month,
-        )
-        return result
-
-    if backtest_only:
-        result = run_canonical_config(
-            cfg, output_root=args.output_root, backtest_only=True,
-        )
-        logger.info("[run.py] 仅回测完成；未执行 final fit、bundle 保存或最终预测。")
+        logger.info("[run.py] mode=%s 完成；bundle持久化=%s", mode,
+                    persist_bundle and not backtest_only)
         return result
 
     model = build_model(cfg)

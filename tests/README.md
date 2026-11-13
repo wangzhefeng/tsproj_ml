@@ -58,6 +58,8 @@
 
 `test_aidc_load_month_parameter_experiments` 默认 integration：核对两路各 20 份参数实验的精确文件集合、point/分解身份、逐变体语义修改、路线输出路径和 fingerprint 唯一性；含路线专项组合实验及路线根目录最优副本的字节/身份一致性，不拟合正式模型。定向 `integration --match test_aidc_load_month_parameter_experiments`。
 
+`test_lifecycle_modes` 默认 integration：真实 Ridge fixed-step/calendar-month 三模式、足够 final fit 但无回测折、跳过与完整链最终值逐值一致、实际加载 bundle 预测一致、旧模型和旧回测文件保真、内存拟合预测、公共 API 前置守卫、失败状态及动态原点与 fingerprint。测试产物仅在临时目录，不代表正式模型效果。`test_weather_phase_runtime` 同时覆盖动态全生命周期与 production 的 historical/future 隔离。
+
 `test_production_dynamic_origin` 默认 integration：覆盖生产发报日期跨年、最后完整目标网格、来源内容证据、多序列共同原点、延迟进入目标月拒绝，以及真实生产 final fit/forecast 的目标月切片、运行子目录和元数据。定向 `integration --match test_production_dynamic_origin`。
 
 天气阶段隔离定向测试：`test_inference_columns` 验证历史训练实测/测试预报、future 不参与历史请求及未来实测列忽略；`test_weather_phase_runtime` 用真实编译、Ridge 生命周期验证文件隔离和缓存不依赖 future；`test_weather_history_coverage` 与联通准备测试验证完整 history 覆盖。均默认纳入 integration，不自动运行正式业务模型。
@@ -102,7 +104,7 @@ env -u PYTHONPATH .venv/bin/python -m unittest discover -s tests -p "test_*.py"
 - `test_probabilistic_contracts` / `test_probabilistic_objectives` 改走生产 `probabilistic_spec_from_mapping()`；保留 quantile/interval/CQR 数值与错误断言，旧 args 新旧冲突检查改为 legacy 字段及 args 对象拒绝，不再维持生产兼容适配器。目标变换往返、融合四方法与 bundle 恢复继续由既有集成测试覆盖；未删测试文件或冻结 fixture。
 
 - 全仓模型数量不锁定历史快照：`fixtures/config_inventory.py` 独立读取物理 YAML，按 estimator/ensemble 建立相对路径及类型清单，不调用生产 loader 的发现规则。catalog 与 checker 核对完整路径集合、类型（catalog）及无重复，runtime grammar 核对单模型集合；资产审计总数对照独立清单，保留零缺文件、零缺列、零天气资产错误的全部断言。具体场景矩阵仍保留明确文件集合与数量门禁；`test_config_inventory` 默认 integration，覆盖新文件、非法版本不漏扫及类型歧义拒绝。
-- CLI 测试同时验证 `backtest_only=False` 默认值与显式开关；MSTL 单周期仍必须被拒绝，断言同步现行错误文本。配置入口测试核对当前版本数据文件及真实存在性。ESS 天气矩阵按六项实测/预报映射、history-only 文件及 forecast_origin 可得性假设校验；逐份配置使用临时数据验证训练读实测、历史预测读预报及 history lineage，不把该假设当真实发布时间证据。未来文件隔离/缺预报拒绝继续由 `test_inference_columns`、`test_weather_phase_runtime` 覆盖。
+- CLI 测试验证默认 `--mode backtest-fit-forecast`、三个模式与独立 issue-date/no-bundle 组合、旧参数拒绝及真实生产子进程；MSTL 单周期仍必须被拒绝，断言同步现行错误文本。配置入口测试核对当前版本数据文件及真实存在性。ESS 天气矩阵按六项实测/预报映射、history-only 文件及 forecast_origin 可得性假设校验；逐份配置使用临时数据验证训练读实测、历史预测读预报及 history lineage，不把该假设当真实发布时间证据。未来文件隔离/缺预报拒绝继续由 `test_inference_columns`、`test_weather_phase_runtime` 覆盖。
 
 | 原重复/历史检查 | 当前保留位置与变化 |
 |---|---|

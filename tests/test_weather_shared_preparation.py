@@ -97,6 +97,62 @@ class SharedWeatherPreparationTest(unittest.TestCase):
                 for col in six:
                     np.testing.assert_array_equal(fine[col].to_numpy(), held[col].to_numpy())
 
+    def test_aggregated_shared_assets_publish_complete_intervals_only(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source_dir = root / 'actual'
+            source_dir.mkdir()
+            # 两个月零两天：2026-07 完整、2026-08 完整、2026-09 仅 2 天（部分月必须被丢弃）。
+            times = pd.date_range('2026-07-01', '2026-09-02 05:00', freq='1h')
+            frame = pd.DataFrame({'ts': times, 'rt_tt2': 280., 'rt_dt': 278., 'rt_ssr': 2.,
+                                  'rt_ws10': 4., 'rt_rain': 1., 'rt_ps': 100000.,
+                                  'pred_tt2': 281., 'pred_rh': 80., 'pred_ssrd': 3.,
+                                  'pred_ws10': 3., 'pred_rain': 0.5, 'pred_ps': 100001.})
+            frame.to_csv(source_dir / 'weather_in_20260701_20260902.csv', index=False)
+            era5 = root / 'era5.csv'
+            pd.DataFrame({'ts': []}).to_csv(era5, index=False)
+            output = root / 'processed/weather_hourly.csv'
+            command = [sys.executable, str(ROOT / 'scripts/build_scenario_weather.py'),
+                       '--source-dir', str(source_dir), '--era5-path', str(era5),
+                       '--output', str(output), '--aggregate', '1D,1ME']
+            result = subprocess.run(command, cwd=root, capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            hourly, hourly_meta = weather.read_processed(output)
+            daily, meta_day = weather.read_processed(root / 'processed/weather_1day.csv')
+            monthly, meta_me = weather.read_processed(root / 'processed/weather_1ME.csv')
+            self.assertEqual((meta_day['freq'], meta_me['freq']), ('1D', '1ME'))
+            self.assertEqual(meta_day['role'], 'shared_processed')
+            self.assertEqual(meta_day['aggregated_from']['sha256'], hourly_meta['sha256_file'])
+            self.assertEqual(meta_day['aggregation']['rt_ssr'], 'interval_sum')
+            self.assertEqual(meta_day['aggregation']['rt_tt2'], 'interval_mean')
+            # 日资产：每小时值恒定 → 均值=原值、总量=×24；仅完整日发布（09-02 部分日丢弃）。
+            self.assertEqual(len(daily), 63)
+            self.assertEqual(str(daily.index[-1]), '2026-09-01 00:00:00')
+            np.testing.assert_allclose(daily['rt_tt2'].to_numpy(), 280.)
+            np.testing.assert_allclose(daily['rt_ssr'].to_numpy(), 48.)
+            np.testing.assert_allclose(daily['pred_rain'].to_numpy(), 12.)
+            # 月资产：部分月 2026-09 被丢弃，只保留两个完整月（月末标签）。
+            self.assertEqual([str(t) for t in monthly.index], ['2026-07-31 00:00:00', '2026-08-31 00:00:00'])
+            self.assertEqual(meta_me['incomplete_intervals_dropped']['either_family_dropped'], 1)
+            np.testing.assert_allclose(monthly['rt_ssr'].to_numpy(), 31 * 24 * 2.)
+            six = list(weather.SIX_MAPPING) + list(weather.SIX_MAPPING.values())
+            for aggregated in (daily, monthly):
+                self.assertTrue(np.isfinite(aggregated[six].to_numpy()).all())
+
+    def test_aggregate_rule_validation_and_output_naming(self):
+        self.assertEqual(weather.parse_aggregate_rules(['1D', '1D', '1ME', '']), ['1D', '1ME'])
+        with self.assertRaisesRegex(ValueError, '非法聚合频率'):
+            weather.parse_aggregate_rules(['1W'])
+        self.assertEqual(weather.aggregated_output_path(Path('a/weather_hourly.csv'), '1D'),
+                         Path('a/weather_1day.csv'))
+        self.assertEqual(weather.aggregated_output_path(Path('a/weather_hourly.csv'), '1ME'),
+                         Path('a/weather_1ME.csv'))
+        source = weather.weather_source('1ME')
+        self.assertEqual(source['history_path'], 'dataset/shared/weather/processed/weather_1ME.csv')
+        self.assertEqual(source['inference_columns'], weather.SIX_MAPPING)
+        with self.assertRaisesRegex(ValueError, '未知共享天气资产频率'):
+            weather.weather_source('2min')
+
     def test_resample_freq_validation_and_output_naming(self):
         self.assertEqual(weather.parse_resample_freqs(['15min', '15min', '5min', '']), ['15min', '5min'])
         for bad in ('1h', '1D', '7min', '90min'):

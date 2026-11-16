@@ -23,6 +23,35 @@ PRED = ['pred_ssrd', 'pred_tsdsr', 'pred_s_tsr', 'pred_ws10', 'pred_wd10', 'pred
         'pred_rh', 'pred_ps', 'pred_tcc', 'pred_rain', 'pred_ws100', 'pred_wd100', 'pred_dt']
 SIX_MAPPING = {'rt_tt2': 'pred_tt2', 'cal_rh': 'pred_rh', 'rt_ssr': 'pred_ssrd',
                'rt_ws10': 'pred_ws10', 'rt_ps': 'pred_ps', 'rt_rain': 'pred_rain'}
+# 日/月聚合列合同：六项同名；连续量取区间均值，辐射/降雨取区间总量。
+AGGREGATE_RULES = {'1D': '1day', '1ME': '1ME'}
+RT_AGG_PAIRS = [('rt_tt2', 'rt_tt2', 'mean'), ('cal_rh', 'cal_rh', 'mean'), ('rt_ssr', 'rt_ssr', 'sum'),
+                ('rt_ws10', 'rt_ws10', 'mean'), ('rt_ps', 'rt_ps', 'mean'), ('rt_rain', 'rt_rain', 'sum')]
+PRED_AGG_PAIRS = [('pred_tt2', 'pred_tt2', 'mean'), ('pred_rh', 'pred_rh', 'mean'),
+                  ('pred_ssrd', 'pred_ssrd', 'sum'), ('pred_ws10', 'pred_ws10', 'mean'),
+                  ('pred_ps', 'pred_ps', 'mean'), ('pred_rain', 'pred_rain', 'sum')]
+AGG_SEMANTICS = {name: ('interval_sum' if how == 'sum' else 'interval_mean')
+                 for pairs in (RT_AGG_PAIRS, PRED_AGG_PAIRS) for name, _, how in pairs}
+
+
+def weather_source(freq):
+    """六项两段制 file 源合同：训练读 rt_ 实测列，推理按 inference_columns 换 pred_ 预报列。
+
+    场景配置与生成器共用；history_path 直连共享 processed 资产，窗口对齐由装载层
+    按目标请求网格切片并要求精确覆盖。availability=forecast_origin 是可得性假设，
+    不是供应商发布时间证据。
+    """
+    if freq not in {'5min', '15min', '1day', '1ME'}:
+        raise ValueError(f'未知共享天气资产频率: {freq}（可选 5min/15min/1day/1ME）')
+    return {
+        'name': 'weather', 'source_type': 'file',
+        'history_path': f'dataset/shared/weather/processed/weather_{freq}.csv',
+        'time_col': 'ts', 'series_id_cols': [], 'availability': 'forecast_origin',
+        'columns': [{'name': column, 'role': role, 'categorical': False}
+                    for role, names in (('known_future', SIX_MAPPING), ('ignored', SIX_MAPPING.values()))
+                    for column in names],
+        'inference_columns': dict(SIX_MAPPING),
+    }
 
 ERA5_PATH = ROOT / 'dataset/shared/weather/extracted/api/open_meteo_era5_hourly_20250101_20250902.csv'
 # ERA5 → 供应商列的单位换算映射（ERA5 无 cloud_cover/100m 风：pred_tcc/pred_ws100/pred_wd100 保持 NaN）
@@ -233,6 +262,25 @@ def parse_resample_freqs(tokens):
     return freqs
 
 
+def parse_aggregate_rules(tokens):
+    """解析聚合频率：仅接受完整区间聚合规则 1D/1ME，去重保序。"""
+    rules = []
+    for token in tokens:
+        token = token.strip()
+        if not token:
+            continue
+        if token not in AGGREGATE_RULES:
+            raise ValueError(f'非法聚合频率: {token}（仅接受 {sorted(AGGREGATE_RULES)}）')
+        if token not in rules:
+            rules.append(token)
+    return rules
+
+
+def aggregated_output_path(output, rule):
+    stem = output.stem[:-len('_hourly')] if output.stem.endswith('_hourly') else output.stem
+    return output.with_name(f'{stem}_{AGGREGATE_RULES[rule]}.csv')
+
+
 def resampled_output_path(output, freq):
     stem = output.stem[:-len('_hourly')] if output.stem.endswith('_hourly') else output.stem
     return output.with_name(f'{stem}_{freq}.csv')
@@ -358,7 +406,47 @@ def publish_upsampled(hourly, output, hourly_result, hourly_meta, sources, freqs
     return derivatives
 
 
-def build_shared(source_dir, era5_path, output, resample_freqs=()):
+def publish_aggregated(hourly, output, hourly_result, hourly_meta, sources, rules):
+    """发布共享完整区间聚合资产：六项列同名，均值/总量按 AGG_SEMANTICS。
+
+    缺 1 小时的区间整行 NaN 并在发布前丢弃（计数入 meta），资产内只保留完整区间；
+    血缘记录小时资产 CSV 与 metadata 哈希。
+    """
+    if not rules:
+        return []
+    meta_path = output.parent / (output.stem + '.meta.json')
+    lineage = {'file': relative_path(output), 'sha256': hourly_result['sha256'], 'freq': '1h',
+               'metadata': relative_path(meta_path),
+               'metadata_sha256': hashlib.sha256(meta_path.read_bytes()).hexdigest()}
+    derivatives = []
+    for rule in rules:
+        actual, incomplete_actual = aggregate(
+            hourly[list(dict.fromkeys(col for _, col, _ in RT_AGG_PAIRS))], rule, RT_AGG_PAIRS)
+        forecast, incomplete_forecast = aggregate(
+            hourly[list(dict.fromkeys(col for _, col, _ in PRED_AGG_PAIRS))], rule, PRED_AGG_PAIRS)
+        combined = actual.merge(forecast, on='ts')
+        complete = combined.notna().all(axis=1)
+        dropped = int((~complete).sum())
+        combined = combined.loc[complete].reset_index(drop=True)
+        require_finite(combined, [col for col in combined.columns if col != 'ts'])
+        dest = aggregated_output_path(output, rule)
+        result = publish(combined, dest, {
+            'role': 'shared_processed', 'freq': rule, 'aggregated_from': lineage,
+            'aggregation': AGG_SEMANTICS,
+            'aggregating': 'complete-interval only; mean for continuous, sum for radiation/rain '
+                           'interval totals; incomplete intervals dropped, not NaN-published',
+            'incomplete_intervals_dropped': {'actual_family': incomplete_actual,
+                                             'pred_family': incomplete_forecast,
+                                             'either_family_dropped': dropped},
+            'start': str(combined['ts'].iloc[0]), 'end': str(combined['ts'].iloc[-1]),
+            'availability_assumption': hourly_meta['availability_assumption'],
+        }, sources)
+        result['rule'] = rule
+        derivatives.append(result)
+    return derivatives
+
+
+def build_shared(source_dir, era5_path, output, resample_freqs=(), aggregate_rules=()):
     source_dir, era5_path, output = Path(source_dir).resolve(), Path(era5_path).resolve(), Path(output).resolve()
     if (source_dir in output.parents or output == era5_path
             or (ROOT / 'dataset/shared/weather/extracted').resolve() in output.parents):
@@ -379,6 +467,8 @@ def build_shared(source_dir, era5_path, output, resample_freqs=()):
     published = publish(hourly.reset_index(names='ts'), output, meta, sources)
     published['resampled'] = publish_upsampled(hourly, output, published, meta, sources,
                                                parse_resample_freqs(resample_freqs))
+    published['aggregated'] = publish_aggregated(hourly, output, published, meta, sources,
+                                                 parse_aggregate_rules(aggregate_rules))
     return published
 
 
@@ -389,9 +479,12 @@ def main():
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--resample', nargs='*', default=[],
                         help='附加发布的子小时上采样频率（如 15min 5min），输出同目录 weather_<freq>.csv')
+    parser.add_argument('--aggregate', nargs='*', default=[],
+                        help='附加发布的完整区间聚合频率（1D 1ME），输出同目录 weather_1day.csv / weather_1ME.csv')
     args = parser.parse_args()
     tokens = [part for token in args.resample for part in token.replace(',', ' ').split()]
-    print(json.dumps(build_shared(args.source_dir, args.era5_path, args.output, tokens),
+    agg_tokens = [part for token in args.aggregate for part in token.replace(',', ' ').split()]
+    print(json.dumps(build_shared(args.source_dir, args.era5_path, args.output, tokens, agg_tokens),
                      ensure_ascii=False))
 
 

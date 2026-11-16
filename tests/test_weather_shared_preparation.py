@@ -59,6 +59,55 @@ class SharedWeatherPreparationTest(unittest.TestCase):
             output.write_bytes(first + b'\n')
             with self.assertRaisesRegex(ValueError, 'hash'):
                 weather.read_processed(output)
+            self.assertFalse((root / 'processed/weather_15min.csv').exists())
+
+    def test_resampled_shared_assets_hold_hourly_values(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source_dir = root / 'actual'
+            source_dir.mkdir()
+            times = pd.date_range('2026-09-16 15:00', '2026-09-16 23:00', freq='1h')
+            frame = pd.DataFrame({'ts': times, 'rt_tt2': 280.5, 'rt_dt': 278., 'rt_ssr': 0.,
+                                  'rt_ws10': 2., 'rt_rain': 0., 'rt_ps': 100000.,
+                                  'pred_tt2': 281., 'pred_rh': 80., 'pred_ssrd': 0.,
+                                  'pred_ws10': 3., 'pred_rain': 0., 'pred_ps': 100001.})
+            frame.to_csv(source_dir / 'weather_in_20260916_20260916.csv', index=False)
+            era5 = root / 'era5.csv'
+            pd.DataFrame({'ts': []}).to_csv(era5, index=False)
+            output = root / 'processed/weather_hourly.csv'
+            command = [sys.executable, str(ROOT / 'scripts/build_scenario_weather.py'),
+                       '--source-dir', str(source_dir), '--era5-path', str(era5),
+                       '--output', str(output), '--resample', '15min,5min']
+            result = subprocess.run(command, cwd=root, capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            hourly, hourly_meta = weather.read_processed(output)
+            fine15, meta15 = weather.read_processed(root / 'processed/weather_15min.csv')
+            fine5, meta5 = weather.read_processed(root / 'processed/weather_5min.csv')
+            self.assertEqual((len(fine15), len(fine5)), (36, 108))
+            self.assertEqual([str(fine15.index[0]), str(fine15.index[-1])],
+                             ['2026-09-16 15:00:00', '2026-09-16 23:45:00'])
+            self.assertEqual([str(fine5.index[0]), str(fine5.index[-1])],
+                             ['2026-09-16 15:00:00', '2026-09-16 23:55:00'])
+            self.assertEqual((meta15['freq'], meta5['freq']), ('15min', '5min'))
+            self.assertEqual(meta15['role'], 'shared_processed')
+            self.assertEqual(meta15['upsampled_from']['sha256'], hourly_meta['sha256_file'])
+            six = list(weather.SIX_MAPPING) + list(weather.SIX_MAPPING.values())
+            for fine in (fine15, fine5):
+                held = hourly.reindex(fine.index.floor('1h'))
+                for col in six:
+                    np.testing.assert_array_equal(fine[col].to_numpy(), held[col].to_numpy())
+
+    def test_resample_freq_validation_and_output_naming(self):
+        self.assertEqual(weather.parse_resample_freqs(['15min', '15min', '5min', '']), ['15min', '5min'])
+        for bad in ('1h', '1D', '7min', '90min'):
+            with self.assertRaisesRegex(ValueError, '子小时'):
+                weather.parse_resample_freqs([bad])
+        with self.assertRaisesRegex(ValueError, '非法上采样频率'):
+            weather.parse_resample_freqs(['soon'])
+        self.assertEqual(weather.resampled_output_path(Path('a/weather_hourly.csv'), '15min'),
+                         Path('a/weather_15min.csv'))
+        self.assertEqual(weather.resampled_output_path(Path('a/custom.csv'), '5min'),
+                         Path('a/custom_5min.csv'))
 
     def test_raw_destination_is_rejected_before_writes(self):
         with tempfile.TemporaryDirectory() as directory:

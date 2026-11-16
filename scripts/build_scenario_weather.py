@@ -215,6 +215,29 @@ def resample_hold(hourly, freq, start, end):
     return out.reset_index()
 
 
+def parse_resample_freqs(tokens):
+    """解析上采样频率：仅接受整除 1h 的子小时间隔（如 5min/15min/30min），去重保序。"""
+    freqs = []
+    for token in tokens:
+        token = token.strip()
+        if not token:
+            continue
+        try:
+            step = pd.Timedelta(token)
+        except ValueError as error:
+            raise ValueError(f'非法上采样频率: {token}') from error
+        if step <= pd.Timedelta(0) or step >= pd.Timedelta('1h') or pd.Timedelta('1h') % step:
+            raise ValueError(f'上采样频率必须是整除 1h 的子小时间隔: {token}')
+        if token not in freqs:
+            freqs.append(token)
+    return freqs
+
+
+def resampled_output_path(output, freq):
+    stem = output.stem[:-len('_hourly')] if output.stem.endswith('_hourly') else output.stem
+    return output.with_name(f'{stem}_{freq}.csv')
+
+
 def aggregate(frame, rule, pairs):
     """完整覆盖聚合；pairs: (输出列, 源列, 聚合方式)。缺 1 小时即整行 NaN。"""
     counts = frame.notna().resample(rule).sum()
@@ -292,9 +315,10 @@ def read_processed(path):
         raise ValueError('processed weather hash mismatch')
     frame = pd.read_csv(path, float_precision='round_trip')
     times = pd.DatetimeIndex(pd.to_datetime(frame.pop('ts')))
+    freq = metadata.get('freq', '1h')
     if (times.empty or times.hasnans or times.has_duplicates or not times.is_monotonic_increasing
-            or not times.equals(pd.date_range(times[0], times[-1], freq='1h'))):
-        raise ValueError('processed weather requires regular hourly timeline')
+            or not times.equals(pd.date_range(times[0], times[-1], freq=freq))):
+        raise ValueError(f'processed weather requires regular {freq} timeline')
     frame.index = times
     require_finite(frame, list(SIX_MAPPING) + list(SIX_MAPPING.values()))
     metadata['processed_asset'] = {'file': relative_path(path), 'sha256': metadata['sha256_file'],
@@ -303,7 +327,38 @@ def read_processed(path):
     return frame, metadata
 
 
-def build_shared(source_dir, era5_path, output):
+def publish_upsampled(hourly, output, hourly_result, hourly_meta, sources, freqs):
+    """发布共享子小时上采样资产：仅在原生小时气泡内 hold，缺口不借升频填补。
+
+    小时区间总量列（rt_rain/pred_rain）按整小时原值保持到各子区间，不折算；
+    血缘记录小时资产 CSV 与 metadata 哈希。
+    """
+    if not freqs:
+        return []
+    meta_path = output.parent / (output.stem + '.meta.json')
+    lineage = {'file': relative_path(output), 'sha256': hourly_result['sha256'], 'freq': '1h',
+               'metadata': relative_path(meta_path),
+               'metadata_sha256': hashlib.sha256(meta_path.read_bytes()).hexdigest()}
+    derivatives = []
+    for freq in freqs:
+        dest = resampled_output_path(output, freq)
+        if dest == output:
+            raise ValueError('上采样输出不得与小时资产同名')
+        end = hourly.index.max() + pd.Timedelta('1h') - pd.Timedelta(freq)
+        fine = resample_hold(hourly, freq, hourly.index.min(), end)
+        result = publish(fine, dest, {
+            'role': 'shared_processed', 'freq': freq, 'upsampled_from': lineage,
+            'upsampling': 'hold within native hourly bubble; measurement gaps stay NaN; '
+                          'hourly interval totals (rt_rain/pred_rain) held, not divided',
+            'start': str(fine['ts'].iloc[0]), 'end': str(fine['ts'].iloc[-1]),
+            'availability_assumption': hourly_meta['availability_assumption'],
+        }, sources)
+        result['freq'] = freq
+        derivatives.append(result)
+    return derivatives
+
+
+def build_shared(source_dir, era5_path, output, resample_freqs=()):
     source_dir, era5_path, output = Path(source_dir).resolve(), Path(era5_path).resolve(), Path(output).resolve()
     if (source_dir in output.parents or output == era5_path
             or (ROOT / 'dataset/shared/weather/extracted').resolve() in output.parents):
@@ -321,7 +376,10 @@ def build_shared(source_dir, era5_path, output):
             'era5': {'file': relative_path(era5_path), 'sha256': hashlib.sha256(era5_path.read_bytes()).hexdigest()},
             'start': str(hourly.index.min()), 'end': str(hourly.index.max()),
             'availability_assumption': 'offline repairs; no supplier vintage evidence; not verified ex-ante'}
-    return publish(hourly.reset_index(names='ts'), output, meta, sources)
+    published = publish(hourly.reset_index(names='ts'), output, meta, sources)
+    published['resampled'] = publish_upsampled(hourly, output, published, meta, sources,
+                                               parse_resample_freqs(resample_freqs))
+    return published
 
 
 def main():
@@ -329,8 +387,12 @@ def main():
     parser.add_argument('--source-dir', type=Path, default=SOURCE_DIR)
     parser.add_argument('--era5-path', type=Path, default=ERA5_PATH)
     parser.add_argument('--output', type=Path, required=True)
+    parser.add_argument('--resample', nargs='*', default=[],
+                        help='附加发布的子小时上采样频率（如 15min 5min），输出同目录 weather_<freq>.csv')
     args = parser.parse_args()
-    print(json.dumps(build_shared(args.source_dir, args.era5_path, args.output), ensure_ascii=False))
+    tokens = [part for token in args.resample for part in token.replace(',', ' ').split()]
+    print(json.dumps(build_shared(args.source_dir, args.era5_path, args.output, tokens),
+                     ensure_ascii=False))
 
 
 if __name__ == '__main__':

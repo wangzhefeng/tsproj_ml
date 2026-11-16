@@ -29,9 +29,9 @@ env -u PYTHONPATH .venv/bin/python scripts/audit_ensemble_configs.py
 
 ### 公共处理与场景适配边界
 
-`build_scenario_weather.py` 只处理共享天气：分片合并、小时网格、源缺口修补、通用派生和审计，输出 `dataset/shared/weather/processed/weather_hourly.csv` 及 metadata；可选 `--resample 15min 5min` 在同目录追加共享子小时上采样资产 `weather_<freq>.csv`（仅在原生小时气泡内 hold，测量缺口保持 NaN，降雨等小时区间总量原值保持、不折算，血缘记录小时资产哈希）。不枚举预测场景，不写场景目录。原始 `extracted/` 只读。9月16日授权内部缺口修补纳入共享源规则，不再由HVAC重复修补。实测/预报身份与离线双向插值性质必须保留，不制造发布时间证据。
+`build_scenario_weather.py` 只处理共享天气：分片合并、小时网格、源缺口修补、通用派生和审计，输出 `dataset/shared/weather/processed/weather_hourly.csv` 及 metadata；可选 `--resample 15min 5min` 在同目录追加共享子小时上采样资产 `weather_<freq>.csv`（仅在原生小时气泡内 hold，测量缺口保持 NaN，降雨等小时区间总量原值保持、不折算，血缘记录小时资产哈希），可选 `--aggregate 1D 1ME` 追加完整区间聚合资产 `weather_1day.csv`/`weather_1ME.csv`（六项列同名：tt2/rh/ws10/ps 区间均值、ssr/rain 区间总量，仅完整区间发布，不完整区间丢弃并计数入 meta）。不枚举预测场景，不写场景目录。原始 `extracted/` 只读。9月16日授权内部缺口修补纳入共享源规则，不再由HVAC重复修补。实测/预报身份与离线双向插值性质必须保留，不制造发布时间证据。
 
-场景入口统一放在 `config/<场景>/scripts/`，读取同一共享处理后资产，负责目标时间轴、频率、字段、输出路径和source片段。三个15min场景、ESS、power_month 各有独立 `prepare_weather.py`；HVAC 入口为 `weather_data/bind_weather.py` 绑定核验，模型配置经 `weather_data/weather_source.py` 直连共享 processed 5min 资产，不再逐目标配套场景天气拷贝。既有历史资产窗口不扩展。共享处理只运行一次，场景执行不触发共享修补或其他场景重建。公共资产与场景CSV值须保持迁移前一致；metadata允许增加共享资产哈希及入口身份。
+活动场景（三个15min负荷、ESS、power_month、HVAC）的模型配置均经 `scripts/build_scenario_weather.py::weather_source(freq)` 直连共享 processed 资产（15min/5min/1day/1ME），不再在场景内复制天气；场景绑定核验入口为仓库根 `scripts/bind_weather.py --scenario <场景>`（HVAC 为 `config/aidc_hvac_load_5min/scripts/weather_data/bind_weather.py --data-version <版本>`）。既有历史资产窗口不扩展。共享处理只运行一次，场景执行不触发共享修补或其他场景重建。公共资产与既有场景CSV值须保持迁移前一致；metadata记录共享资产哈希及入口身份。
 
 `build_scenario_weather.py` 会传递共享源旁 `.six_features_repair.json` 的内容哈希与补值性质，重建不能丢失再分析替代证据。共享源 `dataset/shared/weather/extracted/actual/` 为增量分片制：全部 `weather_in_<起始>_<截止>.csv`（起止为含数据日期，inclusive，LF 行尾）按文件名排序加载并做零冲突合并，同 ts 同列存在两个不同非空值即 RAISE；新增分片只追加、不改写既有分片，修补证据按分片自身 sha256 绑定。三个15分钟负荷场景的 `generate_load_15min_matrix.py` 天气 source 同步使用六项及实测/预报映射，避免重建配置退回露点五项或旧分段路径。六项范围与排除场景见 `config/README.md`。
 
@@ -44,15 +44,15 @@ HVAC 场景模型配置经 `scripts/weather_data/weather_source.py` 直连共享
 ```bash
 # 公共治理：只写共享处理后资产；--output 必填，不再默认重建全部场景
 env -u PYTHONPATH .venv/bin/python scripts/build_scenario_weather.py --output dataset/shared/weather/processed/weather_hourly.csv
-# 可选：同目录追加共享子小时上采样资产（weather_15min.csv / weather_5min.csv）
-env -u PYTHONPATH .venv/bin/python scripts/build_scenario_weather.py --output dataset/shared/weather/processed/weather_hourly.csv --resample 15min 5min
+# 可选：同目录追加共享子小时上采样与完整区间聚合资产（weather_15min/weather_5min/weather_1day/weather_1ME）
+env -u PYTHONPATH .venv/bin/python scripts/build_scenario_weather.py --output dataset/shared/weather/processed/weather_hourly.csv --resample 15min 5min --aggregate 1D 1ME
 # 场景绑定核验：按需运行其中一个，不会处理其他场景
 env -u PYTHONPATH .venv/bin/python config/aidc_hvac_load_5min/scripts/weather_data/bind_weather.py --data-version data_v1
-env -u PYTHONPATH .venv/bin/python config/aidc_load_15min_daily/scripts/prepare_weather.py
-env -u PYTHONPATH .venv/bin/python config/aidc_load_15min_rolling/scripts/prepare_weather.py
-env -u PYTHONPATH .venv/bin/python config/aidc_load_15min_short/scripts/prepare_weather.py
-env -u PYTHONPATH .venv/bin/python config/aidc_ess_selfuse_load/scripts/prepare_weather.py
-env -u PYTHONPATH .venv/bin/python config/aidc_power_month/scripts/prepare_weather.py
+env -u PYTHONPATH .venv/bin/python scripts/bind_weather.py --scenario aidc_load_15min_daily
+env -u PYTHONPATH .venv/bin/python scripts/bind_weather.py --scenario aidc_load_15min_rolling
+env -u PYTHONPATH .venv/bin/python scripts/bind_weather.py --scenario aidc_load_15min_short
+env -u PYTHONPATH .venv/bin/python scripts/bind_weather.py --scenario aidc_ess_selfuse_load
+env -u PYTHONPATH .venv/bin/python scripts/bind_weather.py --scenario aidc_power_month
 ```
 
 公共入口支持 `--source-dir/--era5-path`，不扫描api原响应或JSON审计文件为天气分片；各场景支持 `--processed` 指定共享CSV，自动核验同名metadata中的内容哈希并以round-trip精度读取。公共与场景入口会重写各自派生产物，不覆盖原始输入、不自动删除历史资产。详细窗口及source用法见 [HVAC场景说明](../config/aidc_hvac_load_5min/README.md)。

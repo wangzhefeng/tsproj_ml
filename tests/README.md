@@ -64,7 +64,7 @@
 
 天气阶段隔离定向测试：`test_inference_columns` 验证历史训练实测/测试预报、future 不参与历史请求及未来实测列忽略；`test_weather_phase_runtime` 用真实编译、Ridge 生命周期验证文件隔离和缓存不依赖 future；`test_weather_history_coverage` 与联通准备测试验证完整 history 覆盖。均默认纳入 integration，不自动运行正式业务模型。
 
-共享源治理定向：`test_weather_shared_preparation` 默认integration，覆盖公共脚本不含场景、非仓库cwd真实CLI、源补值/审计、原始写入路径拒绝、共享CSV哈希校验与重复构建一致性。`test_weather_hvac_windows` 核对直连共享资产的三版绑定清单和生产信息集阶段映射；`test_weather_history_coverage` 从各场景入口检查既有历史边界。命令分别为 `tests/run_suite.py integration --match test_weather_shared_preparation` 与 `--match test_weather_hvac_windows`，不修改发现规则，不训练模型。
+共享源治理定向：`test_weather_shared_preparation` 默认integration，覆盖公共脚本不含场景、非仓库cwd真实CLI、源补值/审计、原始写入路径拒绝、共享CSV哈希校验、上采样/聚合发布与重复构建一致性。`test_weather_hvac_windows` 核对HVAC直连共享资产的三版绑定清单和生产信息集阶段映射；`test_weather_history_coverage` 经 `scripts/bind_weather.py` 注册表核验五个直连场景的目标网格覆盖与绑定清单。命令分别为 `tests/run_suite.py integration --match test_weather_shared_preparation` 与 `--match test_weather_hvac_windows`，不修改发现规则，不训练模型。
 
 - `test_hongtaiyang_cesuan`：20份非递归主配置、日历冷启动及未来/窗口外扰动、四方法真实1D LightGBM、年度合并与通用评分/13张图。`test_hongtaiyang_optimization` 覆盖命名节日、严格配方、权重归一化/传递、动态训练设置保留和不递归的冷启动。`test_hongtaiyang_visualization` 覆盖原始点绘图及CSV不变；`test_backtest_plot_labels` 钉住通用图例数值关系。均默认integration发现；业务全年用 `verify_results.py --freq 1D` 验收8份，不运行15min业务模型。
 - `test_liantong_power_process`：使用临时Excel验证白名单先过滤、5min向下对齐、点位映射、部分相位求和、全空保留和真实零值；默认integration发现，定向选择器为 `integration --match test_liantong_power_process`，不训练模型。

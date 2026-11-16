@@ -7,8 +7,8 @@ from tempfile import TemporaryDirectory
 import numpy as np
 import pandas as pd
 
-from config.aidc_hvac_load_5min.scripts.v3.imputed_data.gap_filling import fill_series, predictions
-from config.aidc_hvac_load_5min.scripts.v3.imputed_data.prepare_data import prepare, select_it
+from config.aidc_hvac_load_5min.scripts.imputed_data.gap_filling import fill_series, predictions
+from config.aidc_hvac_load_5min.scripts.imputed_data.prepare_data import prepare, select_it
 from config.aidc_hvac_load_5min.scripts.raw_data.migrate_hvac_data import sha256_file
 
 
@@ -71,12 +71,12 @@ class A1GapFillingTest(unittest.TestCase):
                 frame.to_csv(path)
             recipe = {'start': str(index[30 * 288]), 'end': str(index[-1]), 'context_days': 30,
                       'excluded_absent_it_points': ['absent'], 'excluded_late_it_points': ['late'],
-                      'retained_it_points': ['kept'], 'data_version': 'data_v3',
+                      'retained_it_points': ['kept'], 'data_version': 'current',
                       'input_sha256': {p: sha256_file(root / p) for p in paths}}
             report = prepare(root, recipe)
             self.assertEqual(len(report['targets']), 2)
             for devices, expected in (('hvac_all_devices', 36.), ('hvac_remove_devices', 30.)):
-                path = root / f'forecast_data/data_v3/{devices}/A1_all/data.csv'
+                path = root / f'forecast_data/{devices}/A1_all/data.csv'
                 actual = pd.read_csv(path)
                 self.assertEqual(len(actual), 10 * 288)
                 np.testing.assert_array_equal(actual.hvac_total_load_AB, expected)

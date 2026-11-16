@@ -1,5 +1,4 @@
-# -*- coding: utf-8 -*-
-"""构建 HVAC 四组物理 YAML；只读数据，预检全部配置后写入，不训练模型。"""
+"""A1_all 六组配置，消费 data_v3；完整预检后独立发布，不训练模型。"""
 from __future__ import annotations
 
 import argparse
@@ -8,53 +7,30 @@ import json
 from pathlib import Path
 import sys
 
+ROOT = Path(__file__).resolve().parents[4]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
 import numpy as np
 import pandas as pd
 import yaml
 
-ROOT = Path(__file__).resolve().parents[4]
-sys.path.insert(0, str(ROOT))
-
 from config.config_loader import load_yaml_config
+from config.aidc_hvac_load_5min.scripts.forecast_data.model_config_common import (
+    DATA, DAY, DIRECTORY, TEMPLATES, VARIANTS, VERSIONS, publish, read_frame, rename_target,
+)
 from scripts.weather_data.build_scenario_weather import weather_source
 from feature_engineering.compiler import FeatureCompiler
 from forecasting_core.specs.config import parse_model_config
 from model_pipeline.supervised_design import minimum_history_rows
 
-DIRECTORY = ROOT / 'config/aidc_hvac_load_5min'
-TEMPLATES = ROOT / 'config/aidc_electricity_computility/electricity/2026-08-31/liantong_IT/baseline'
-DATA = Path('dataset/aidc_hvac_load_5min')
-GROUPS = ('baseline', 'add_weather', 'add_endogenous_it', 'add_endogenous_route')
-VERSIONS = ('hvac_all_devices', 'hvac_remove_devices')
-ROUTES = ('route_A', 'route_B')
-TRAIN_DAYS = {'A1': 14, 'A2': 14, 'A3': 7, 'ALL': 7}
-VARIANTS = ('direct', 'direct-pointwise', 'direct-pointwise-horizon', 'recursive',
-            'mimo', 'recmo', 'dirrec', 'dirmo', 'dirrecmo')
-DAY = 288
-
-
-def read_frame(path, time_col, cache):
-    """缓存只在本次生成内共享；每份输入必须是完整自然日5min网格。"""
-    key = (str(path), time_col)
-    if key not in cache:
-        frame = pd.read_csv(ROOT / path, float_precision='round_trip')
-        times = pd.DatetimeIndex(pd.to_datetime(frame[time_col], errors='raise'))
-        if (times.empty or times[0] != times[0].normalize()
-                or len(times) % DAY
-                or not times.equals(pd.date_range(times[0], periods=len(times), freq='5min'))):
-            raise ValueError(f'非完整自然日5min网格: {path}')
-        cache[key] = (frame, times)
-    return cache[key]
-
-
-def rename_target(value, target):
-    """精确替换模板目标标识，不做字符串子串替换。"""
-    if isinstance(value, dict):
-        return {(target if key == 'value' else key): rename_target(item, target)
-                for key, item in value.items()}
-    if isinstance(value, list):
-        return [rename_target(item, target) for item in value]
-    return target if value == 'value' else value
+TARGET = 'hvac_total_load_AB'
+GROUPS = ('baseline', 'add_datetime_holiday', 'add_weather', 'add_endogenous_it',
+          'add_endogenous_route', 'add_context')
+TARGET_LAG_DAYS = (1, 2, 3, 4, 5, 6, 7, 14, 21, 28)
+ROLLING_DAYS = (1, 2, 4, 7, 14, 28)
+COVARIATE_LAG_DAYS = (1, 2, 7, 14, 28)
+TEMPORAL_BASELINE = Path('baseline/A1_all/hvac_all_devices/lgbm_direct-pointwise.yaml')
 
 
 def build_documents():
@@ -62,135 +38,119 @@ def build_documents():
     for variant in VARIANTS:
         path = TEMPLATES / f'lgbm_{variant}.yaml'
         load_yaml_config(path)
-        templates[variant] = yaml.safe_load(path.read_text(encoding='utf-8'))
-    cache = {}
-    documents = {}
+        templates[f'lgbm_{variant}.yaml'] = yaml.safe_load(path.read_text(encoding='utf-8'))
+    for model in ('ridge', 'xgboost', 'st'):
+        for variant in VARIANTS[:4]:
+            payload = deepcopy(templates[f'lgbm_{variant}.yaml'])
+            payload['estimator']['model_type'] = model
+            # ST仅消费目标lag；纯目标基线不按星期拆分权重。
+            payload['estimator']['params'] = {'day_type_split': False} if model == 'st' else {}
+            templates[f'{model}_{variant}.yaml'] = payload
+    ets_path = TEMPLATES / 'ets.yaml'
+    load_yaml_config(ets_path)
+    templates['ets.yaml'] = yaml.safe_load(ets_path.read_text(encoding='utf-8'))
+    grid = pd.date_range('2026-04-08', '2026-09-16 23:55', freq='5min')
+    documents, cache = {}, {}
     for group in GROUPS:
-        for version in VERSIONS:
-            for route in ROUTES:
-                for building, train_days in TRAIN_DAYS.items():
-                    stem = 'data' if building == 'ALL' else building + '_data'
-                    if group == 'add_endogenous_it':
-                        stem += '_with_it'
-                    target_path = DATA / 'forecast_data/data_v1' / version / route / (stem + '.csv')
-                    _, times = read_frame(target_path, 'time', cache)
-                    fold_count = len(times) // DAY - train_days
-                    if fold_count < 1:
-                        raise ValueError(f'不足一个完整训练+预测窗口: {target_path}')
-                    target = 'hvac_total_load_' + route[-1]
-                    for variant, template in templates.items():
-                        relative = Path(group) / version / route / building / f'lgbm_{variant}.yaml'
-                        payload = rename_target(deepcopy(template), target)
-                        payload['data']['sources'][0]['history_path'] = str(target_path)
-                        features = payload['features']
-                        # 短训练窗不能借窗外数据预热；保留模板的1/2天rolling，lag取1/2/3天。
-                        if train_days == 7:
-                            features['target_lags'][target] = [DAY, 2 * DAY, 3 * DAY]
-                            features['transformations']['advanced']['rolling']['windows'] = [DAY, 2 * DAY]
-                        if group == 'add_weather':
-                            payload['data']['sources'].append(weather_source('5min'))
-                        elif group in ('add_endogenous_it', 'add_endogenous_route'):
-                            columns = ['it_total_load'] if group == 'add_endogenous_it' else [
-                                'hvac_total_load_' + ('B' if route == 'route_A' else 'A')]
-                            if group == 'add_endogenous_route' and building == 'ALL':
-                                columns.append('hvac_total_load_AB')
-                            payload['data']['sources'].append({
-                                'name': 'covariate_history', 'source_type': 'file',
-                                'columns': [{'name': col, 'role': 'observed_past', 'categorical': False}
-                                            for col in columns],
-                                'history_path': str(target_path), 'time_col': 'time',
-                                'series_id_cols': [], 'availability': 'source_time', 'provider': 'persistence',
-                            })
-                            # safe-lag 不请求预测区间真值，provider 不参与这些设计请求。
-                            features['observed_past_lags'] = {col: [DAY, 2 * DAY] for col in columns}
-                        # HVAC保持自身密集训练口径，不继承联通模板的训练采样。
-                        payload['validation'].pop('training', None)
-                        config = parse_model_config(payload, source=relative)
-                        train_window = train_days * DAY - minimum_history_rows(config) - DAY + 1
-                        if train_window < 1:
-                            raise ValueError(f'无有效训练样本: {relative}')
-                        performance = payload['validation'].get('performance')
-                        payload['validation'] = {
-                            'forecast_origin': times[-1].isoformat(),
-                            'schedule_mode': 'daily', 'horizon_mode': 'fixed_steps',
-                            'fold_count': fold_count, 'stride_steps': DAY,
-                            **({'performance': performance} if performance else {}),
-                            'training_window': {'kind': 'rolling', 'history_steps': train_days * DAY},
-                        }
-                        # 保留既有物理YAML的并行参数前置顺序；不改变语义或放宽发布保护。
-                        if performance and 'multi_output_n_jobs' in performance:
-                            validation = payload['validation']
-                            payload['validation'] = {'performance': validation.pop('performance'),
-                                                     'training_window': validation.pop('training_window'), **validation}
-                        payload['output']['scenario_subpath'] = 'aidc_hvac_load_5min/' + str(relative.parent)
-                        config = parse_model_config(payload, source=relative)
-                        FeatureCompiler(config)
-                        config.strategy.resolve(DAY)
-                        for source in config.data.sources:
-                            if source.source_type != 'file':
-                                continue
-                            frame, source_times = read_frame(source.history_path, source.time_col, cache)
-                            if source.name == 'weather':
-                                # 共享全跨度天气资产：只要求完整覆盖目标窗口，切片后校验有限性。
-                                if not times.isin(source_times).all():
-                                    raise ValueError(f'天气未完整覆盖目标窗口: {relative}/{source.name}')
-                                frame = frame.iloc[np.flatnonzero(source_times.isin(times))]
-                            elif not source_times.equals(times):
-                                raise ValueError(f'协变量时间轴不匹配: {relative}/{source.name}')
-                            # 包括 inference_columns 对应 ignored 物理列，未声明原料列不入模。
-                            names = [col.name for col in source.columns]
-                            if not np.isfinite(frame[names].to_numpy(dtype=float)).all():
-                                raise ValueError(f'模型输入有缺失/非有限值: {relative}/{source.name}')
-                        documents[relative] = (
-                            '# HVAC历史回测配置；严格训练窗口，仅支持 --backtest-only。\n'
-                            '# 离线补值和天气可得性假设不构成实盘证据；未执行模型训练。\n'
-                            + yaml.safe_dump(payload, sort_keys=False, allow_unicode=True)
-                        )
+        train_days = 150
+        for devices in VERSIONS:
+            target_path = DATA / 'forecast_data' / devices / 'A1_all/data_dr_adjusted.csv'
+            _, times = read_frame(target_path, 'time', cache)
+            if not times.equals(grid):
+                raise ValueError(f'v3 目标偏离固定窗口: {target_path}')
+            for filename, template in templates.items():
+                if group not in ('baseline', 'add_context') and not filename.startswith('lgbm_'):
+                    continue
+                relative = Path(group) / 'A1_all' / devices / filename
+                payload = rename_target(deepcopy(template), TARGET)
+                if not isinstance(payload, dict):
+                    raise TypeError(f'模型模板必须是映射: {filename}')
+                payload['data']['sources'][0]['history_path'] = str(target_path)
+                if group != 'add_datetime_holiday':
+                    payload['data']['sources'] = payload['data']['sources'][:1]
+                    payload['features']['datetime_features'] = []
+                if filename != 'ets.yaml':
+                    payload['features']['target_lags'][TARGET] = [d * DAY for d in TARGET_LAG_DAYS]
+                    payload['features']['transformations']['advanced']['rolling']['windows'] = [
+                        d * DAY for d in ROLLING_DAYS]
+                if group == 'add_weather':
+                    payload['data']['sources'].append(weather_source('5min'))
+                elif group in ('add_endogenous_it', 'add_endogenous_route'):
+                    columns = ['it_subset_load'] if group == 'add_endogenous_it' else [
+                        'hvac_total_load_A', 'hvac_total_load_B']
+                    payload['data']['sources'].append({
+                        'name': 'covariate_history', 'source_type': 'file',
+                        'columns': [{'name': c, 'role': 'observed_past', 'categorical': False} for c in columns],
+                        'history_path': str(target_path), 'time_col': 'time', 'series_id_cols': [],
+                        'availability': 'source_time', 'provider': 'persistence',
+                    })
+                    payload['features']['observed_past_lags'] = {
+                        c: [d * DAY for d in COVARIATE_LAG_DAYS] for c in columns}
+                payload['validation'].pop('training', None)
+                if payload['estimator']['model_type'] in ('lightgbm', 'xgboost'):
+                    payload['estimator']['params']['n_estimators'] = 100
+                config = parse_model_config(payload, source=relative)
+                train_window = train_days * DAY - minimum_history_rows(config) - DAY + 1
+                if train_window < 1:
+                    raise ValueError(f'训练历史不足: {relative}')
+                folds = len(times) // DAY - train_days
+                if folds < 1:
+                    raise ValueError(f'不足一个完整训练+预测窗口: {relative}')
+                performance = payload['validation'].get('performance')
+                payload['validation'] = {
+                    'forecast_origin': times[-1].isoformat(),
+                    'schedule_mode': 'daily', 'horizon_mode': 'fixed_steps',
+                    'fold_count': folds, 'stride_steps': DAY,
+                    **({'performance': performance} if performance else {}),
+                    'training_window': {'kind': 'rolling', 'history_steps': train_days * DAY},
+                }
+                # 保留既有物理YAML的并行参数前置顺序；不改变语义或放宽发布保护。
+                if performance and 'multi_output_n_jobs' in performance:
+                    validation = payload['validation']
+                    payload['validation'] = {'performance': validation.pop('performance'),
+                                             'training_window': validation.pop('training_window'), **validation}
+                payload['output']['scenario_subpath'] = 'aidc_hvac_load_5min/' + str(relative.parent)
+                # 保留先行样例的次日区间和采样，其余场景保持原密集训练。
+                if relative == TEMPORAL_BASELINE:
+                    payload['validation'].update({
+                        'training_window': {'kind': 'rolling', 'history_steps': train_days * DAY},
+                        'forecast_window': {'start': 'next_day'}, 'refit_every': 1,
+                        'training': {'origin_sampling': {'time_of_day': '23:55'}},
+                    })
+                config = parse_model_config(payload, source=relative)
+                FeatureCompiler(config)
+                config.strategy.resolve(DAY)
+                for source in config.data.sources:
+                    if source.source_type != 'file':
+                        continue
+                    frame, source_times = read_frame(source.history_path, source.time_col, cache)
+                    if source.name == 'weather':
+                        # 共享全跨度天气资产：只要求完整覆盖目标窗口，切片后校验有限性。
+                        if not times.isin(source_times).all():
+                            raise ValueError(f'v3 天气未完整覆盖目标窗口: {relative}/{source.name}')
+                        frame = frame.iloc[np.flatnonzero(source_times.isin(times))]
+                    elif not source_times.equals(times):
+                        raise ValueError(f'v3 协变量网格不匹配: {relative}/{source.name}')
+                    if not np.isfinite(frame[[c.name for c in source.columns]].to_numpy(dtype=float)).all():
+                        raise ValueError(f'v3 模型声明列缺失或非有限: {relative}/{source.name}')
+                documents[relative] = (
+                    '# A1 双路合计 data_v3；IT 为固定204点子集，不是全楼IT总负荷。\n'
+                    '# 无异常清洗；离线补值/天气可得性假设不构成实盘证据。\n'
+                    + ('# 150天固定训练窗、预测次日；23:55采样，每折重训；支持final/bundle。\n'
+                       '# 正式回测未重跑；两折派生验证不代表长期精度或实盘可用性。\n'
+                       if relative == TEMPORAL_BASELINE else
+                       f'# {train_days}天训练、1天预测；仅支持 --backtest-only，未执行正式模型。\n')
+                    + yaml.safe_dump(payload, sort_keys=False, allow_unicode=True)
+                )
     return documents
-
-
-def publish(documents, output_dir, *, check=False, config_version='v1'):
-    """先核对全部文件；不同内容拒绝覆盖，绝不清除清单外文件。"""
-    if config_version not in ('v1', 'a1'):
-        raise ValueError(f'未知配置版本: {config_version}')
-    groups = (*GROUPS, 'add_datetime_holiday', 'add_context') if config_version == 'a1' else GROUPS
-    existing = {p.relative_to(output_dir) for group in groups
-                for p in (output_dir / group).rglob('*.yaml')}
-    # 两个生成器各自管理明确命名空间，不互相覆盖，也不忽略本空间未知文件。
-    existing = {p for p in existing if (p.parts[1:2] == ('A1_all',)) == (config_version == 'a1')}
-    if any((p.parts[1:2] == ('A1_all',)) != (config_version == 'a1')
-           or p.is_absolute() or '..' in p.parts or p.parts[0] not in groups
-           or (config_version == 'a1' and (len(p.parts) != 4 or p.parts[2] not in VERSIONS))
-           for p in documents):
-        raise ValueError('配置路径越过当前生成器命名空间')
-    unexpected = existing - documents.keys()
-    if unexpected:
-        raise ValueError(f'发现清单外配置，拒绝处理: {sorted(map(str, unexpected))}')
-    missing = []
-    for relative, text in documents.items():
-        path = output_dir / relative
-        if path.exists():
-            if path.read_text(encoding='utf-8') != text:
-                raise FileExistsError(f'拒绝覆盖已有不同配置: {path}')
-        else:
-            missing.append(relative)
-    if check and missing:
-        raise FileNotFoundError(f'缺少 {len(missing)} 份配置，例如 {missing[0]}')
-    if not check:
-        for relative in missing:
-            path = output_dir / relative
-            path.parent.mkdir(parents=True, exist_ok=True)
-            with path.open('x', encoding='utf-8') as stream:
-                stream.write(documents[relative])
-    return {'configs': len(documents), 'created': 0 if check else len(missing),
-            'mode': 'check' if check else 'create', 'output_dir': str(output_dir)}
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--check', action='store_true', help='只核验资产及物理配置与生成规则一致')
+    parser.add_argument('--check', action='store_true')
     args = parser.parse_args()
-    print(json.dumps(publish(build_documents(), DIRECTORY, check=args.check), ensure_ascii=False))
+    print(json.dumps(publish(build_documents(), DIRECTORY, check=args.check, config_version='a1'),
+                     ensure_ascii=False))
 
 
 if __name__ == '__main__':

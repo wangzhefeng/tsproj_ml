@@ -19,7 +19,7 @@
 4. total_load 时序可视化: data.csv 三楼总负荷 + 各楼分楼总负荷,
    标注缺失导致的不完整时间戳; 缺失热力图(data.csv 非全空点位)
 
-输出: dataset/aidc_hvac_load_5min/analysis/data_v1/raw_diagnostics/IT_load/
+输出: dataset/aidc_hvac_load_5min/analysis/raw_diagnostics/IT_load/
   - IT_load_missing_summary.csv / IT_load_anomaly_summary.csv / IT_load_total_load_gap_summary.csv
     (均含 file 列区分 A1/A2/A3/data)
   - IT_load_total_load.png / IT_load_missing_heatmap.png
@@ -47,7 +47,7 @@ plt.rcParams['axes.unicode_minus'] = False
 # ---------------------------------------------------------------- 路径与常量
 REPO = Path(__file__).resolve().parents[4]
 DATA = REPO / 'dataset' / 'aidc_hvac_load_5min' / 'raw_data' / 'IT_load'
-OUT = DATA.parent.parent / 'analysis/data_v1/raw_diagnostics/IT_load'
+OUT = DATA.parent.parent / 'analysis/raw_diagnostics/IT_load'
 TOTAL_COL = 'total_load'
 
 START = pd.Timestamp('2025-10-01 00:00:00')

@@ -14,7 +14,7 @@
 4. total_load 时序可视化: data.csv 三楼总负荷 + 各楼 A*_data.csv 分楼总负荷,
    标注缺失导致的不完整时间戳
 
-输出: dataset/aidc_hvac_load_5min/analysis/data_v1/raw_diagnostics/hvac/
+输出: dataset/aidc_hvac_load_5min/analysis/raw_diagnostics/hvac/
   - missing_summary.csv / anomaly_summary.csv / total_load_gap_summary.csv
     (均含 file 列区分 A1/A2/A3/data)
   - <version>_<route>_total_load.png / <version>_<route>_missing_heatmap.png
@@ -45,7 +45,7 @@ REPO = Path(__file__).resolve().parents[4]
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--root', type=Path, default=REPO / 'dataset/aidc_hvac_load_5min')
 DATA = parser.parse_args().root.resolve() / 'raw_data'
-OUT = DATA.parent / 'analysis/data_v1/raw_diagnostics/hvac'
+OUT = DATA.parent / 'analysis/raw_diagnostics/hvac'
 TOTAL_COL = 'total_load'
 
 START = pd.Timestamp('2026-07-24 14:00:00')

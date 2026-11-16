@@ -2,8 +2,8 @@
 import json
 import unittest
 
-from config.aidc_hvac_load_5min.scripts.v3.forecast_data.prepare_flow_temp import DEFAULT_ROOT, RECIPE
-from config.aidc_hvac_load_5min.scripts.v3.forecast_data.verify_flow_temp import verify_assets
+from config.aidc_hvac_load_5min.scripts.forecast_data.prepare_flow_temp import DEFAULT_ROOT, RECIPE
+from config.aidc_hvac_load_5min.scripts.forecast_data.verify_flow_temp import verify_assets
 
 
 class FlowTempAssetsTest(unittest.TestCase):

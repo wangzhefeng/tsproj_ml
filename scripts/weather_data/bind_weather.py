@@ -3,7 +3,7 @@
 场景配置经 build_scenario_weather.weather_source 直连共享资产；本入口按
 场景注册表枚举预测目标，核验时间网格、资产窗口覆盖与六项实测/预报有限性，
 把 target SHA 与资产血缘写入 dataset/<场景>/analysis/weather_binding/ 下的
-绑定清单（HVAC 按数据版本各一份；v3 只发现原 data.csv，不自动扩展具名派生）。
+绑定清单（HVAC 单版本只发现原 A1_all/data.csv，不自动扩展具名派生）。
 不复制天气数值、不改共享资产。
 """
 import argparse
@@ -40,15 +40,9 @@ SCENARIOS = {
     'aidc_ess_selfuse_load': _entry('aidc_ess_selfuse_load', '5min', '5min',
                                     ['forecasting_data/*_ESS_PCS_merged_5min_*.csv']),
     'aidc_power_month': _entry('aidc_power_month', None, None, []),
-    'aidc_hvac_load_5min_data_v1': _entry(
-        'aidc_hvac_load_5min', '5min', '5min', ['forecast_data/data_v1/*/*/*.csv'],
-        manifest='analysis/weather_binding/data_v1/manifest.csv', version='data_v1'),
-    'aidc_hvac_load_5min_data_v2': _entry(
-        'aidc_hvac_load_5min', '5min', '5min', ['forecast_data/data_v2/*/*/*.csv'],
-        manifest='analysis/weather_binding/data_v2/manifest.csv', version='data_v2'),
-    'aidc_hvac_load_5min_data_v3': _entry(
-        'aidc_hvac_load_5min', '5min', '5min', ['forecast_data/data_v3/*/A1_all/data.csv'],
-        manifest='analysis/weather_binding/data_v3/manifest.csv', version='data_v3'),
+    'aidc_hvac_load_5min': _entry(
+        'aidc_hvac_load_5min', '5min', '5min', ['forecast_data/*/A1_all/data.csv'],
+        manifest='analysis/weather_binding/manifest.csv', version='current'),
 }
 # power_month 两个频率组各绑各的资产。
 SCENARIOS['aidc_power_month']['groups'] = [

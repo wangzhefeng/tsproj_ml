@@ -18,8 +18,8 @@ def read(path):
 
 
 def verify_assets():
-    recipe = json.loads((ROOT / 'config/aidc_hvac_load_5min/scripts/v3/preparation.json').read_text())
-    manifest = json.loads((DATA / 'analysis/data_v3/manifest.json').read_text())
+    recipe = json.loads((ROOT / 'config/aidc_hvac_load_5min/scripts/preparation.json').read_text())
+    manifest = json.loads((DATA / 'analysis/manifest.json').read_text())
     assert manifest['recipe'] == recipe
     assert manifest['outlier_processing'] is False
     assert len(recipe['retained_it_points']) == 204
@@ -30,7 +30,7 @@ def verify_assets():
         assert sha256_file(DATA / name) == expected, name
         key = name.removeprefix('raw_data/')
         raw = read(DATA / name)
-        path = DATA / 'imputed_data/data_v3' / key
+        path = DATA / 'imputed_data' / key
         filled = read(path)
         hashes[str(path.relative_to(DATA))] = sha256_file(path)
         pd.testing.assert_index_equal(filled.index, GRID)
@@ -42,7 +42,7 @@ def verify_assets():
         assert np.isfinite(filled.to_numpy()).all(), key
         np.testing.assert_array_equal(filled[points].to_numpy()[observed], truth.to_numpy()[observed])
         np.testing.assert_allclose(filled.total_load, filled[points].sum(axis=1), rtol=1e-14, atol=1e-10)
-        mask_path = DATA / 'analysis/data_v3/imputation' / key.replace('.csv', '.mask.csv')
+        mask_path = DATA / 'analysis/imputation' / key.replace('.csv', '.mask.csv')
         mask = read(mask_path)
         pd.testing.assert_index_equal(mask.index, GRID)
         np.testing.assert_array_equal(mask.total_observed, observed.all(axis=1))
@@ -50,7 +50,7 @@ def verify_assets():
         masks[key], tables[key] = mask, filled
         counts[key] = {'retained_points': len(points), 'filled_cells': int((~observed).sum())}
         if not key.startswith('hvac_remove_devices'):
-            audit_path = DATA / 'analysis/data_v3/imputation' / key.replace('.csv', '.gaps.csv')
+            audit_path = DATA / 'analysis/imputation' / key.replace('.csv', '.gaps.csv')
             audit = pd.read_csv(audit_path, float_precision='round_trip')
             hashes[str(audit_path.relative_to(DATA))] = sha256_file(audit_path)
             assert (audit.validation_count >= 3).all()
@@ -89,32 +89,32 @@ def verify_assets():
         subset = tables[f'hvac_remove_devices/{route}/A1_data.csv']
         points = subset.columns.drop('total_load')
         pd.testing.assert_frame_equal(whole[points], subset[points])
-    expected_targets = {f'forecast_data/data_v3/{d}/A1_all/data.csv'
+    expected_targets = {f'forecast_data/{d}/A1_all/data.csv'
                         for d in ('hvac_all_devices', 'hvac_remove_devices')}
     adjusted_targets = {str(Path(p).with_name('data_dr_adjusted.csv')) for p in expected_targets}
     flow_temp_targets = {str(Path(p).with_name(name)) for p in expected_targets
                          for name in ('data_with_flow_temp.csv', 'data_dr_adjusted_with_flow_temp.csv')}
-    flow_temp_targets.add('forecast_data/data_v3/hvac_flow_temp/features.csv')
+    flow_temp_targets.add('forecast_data/hvac_flow_temp/features.csv')
     switch_targets = {str(Path(p).with_name(name)) for p in expected_targets
                       for name in ('data_with_flow_temp_switch.csv', 'data_dr_adjusted_with_flow_temp_switch.csv')}
-    switch_targets.add('forecast_data/data_v3/hvac_switch/features.csv')
-    assert {str(p.relative_to(DATA)) for p in (DATA / 'forecast_data/data_v3').rglob('*.csv')} == (
+    switch_targets.add('forecast_data/hvac_switch/features.csv')
+    assert {str(p.relative_to(DATA)) for p in (DATA / 'forecast_data').rglob('*.csv')} == (
         expected_targets | adjusted_targets | flow_temp_targets | switch_targets)
     assert {r['path'] for r in manifest['targets']} == expected_targets
-    weather_manifest = pd.read_csv(DATA / 'analysis/weather_binding/data_v3/manifest.csv')
+    weather_manifest = pd.read_csv(DATA / 'analysis/weather_binding/manifest.csv')
     assert set(weather_manifest.target_file) == {'dataset/aidc_hvac_load_5min/' + p for p in expected_targets}
     for item in manifest['targets']:
         relative = item['path']
         frame = read(DATA / relative)
         assert sha256_file(DATA / relative) == item['sha256']
         pd.testing.assert_index_equal(frame.index, GRID)
-        devices = Path(relative).parts[2]
+        devices = Path(relative).parts[1]
         for route in ('A', 'B'):
             np.testing.assert_array_equal(frame['hvac_total_load_' + route],
                                           tables[f'{devices}/route_{route}/A1_data.csv'].total_load)
         np.testing.assert_array_equal(frame.hvac_total_load_AB, frame.hvac_total_load_A + frame.hvac_total_load_B)
         np.testing.assert_array_equal(frame.it_subset_load, tables['IT_load/A1_data.csv'].total_load)
-        mask = read(DATA / f'analysis/data_v3/forecast_windows/{devices}/A1_all/mask.csv')
+        mask = read(DATA / f'analysis/forecast_windows/{devices}/A1_all/mask.csv')
         pd.testing.assert_index_equal(mask.index, GRID)
         a, b = (masks[f'{devices}/route_{r}/A1_data.csv'] for r in ('A', 'B'))
         np.testing.assert_array_equal(mask.hvac_total_load_AB_observed, a.total_observed & b.total_observed)

@@ -18,8 +18,8 @@ from scripts.weather_data.build_scenario_weather import weather_source
 
 
 MAPPING = dict(builder.SIX_MAPPING)
-HVAC_V1 = 'aidc_hvac_load_5min_data_v1'
-HVAC_V3 = 'aidc_hvac_load_5min_data_v3'
+HVAC_V1 = 'aidc_hvac_load_5min'
+HVAC_V3 = 'aidc_hvac_load_5min'
 
 
 def publish_processed_asset(root, frame):
@@ -54,7 +54,7 @@ class WeatherHvacBindingTest(unittest.TestCase):
             times = pd.date_range('2026-04-08', periods=288, freq='5min')
             targets = {}
             for devices in ('hvac_all_devices', 'hvac_remove_devices'):
-                path = root / 'dataset/aidc_hvac_load_5min/forecast_data/data_v3' / devices / 'A1_all/data.csv'
+                path = root / 'dataset/aidc_hvac_load_5min/forecast_data' / devices / 'A1_all/data.csv'
                 path.parent.mkdir(parents=True)
                 targets[path] = times
                 # 同目录反事实派生不是原天气绑定的自动消费目标。
@@ -63,10 +63,10 @@ class WeatherHvacBindingTest(unittest.TestCase):
             rows = self.run_bind(root, HVAC_V3, asset_times=times, targets=targets)
             self.assertEqual(len(rows), 2)
             for row in rows:
-                self.assertIn('/data_v3/', row['target_file'])
+                self.assertIn('/', row['target_file'])
                 self.assertNotIn('/route_', row['target_file'])
                 self.assertTrue(row['target_file'].endswith('/data.csv'))
-                self.assertEqual(row['data_version'], 'data_v3')
+                self.assertEqual(row['data_version'], 'current')
                 self.assertEqual((row['start'], row['end'], row['rows']),
                                  (str(times[0]), str(times[-1]), len(times)))
                 self.assertEqual(row['target_sha256'],
@@ -100,20 +100,20 @@ class WeatherHvacBindingTest(unittest.TestCase):
     def test_independent_target_windows_and_manifest_lifecycle(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            inputs = root / 'dataset/aidc_hvac_load_5min/forecast_data/data_v1/family/route_A'
+            inputs = root / 'dataset/aidc_hvac_load_5min/forecast_data'
             windows = {
                 'A1_data': pd.date_range('2026-08-31 23:30', periods=12, freq='5min'),
                 'A1_data_with_it': pd.date_range('2026-09-01 01:00', periods=12, freq='5min'),
             }
             asset_times = pd.date_range('2026-08-31 23:00', periods=36, freq='5min')
             rows = self.run_bind(root, HVAC_V1, asset_times=asset_times,
-                                 targets={inputs / f'{name}.csv': times
+                                 targets={inputs / name / 'A1_all/data.csv': times
                                           for name, times in windows.items()})
-            self.assertEqual({Path(row['target_file']).stem for row in rows}, set(windows))
+            self.assertEqual({Path(row['target_file']).parents[1].name for row in rows}, set(windows))
             for row in rows:
-                self.assertEqual(row['rows'], len(windows[Path(row['target_file']).stem]))
-                self.assertEqual(row['start'], str(windows[Path(row['target_file']).stem][0]))
-            manifest_dir = root / 'dataset/aidc_hvac_load_5min/analysis/weather_binding/data_v1'
+                self.assertEqual(row['rows'], len(windows[Path(row['target_file']).parents[1].name]))
+                self.assertEqual(row['start'], str(windows[Path(row['target_file']).parents[1].name][0]))
+            manifest_dir = root / 'dataset/aidc_hvac_load_5min/analysis/weather_binding'
             with patch.object(binder, 'ROOT', root), patch.object(builder, 'ROOT', root):
                 with patch.object(sys, 'argv', ['bind_weather.py', '--scenario', HVAC_V1]):
                     binder.main()
@@ -127,7 +127,9 @@ class WeatherHvacBindingTest(unittest.TestCase):
     def test_invalid_grid_uncovered_window_and_missing_weather_raise(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            inputs = root / 'dataset/aidc_hvac_load_5min/forecast_data/data_v1/family/route_A'
+            inputs = root / 'dataset/aidc_hvac_load_5min/forecast_data'
+            inputs.mkdir(parents=True)
+            inputs = inputs / 'family/A1_all'
             inputs.mkdir(parents=True)
             path = inputs / 'data.csv'
             asset_times = pd.date_range('2026-08-01', periods=288, freq='5min')
@@ -160,11 +162,11 @@ class WeatherHvacBindingTest(unittest.TestCase):
         source = weather_source('5min')
         self.assertEqual(source['history_path'], 'dataset/shared/weather/processed/weather_5min.csv')
         self.assertEqual(source['inference_columns'], MAPPING)
-        for data_version, expected in (('data_v1', 32), ('data_v2', 32), ('data_v3', 2)):
-            manifest = pd.read_csv(scenario / f'analysis/weather_binding/{data_version}/manifest.csv')
-            pattern = '*/A1_all/data.csv' if data_version == 'data_v3' else '*/*/*.csv'
+        for data_version, expected in (('current', 2),):
+            manifest = pd.read_csv(scenario / 'analysis/weather_binding/manifest.csv')
+            pattern = '*/A1_all/data.csv'
             targets = {str(p.relative_to(root)) for p in
-                       (scenario / 'forecast_data' / data_version).glob(pattern)}
+                       (scenario / 'forecast_data').glob(pattern)}
             self.assertEqual(len(targets), expected)
             self.assertEqual(set(manifest.target_file), targets)
             for row in manifest.to_dict('records'):
@@ -179,10 +181,7 @@ class WeatherHvacBindingTest(unittest.TestCase):
                     self.assertEqual(len(slice_frame), len(times))
                     self.assertTrue(np.isfinite(
                         slice_frame[list(MAPPING) + list(MAPPING.values())].to_numpy()).all())
-                    if data_version != 'data_v1':
-                        continue
-                    route = Path(row['target_file']).parent.name.removeprefix('route_')
-                    target_column = 'hvac_total_load_' + route
+                    target_column = 'hvac_total_load_AB'
                     self.assertIn(target_column, target.columns)
                     target_source = {'name': 'target', 'source_type': 'file', 'time_col': 'time',
                                      'history_path': row['target_file'], 'availability': 'source_time',

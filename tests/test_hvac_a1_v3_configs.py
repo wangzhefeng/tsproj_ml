@@ -11,9 +11,13 @@ import yaml
 
 from config.config_loader import load_yaml_config
 from forecasting_core.specs import ForecastConfigSpec
-from config.aidc_hvac_load_5min.scripts.v3.forecast_data.build_model_configs import build_documents
+from config.aidc_hvac_load_5min.scripts.forecast_data.build_model_configs import build_documents
 from config.aidc_hvac_load_5min.scripts.forecast_data.build_model_configs import publish
-from tests.test_hvac_model_configs import builder_for, expected_paths as legacy_paths
+from data_loading import BUILTIN_GENERATORS, SourceRegistry
+from model_pipeline.supervised_design import SupervisedDesignBuilder
+
+def builder_for(config, start):
+    return SupervisedDesignBuilder(config, SourceRegistry(config.data, ROOT, generators=BUILTIN_GENERATORS), history_start=start)
 from model_pipeline.supervised_design import minimum_history_rows, temporal_backtest_windows
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -57,10 +61,7 @@ class A1V3ConfigsTest(unittest.TestCase):
         self.assertEqual(len(documents), 160)
         with TemporaryDirectory() as directory:
             root = Path(directory)
-            legacy = Path('baseline/old.yaml')
-            publish({legacy: 'old\n'}, root)
             self.assertEqual(publish(documents, root, config_version='a1')['created'], len(documents))
-            self.assertEqual(publish({legacy: 'old\n'}, root, check=True)['created'], 0)
             self.assertEqual(publish(documents, root, check=True, config_version='a1')['created'], 0)
             first = next(iter(documents))
             with self.assertRaises(FileExistsError):
@@ -98,7 +99,7 @@ class A1V3ConfigsTest(unittest.TestCase):
 
     def test_real_matrix_and_production_designs(self):
         physical = {p.relative_to(DIRECTORY) for p in DIRECTORY.rglob('*.yaml')}
-        self.assertEqual(physical, legacy_paths() | expected_paths() | NAIVE_PATHS)
+        self.assertEqual(physical, expected_paths() | NAIVE_PATHS)
         frames = {}
         for relative in sorted(expected_paths()):
             with self.subTest(path=relative):
@@ -181,7 +182,7 @@ class A1V3ConfigsTest(unittest.TestCase):
 
     def test_cli_check_outside_repo(self):
         with TemporaryDirectory() as directory:
-            process = subprocess.run([sys.executable, str(DIRECTORY / 'scripts/v3/forecast_data/build_model_configs.py'),
+            process = subprocess.run([sys.executable, str(DIRECTORY / 'scripts/forecast_data/build_model_configs.py'),
                                       '--check'], cwd=directory, capture_output=True, text=True)
             self.assertEqual(process.returncode, 0, process.stdout + process.stderr)
 

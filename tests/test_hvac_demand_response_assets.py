@@ -10,8 +10,8 @@ from config.aidc_hvac_load_5min.scripts.raw_data.migrate_hvac_data import sha256
 
 ROOT = Path(__file__).resolve().parents[1]
 DATA = ROOT / 'dataset/aidc_hvac_load_5min'
-AUDIT = DATA / 'analysis/data_v3/demand_response'
-POINTS = DATA / 'outlier_remove_data/data_v3/demand_response'
+AUDIT = DATA / 'analysis/demand_response'
+POINTS = DATA / 'outlier_remove_data'
 
 
 def read(path):
@@ -31,7 +31,7 @@ def reference(values, origin, length, method):
 class DemandResponseAssetsTest(unittest.TestCase):
     def test_actual_inputs_outputs_masks_and_all_point_estimates(self):
         manifest = json.loads((AUDIT / 'manifest.json').read_text())
-        recipe_path = ROOT / 'config/aidc_hvac_load_5min/scripts/v3/outlier_remove_data/demand_response.json'
+        recipe_path = ROOT / 'config/aidc_hvac_load_5min/scripts/outlier_remove_data/demand_response.json'
         recipe = json.loads(recipe_path.read_text())
         self.assertEqual(manifest['recipe'], recipe)
         self.assertFalse(manifest['strict_online_eligible'])
@@ -46,9 +46,20 @@ class DemandResponseAssetsTest(unittest.TestCase):
             expected = {migration['path_mapping'].get(p, p): digest
                         for p, digest in original['artifact_sha256'].items()}
             self.assertEqual(manifest['artifact_sha256'], expected)
+            for name, digest in migration['preserved_files_sha256'].items():
+                self.assertEqual(sha256_file(DATA / name), digest)
+            if 'original_switch_manifest' in migration:
+                snapshot = DATA / migration['original_switch_manifest']
+                self.assertEqual(sha256_file(snapshot), migration['original_switch_manifest_sha256'])
+                expected_switch = snapshot.read_text()
+                for old, new in migration['path_mapping'].items():
+                    expected_switch = expected_switch.replace(old, new)
+                current_switch = DATA / 'analysis/hvac_switch/manifest.json'
+                self.assertEqual(json.loads(current_switch.read_text()), json.loads(expected_switch))
             self.assertFalse((AUDIT / 'point_tables').exists())
         else:
             self.assertEqual(manifest['builder_sha256'], sha256_file(recipe_path.with_name('adjust_demand_response.py')))
+        self.assertFalse((POINTS / 'demand_response').exists())
         methods = pd.read_csv(AUDIT / 'point_methods.csv', float_precision='round_trip')
         blocks = pd.read_csv(AUDIT / 'validation_blocks.csv', float_precision='round_trip')
         changes = pd.read_csv(AUDIT / 'point_changes.csv', float_precision='round_trip')
@@ -58,7 +69,7 @@ class DemandResponseAssetsTest(unittest.TestCase):
         for route in ('route_A', 'route_B'):
             key = f'hvac_all_devices/{route}/A1_data.csv'
             raw = read(DATA / 'raw_data' / key).drop(columns='total_load')
-            parent = read(DATA / 'imputed_data/data_v3' / key).drop(columns='total_load')
+            parent = read(DATA / 'imputed_data' / key).drop(columns='total_load')
             output = read(POINTS / key).drop(columns='total_load')
             masked = raw.copy()
             scope = np.zeros(len(parent), dtype=bool)
@@ -113,7 +124,7 @@ class DemandResponseAssetsTest(unittest.TestCase):
                 self.assertEqual(row['method'], ('locf', 'past_mean_1h', 'past_day_repeat')[int(np.argmin(scores))])
         self.assertEqual(len(changes), expected_estimates)
         for devices in ('hvac_all_devices', 'hvac_remove_devices'):
-            directory = DATA / f'forecast_data/data_v3/{devices}/A1_all'
+            directory = DATA / f'forecast_data/{devices}/A1_all'
             old, new = read(directory / 'data.csv'), read(directory / 'data_dr_adjusted.csv')
             scope = np.zeros(len(old), dtype=bool)
             for event in recipe['events']:
@@ -124,7 +135,7 @@ class DemandResponseAssetsTest(unittest.TestCase):
             np.testing.assert_array_equal(new.hvac_total_load_AB, new.hvac_total_load_A + new.hvac_total_load_B)
             self.assertTrue(np.isfinite(new.to_numpy()).all())
             mask = read(AUDIT / devices / 'mask.csv')
-            original_mask = read(DATA / f'analysis/data_v3/forecast_windows/{devices}/A1_all/mask.csv')
+            original_mask = read(DATA / f'analysis/forecast_windows/{devices}/A1_all/mask.csv')
             pd.testing.assert_frame_equal(mask.loc[~scope, original_mask.columns], original_mask.loc[~scope])
             np.testing.assert_array_equal(mask.dr_counterfactual, scope)
             self.assertFalse(mask.loc[scope, 'hvac_total_load_AB_observed'].any())

@@ -13,8 +13,7 @@ class WeatherHistoryCoverageTest(unittest.TestCase):
     def test_shared_assets_cover_all_scenario_targets(self):
         expected_targets = {'aidc_load_15min_daily': 3, 'aidc_load_15min_rolling': 3,
                             'aidc_load_15min_short': 3, 'aidc_ess_selfuse_load': 2,
-                            'aidc_power_month': 4, 'aidc_hvac_load_5min_data_v1': 32,
-                            'aidc_hvac_load_5min_data_v2': 32, 'aidc_hvac_load_5min_data_v3': 2}
+                            'aidc_power_month': 4, 'aidc_hvac_load_5min': 2}
         self.assertEqual(set(bind_weather.SCENARIOS), set(expected_targets))
         for scenario, count in expected_targets.items():
             rows = bind_weather.bind_scenario(scenario)

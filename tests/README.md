@@ -1,5 +1,9 @@
 # tests
 
+`test_hvac_switch_buildings` / `test_hvac_switch_buildings_assets` 默认integration：跨三楼套组映射校验、负/无限值置空但真实事件不改、显式保留不可填NaN、两口径共享点一致、80份新增点位表、严格三楼总量、覆盖冲突前置拒绝；独立回读真实源、分套/分楼/汇总与冻结A1和预测资产SHA。不生成预测特征。
+
+`test_hvac_building_extension` 默认integration：显式保留无法填补的NaN、默认严格拒绝不变、独立事件候选不自动批准、分楼与三楼严格汇总、raw和forecast字节保真及重复发布保护。`test_hvac_building_extension_assets` 独立回读真实扩展产物、缺口来源和已批准事件范围。
+
 `test_hongtaiyang_2026`默认integration：跨年两份pointwise配置、335日/11月窗口、三日历月边界、真实日均聚合、首月非递归短样本及未来/窗口外扰动不变性、跨年图表和剔除真值接入段的评分。定向`integration --match test_hongtaiyang`同时回归原2025年场景；不等于正式全年模型效果验收。
 
 联通场景测试默认进入 integration，不改发现规则、不 skip：`test_native_ets`（含 4032 点、5min/288 合成序列、失败透明及可信 pickle）；`test_seasonal_kernels`（独立黄金值、严格 as-of）；`test_liantong_optimization`（single/batch、九策略×有无天气残差、递归单位、目标隔离、缓存身份和合成 backtest 生命周期）；`test_liantong_four_groups`（原四组、三个算力组及 accuracy_ablation 共八组 72 份 YAML，逐项核对完整物理路径、模型/输出合同、参数静态校验和逐份 17 折几何）。原 `test_liantong_august_configs` 的路径已同步到 `add_weather/`。测试合成拟合不构成正式模型效果证据。
@@ -12,9 +16,9 @@
 
 `test_hvac_data_preparation` 默认 integration：AIDC 暖通/IT 的原始归档迁移与重名冲突保护、72/73槽填补边界、逐缺口过去遮蔽选型与未来扰动不变性、未授权全空点位拒绝、严格总量与三楼分量、20输入到32场景、自然日选窗和短窗口折数、独立mask以及覆盖保护。定向 `integration --match test_hvac_data_preparation`；使用临时fixture，不改正式数据、不训练模型。
 
-`test_hvac_forecast_visual` 默认 integration：尖峰/跳变/低负荷/恒值候选、近恒定序列微小波动不误报、实测与填补端点标记，以及含三楼暖通/IT分量的真实临时PNG/CSV生成和源字节不变；不执行异常清洗。定向 `integration --match test_hvac_forecast_visual`。
 
-`test_hvac_outlier_cleaning` 默认 integration：单槽原始点位归因、持续/多点/缺失邻域保护、过去观测修正、检测可得时间、原始归档与IT保真、跨设备版本一致、准备根绑定与跨路目标/特征同值；临时fixture走清洗→选窗→可视化mask真实接线，不运行模型。定向`integration --match test_hvac_outlier_cleaning`。
+
+
 
 双路合同回归仍在上述两模块：不对称A/B数值与缺失掩码、AB严格和、路线显式目标、跨路线目录相同输入、逐字段资格时间、授权覆盖/失败回滚/源目录范围拒绝。`test_weather_hvac_windows` 核验直连共享 processed 5min 资产的绑定合同（窗口覆盖、六项有限、target SHA、清单生命周期），并对32份真实目标执行生产信息集阶段映射；字段迁移不改变天气值。
 
@@ -26,7 +30,7 @@
 
 `test_hvac_demand_response` 默认 integration：原 data.csv 与具名派生共存、固定事件范围外保真、IT保真、两设备口径共享点位、只用过去原观测选型、此前事件不进入校准/参考、校准不足与源SHA漂移拒绝、非仓库cwd真实CLI和拒绝覆盖；真实产物独立回读核对来源/产物SHA、点位重建、方法评分及mask。旧v3资产测试核对两原表+两派生表的完整集合；天气v3只绑定原 data.csv，新增派生不触发自动扩展。不训练模型。定向 `integration --match test_hvac_demand_response`。
 
-需求响应点位归档回归 `test_hvac_demand_response_relocation` 默认integration：四表原字节迁移、旧目录退出、目标冲突与源SHA损坏前置拒绝、旧生成manifest保留；生成入口CLI同时断言点位进入 `outlier_remove_data/data_v3/demand_response/`，真实资产验收区分迁移记录和历史builder身份。
+需求响应点位归档回归 `test_hvac_demand_response_relocation` 默认integration：四表原字节迁移、旧目录退出、目标冲突与源SHA损坏前置拒绝、旧生成manifest保留；生成入口CLI同时断言点位进入 `outlier_remove_data/`，真实资产验收区分迁移记录和历史builder身份。
 
 ## 执行集合
 
@@ -48,11 +52,11 @@
 
 回测特征执行重构的新增测试默认 integration：`test_compiler_array_kernels`（统计稳定性/历史下界）、`test_indexed_design` 与 `test_indexed_training`（紧凑视图/模型边界展开/前置预算/ETS/预测批编译）、`test_numeric_snapshot`（共享只读与源变化拒绝）、`test_bounded_execution` 与 `test_calendar_bounded_execution`（有界在途/按序消费）。原 `test_raw_history_window`、`test_design_identity`、`test_compiler_batch_equivalence` 和自然月/Ensemble 测试继续覆盖接线；不修改发现规则。业务验收按本轮授权仅跑 baseline 的两折冷/热派生配置，不等同于原72折效果验收，也不替代代码套件 `all`。
 
-`test_hvac_a1_v3*` 默认integration：固定IT子集漂移拒绝、只补NaN、过去日长段不越界、逐缺口未来扰动不变、稀疏原观测遮蔽评分、校准不足拒绝、两口径共享点一致、覆盖保护；独立核对5份真实点位表原值保真、全部补值重建、来源mask、固定窗口和天气SHA绑定。配置测试覆盖A1_all六组160份完整矩阵（配置路径不含v3，数据仍用data_v3）、组间字段正交性、90/150天训练及72/12折时间几何、每份首末折真实训练origin及预测首/中/末步编译、ETS无特征合同，并与旧576份配置做联合路径集核对；发布保护拒绝旧嵌套层级、越界及清单外文件。不拟合正式模型。定向：`integration --match test_hvac_a1_v3`。天气v3无路线目录的绑定核验并入`test_weather_hvac_windows`，绑定清单在 `analysis/weather_binding/data_v3/`。
+`test_hvac_a1_v3*` 保留A1固定子集、缺失估计与164份现行配置的校验；名称沿用历史，但代码和数据路径已去版本化。旧576份配置及专属测试随旧流程退役，不再作为活动资产验收。
 
-`test_hvac_redbox_cleaning`默认integration：人工范围边界、过去基线、先前异常不进入参考、固定异常mask的未来数值扰动不改变补值/选型、长段/不足历史拒绝强填、事件内已有缺失槽不沿用受污染旧补值。仅离线清洗，不训练模型；定向`integration --match test_hvac_redbox_cleaning`。真实32表另核验总分、共享点位、时间窗、IT保真及逐格改值，报告保存在准备版本`analysis/outliers`。
 
-`test_hvac_model_configs` 默认 integration：576份物理YAML精确路径集、九方法模板一致性、四组字段投影/正交性、真实资产声明列有限性及完整自然日网格、14/7天原始训练窗口与全部折日期、逐配置真实训练origin及预测首/中/末步编译、IT/peer安全lag的可见性证明和窗口外/未来扰动隔离。只验证配置与设计，不拟合正式模型；定向 `integration --match test_hvac_model_configs`。
+
+
 
 `test_direct_result_identity` 默认 integration：三类 Direct 方法（含 horizon 的有/无周期编码两种特征变体）的真实小样本训练/回测/预测落盘及元数据、原始语义 hash、文件别名不变性和非法配置拒绝；`test_forecast_config_fingerprint` 在 fast 中覆盖三类前缀及 cyclical 仅影响特征元数据和语义 hash、不新增方法类型。迁移清单只读，不移动存量结果。
 
@@ -197,5 +201,3 @@ env -u PYTHONPATH .venv/bin/python tests/run_suite.py integration --match test_m
 本地复验入口为 `.hermes/plans/verify-architecture-no-models.py`，安装调用拦截器后执行上述白名单，遇到 fit/predict 类调用立即中止。各文件仍纳入原生 discovery，不从完整测试集合排除。
 
 ## HVAC 数据阶段版本化
-
-`test_hvac_versioned_preparation` 默认integration：data_v1/data_v2隔离、合并原始异常mask先于填补、红框外缺失传播重算、73槽组合缺口不恢复异常、真实临时20表→32预测表及可得性mask、重复构建拒绝。既有清洗测试验证scripts/v1的旧行为；模型/天气真实资产测试绑定data_v1。共享脚本按analysis/forecast_data/imputed_data/outlier_remove_data/raw_data分类，天气合同与绑定核验在weather_data目录（直连共享processed资产），版本专属入口在v1/v2同名阶段目录。

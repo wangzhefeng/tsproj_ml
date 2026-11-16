@@ -6,8 +6,8 @@ from tempfile import TemporaryDirectory
 import numpy as np
 import pandas as pd
 
-from config.aidc_hvac_load_5min.scripts.v3.forecast_data.switch_features import unit_states, module_events, clean_power
-from config.aidc_hvac_load_5min.scripts.v3.forecast_data.prepare_switch import build, verify, target_pairs, sha256
+from config.aidc_hvac_load_5min.scripts.forecast_data.switch_features import unit_states, module_events, clean_power
+from config.aidc_hvac_load_5min.scripts.forecast_data.prepare_switch import build, verify, target_pairs, sha256
 
 
 class SwitchFeaturesTest(unittest.TestCase):

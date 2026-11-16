@@ -4,11 +4,11 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
 
-from config.aidc_hvac_load_5min.scripts.v3.outlier_remove_data.relocate_point_tables import relocate
+from config.aidc_hvac_load_5min.scripts.outlier_remove_data.relocate_point_tables import relocate
 from config.aidc_hvac_load_5min.scripts.raw_data.migrate_hvac_data import sha256_file
 
-OLD = Path('analysis/data_v3/demand_response/point_tables')
-NEW = Path('outlier_remove_data/data_v3/demand_response')
+OLD = Path('analysis/demand_response/point_tables')
+NEW = Path('outlier_remove_data')
 AUDIT = OLD.parent
 
 
@@ -21,7 +21,7 @@ class DemandResponseRelocationTest(unittest.TestCase):
                 path.parent.mkdir(parents=True)
                 path.write_bytes(b'time,value\n2026-07-10 00:00:00,1.25\n')
                 hashes[str(path.relative_to(root))] = sha256_file(path)
-        plot = root / 'analysis/data_v3/forecast_data_visual/existing.png'
+        plot = root / 'analysis/forecast_data_visual/existing.png'
         plot.parent.mkdir(parents=True)
         plot.write_bytes(b'untouched-existing-artifact')
         manifest = root / AUDIT / 'manifest.json'
@@ -32,7 +32,11 @@ class DemandResponseRelocationTest(unittest.TestCase):
         with TemporaryDirectory() as tmp:
             root = Path(tmp)
             original = self.fixture(root)
+            sibling = root / NEW / 'hvac_switch' / 'existing.csv'
+            sibling.parent.mkdir(parents=True)
+            sibling.write_bytes(b'unchanged')
             result = relocate(root)
+            self.assertEqual(sibling.read_bytes(), b'unchanged')
             self.assertEqual(result['moved_tables'], 4)
             self.assertFalse((root / OLD).exists())
             report = json.loads((root / AUDIT / 'manifest.json').read_text())
@@ -54,7 +58,7 @@ class DemandResponseRelocationTest(unittest.TestCase):
                 root = Path(tmp)
                 original = self.fixture(root)
                 if conflict:
-                    (root / NEW).mkdir(parents=True)
+                    (root / NEW / 'hvac_all_devices').mkdir(parents=True)
                     error = FileExistsError
                 else:
                     path = next((root / OLD).rglob('*.csv'))

@@ -1,0 +1,58 @@
+{
+  "approved": true,
+  "scope": "Human authorized five curve-derived intervals for offline counterfactual estimation; not proof of dispatch events",
+  "events": {
+    "A2": [
+      {
+        "event_id": "a2_1",
+        "start": "2026-08-06 15:15:00",
+        "rebound_start": "2026-08-06 16:00:00",
+        "end_exclusive": "2026-08-06 17:20:00"
+      }
+    ],
+    "A3": [
+      {
+        "event_id": "a3_1",
+        "start": "2026-07-16 15:15:00",
+        "rebound_start": "2026-07-16 16:05:00",
+        "end_exclusive": "2026-07-16 17:30:00"
+      },
+      {
+        "event_id": "a3_2",
+        "start": "2026-07-17 15:15:00",
+        "rebound_start": "2026-07-17 16:10:00",
+        "end_exclusive": "2026-07-17 17:30:00"
+      },
+      {
+        "event_id": "a3_3",
+        "start": "2026-08-06 15:15:00",
+        "rebound_start": "2026-08-06 16:10:00",
+        "end_exclusive": "2026-08-06 18:20:00"
+      },
+      {
+        "event_id": "a3_4",
+        "start": "2026-08-06 19:25:00",
+        "rebound_start": "2026-08-06 20:00:00",
+        "end_exclusive": "2026-08-06 21:15:00"
+      }
+    ]
+  },
+  "input_sha256": {
+    "raw_data/hvac_all_devices/route_A/A2_data.csv": "a333d0cc78f7a95d324d6765d8b0e0e28998d7c3fc231f881886acc62541b9d3",
+    "raw_data/hvac_all_devices/route_A/A3_data.csv": "6bb774edfa05194c63a8655117e987983fdb0261c56b14e7ae97d7b234eb104a",
+    "raw_data/hvac_all_devices/route_B/A2_data.csv": "3c2f8eb67e4224441111071aed562165b1f251c6f14994f0239a52c797f72057",
+    "raw_data/hvac_all_devices/route_B/A3_data.csv": "dc155817e6c81bab3859400e8af1cf018eaf0c89b54f2f301ecdd90ef3750a94",
+    "raw_data/hvac_remove_devices/route_A/A2_data.csv": "0c0c8e2f856504a3bb2d862c2bc7641806a1d6051ebac910ca75735b7080ddeb",
+    "raw_data/hvac_remove_devices/route_A/A3_data.csv": "3f18637670e64b354a0e24e55b9d4941c46f7d025962a272332de99d0ec0a7e5",
+    "raw_data/hvac_remove_devices/route_B/A2_data.csv": "785db4d017a6e4e398e438a41c89bd8edae2cd28477d96ca7f2e93382edc76f9",
+    "raw_data/hvac_remove_devices/route_B/A3_data.csv": "4c8286226adad151c207a937d52f9b7ba48f99ee82e86545ddbf7c9bbe026289",
+    "imputed_data/hvac_all_devices/route_A/A2_data.csv": "36e3f4224fe48448c727128e01791d2f1efb238458174da0fb74cfe5897922ac",
+    "imputed_data/hvac_all_devices/route_A/A3_data.csv": "f2cbe63fae38773953c93d8a07a84c0b6842f1db4159d2fe793f43ffb4f13601",
+    "imputed_data/hvac_all_devices/route_B/A2_data.csv": "6c496345975d29a854da509d9084d3c57c8bfb4222746794a1714ffcf3b2e960",
+    "imputed_data/hvac_all_devices/route_B/A3_data.csv": "f79ecab5cec5a565080ff3b5a3f8528d90d53a6c3be4da978302d718722ddafe",
+    "imputed_data/hvac_remove_devices/route_A/A2_data.csv": "d577616caa7c7e26ad0c08551f4159a47ff70aa1eaa8a55485b2a2f50531dd57",
+    "imputed_data/hvac_remove_devices/route_A/A3_data.csv": "8e1e7ee7424d4f2de5c2980ce000b10cc901491e5bf787beb152b57cf767ef91",
+    "imputed_data/hvac_remove_devices/route_B/A2_data.csv": "8440fb557579cc5b68c3602a7dede3fc92fa4e83372f70c81aaed63509341c30",
+    "imputed_data/hvac_remove_devices/route_B/A3_data.csv": "45ca8befd3f5bd402cba9c30ca0de1306e2f263b19401bff999a63db10c98692"
+  }
+}

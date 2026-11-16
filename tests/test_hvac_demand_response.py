@@ -10,11 +10,11 @@ from tempfile import TemporaryDirectory
 import numpy as np
 import pandas as pd
 
-from config.aidc_hvac_load_5min.scripts.v3.outlier_remove_data.adjust_demand_response import correct_points, prepare
+from config.aidc_hvac_load_5min.scripts.outlier_remove_data.adjust_demand_response import correct_points, prepare
 from config.aidc_hvac_load_5min.scripts.raw_data.migrate_hvac_data import sha256_file
 
 ROOT = Path(__file__).resolve().parents[1]
-SCRIPT = ROOT / 'config/aidc_hvac_load_5min/scripts/v3/outlier_remove_data/adjust_demand_response.py'
+SCRIPT = ROOT / 'config/aidc_hvac_load_5min/scripts/outlier_remove_data/adjust_demand_response.py'
 
 
 def fixture(root):
@@ -31,17 +31,17 @@ def fixture(root):
                 frame['pump'] = 3.
             frame['total_load'] = frame.sum(axis=1)
             totals[route] = frame.total_load
-            for category in ('raw_data', 'imputed_data/data_v3'):
+            for category in ('raw_data', 'imputed_data'):
                 paths[f'{category}/{devices}/{route}/A1_data.csv'] = frame
         target = pd.DataFrame({'hvac_total_load_AB': totals['route_A'] + totals['route_B'],
                                'hvac_total_load_A': totals['route_A'], 'hvac_total_load_B': totals['route_B'],
                                'it_subset_load': 5.}, index=index)
-        paths[f'forecast_data/data_v3/{devices}/A1_all/data.csv'] = target
+        paths[f'forecast_data/{devices}/A1_all/data.csv'] = target
         mask = pd.DataFrame(index=index)
         for col in target:
             mask[col + '_observed'] = True
             mask[col + '_eligibility_known_at'] = index
-        paths[f'analysis/data_v3/forecast_windows/{devices}/A1_all/mask.csv'] = mask
+        paths[f'analysis/forecast_windows/{devices}/A1_all/mask.csv'] = mask
     for path, frame in paths.items():
         dest = root / path
         dest.parent.mkdir(parents=True, exist_ok=True)
@@ -117,6 +117,9 @@ class DemandResponseTest(unittest.TestCase):
         with TemporaryDirectory() as tmp:
             root = Path(tmp)
             recipe = fixture(root)
+            sibling = root / 'outlier_remove_data/hvac_flow_temp/existing.csv'
+            sibling.parent.mkdir(parents=True)
+            sibling.write_bytes(b'unchanged')
             path = root / 'recipe.json'
             path.write_text(json.dumps(recipe), encoding='utf-8')
             env = dict(os.environ)
@@ -124,16 +127,18 @@ class DemandResponseTest(unittest.TestCase):
             result = subprocess.run([sys.executable, str(SCRIPT), '--root', str(root), '--recipe', str(path)],
                                     cwd=root, env=env, text=True, capture_output=True, timeout=120)
             self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(sibling.read_bytes(), b'unchanged')
+            self.assertFalse((root / 'outlier_remove_data/demand_response').exists())
             event = recipe['events'][0]
-            self.assertFalse((root / 'analysis/data_v3/demand_response/point_tables').exists())
+            self.assertFalse((root / 'analysis/demand_response/point_tables').exists())
             for devices, expected in (('hvac_all_devices', 36.), ('hvac_remove_devices', 30.)):
-                target = pd.read_csv(root / f'forecast_data/data_v3/{devices}/A1_all/data_dr_adjusted.csv')
+                target = pd.read_csv(root / f'forecast_data/{devices}/A1_all/data_dr_adjusted.csv')
                 np.testing.assert_array_equal(target.hvac_total_load_AB, expected)
                 np.testing.assert_array_equal(target.it_subset_load, 5.)
                 for route in ('route_A', 'route_B'):
-                    points = pd.read_csv(root / f'outlier_remove_data/data_v3/demand_response/{devices}/{route}/A1_data.csv')
+                    points = pd.read_csv(root / f'outlier_remove_data/{devices}/{route}/A1_data.csv')
                     np.testing.assert_array_equal(points.total_load, target['hvac_total_load_' + route[-1]])
-                mask = pd.read_csv(root / f'analysis/data_v3/demand_response/{devices}/mask.csv')
+                mask = pd.read_csv(root / f'analysis/demand_response/{devices}/mask.csv')
                 active = mask.dr_counterfactual
                 self.assertEqual(int(active.sum()), 24)
                 self.assertFalse(mask.loc[active, 'hvac_total_load_AB_observed'].any())
@@ -141,13 +146,13 @@ class DemandResponseTest(unittest.TestCase):
                 self.assertTrue(mask.it_subset_load_observed.all())
                 known = pd.to_datetime(mask.loc[active, 'hvac_total_load_AB_eligibility_known_at'])
                 self.assertTrue((known == pd.Timestamp(event['end_exclusive']) + pd.Timedelta(minutes=25)).all())
-                self.assertEqual({p.name for p in (root / f'forecast_data/data_v3/{devices}/A1_all').glob('*.csv')},
+                self.assertEqual({p.name for p in (root / f'forecast_data/{devices}/A1_all').glob('*.csv')},
                                  {'data.csv', 'data_dr_adjusted.csv'})
-            report = json.loads((root / 'analysis/data_v3/demand_response/manifest.json').read_text())
+            report = json.loads((root / 'analysis/demand_response/manifest.json').read_text())
             self.assertFalse(report['strict_online_eligible'])
             for name, digest in {**recipe['input_sha256'], **report['artifact_sha256']}.items():
                 self.assertEqual(sha256_file(root / name), digest)
-            png = root / 'analysis/data_v3/demand_response/plots/dr_test.png'
+            png = root / 'analysis/demand_response/plots/dr_test.png'
             self.assertEqual(png.read_bytes()[:8], b'\x89PNG\r\n\x1a\n')
             with self.assertRaises(FileExistsError):
                 prepare(root, recipe)
@@ -165,7 +170,7 @@ class DemandResponseTest(unittest.TestCase):
             bad['events'][0]['end_exclusive'] = str(pd.Timestamp(bad['events'][0]['end_exclusive']) + pd.Timedelta(minutes=5))
             with self.assertRaisesRegex(ValueError, '结束边界'):
                 prepare(root, bad)
-            self.assertFalse((root / 'analysis/data_v3/demand_response').exists())
+            self.assertFalse((root / 'analysis/demand_response').exists())
             self.assertFalse(list(root.glob('forecast_data/**/data_dr_adjusted.csv')))
 
 

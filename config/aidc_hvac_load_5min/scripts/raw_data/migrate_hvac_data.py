@@ -40,13 +40,9 @@ def verify_manifest(root, manifest):
             raise ValueError(f"迁移文件哈希改变: {row['destination']}")
 
 
-def migrate(root=DEFAULT_ROOT, *, data_version=None):
+def migrate(root=DEFAULT_ROOT):
     root = Path(root).resolve()
     analysis = root / 'analysis'
-    if data_version is not None:
-        if data_version != 'data_v1':
-            raise ValueError('历史迁移只适用于data_v1')
-        analysis = analysis / data_version
     manifest_path = analysis / 'preparation/raw_migration.json'
     if manifest_path.exists():
         manifest = json.loads(manifest_path.read_text(encoding='utf-8'))
@@ -103,7 +99,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--root', type=Path, default=DEFAULT_ROOT)
     args = parser.parse_args()
-    manifest = migrate(args.root, data_version='data_v1')
+    manifest = migrate(args.root)
     print(f"迁移核验通过: raw={len(manifest['raw_files'])}, analysis={len(manifest['analysis_files'])}")
 
 

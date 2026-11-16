@@ -21,9 +21,6 @@ scripts/
     analyze_hvac_window.py               # 原始诊断，保存于data_v1/raw_diagnostics
     analyze_it_load.py
     analyze_forecast_data.py             # 版本显式的预测输入可视化
-  weather_data/
-    weather_source.py                     # 天气源合同：直连共享 processed 5min 资产
-    bind_weather.py                       # 逐目标窗口覆盖/有限性核验，发布绑定清单
   v1/
     imputed_data/prepare_data.py          # 旧流程：先填补raw
     outlier_remove_data/
@@ -128,7 +125,7 @@ v3数据及A1_all配置构建命令见[场景README](../README.md#a1_all固定�
 - `imputed_data/data_v2/`：从屏蔽后的原观测统一填补，20份表，严格总量。
 - `forecast_data/{data_v1,data_v2}/`：各版32份业务输入；不是模型预测结果。
 - `analysis/{data_v1,data_v2}/`：各版的清洗/填补/选窗/可视化证据。原有分析目录、历史archive和`TOOD.md`均归入data_v1，待办内容不变。
-- `analysis/weather_binding/{data_v1,data_v2,data_v3}/manifest.csv`：各版逐目标天气绑定清单（目标 SHA、窗口、共享 processed 5min 资产 SHA 血缘）。天气数值不再复制进本场景，模型配置经 `weather_data/weather_source.py` 直连共享资产；共享处理后天气源不变。
+- `analysis/weather_binding/{data_v1,data_v2,data_v3}/manifest.csv`：各版逐目标天气绑定清单（目标 SHA、窗口、共享 processed 5min 资产 SHA 血缘）。天气数值不再复制进本场景，模型配置经共享 `scripts/weather_data/build_scenario_weather.py::weather_source` 直连资产，绑定核验用共享 `scripts/weather_data/bind_weather.py --scenario aidc_hvac_load_5min_data_<版本>`；共享处理后天气源不变。
 
 现有576份模型YAML读取data_v1。仅迁移输入路径，不调整特征、训练窗口或预测策略，不自动切换到data_v2，不重跑或删除既有模型结果。路径属于配置payload时身份可能变化，不把旧模型结果改名冒充新配置结果。
 
@@ -166,7 +163,7 @@ env -u PYTHONPATH .venv/bin/python config/aidc_hvac_load_5min/scripts/v1/outlier
 ```bash
 env -u PYTHONPATH .venv/bin/python config/aidc_hvac_load_5min/scripts/v2/imputed_data/prepare_data.py
 env -u PYTHONPATH .venv/bin/python config/aidc_hvac_load_5min/scripts/forecast_data/select_hvac_windows.py --data-version data_v2
-env -u PYTHONPATH .venv/bin/python config/aidc_hvac_load_5min/scripts/weather_data/bind_weather.py --data-version data_v2
+env -u PYTHONPATH .venv/bin/python scripts/weather_data/bind_weather.py --scenario aidc_hvac_load_5min_data_v2
 env -u PYTHONPATH .venv/bin/python config/aidc_hvac_load_5min/scripts/analysis/analyze_forecast_data.py --data-version data_v2
 ```
 

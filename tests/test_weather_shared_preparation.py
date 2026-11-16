@@ -10,14 +10,14 @@ import unittest
 import numpy as np
 import pandas as pd
 
-from scripts import build_scenario_weather as weather
+from scripts.weather_data import build_scenario_weather as weather
 
 ROOT = Path(__file__).resolve().parents[1]
 
 
 class SharedWeatherPreparationTest(unittest.TestCase):
     def test_shared_tool_does_not_own_scenarios(self):
-        source = (ROOT / 'scripts/build_scenario_weather.py').read_text()
+        source = (ROOT / 'scripts/weather_data/build_scenario_weather.py').read_text()
         for token in ('aidc_hvac', 'aidc_load_15min', 'aidc_power_month', 'aidc_ess', 'HISTORY_END'):
             self.assertNotIn(token, source)
 
@@ -42,7 +42,7 @@ class SharedWeatherPreparationTest(unittest.TestCase):
             era5 = root / 'era5.csv'
             pd.DataFrame({'ts': []}).to_csv(era5, index=False)
             output = root / 'processed/weather_hourly.csv'
-            command = [sys.executable, str(ROOT / 'scripts/build_scenario_weather.py'),
+            command = [sys.executable, str(ROOT / 'scripts/weather_data/build_scenario_weather.py'),
                        '--source-dir', str(source_dir), '--era5-path', str(era5), '--output', str(output)]
             result = subprocess.run(command, cwd=root, capture_output=True, text=True)
             self.assertEqual(result.returncode, 0, result.stderr)
@@ -75,7 +75,7 @@ class SharedWeatherPreparationTest(unittest.TestCase):
             era5 = root / 'era5.csv'
             pd.DataFrame({'ts': []}).to_csv(era5, index=False)
             output = root / 'processed/weather_hourly.csv'
-            command = [sys.executable, str(ROOT / 'scripts/build_scenario_weather.py'),
+            command = [sys.executable, str(ROOT / 'scripts/weather_data/build_scenario_weather.py'),
                        '--source-dir', str(source_dir), '--era5-path', str(era5),
                        '--output', str(output), '--resample', '15min,5min']
             result = subprocess.run(command, cwd=root, capture_output=True, text=True)
@@ -112,7 +112,7 @@ class SharedWeatherPreparationTest(unittest.TestCase):
             era5 = root / 'era5.csv'
             pd.DataFrame({'ts': []}).to_csv(era5, index=False)
             output = root / 'processed/weather_hourly.csv'
-            command = [sys.executable, str(ROOT / 'scripts/build_scenario_weather.py'),
+            command = [sys.executable, str(ROOT / 'scripts/weather_data/build_scenario_weather.py'),
                        '--source-dir', str(source_dir), '--era5-path', str(era5),
                        '--output', str(output), '--aggregate', '1D,1ME']
             result = subprocess.run(command, cwd=root, capture_output=True, text=True)

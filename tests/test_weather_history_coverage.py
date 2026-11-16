@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from scripts import bind_weather
+from scripts.weather_data import bind_weather
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -13,15 +13,17 @@ class WeatherHistoryCoverageTest(unittest.TestCase):
     def test_shared_assets_cover_all_scenario_targets(self):
         expected_targets = {'aidc_load_15min_daily': 3, 'aidc_load_15min_rolling': 3,
                             'aidc_load_15min_short': 3, 'aidc_ess_selfuse_load': 2,
-                            'aidc_power_month': 4}
+                            'aidc_power_month': 4, 'aidc_hvac_load_5min_data_v1': 32,
+                            'aidc_hvac_load_5min_data_v2': 32, 'aidc_hvac_load_5min_data_v3': 2}
         self.assertEqual(set(bind_weather.SCENARIOS), set(expected_targets))
         for scenario, count in expected_targets.items():
             rows = bind_weather.bind_scenario(scenario)
             self.assertEqual(len(rows), count, scenario)
+            entry = bind_weather.SCENARIOS[scenario]
+            manifest = pd.read_csv(ROOT / 'dataset' / entry['dataset'] / entry['manifest'])
+            published = manifest.to_dict('records')
             for row in rows:
                 with self.subTest(scenario=scenario, target=row['target_file']):
-                    manifest = pd.read_csv(ROOT / 'dataset' / scenario / 'analysis/weather_binding/manifest.csv')
-                    published = manifest.to_dict('records')
                     self.assertIn(row, published)
                     self.assertTrue(row['target_file'].endswith('.csv'))
 

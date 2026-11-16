@@ -12,7 +12,7 @@ from test_weather_compiler import config_fixture
 class WeatherRequestPlanningTest(unittest.TestCase):
     def test_shifted_final_output_envelope_matches_temporal_grid(self):
         from forecasting_core.specs.temporal import forecast_times
-        from scripts.plan_weather_requests import plan_single_model
+        from scripts.weather_data.plan_weather_requests import plan_single_model
         for window, horizon in (({'start': 'after_origin', 'gap_steps': 2}, 2),
                                 ({'start': 'next_day'}, 24)):
             with self.subTest(window=window), tempfile.TemporaryDirectory() as directory:
@@ -35,7 +35,7 @@ class WeatherRequestPlanningTest(unittest.TestCase):
     def test_fixed_origins_match_real_runtime_without_fitting(self):
         from data_loading import SourceRegistry
         from model_pipeline.runner import CanonicalBaseModelRunner
-        from scripts.plan_weather_requests import plan_single_model
+        from scripts.weather_data.plan_weather_requests import plan_single_model
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             config = config_fixture(root)
@@ -47,7 +47,7 @@ class WeatherRequestPlanningTest(unittest.TestCase):
             self.assertEqual(result['groups'][0]['supervised_origins'], [t.isoformat() for t in runner.supervised_origins])
 
     def test_fixed_window_is_bounded_by_actual_supervised_timeline(self):
-        from scripts.plan_weather_requests import plan_single_model
+        from scripts.weather_data.plan_weather_requests import plan_single_model
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             config = config_fixture(root)
@@ -64,7 +64,7 @@ class WeatherRequestPlanningTest(unittest.TestCase):
             self.assertFalse(result['weather_values_verified'])
 
     def test_irregular_target_timeline_is_rejected(self):
-        from scripts.plan_weather_requests import plan_single_model
+        from scripts.weather_data.plan_weather_requests import plan_single_model
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             config = config_fixture(root)
@@ -74,7 +74,7 @@ class WeatherRequestPlanningTest(unittest.TestCase):
                 plan_single_model(config, root, origin=times[-1])
 
     def test_gap_outside_requested_training_window_does_not_expand_scope(self):
-        from scripts.plan_weather_requests import plan_single_model
+        from scripts.weather_data.plan_weather_requests import plan_single_model
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             config = config_fixture(root)
@@ -84,7 +84,7 @@ class WeatherRequestPlanningTest(unittest.TestCase):
             self.assertEqual(result['label_start'], '2026-01-02T19:00:00')
 
     def test_calendar_includes_variable_horizon_runner_envelopes(self):
-        from scripts.plan_weather_requests import plan_single_model
+        from scripts.weather_data.plan_weather_requests import plan_single_model
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             config = config_fixture(root)

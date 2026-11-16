@@ -12,7 +12,7 @@ import numpy as np
 import pandas as pd
 
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 SOURCE_DIR = ROOT / 'dataset/shared/weather/extracted/actual'
 SOURCE_GLOB = 'weather_in_*.csv'
 DEFAULT_PROCESSED = ROOT / 'dataset/shared/weather/processed/weather_hourly.csv'

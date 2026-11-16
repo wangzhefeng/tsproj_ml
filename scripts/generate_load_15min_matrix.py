@@ -22,7 +22,7 @@ sys.path.insert(0, str(ROOT))
 
 from config.config_loader import load_yaml_config  # noqa: E402
 
-from scripts.build_scenario_weather import weather_source  # noqa: E402
+from scripts.weather_data.build_scenario_weather import weather_source  # noqa: E402
 
 from forecasting_core.specs import ForecastConfigSpec  # noqa: E402
 from model_ensemble.specs import EnsembleConfigSpec  # noqa: E402

@@ -14,7 +14,7 @@ from config.config_loader import load_yaml_config
 from data_loading import InformationSetRequest, SourceRegistry
 from forecasting_core.specs.config import parse_data_spec
 from scripts import generate_load_15min_matrix as matrix
-from scripts import build_scenario_weather as weather_builder
+from scripts.weather_data import build_scenario_weather as weather_builder
 
 ROOT = Path(__file__).resolve().parents[1]
 FAMILIES = ('aidc_load_15min_daily', 'aidc_load_15min_rolling',

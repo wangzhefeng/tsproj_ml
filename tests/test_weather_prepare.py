@@ -26,7 +26,7 @@ class WeatherPrepareTest(unittest.TestCase):
             meta['raw'] += [{'path': p.name, 'sha256': hashlib.sha256(p.read_bytes()).hexdigest()} for p in (source,releases)]
             metadata = root / 'metadata.json'
             metadata.write_text(json.dumps(meta))
-            command = [sys.executable,'scripts/prepare_weather.py','register','--adapter','open_meteo','--input',str(source),'--metadata',str(metadata),'--availability-csv',str(releases),'--base-dir',str(root),'--output-root',str(root/'shared')]
+            command = [sys.executable,'scripts/weather_data/prepare_weather.py','register','--adapter','open_meteo','--input',str(source),'--metadata',str(metadata),'--availability-csv',str(releases),'--base-dir',str(root),'--output-root',str(root/'shared')]
             for flags in ([], ['--write'], ['--write']):
                 result = subprocess.run(command+flags,capture_output=True,text=True)
                 self.assertEqual(result.returncode,0,result.stderr)
@@ -50,7 +50,7 @@ class WeatherPrepareTest(unittest.TestCase):
             meta['raw'][0]['sha256'] = hashlib.sha256(source.read_bytes()).hexdigest()
             metadata = root / 'metadata.json'
             metadata.write_text(json.dumps(meta))
-            command = [sys.executable, 'scripts/prepare_weather.py', 'register', '--input', str(source), '--metadata', str(metadata), '--adapter', 'vendor', '--time-col', 'ts', '--base-dir', str(root), '--output-root', str(root / 'shared')]
+            command = [sys.executable, 'scripts/weather_data/prepare_weather.py', 'register', '--input', str(source), '--metadata', str(metadata), '--adapter', 'vendor', '--time-col', 'ts', '--base-dir', str(root), '--output-root', str(root / 'shared')]
             preview = subprocess.run(command, capture_output=True, text=True)
             self.assertEqual(preview.returncode, 0, preview.stderr)
             self.assertFalse((root / 'shared').exists())
@@ -77,7 +77,7 @@ class WeatherPrepareTest(unittest.TestCase):
             source = root / 'vendor.csv'
             source.write_bytes(b'ts,unknown_unit\n2026-01-01,7\n')
             output = root / 'shared'
-            command = [sys.executable, 'scripts/prepare_weather.py', 'archive', '--input', str(source), '--output-root', str(output), '--source-id', 'unverified-fixture']
+            command = [sys.executable, 'scripts/weather_data/prepare_weather.py', 'archive', '--input', str(source), '--output-root', str(output), '--source-id', 'unverified-fixture']
             preview = subprocess.run(command, capture_output=True, text=True)
             self.assertEqual(preview.returncode, 0, preview.stderr)
             self.assertFalse(output.exists())

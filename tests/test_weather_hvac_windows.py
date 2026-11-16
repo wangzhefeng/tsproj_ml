@@ -1,4 +1,4 @@
-"""HVAC 天气绑定合同：配置直连共享 processed 5min 资产，不训练模型。"""
+"""HVAC 天气绑定合同：配置直连共享 processed 5min 资产，经共享 binder 核验；不训练模型。"""
 import hashlib
 import json
 from pathlib import Path
@@ -12,19 +12,19 @@ import pandas as pd
 
 from data_loading import InformationSetRequest, SourceRegistry
 from forecasting_core.specs.config import parse_data_spec
-from scripts import build_scenario_weather as builder
-from config.aidc_hvac_load_5min.scripts.weather_data import bind_weather as binder
-from config.aidc_hvac_load_5min.scripts.weather_data.weather_source import weather_source
+from scripts.weather_data import build_scenario_weather as builder
+from scripts.weather_data import bind_weather as binder
+from scripts.weather_data.build_scenario_weather import weather_source
 
 
-MAPPING = {'rt_tt2': 'pred_tt2', 'cal_rh': 'pred_rh', 'rt_ssr': 'pred_ssrd',
-           'rt_ws10': 'pred_ws10', 'rt_ps': 'pred_ps', 'rt_rain': 'pred_rain'}
-PROCESSED = Path('dataset/shared/weather/processed/weather_5min.csv')
+MAPPING = dict(builder.SIX_MAPPING)
+HVAC_V1 = 'aidc_hvac_load_5min_data_v1'
+HVAC_V3 = 'aidc_hvac_load_5min_data_v3'
 
 
 def publish_processed_asset(root, frame):
     """按共享资产合同写入 5min processed CSV 与 meta，供 read_processed 校验。"""
-    dest = root / PROCESSED
+    dest = root / binder.PROCESSED_DIR / 'weather_5min.csv'
     dest.parent.mkdir(parents=True, exist_ok=True)
     frame.to_csv(dest)
     meta = {'file': dest.name, 'sha256_file': hashlib.sha256(dest.read_bytes()).hexdigest(),
@@ -40,14 +40,13 @@ def synthetic_asset(times):
 
 
 class WeatherHvacBindingTest(unittest.TestCase):
-    def run_binder(self, root, data_version, *, asset_times, targets):
+    def run_bind(self, root, scenario, *, asset_times, targets):
         for path, times in targets.items():
             path.parent.mkdir(parents=True, exist_ok=True)
             pd.DataFrame({'time': times, 'hvac_total_load_AB': 1.}).to_csv(path, index=False)
         publish_processed_asset(root, synthetic_asset(asset_times))
         with patch.object(binder, 'ROOT', root), patch.object(builder, 'ROOT', root):
-            return binder.bind_weather(root / 'dataset/aidc_hvac_load_5min', PROCESSED,
-                                       data_version=data_version)
+            return binder.bind_scenario(scenario)
 
     def test_v3_binding_without_route_partition_ignores_named_derivatives(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -61,19 +60,20 @@ class WeatherHvacBindingTest(unittest.TestCase):
                 # 同目录反事实派生不是原天气绑定的自动消费目标。
                 pd.DataFrame({'time': times, 'hvac_total_load_AB': 4.}).to_csv(
                     path.with_name('data_dr_adjusted.csv'), index=False)
-            rows = self.run_binder(root, 'data_v3', asset_times=times, targets=targets)
+            rows = self.run_bind(root, HVAC_V3, asset_times=times, targets=targets)
             self.assertEqual(len(rows), 2)
             for row in rows:
                 self.assertIn('/data_v3/', row['target_file'])
                 self.assertNotIn('/route_', row['target_file'])
                 self.assertTrue(row['target_file'].endswith('/data.csv'))
+                self.assertEqual(row['data_version'], 'data_v3')
                 self.assertEqual((row['start'], row['end'], row['rows']),
                                  (str(times[0]), str(times[-1]), len(times)))
                 self.assertEqual(row['target_sha256'],
                                  hashlib.sha256((root / row['target_file']).read_bytes()).hexdigest())
-                self.assertEqual(row['weather_file'], str(PROCESSED))
+                self.assertEqual(row['weather_file'], 'dataset/shared/weather/processed/weather_5min.csv')
                 self.assertEqual(row['weather_sha256'],
-                                 hashlib.sha256((root / PROCESSED).read_bytes()).hexdigest())
+                                 hashlib.sha256((root / binder.PROCESSED_DIR / 'weather_5min.csv').read_bytes()).hexdigest())
             self.assertFalse((root / 'dataset/aidc_hvac_load_5min/weather_data').exists())
 
     def test_authorized_tail_interpolation_is_local_and_audited(self):
@@ -106,20 +106,20 @@ class WeatherHvacBindingTest(unittest.TestCase):
                 'A1_data_with_it': pd.date_range('2026-09-01 01:00', periods=12, freq='5min'),
             }
             asset_times = pd.date_range('2026-08-31 23:00', periods=36, freq='5min')
-            rows = self.run_binder(root, 'data_v1', asset_times=asset_times,
-                                   targets={inputs / f'{name}.csv': times
-                                            for name, times in windows.items()})
+            rows = self.run_bind(root, HVAC_V1, asset_times=asset_times,
+                                 targets={inputs / f'{name}.csv': times
+                                          for name, times in windows.items()})
             self.assertEqual({Path(row['target_file']).stem for row in rows}, set(windows))
             for row in rows:
                 self.assertEqual(row['rows'], len(windows[Path(row['target_file']).stem]))
                 self.assertEqual(row['start'], str(windows[Path(row['target_file']).stem][0]))
             manifest_dir = root / 'dataset/aidc_hvac_load_5min/analysis/weather_binding/data_v1'
             with patch.object(binder, 'ROOT', root), patch.object(builder, 'ROOT', root):
-                with patch.object(sys, 'argv', ['bind_weather.py', '--data-version', 'data_v1']):
+                with patch.object(sys, 'argv', ['bind_weather.py', '--scenario', HVAC_V1]):
                     binder.main()
                     with self.assertRaises(FileExistsError):
                         binder.main()
-                with patch.object(sys, 'argv', ['bind_weather.py', '--data-version', 'data_v1', '--replace']):
+                with patch.object(sys, 'argv', ['bind_weather.py', '--scenario', HVAC_V1, '--replace']):
                     binder.main()
             manifest = pd.read_csv(manifest_dir / 'manifest.csv')
             self.assertEqual(set(manifest.target_file), {row['target_file'] for row in rows})
@@ -136,12 +136,12 @@ class WeatherHvacBindingTest(unittest.TestCase):
                           ['2026-08-01 00:01', '2026-08-01 00:06']):
                 pd.DataFrame({'time': times}).to_csv(path, index=False)
                 with patch.object(binder, 'ROOT', root), self.assertRaisesRegex(ValueError, '5min 网格'):
-                    self.run_binder(root, 'data_v1', asset_times=asset_times, targets={})
+                    self.run_bind(root, HVAC_V1, asset_times=asset_times, targets={})
             # 目标窗口超出共享资产覆盖。
             pd.DataFrame({'time': ['2026-08-02 00:00', '2026-08-02 00:05']}).to_csv(path, index=False)
             short = pd.date_range('2026-08-01', periods=12, freq='5min')
             with patch.object(binder, 'ROOT', root), self.assertRaisesRegex(ValueError, '未完整覆盖目标窗口'):
-                self.run_binder(root, 'data_v1', asset_times=short, targets={})
+                self.run_bind(root, HVAC_V1, asset_times=short, targets={})
             # 必需天气列缺失：共享资产校验直接拒绝，不产生绑定。
             for column in ('rt_tt2', 'pred_tt2'):
                 frame = synthetic_asset(asset_times)
@@ -149,16 +149,16 @@ class WeatherHvacBindingTest(unittest.TestCase):
                 publish_processed_asset(root, frame)
                 with patch.object(binder, 'ROOT', root), patch.object(builder, 'ROOT', root), \
                      self.assertRaisesRegex(ValueError, '缺失或非有限'):
-                    binder.bind_weather(root / 'dataset/aidc_hvac_load_5min', PROCESSED, data_version='data_v1')
+                    binder.bind_scenario(HVAC_V1)
             self.assertFalse((root / 'dataset/aidc_hvac_load_5min/weather_data').exists())
 
     def test_real_assets_bind_and_materialize_both_phases(self):
         root = Path(__file__).resolve().parents[1]
         scenario = root / 'dataset/aidc_hvac_load_5min'
-        asset = pd.read_csv(root / PROCESSED, float_precision='round_trip',
+        asset = pd.read_csv(root / binder.PROCESSED_DIR / 'weather_5min.csv', float_precision='round_trip',
                             index_col='ts', parse_dates=True)
-        source = weather_source()
-        self.assertEqual(source['history_path'], str(PROCESSED))
+        source = weather_source('5min')
+        self.assertEqual(source['history_path'], 'dataset/shared/weather/processed/weather_5min.csv')
         self.assertEqual(source['inference_columns'], MAPPING)
         for data_version, expected in (('data_v1', 32), ('data_v2', 32), ('data_v3', 2)):
             manifest = pd.read_csv(scenario / f'analysis/weather_binding/{data_version}/manifest.csv')

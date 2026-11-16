@@ -19,7 +19,7 @@ from config.config_loader import load_yaml_config
 from config.aidc_hvac_load_5min.scripts.forecast_data.build_model_configs import (
     DATA, DAY, DIRECTORY, TEMPLATES, VARIANTS, VERSIONS, publish, read_frame, rename_target,
 )
-from config.aidc_hvac_load_5min.scripts.weather_data.weather_source import weather_source
+from scripts.weather_data.build_scenario_weather import weather_source
 from feature_engineering.compiler import FeatureCompiler
 from forecasting_core.specs.config import parse_model_config
 from model_pipeline.supervised_design import minimum_history_rows
@@ -74,7 +74,7 @@ def build_documents():
                     payload['features']['transformations']['advanced']['rolling']['windows'] = [
                         d * DAY for d in ROLLING_DAYS]
                 if group == 'add_weather':
-                    payload['data']['sources'].append(weather_source())
+                    payload['data']['sources'].append(weather_source('5min'))
                 elif group in ('add_endogenous_it', 'add_endogenous_route'):
                     columns = ['it_subset_load'] if group == 'add_endogenous_it' else [
                         'hvac_total_load_A', 'hvac_total_load_B']

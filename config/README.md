@@ -103,7 +103,7 @@ Fixed-step 的 fold_count/stride_steps 与截止原点、预测区间共同定�
 
 ### 活动天气特征选择
 
-共享源缺失统一由 `scripts/build_scenario_weather.py` 处理，原始 `dataset/shared/weather/extracted/` 保持只读，结果写 `processed/weather_hourly.csv` 及审计metadata；`--resample 15min 5min` 发布共享子小时上采样资产、`--aggregate 1D 1ME` 发布共享完整区间聚合资产（小时气泡内 hold，缺口不借升频填补；日/月六项同名聚合，仅完整区间发布）。活动场景（三个15min负荷、ESS、power_month、HVAC）的模型配置均经 `scripts/build_scenario_weather.py::weather_source(freq)` 直连对应共享资产，场景内不再复制天气；绑定核验入口为仓库根 `scripts/bind_weather.py --scenario <场景>`（HVAC 为其场景内 `bind_weather.py --data-version <版本>`）。操作命令见 `scripts/README.md`。既有天气CSV值保持迁移前一致；metadata记录共享资产血缘。
+共享源缺失统一由 `scripts/weather_data/build_scenario_weather.py` 处理，原始 `dataset/shared/weather/extracted/` 保持只读，结果写 `processed/weather_hourly.csv` 及审计metadata；`--resample 15min 5min` 发布共享子小时上采样资产、`--aggregate 1D 1ME` 发布共享完整区间聚合资产（小时气泡内 hold，缺口不借升频填补；日/月六项同名聚合，仅完整区间发布）。活动场景（三个15min负荷、ESS、power_month、HVAC）的模型配置均经 `scripts/weather_data/build_scenario_weather.py::weather_source(freq)` 直连对应共享资产，场景内不再复制天气；绑定核验入口为仓库根 `scripts/weather_data/bind_weather.py --scenario <场景>`（HVAC 为其场景内 `bind_weather.py --data-version <版本>`）。操作命令见 `scripts/README.md`。既有天气CSV值保持迁移前一致；metadata记录共享资产血缘。
 
 三个 `aidc_load_15min_{daily,rolling,short}`、`aidc_ess_selfuse_load`、`aidc_power_month` 与 `aidc_electricity_computility/electricity/2026-08-31/liantong_IT` 的天气组统一使用六项：`rt_tt2`（温度）、`cal_rh`（相对湿度）、`rt_ssr`（辐射）、`rt_ws10`（风速）、`rt_ps`（气压）、`rt_rain`（降雨）。对应预报为 `pred_tt2/pred_rh/pred_ssrd/pred_ws10/pred_ps/pred_rain`；露点只作为湿度派生原料，不再独立入模。power_month 消费共享日/月聚合资产（均值/总量语义见共享 metadata），其配置已从旧四项升为六项。无天气基线不添加天气，其他 `aidc_electricity_computility` 场景不在此次特征调整范围。
 

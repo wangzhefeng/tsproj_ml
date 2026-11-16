@@ -47,7 +47,7 @@
 | 历史（训练+回测） | `weather_history_1month_20250131_20260731.csv` | rt_ 实测月聚合 + pred_ 并列 | 训练读 rt_；fold 推理时段经 `inference_columns` 读同文件 pred_ 列 |
 | 正式未来 | `weather_future_1month_20260831_20260831.csv` | pred_ 月聚合 | 当前 0 行（pred 覆盖止 08-14），2026-08 最终预测如实 RAISE，待补数据 |
 
-数据源：`scripts/build_scenario_weather.py` 从 `dataset/shared/weather/extracted/actual/weather_in_20250101_20260814.csv`（供应商权威并集）小时级聚合，完整覆盖否则整行 NaN 剔除并由请求级校验 RAISE；数据文件不含 available_at。
+数据源：`scripts/weather_data/build_scenario_weather.py` 从 `dataset/shared/weather/extracted/actual/weather_in_20250101_20260814.csv`（供应商权威并集）小时级聚合，完整覆盖否则整行 NaN 剔除并由请求级校验 RAISE；数据文件不含 available_at。
 
 > **核心认识**：历史教训——修复前回测曾直接使用测试月实测气象（oracle 泄露），泄露差分实证（扰动 7 月实测预测不变 10,501,740；扰动 proxy 预测变为 11,512,484）后才确认契约生效。任何"回测分数异常好"的月频结果都应先怀疑天气泄露。旧三段式 proxy（上一年同月代理）已于本轮废弃，旧 stats/proxy CSV 的删除走清理清单审批。
 

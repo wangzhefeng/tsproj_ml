@@ -16,7 +16,7 @@ ROOT = Path(__file__).resolve().parents[4]
 sys.path.insert(0, str(ROOT))
 
 from config.config_loader import load_yaml_config
-from config.aidc_hvac_load_5min.scripts.weather_data.weather_source import weather_source
+from scripts.weather_data.build_scenario_weather import weather_source
 from feature_engineering.compiler import FeatureCompiler
 from forecasting_core.specs.config import parse_model_config
 from model_pipeline.supervised_design import minimum_history_rows
@@ -88,7 +88,7 @@ def build_documents():
                             features['target_lags'][target] = [DAY, 2 * DAY, 3 * DAY]
                             features['transformations']['advanced']['rolling']['windows'] = [DAY, 2 * DAY]
                         if group == 'add_weather':
-                            payload['data']['sources'].append(weather_source())
+                            payload['data']['sources'].append(weather_source('5min'))
                         elif group in ('add_endogenous_it', 'add_endogenous_route'):
                             columns = ['it_total_load'] if group == 'add_endogenous_it' else [
                                 'hvac_total_load_' + ('B' if route == 'route_A' else 'A')]

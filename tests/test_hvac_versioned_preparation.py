@@ -76,7 +76,7 @@ class VersionedPathsTest(unittest.TestCase):
         from config.aidc_hvac_load_5min.scripts.preparation_paths import artifact_path
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            for name in ('analysis', 'forecast_data', 'imputed_data', 'outlier_remove_data', 'weather_data'):
+            for name in ('analysis', 'forecast_data', 'imputed_data', 'outlier_remove_data'):
                 self.assertEqual(artifact_path(root, name, 'data_v1'), root / name / 'data_v1')
                 self.assertEqual(artifact_path(root, name, 'data_v2'), root / name / 'data_v2')
             with self.assertRaises(ValueError):

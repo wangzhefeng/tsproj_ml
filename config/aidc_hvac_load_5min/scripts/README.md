@@ -21,7 +21,9 @@ scripts/
     analyze_hvac_window.py               # 原始诊断，保存于data_v1/raw_diagnostics
     analyze_it_load.py
     analyze_forecast_data.py             # 版本显式的预测输入可视化
-  weather_data/prepare_weather.py         # 共享天气源→每版逐目标天气适配
+  weather_data/
+    weather_source.py                     # 天气源合同：直连共享 processed 5min 资产
+    bind_weather.py                       # 逐目标窗口覆盖/有限性核验，发布绑定清单
   v1/
     imputed_data/prepare_data.py          # 旧流程：先填补raw
     outlier_remove_data/
@@ -88,7 +90,7 @@ env -u PYTHONPATH .venv/bin/python tests/run_suite.py integration --match test_h
 - 全设备点位修正一次，去二次泵口径复用共享点位，严格重算 A/B/AB；IT 及事件外全部业务数值保持不变。原点位表、原mask、天气、旧分析均不覆盖。
 - `outlier_remove_data/data_v3/demand_response/<设备口径>/<路线>/A1_data.csv` 保存修正点位表；`analysis/data_v3/demand_response/` 仅保存逐格前后值、逐点方法和遮蔽分数、事件及独立来源mask、源/产物SHA、核验结果与前后对比图。新mask不自动接入现有模型评分；天气不生成新绑定，模型仍使用原文件。
 - 旧 `analysis/data_v3/demand_response/point_tables/` 由同目录脚本 `v3/outlier_remove_data/relocate_point_tables.py` 原字节迁移；`analysis/data_v3/demand_response/path_migration/` 保存迁移前manifest及路径/SHA映射。历史builder SHA保持生成时事实，不改成迁移后代码身份；不重算CSV或图片。
-- 天气v3入口只发现 `*/A1_all/data.csv`，不会因同目录出现具名派生而自动扩展旧天气绑定。7月10日恢复后存在持续的A/B负荷重新分配；仅过去参考不能恢复真实切换过程，分路修正末端允许保留阶跃，不为平滑修改范围外值。
+- 天气绑定入口只发现 `*/A1_all/data.csv`，不会因同目录出现具名派生而自动扩展绑定。7月10日恢复后存在持续的A/B负荷重新分配；仅过去参考不能恢复真实切换过程，分路修正末端允许保留阶跃，不为平滑修改范围外值。
 
 ```bash
 env -u PYTHONPATH .venv/bin/python config/aidc_hvac_load_5min/scripts/v3/outlier_remove_data/adjust_demand_response.py
@@ -115,7 +117,7 @@ env -u PYTHONPATH .venv/bin/python tests/run_suite.py integration --match test_h
 - 共享暖通点位只填补一次，再投影至两口径。未缺失值逐格保持；IT内部长缺口估计不是实测，补值来源与依赖保留于 `analysis/data_v3/`。
 - 六组配置为 `<组>/A1_all/<设备口径>/<模型>_<方法>.yaml`，原生ETS独立命名`ets.yaml`，共160份。纯目标baseline与add_context各44份，日期节假日/天气/IT/分路四组各18份；后三组不含日期节假日。2026-11-09 起六组统一150天训练＋1天预测（此前普通组为90天），保持相同lag。仅历史回测，不启动正式训练或覆盖结果。发布器以A1_all命名空间隔离旧576份配置，拒绝旧v3嵌套路径、清单外文件和不同内容覆盖。
 
-v3数据及A1_all配置构建命令见[场景README](../README.md#a1_all固定数据两路合计)。旧三楼填补、自动选窗和旧可视化CLI仅接受data_v1/v2，不把这些合同套到v3；公共天气适配支持data_v3。
+v3数据及A1_all配置构建命令见[场景README](../README.md#a1_all固定数据两路合计)。旧三楼填补、自动选窗和旧可视化CLI仅接受data_v1/v2，不把这些合同套到v3；天气绑定核验支持data_v3。
 
 以 `dataset/aidc_hvac_load_5min/` 为根：
 
@@ -126,7 +128,7 @@ v3数据及A1_all配置构建命令见[场景README](../README.md#a1_all固定�
 - `imputed_data/data_v2/`：从屏蔽后的原观测统一填补，20份表，严格总量。
 - `forecast_data/{data_v1,data_v2}/`：各版32份业务输入；不是模型预测结果。
 - `analysis/{data_v1,data_v2}/`：各版的清洗/填补/选窗/可视化证据。原有分析目录、历史archive和`TOOD.md`均归入data_v1，待办内容不变。
-- `weather_data/{data_v1,data_v2}/`：各版逐目标天气及路径/SHA绑定；共享处理后天气源不变。
+- `analysis/weather_binding/{data_v1,data_v2,data_v3}/manifest.csv`：各版逐目标天气绑定清单（目标 SHA、窗口、共享 processed 5min 资产 SHA 血缘）。天气数值不再复制进本场景，模型配置经 `weather_data/weather_source.py` 直连共享资产；共享处理后天气源不变。
 
 现有576份模型YAML读取data_v1。仅迁移输入路径，不调整特征、训练窗口或预测策略，不自动切换到data_v2，不重跑或删除既有模型结果。路径属于配置payload时身份可能变化，不把旧模型结果改名冒充新配置结果。
 
@@ -164,11 +166,11 @@ env -u PYTHONPATH .venv/bin/python config/aidc_hvac_load_5min/scripts/v1/outlier
 ```bash
 env -u PYTHONPATH .venv/bin/python config/aidc_hvac_load_5min/scripts/v2/imputed_data/prepare_data.py
 env -u PYTHONPATH .venv/bin/python config/aidc_hvac_load_5min/scripts/forecast_data/select_hvac_windows.py --data-version data_v2
-env -u PYTHONPATH .venv/bin/python config/aidc_hvac_load_5min/scripts/weather_data/prepare_weather.py --data-version data_v2
+env -u PYTHONPATH .venv/bin/python config/aidc_hvac_load_5min/scripts/weather_data/bind_weather.py --data-version data_v2
 env -u PYTHONPATH .venv/bin/python config/aidc_hvac_load_5min/scripts/analysis/analyze_forecast_data.py --data-version data_v2
 ```
 
-选窗与可视化只有显式 `--replace` 才替换指定版本，禁止把替换另一版本当成默认行为。准备过程暂存完成后发布，不承诺多个目录对并发读者原子切换；真实数据重建时不要同时启动消费进程。天气适配独立于原始共享源修补，只消费已处理公共天气，不重写其他场景。
+选窗与可视化只有显式 `--replace` 才替换指定版本，禁止把替换另一版本当成默认行为。准备过程暂存完成后发布，不承诺多个目录对并发读者原子切换；真实数据重建时不要同时启动消费进程。天气绑定核验独立于原始共享源修补，只消费已处理公共天气，不重写其他场景。
 
 ## 原始提取合同
 

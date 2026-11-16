@@ -16,6 +16,7 @@ ROOT = Path(__file__).resolve().parents[4]
 sys.path.insert(0, str(ROOT))
 
 from config.config_loader import load_yaml_config
+from config.aidc_hvac_load_5min.scripts.weather_data.weather_source import weather_source
 from feature_engineering.compiler import FeatureCompiler
 from forecasting_core.specs.config import parse_model_config
 from model_pipeline.supervised_design import minimum_history_rows
@@ -87,11 +88,7 @@ def build_documents():
                             features['target_lags'][target] = [DAY, 2 * DAY, 3 * DAY]
                             features['transformations']['advanced']['rolling']['windows'] = [DAY, 2 * DAY]
                         if group == 'add_weather':
-                            snippet = ROOT / DATA / 'weather_data/data_v1' / version / route / stem / 'weather.source.yaml'
-                            weather = yaml.safe_load(snippet.read_text(encoding='utf-8'))['data']['sources']
-                            if len(weather) != 1 or weather[0]['name'] != 'weather':
-                                raise ValueError(f'未知天气片段结构: {snippet}')
-                            payload['data']['sources'].extend(weather)
+                            payload['data']['sources'].append(weather_source())
                         elif group in ('add_endogenous_it', 'add_endogenous_route'):
                             columns = ['it_total_load'] if group == 'add_endogenous_it' else [
                                 'hvac_total_load_' + ('B' if route == 'route_A' else 'A')]
@@ -133,7 +130,12 @@ def build_documents():
                             if source.source_type != 'file':
                                 continue
                             frame, source_times = read_frame(source.history_path, source.time_col, cache)
-                            if not source_times.equals(times):
+                            if source.name == 'weather':
+                                # 共享全跨度天气资产：只要求完整覆盖目标窗口，切片后校验有限性。
+                                if not times.isin(source_times).all():
+                                    raise ValueError(f'天气未完整覆盖目标窗口: {relative}/{source.name}')
+                                frame = frame.iloc[np.flatnonzero(source_times.isin(times))]
+                            elif not source_times.equals(times):
                                 raise ValueError(f'协变量时间轴不匹配: {relative}/{source.name}')
                             # 包括 inference_columns 对应 ignored 物理列，未声明原料列不入模。
                             names = [col.name for col in source.columns]

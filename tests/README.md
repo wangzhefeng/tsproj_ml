@@ -16,7 +16,7 @@
 
 `test_hvac_outlier_cleaning` 默认 integration：单槽原始点位归因、持续/多点/缺失邻域保护、过去观测修正、检测可得时间、原始归档与IT保真、跨设备版本一致、准备根绑定与跨路目标/特征同值；临时fixture走清洗→选窗→可视化mask真实接线，不运行模型。定向`integration --match test_hvac_outlier_cleaning`。
 
-双路合同回归仍在上述两模块：不对称A/B数值与缺失掩码、AB严格和、路线显式目标、跨路线目录相同输入、逐字段资格时间、授权覆盖/失败回滚/源目录范围拒绝。`test_weather_hvac_windows` 对32份真实资产使用新的目标列，并校验天气metadata绑定的新target SHA；字段迁移不改变天气值。
+双路合同回归仍在上述两模块：不对称A/B数值与缺失掩码、AB严格和、路线显式目标、跨路线目录相同输入、逐字段资格时间、授权覆盖/失败回滚/源目录范围拒绝。`test_weather_hvac_windows` 核验直连共享 processed 5min 资产的绑定合同（窗口覆盖、六项有限、target SHA、清单生命周期），并对32份真实目标执行生产信息集阶段映射；字段迁移不改变天气值。
 
 `test_training_workload` 默认 integration：严格采样配置、固定时刻/末端锚定间隔/最近上限、非连续索引、默认预测等价、fit/final一致与完整小数据bundle、未来标签扰动、间隔重训复用artifact但更新上下文、逐折计时和工作量证据。业务模型只跑两折派生配置，不改变正式baseline。
 
@@ -48,7 +48,7 @@
 
 回测特征执行重构的新增测试默认 integration：`test_compiler_array_kernels`（统计稳定性/历史下界）、`test_indexed_design` 与 `test_indexed_training`（紧凑视图/模型边界展开/前置预算/ETS/预测批编译）、`test_numeric_snapshot`（共享只读与源变化拒绝）、`test_bounded_execution` 与 `test_calendar_bounded_execution`（有界在途/按序消费）。原 `test_raw_history_window`、`test_design_identity`、`test_compiler_batch_equivalence` 和自然月/Ensemble 测试继续覆盖接线；不修改发现规则。业务验收按本轮授权仅跑 baseline 的两折冷/热派生配置，不等同于原72折效果验收，也不替代代码套件 `all`。
 
-`test_hvac_a1_v3*` 默认integration：固定IT子集漂移拒绝、只补NaN、过去日长段不越界、逐缺口未来扰动不变、稀疏原观测遮蔽评分、校准不足拒绝、两口径共享点一致、覆盖保护；独立核对5份真实点位表原值保真、全部补值重建、来源mask、固定窗口和天气SHA绑定。配置测试覆盖A1_all六组160份完整矩阵（配置路径不含v3，数据仍用data_v3）、组间字段正交性、90/150天训练及72/12折时间几何、每份首末折真实训练origin及预测首/中/末步编译、ETS无特征合同，并与旧576份配置做联合路径集核对；发布保护拒绝旧嵌套层级、越界及清单外文件。不拟合正式模型。定向：`integration --match test_hvac_a1_v3`。天气v3无路线目录适配并入`test_weather_hvac_windows`。
+`test_hvac_a1_v3*` 默认integration：固定IT子集漂移拒绝、只补NaN、过去日长段不越界、逐缺口未来扰动不变、稀疏原观测遮蔽评分、校准不足拒绝、两口径共享点一致、覆盖保护；独立核对5份真实点位表原值保真、全部补值重建、来源mask、固定窗口和天气SHA绑定。配置测试覆盖A1_all六组160份完整矩阵（配置路径不含v3，数据仍用data_v3）、组间字段正交性、90/150天训练及72/12折时间几何、每份首末折真实训练origin及预测首/中/末步编译、ETS无特征合同，并与旧576份配置做联合路径集核对；发布保护拒绝旧嵌套层级、越界及清单外文件。不拟合正式模型。定向：`integration --match test_hvac_a1_v3`。天气v3无路线目录的绑定核验并入`test_weather_hvac_windows`，绑定清单在 `analysis/weather_binding/data_v3/`。
 
 `test_hvac_redbox_cleaning`默认integration：人工范围边界、过去基线、先前异常不进入参考、固定异常mask的未来数值扰动不改变补值/选型、长段/不足历史拒绝强填、事件内已有缺失槽不沿用受污染旧补值。仅离线清洗，不训练模型；定向`integration --match test_hvac_redbox_cleaning`。真实32表另核验总分、共享点位、时间窗、IT保真及逐格改值，报告保存在准备版本`analysis/outliers`。
 
@@ -64,7 +64,7 @@
 
 天气阶段隔离定向测试：`test_inference_columns` 验证历史训练实测/测试预报、future 不参与历史请求及未来实测列忽略；`test_weather_phase_runtime` 用真实编译、Ridge 生命周期验证文件隔离和缓存不依赖 future；`test_weather_history_coverage` 与联通准备测试验证完整 history 覆盖。均默认纳入 integration，不自动运行正式业务模型。
 
-共享源治理定向：`test_weather_shared_preparation` 默认integration，覆盖公共脚本不含场景、非仓库cwd真实CLI、源补值/审计、原始写入路径拒绝、共享CSV哈希校验与重复构建一致性。`test_weather_hvac_windows` 核对32份场景资产和生产信息集阶段映射；`test_weather_history_coverage` 从各场景入口检查既有历史边界。命令分别为 `tests/run_suite.py integration --match test_weather_shared_preparation` 与 `--match test_weather_hvac_windows`，不修改发现规则，不训练模型。
+共享源治理定向：`test_weather_shared_preparation` 默认integration，覆盖公共脚本不含场景、非仓库cwd真实CLI、源补值/审计、原始写入路径拒绝、共享CSV哈希校验与重复构建一致性。`test_weather_hvac_windows` 核对直连共享资产的三版绑定清单和生产信息集阶段映射；`test_weather_history_coverage` 从各场景入口检查既有历史边界。命令分别为 `tests/run_suite.py integration --match test_weather_shared_preparation` 与 `--match test_weather_hvac_windows`，不修改发现规则，不训练模型。
 
 - `test_hongtaiyang_cesuan`：20份非递归主配置、日历冷启动及未来/窗口外扰动、四方法真实1D LightGBM、年度合并与通用评分/13张图。`test_hongtaiyang_optimization` 覆盖命名节日、严格配方、权重归一化/传递、动态训练设置保留和不递归的冷启动。`test_hongtaiyang_visualization` 覆盖原始点绘图及CSV不变；`test_backtest_plot_labels` 钉住通用图例数值关系。均默认integration发现；业务全年用 `verify_results.py --freq 1D` 验收8份，不运行15min业务模型。
 - `test_liantong_power_process`：使用临时Excel验证白名单先过滤、5min向下对齐、点位映射、部分相位求和、全空保留和真实零值；默认integration发现，定向选择器为 `integration --match test_liantong_power_process`，不训练模型。
@@ -198,4 +198,4 @@ env -u PYTHONPATH .venv/bin/python tests/run_suite.py integration --match test_m
 
 ## HVAC 数据阶段版本化
 
-`test_hvac_versioned_preparation` 默认integration：data_v1/data_v2隔离、合并原始异常mask先于填补、红框外缺失传播重算、73槽组合缺口不恢复异常、真实临时20表→32预测表及可得性mask、重复构建拒绝。既有清洗测试验证scripts/v1的旧行为；模型/天气真实资产测试绑定data_v1。共享脚本按analysis/forecast_data/imputed_data/outlier_remove_data/raw_data/weather_data分类，版本专属入口在v1/v2同名阶段目录。
+`test_hvac_versioned_preparation` 默认integration：data_v1/data_v2隔离、合并原始异常mask先于填补、红框外缺失传播重算、73槽组合缺口不恢复异常、真实临时20表→32预测表及可得性mask、重复构建拒绝。既有清洗测试验证scripts/v1的旧行为；模型/天气真实资产测试绑定data_v1。共享脚本按analysis/forecast_data/imputed_data/outlier_remove_data/raw_data分类，天气合同与绑定核验在weather_data目录（直连共享processed资产），版本专属入口在v1/v2同名阶段目录。

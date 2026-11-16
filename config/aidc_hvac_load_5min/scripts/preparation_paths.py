@@ -3,7 +3,7 @@ from pathlib import Path
 
 ROUTE_DATA_VERSIONS = ('data_v1', 'data_v2')
 DATA_VERSIONS = (*ROUTE_DATA_VERSIONS, 'data_v3')
-ARTIFACTS = ('outlier_remove_data', 'imputed_data', 'forecast_data', 'analysis', 'weather_data')
+ARTIFACTS = ('outlier_remove_data', 'imputed_data', 'forecast_data', 'analysis')
 
 
 def artifact_path(root, category, data_version=None):

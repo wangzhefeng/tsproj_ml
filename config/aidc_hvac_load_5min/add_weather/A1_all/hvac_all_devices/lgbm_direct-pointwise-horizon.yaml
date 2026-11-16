@@ -24,7 +24,7 @@ data:
     availability: source_time
   - name: weather
     source_type: file
-    history_path: dataset/aidc_hvac_load_5min/weather_data/data_v3/hvac_all_devices/A1_all/data/weather_history_5min_20260408_20260916.csv
+    history_path: dataset/shared/weather/processed/weather_5min.csv
     time_col: ts
     series_id_cols: []
     availability: forecast_origin

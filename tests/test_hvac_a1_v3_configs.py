@@ -147,10 +147,17 @@ class A1V3ConfigsTest(unittest.TestCase):
                     if source.history_path not in frames:
                         frames[source.history_path] = pd.read_csv(ROOT / source.history_path)
                     frame = frames[source.history_path]
-                    self.assertEqual(len(frame), 46656)
+                    all_times = pd.DatetimeIndex(pd.to_datetime(frame[source.time_col]))
+                    grid = pd.date_range('2026-04-08', '2026-09-16 23:55', freq='5min')
+                    if source.name == 'weather':
+                        # 共享全跨度天气资产：要求完整覆盖目标窗口，切片后校验有限性。
+                        self.assertTrue(grid.isin(all_times).all())
+                        frame = frame.iloc[np.flatnonzero(all_times.isin(grid))]
+                        self.assertEqual(len(frame), 46656)
+                    else:
+                        self.assertEqual(len(frame), 46656)
+                        self.assertTrue(all_times.equals(grid))
                     self.assertTrue(np.isfinite(frame[[c.name for c in source.columns]].to_numpy(dtype=float)).all())
-                    times = pd.DatetimeIndex(pd.to_datetime(frame[source.time_col]))
-                    self.assertTrue(times.equals(pd.date_range('2026-04-08', '2026-09-16 23:55', freq='5min')))
                 window_builder = temporal_backtest_windows
                 folds = window_builder(builder_for(config, None), pd.Timestamp('2026-09-16 23:55'))
                 self.assertEqual(len(folds), fold_count)

@@ -101,7 +101,7 @@ def verify_assets():
     assert {str(p.relative_to(DATA)) for p in (DATA / 'forecast_data/data_v3').rglob('*.csv')} == (
         expected_targets | adjusted_targets | flow_temp_targets | switch_targets)
     assert {r['path'] for r in manifest['targets']} == expected_targets
-    weather_manifest = pd.read_csv(DATA / 'weather_data/data_v3/manifest.csv')
+    weather_manifest = pd.read_csv(DATA / 'analysis/weather_binding/data_v3/manifest.csv')
     assert set(weather_manifest.target_file) == {'dataset/aidc_hvac_load_5min/' + p for p in expected_targets}
     for item in manifest['targets']:
         relative = item['path']
@@ -121,16 +121,17 @@ def verify_assets():
         np.testing.assert_array_equal(mask.it_subset_load_observed, masks['IT_load/A1_data.csv'].total_observed)
         hashes[relative] = item['sha256']
     for row in weather_manifest.to_dict('records'):
-        path = ROOT / row['file']
-        meta = json.loads(path.with_suffix('.meta.json').read_text())
-        assert meta['target_sha256'] == sha256_file(ROOT / row['target_file'])
-        assert row['sha256'] == sha256_file(path)
-        frame = pd.read_csv(path)
-        assert pd.DatetimeIndex(pd.to_datetime(frame.ts)).equals(GRID.rename('ts'))
-        names = ['rt_tt2', 'cal_rh', 'rt_ssr', 'rt_ws10', 'rt_ps', 'rt_rain',
-                 'pred_tt2', 'pred_rh', 'pred_ssrd', 'pred_ws10', 'pred_ps', 'pred_rain']
-        assert np.isfinite(frame[names].to_numpy()).all()
-        hashes[str(path.relative_to(DATA))] = row['sha256']
+        assert row['target_sha256'] == sha256_file(ROOT / row['target_file'])
+        frame = read(ROOT / row['target_file'])
+        assert (row['start'], row['end'], row['rows']) == (str(frame.index[0]), str(frame.index[-1]), len(GRID))
+    weather_path = ROOT / weather_manifest.weather_file.iloc[0]
+    assert (weather_manifest.weather_file == weather_manifest.weather_file.iloc[0]).all()
+    assert (weather_manifest.weather_sha256 == sha256_file(weather_path)).all()
+    asset = pd.read_csv(weather_path, parse_dates=['ts'], index_col='ts', float_precision='round_trip')
+    names = ['rt_tt2', 'cal_rh', 'rt_ssr', 'rt_ws10', 'rt_ps', 'rt_rain',
+             'pred_tt2', 'pred_rh', 'pred_ssrd', 'pred_ws10', 'pred_ps', 'pred_rain']
+    assert np.isfinite(asset.loc[GRID.rename('ts'), names].to_numpy()).all()
+    hashes[weather_manifest.weather_file.iloc[0]] = weather_manifest.weather_sha256.iloc[0]
     return {'status': 'passed', 'rows_per_target': len(GRID), 'tables': counts,
             'target_count': len(expected_targets), 'weather_count': len(weather_manifest),
             'artifact_sha256': hashes, 'models_fitted': False}

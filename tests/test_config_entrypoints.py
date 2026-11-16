@@ -438,7 +438,7 @@ output: {}
         )
         self.assertEqual(cfg.estimator.model_type, "lightgbm")
         self.assertEqual(cfg.validation["forecast_origin"], "2026-07-31T23:45:00")
-        self.assertEqual(Path(weather_source.history_path).name, "weather_history_15min_20250101_20260831.csv")
+        self.assertEqual(Path(weather_source.history_path).name, "weather_15min.csv")
         self.assertTrue((ROOT / weather_source.history_path).is_file())
         self.assertEqual(
             [column.name for column in target_source.columns if column.role.value == "observed_past"],

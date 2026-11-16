@@ -22,6 +22,8 @@ sys.path.insert(0, str(ROOT))
 
 from config.config_loader import load_yaml_config  # noqa: E402
 
+from scripts.build_scenario_weather import weather_source  # noqa: E402
+
 from forecasting_core.specs import ForecastConfigSpec  # noqa: E402
 from model_ensemble.specs import EnsembleConfigSpec  # noqa: E402
 
@@ -249,16 +251,7 @@ def _holiday_source() -> dict[str, Any]:
 
 
 def _weather_source(scenario: str) -> dict[str, Any]:
-    source = _file_source(
-        name="weather",
-        columns=[_column(column, "known_future") for column in WEATHER_COLUMNS]
-        + [_column(column, "ignored") for column in WEATHER_INFERENCE_COLUMNS.values()],
-        history_path=f"dataset/{scenario}/weather_history_15min_20250101_20260831.csv",
-        time_col="ts",
-        availability="forecast_origin",
-    )
-    source["inference_columns"] = dict(WEATHER_INFERENCE_COLUMNS)
-    return source
+    return weather_source("15min")
 
 
 def _strategy_spec(

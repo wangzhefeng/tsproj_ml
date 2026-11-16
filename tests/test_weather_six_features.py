@@ -75,7 +75,7 @@ class WeatherSixFeaturesTest(unittest.TestCase):
             self.assertEqual(source['availability'], 'forecast_origin')
             self.assertNotIn('future_path', source)
             self.assertNotIn('backtest_path', source)
-            self.assertEqual(source['history_path'], f'dataset/{family}/weather_history_15min_20250101_20260831.csv')
+            self.assertEqual(source['history_path'], 'dataset/shared/weather/processed/weather_15min.csv')
 
     def test_all_weather_configs_and_real_asset_mapping(self):
         sources = {}

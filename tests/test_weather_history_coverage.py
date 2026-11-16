@@ -1,20 +1,45 @@
-"""活动天气历史覆盖合同；不运行正式模型。"""
+"""活动天气历史覆盖合同：共享 processed 资产经绑定核验覆盖各场景目标；不运行正式模型。"""
 import unittest
+from pathlib import Path
 
 import pandas as pd
 
-from config.aidc_load_15min_daily.scripts import prepare_weather as daily
-from config.aidc_load_15min_rolling.scripts import prepare_weather as rolling
-from config.aidc_load_15min_short.scripts import prepare_weather as short
-from config.aidc_ess_selfuse_load.scripts import prepare_weather as ess
-from config.aidc_power_month.scripts import prepare_weather as monthly
+from scripts import bind_weather
+
+ROOT = Path(__file__).resolve().parents[1]
 
 
 class WeatherHistoryCoverageTest(unittest.TestCase):
-    def test_history_covers_all_available_august_data(self):
-        for scenario in (daily, rolling, short, ess, monthly):
-            self.assertEqual(scenario.HISTORY_START, pd.Timestamp('2025-01-01'))
-            self.assertEqual(scenario.HISTORY_END, pd.Timestamp('2026-08-31 23:59:59'))
+    def test_shared_assets_cover_all_scenario_targets(self):
+        expected_targets = {'aidc_load_15min_daily': 3, 'aidc_load_15min_rolling': 3,
+                            'aidc_load_15min_short': 3, 'aidc_ess_selfuse_load': 2,
+                            'aidc_power_month': 4}
+        self.assertEqual(set(bind_weather.SCENARIOS), set(expected_targets))
+        for scenario, count in expected_targets.items():
+            rows = bind_weather.bind_scenario(scenario)
+            self.assertEqual(len(rows), count, scenario)
+            for row in rows:
+                with self.subTest(scenario=scenario, target=row['target_file']):
+                    manifest = pd.read_csv(ROOT / 'dataset' / scenario / 'analysis/weather_binding/manifest.csv')
+                    published = manifest.to_dict('records')
+                    self.assertIn(row, published)
+                    self.assertTrue(row['target_file'].endswith('.csv'))
+
+    def test_history_windows_still_bound_to_available_history(self):
+        for scenario, span in (
+                ('aidc_load_15min_daily', ('2025-10-01 00:00:00', '2026-07-31 23:45:00')),
+                ('aidc_ess_selfuse_load', ('2025-10-01 00:00:00', '2026-07-28 23:55:00'))):
+            rows = bind_weather.bind_scenario(scenario)
+            self.assertEqual({row['start'] for row in rows}, {span[0]}, scenario)
+            self.assertEqual({row['end'] for row in rows}, {span[1]}, scenario)
+        # 日目标自 2025-10-01、月目标自 2025-10-31（月末标签）；历史下界仍为 2025-01-01。
+        rows = bind_weather.bind_scenario('aidc_power_month')
+        self.assertEqual({row['start'] for row in rows},
+                         {'2025-10-01 00:00:00', '2025-10-31 00:00:00'})
+        self.assertEqual({row['end'] for row in rows}, {'2026-07-31 00:00:00'})
+        for scenario in bind_weather.SCENARIOS:
+            for row in bind_weather.bind_scenario(scenario):
+                self.assertGreaterEqual(row['start'], '2025-01-01 00:00:00')
 
 
 if __name__ == '__main__':

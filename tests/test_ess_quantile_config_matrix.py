@@ -156,7 +156,7 @@ class EssQuantileConfigMatrixTest(unittest.TestCase):
                         f"aidc_ess_selfuse_load/route_{route}/{group}",
                     )
                     self.assertTrue((ROOT / weather.history_path).is_file())
-                    self.assertEqual(Path(weather.history_path).name, "weather_history_5min_20250101_20260831.csv")
+                    self.assertEqual(Path(weather.history_path).name, "weather_5min.csv")
                     self.assertIsNone(weather.backtest_path)
                     self.assertIsNone(weather.future_path)
                     # 每份真实配置的 source 合同接入临时数据，验证实测/预报阶段切换。

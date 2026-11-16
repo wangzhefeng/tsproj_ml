@@ -4,7 +4,7 @@
 - 方案 A（默认）：注册为 builtin generator，YAML 声明
   ``source_type: generated + generator: chinese_holiday`` 即可入模，
   走 canonical known_future 编译与 VisibilityProof 留痕通路。
-- 方案 B（审计兜底）：``scripts/export_chinese_holiday_csv.py`` 用同一
+- 方案 B（审计兜底）：``scripts/holiday_data/export_chinese_holiday_csv.py`` 用同一
   实现导出 CSV，供人工核对 / file source 引用。
 
 合同（与 SourceRegistry 生成通路校验严格对齐）：

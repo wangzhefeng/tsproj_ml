@@ -10,6 +10,7 @@ builtin 注册、导出脚本与在线特征逐点一致（审计兜底合同）
 
 from __future__ import annotations
 
+import os
 import sys
 import datetime
 from dataclasses import replace
@@ -328,14 +329,15 @@ class ExportScriptConsistencyTest(unittest.TestCase):
         result = subprocess.run(
             [
                 sys.executable,
-                "scripts/export_chinese_holiday_csv.py",
+                str(Path(__file__).resolve().parents[1] / "scripts/holiday_data/export_chinese_holiday_csv.py"),
                 "--start", "2026-09-28",
                 "--end", "2026-10-07",
                 "--output", str(out),
             ],
             capture_output=True,
             text=True,
-            cwd=str(Path(__file__).resolve().parents[1]),
+            cwd=self.temp_dir.name,
+            env={key: value for key, value in os.environ.items() if key != "PYTHONPATH"},
         )
         self.assertEqual(result.returncode, 0, result.stderr)
         exported = pd.read_csv(out, parse_dates=["time"])

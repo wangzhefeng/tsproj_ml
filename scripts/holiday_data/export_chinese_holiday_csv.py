@@ -9,7 +9,7 @@
 用法（项目根）::
 
     env -u PYTHONPATH .venv/bin/python \\
-        scripts/export_chinese_holiday_csv.py --start 2025-10-01 --end 2026-12-31 \\
+        scripts/holiday_data/export_chinese_holiday_csv.py --start 2025-10-01 --end 2026-12-31 \\
         --output dataset/shared/holidays/chinese_holiday_20251001_20261231.csv
     # --freq 1D|1h|15min|5min（默认 1D；日内频率同日多点继承当日状态）
 
@@ -27,7 +27,7 @@ from pathlib import Path
 import pandas as pd
 
 # 脚本目录不在包内，引导仓库根后复用 canonical 实现（单一事实来源）。
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from data_loading import chinese_holiday_frame  # noqa: E402
 

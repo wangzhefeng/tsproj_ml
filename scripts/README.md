@@ -12,7 +12,7 @@
 | `audit_aidc_load_15min_designs.py` | 对三个 AIDC 15min 场景全部 4,617 份活动单模型编译一个真实训练设计；成本很高，静态-only 任务禁止运行 |
 | `generate_load_15min_matrix.py` | 默认只读校验三个 AIDC 15min 场景的 4,689 份矩阵；`--write` 确定性重建 4,617 份单模型与 72 份 add_ensemble |
 | `audit_batch_eligibility.py` | 审计全部活动配置的 supervised compiler 批量资格（batch eligible / fallback 及原因） |
-| `export_chinese_holiday_csv.py` | 用 `data_loading/calendar_generator/chinese_holiday.py` 同一实现导出中国节假日特征 CSV（generated source 的审计兜底 / 版本固定 file source） |
+| `holiday_data/export_chinese_holiday_csv.py` | 用 `data_loading/calendar_generator/chinese_holiday.py` 同一实现导出中国节假日特征 CSV（generated source 的审计兜底 / 版本固定 file source） |
 
 ```bash
 env -u PYTHONPATH .venv/bin/python scripts/check_model_configs.py
@@ -72,10 +72,12 @@ env -u PYTHONPATH .venv/bin/python scripts/weather_data/bind_weather.py --scenar
 
 ## 日历与节假日数据导出
 
+入口与各场景使用口径见 [节假日工具说明](<holiday_data/README.md>)。
+
 跨场景日历、节假日数据文件统一放在 `dataset/shared/holidays/`；生成逻辑仍位于 `data_loading/calendar_generator/`。导出脚本的 `--output` 保持必填，不强制限制目录，测试可使用临时路径。
 
 ```bash
-env -u PYTHONPATH .venv/bin/python scripts/export_chinese_holiday_csv.py --start 2025-01-01 --end 2026-12-31 --output dataset/shared/holidays/chinese_holiday_20250101_20261231.csv
+env -u PYTHONPATH .venv/bin/python scripts/holiday_data/export_chinese_holiday_csv.py --start 2025-01-01 --end 2026-12-31 --output dataset/shared/holidays/chinese_holiday_20250101_20261231.csv
 ```
 
 存入该目录不会自动入模。使用 CSV 的配置需显式声明对应 source 路径、列角色和可得性；在线 generated source 不依赖此目录，无需改为 file source。

@@ -145,6 +145,8 @@ class A1V3ConfigsTest(unittest.TestCase):
                 for source in config.data.sources:
                     if source.source_type != 'file':
                         continue
+                    if source.name != 'weather':
+                        self.assertIn('/route_AB/A1/data_dr_adjusted.csv', str(source.history_path))
                     if source.history_path not in frames:
                         frames[source.history_path] = pd.read_csv(ROOT / source.history_path)
                     frame = frames[source.history_path]

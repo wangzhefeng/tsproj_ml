@@ -119,7 +119,7 @@ def exclusion_reason(point):
 
 def input_paths():
     return [f'raw_data/hvac_flow_temp/{name}' for name in TABLES] + [
-        f'forecast_data/{devices}/A1_all/{name}'
+        f'forecast_data/{devices}/route_AB/A1/{name}'
         for devices in DEVICES for name in VERSIONS]
 
 
@@ -180,7 +180,7 @@ def destination_roots():
 
 
 def target_outputs():
-    return [Path('forecast_data') / devices / 'A1_all' / name
+    return [Path('forecast_data') / devices / 'route_AB' / 'A1' / name
             for devices in DEVICES for name in VERSIONS.values()]
 
 
@@ -241,7 +241,7 @@ def build(root, recipe):
                          *[m + '_median_mae' for m in gap_filling.METHODS], 'table']
         pd.DataFrame(audits, columns=audit_columns).to_csv(stage / ANALYSIS / 'gaps.csv', index=False, encoding='utf-8-sig')
         for devices in DEVICES:
-            directory = Path('forecast_data') / devices / 'A1_all'
+            directory = Path('forecast_data') / devices / 'route_AB' / 'A1'
             for old, new in VERSIONS.items():
                 source = inputs[str(directory / old)]
                 if set(source) & set(features):

@@ -192,7 +192,7 @@ def prepare(root, recipe):
     root = Path(root).resolve()
     if set(recipe) != {'kind', 'purpose', 'events', 'input_sha256'} or recipe['kind'] != 'hvac_demand_response_v1':
         raise ValueError('非法需求响应配方')
-    outputs = [Path('forecast_data') / d / 'A1_all/data_dr_adjusted.csv' for d in DEVICES]
+    outputs = [Path('forecast_data') / d / 'route_AB/A1/data_dr_adjusted.csv' for d in DEVICES]
     if (root / AUDIT).exists() or any((root / POINT_TABLES / d).exists() for d in DEVICES) or any((root / p).exists() for p in outputs):
         raise FileExistsError('需求响应产物已存在，拒绝覆盖')
     expected = set()
@@ -200,7 +200,7 @@ def prepare(root, recipe):
         for route in ROUTES:
             for category in ('raw_data', 'imputed_data'):
                 expected.add(f'{category}/{devices}/{route}/A1_data.csv')
-        expected.add(f'forecast_data/{devices}/A1_all/data.csv')
+        expected.add(f'forecast_data/{devices}/route_AB/A1/data.csv')
         expected.add(f'analysis/forecast_windows/{devices}/A1_all/mask.csv')
     if set(recipe['input_sha256']) != expected:
         raise ValueError('输入必须恰为两口径的原始/父版点位、目标和mask')
@@ -208,7 +208,7 @@ def prepare(root, recipe):
         if sha256_file(root / path) != digest:
             raise ValueError(f'输入SHA不匹配: {path}')
     frames = {path: read_frame(root / path) for path in expected}
-    before = {d: frames[f'forecast_data/{d}/A1_all/data.csv'] for d in DEVICES}
+    before = {d: frames[f'forecast_data/{d}/route_AB/A1/data.csv'] for d in DEVICES}
     masks = {d: frames[f'analysis/forecast_windows/{d}/A1_all/mask.csv'] for d in DEVICES}
     index = before[DEVICES[0]].index
     scope = validate_events(index, recipe['events'])

@@ -89,7 +89,7 @@ def verify_assets():
         subset = tables[f'hvac_remove_devices/{route}/A1_data.csv']
         points = subset.columns.drop('total_load')
         pd.testing.assert_frame_equal(whole[points], subset[points])
-    expected_targets = {f'forecast_data/{d}/A1_all/data.csv'
+    expected_targets = {f'forecast_data/{d}/route_AB/A1/data.csv'
                         for d in ('hvac_all_devices', 'hvac_remove_devices')}
     adjusted_targets = {str(Path(p).with_name('data_dr_adjusted.csv')) for p in expected_targets}
     flow_temp_targets = {str(Path(p).with_name(name)) for p in expected_targets

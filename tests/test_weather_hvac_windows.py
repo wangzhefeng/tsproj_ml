@@ -48,13 +48,13 @@ class WeatherHvacBindingTest(unittest.TestCase):
         with patch.object(binder, 'ROOT', root), patch.object(builder, 'ROOT', root):
             return binder.bind_scenario(scenario)
 
-    def test_v3_binding_without_route_partition_ignores_named_derivatives(self):
+    def test_v3_binding_route_ab_a1_ignores_named_derivatives(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             times = pd.date_range('2026-04-08', periods=288, freq='5min')
             targets = {}
             for devices in ('hvac_all_devices', 'hvac_remove_devices'):
-                path = root / 'dataset/aidc_hvac_load_5min/forecast_data' / devices / 'A1_all/data.csv'
+                path = root / 'dataset/aidc_hvac_load_5min/forecast_data' / devices / 'route_AB/A1/data.csv'
                 path.parent.mkdir(parents=True)
                 targets[path] = times
                 # 同目录反事实派生不是原天气绑定的自动消费目标。
@@ -64,7 +64,7 @@ class WeatherHvacBindingTest(unittest.TestCase):
             self.assertEqual(len(rows), 2)
             for row in rows:
                 self.assertIn('/', row['target_file'])
-                self.assertNotIn('/route_', row['target_file'])
+                self.assertIn('/route_AB/A1/', row['target_file'])
                 self.assertTrue(row['target_file'].endswith('/data.csv'))
                 self.assertEqual(row['data_version'], 'current')
                 self.assertEqual((row['start'], row['end'], row['rows']),
@@ -107,12 +107,12 @@ class WeatherHvacBindingTest(unittest.TestCase):
             }
             asset_times = pd.date_range('2026-08-31 23:00', periods=36, freq='5min')
             rows = self.run_bind(root, HVAC_V1, asset_times=asset_times,
-                                 targets={inputs / name / 'A1_all/data.csv': times
+                                 targets={inputs / name / 'route_AB/A1/data.csv': times
                                           for name, times in windows.items()})
-            self.assertEqual({Path(row['target_file']).parents[1].name for row in rows}, set(windows))
+            self.assertEqual({Path(row['target_file']).parents[2].name for row in rows}, set(windows))
             for row in rows:
-                self.assertEqual(row['rows'], len(windows[Path(row['target_file']).parents[1].name]))
-                self.assertEqual(row['start'], str(windows[Path(row['target_file']).parents[1].name][0]))
+                self.assertEqual(row['rows'], len(windows[Path(row['target_file']).parents[2].name]))
+                self.assertEqual(row['start'], str(windows[Path(row['target_file']).parents[2].name][0]))
             manifest_dir = root / 'dataset/aidc_hvac_load_5min/analysis/weather_binding'
             with patch.object(binder, 'ROOT', root), patch.object(builder, 'ROOT', root):
                 with patch.object(sys, 'argv', ['bind_weather.py', '--scenario', HVAC_V1]):
@@ -129,7 +129,7 @@ class WeatherHvacBindingTest(unittest.TestCase):
             root = Path(directory)
             inputs = root / 'dataset/aidc_hvac_load_5min/forecast_data'
             inputs.mkdir(parents=True)
-            inputs = inputs / 'family/A1_all'
+            inputs = inputs / 'family/route_AB/A1'
             inputs.mkdir(parents=True)
             path = inputs / 'data.csv'
             asset_times = pd.date_range('2026-08-01', periods=288, freq='5min')
@@ -164,7 +164,7 @@ class WeatherHvacBindingTest(unittest.TestCase):
         self.assertEqual(source['inference_columns'], MAPPING)
         for data_version, expected in (('current', 2),):
             manifest = pd.read_csv(scenario / 'analysis/weather_binding/manifest.csv')
-            pattern = '*/A1_all/data.csv'
+            pattern = '*/route_AB/A1/data.csv'
             targets = {str(p.relative_to(root)) for p in
                        (scenario / 'forecast_data').glob(pattern)}
             self.assertEqual(len(targets), expected)

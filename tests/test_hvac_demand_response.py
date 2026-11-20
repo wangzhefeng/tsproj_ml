@@ -36,7 +36,7 @@ def fixture(root):
         target = pd.DataFrame({'hvac_total_load_AB': totals['route_A'] + totals['route_B'],
                                'hvac_total_load_A': totals['route_A'], 'hvac_total_load_B': totals['route_B'],
                                'it_subset_load': 5.}, index=index)
-        paths[f'forecast_data/{devices}/A1_all/data.csv'] = target
+        paths[f'forecast_data/{devices}/route_AB/A1/data.csv'] = target
         mask = pd.DataFrame(index=index)
         for col in target:
             mask[col + '_observed'] = True
@@ -132,7 +132,7 @@ class DemandResponseTest(unittest.TestCase):
             event = recipe['events'][0]
             self.assertFalse((root / 'analysis/demand_response/point_tables').exists())
             for devices, expected in (('hvac_all_devices', 36.), ('hvac_remove_devices', 30.)):
-                target = pd.read_csv(root / f'forecast_data/{devices}/A1_all/data_dr_adjusted.csv')
+                target = pd.read_csv(root / f'forecast_data/{devices}/route_AB/A1/data_dr_adjusted.csv')
                 np.testing.assert_array_equal(target.hvac_total_load_AB, expected)
                 np.testing.assert_array_equal(target.it_subset_load, 5.)
                 for route in ('route_A', 'route_B'):
@@ -146,7 +146,7 @@ class DemandResponseTest(unittest.TestCase):
                 self.assertTrue(mask.it_subset_load_observed.all())
                 known = pd.to_datetime(mask.loc[active, 'hvac_total_load_AB_eligibility_known_at'])
                 self.assertTrue((known == pd.Timestamp(event['end_exclusive']) + pd.Timedelta(minutes=25)).all())
-                self.assertEqual({p.name for p in (root / f'forecast_data/{devices}/A1_all').glob('*.csv')},
+                self.assertEqual({p.name for p in (root / f'forecast_data/{devices}/route_AB/A1').glob('*.csv')},
                                  {'data.csv', 'data_dr_adjusted.csv'})
             report = json.loads((root / 'analysis/demand_response/manifest.json').read_text())
             self.assertFalse(report['strict_online_eligible'])

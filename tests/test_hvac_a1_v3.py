@@ -76,7 +76,7 @@ class A1GapFillingTest(unittest.TestCase):
             report = prepare(root, recipe)
             self.assertEqual(len(report['targets']), 2)
             for devices, expected in (('hvac_all_devices', 36.), ('hvac_remove_devices', 30.)):
-                path = root / f'forecast_data/{devices}/A1_all/data.csv'
+                path = root / f'forecast_data/{devices}/route_AB/A1/data.csv'
                 actual = pd.read_csv(path)
                 self.assertEqual(len(actual), 10 * 288)
                 np.testing.assert_array_equal(actual.hvac_total_load_AB, expected)

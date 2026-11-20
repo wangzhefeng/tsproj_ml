@@ -33,7 +33,15 @@ class DemandResponseAssetsTest(unittest.TestCase):
         manifest = json.loads((AUDIT / 'manifest.json').read_text())
         recipe_path = ROOT / 'config/aidc_hvac_load_5min/scripts/outlier_remove_data/demand_response.json'
         recipe = json.loads(recipe_path.read_text())
-        self.assertEqual(manifest['recipe'], recipe)
+        historical_recipe = dict(manifest['recipe'])
+        historical_recipe['input_sha256'] = {
+            path.replace('forecast_data/hvac_all_devices/A1_all/',
+                         'forecast_data/hvac_all_devices/route_AB/A1/').replace(
+                         'forecast_data/hvac_remove_devices/A1_all/',
+                         'forecast_data/hvac_remove_devices/route_AB/A1/'): digest
+            for path, digest in historical_recipe['input_sha256'].items()
+        }
+        self.assertEqual(historical_recipe, recipe)
         self.assertFalse(manifest['strict_online_eligible'])
         for name, digest in {**recipe['input_sha256'], **manifest['artifact_sha256']}.items():
             self.assertEqual(sha256_file(DATA / name), digest, name)
@@ -124,7 +132,7 @@ class DemandResponseAssetsTest(unittest.TestCase):
                 self.assertEqual(row['method'], ('locf', 'past_mean_1h', 'past_day_repeat')[int(np.argmin(scores))])
         self.assertEqual(len(changes), expected_estimates)
         for devices in ('hvac_all_devices', 'hvac_remove_devices'):
-            directory = DATA / f'forecast_data/{devices}/A1_all'
+            directory = DATA / f'forecast_data/{devices}/route_AB/A1'
             old, new = read(directory / 'data.csv'), read(directory / 'data_dr_adjusted.csv')
             scope = np.zeros(len(old), dtype=bool)
             for event in recipe['events']:

@@ -14,7 +14,23 @@ def verify_assets(root, recipe, *, source_root=None):
     source_root = root if source_root is None else Path(source_root)
     analysis = root / 'analysis/hvac_flow_temp'
     manifest = json.loads((analysis / 'manifest.json').read_text(encoding='utf-8'))
-    if manifest['recipe'] != recipe:
+    # Historical audit recipes keep their original paths and hashes on disk.
+    historical_recipe = dict(manifest['recipe'])
+    historical_recipe['input_sha256'] = {
+        path.replace('forecast_data/hvac_all_devices/A1_all/',
+                     'forecast_data/hvac_all_devices/route_AB/A1/').replace(
+                     'forecast_data/hvac_remove_devices/A1_all/',
+                     'forecast_data/hvac_remove_devices/route_AB/A1/'): digest
+        for path, digest in historical_recipe['input_sha256'].items()
+    }
+    manifest['output_sha256'] = {
+        path.replace('forecast_data/hvac_all_devices/A1_all/',
+                     'forecast_data/hvac_all_devices/route_AB/A1/').replace(
+                     'forecast_data/hvac_remove_devices/A1_all/',
+                     'forecast_data/hvac_remove_devices/route_AB/A1/'): digest
+        for path, digest in manifest['output_sha256'].items()
+    }
+    if historical_recipe != recipe:
         raise ValueError('配方与manifest不一致')
     grid = pd.date_range(recipe['start'], recipe['end'], freq='5min', name='time')
 
@@ -31,7 +47,7 @@ def verify_assets(root, recipe, *, source_root=None):
     expected_paths.add('forecast_data/hvac_flow_temp/features.csv')
     expected_paths.update(f'analysis/hvac_flow_temp/{name}.csv' for name in (
         'gaps', 'point_imputed_mask', 'point_eligibility', 'feature_imputed_mask', 'feature_eligibility'))
-    expected_paths.update(f'forecast_data/{d}/A1_all/{n}'
+    expected_paths.update(f'forecast_data/{d}/route_AB/A1/{n}'
                           for d in ('hvac_all_devices', 'hvac_remove_devices')
                           for n in ('data_with_flow_temp.csv', 'data_dr_adjusted_with_flow_temp.csv'))
     if set(manifest['output_sha256']) != expected_paths:
@@ -159,7 +175,7 @@ def verify_assets(root, recipe, *, source_root=None):
         np.testing.assert_array_equal(fm[name], np.maximum(fm[left], fm[right]))
         np.testing.assert_array_equal(fe[name], np.maximum(fe[left], fe[right]))
     for devices in ('hvac_all_devices', 'hvac_remove_devices'):
-        directory = Path('forecast_data') / devices / 'A1_all'
+        directory = Path('forecast_data') / devices / 'route_AB' / 'A1'
         for old, new in [('data.csv', 'data_with_flow_temp.csv'),
                          ('data_dr_adjusted.csv', 'data_dr_adjusted_with_flow_temp.csv')]:
             source = inputs[str(directory / old)]

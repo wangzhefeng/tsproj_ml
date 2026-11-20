@@ -1,5 +1,7 @@
 # tests
 
+`test_hvac_raw_supplement` 默认 integration：原观测不覆盖、整点冲突暂缓、重复外源冲突和负功率拒绝、全流程原始汇总/分套同步、完整备份与下游字节保护。原始观测补充后，旧 HVAC 资产仍属历史批次；其源 SHA 应与 `analysis/raw_supplement_20261023/before/raw_data` 比对，不应改写旧清单。当前旧资产测试若直接读取活动 raw，可能因授权更新而失败；不能据此宣称下游已重建。
+
 `test_hvac_switch_buildings` / `test_hvac_switch_buildings_assets` 默认integration：跨三楼套组映射校验、负/无限值置空但真实事件不改、显式保留不可填NaN、两口径共享点一致、80份新增点位表、严格三楼总量、覆盖冲突前置拒绝；独立回读真实源、分套/分楼/汇总与冻结A1和预测资产SHA。不生成预测特征。
 
 `test_hvac_building_extension` 默认integration：显式保留无法填补的NaN、默认严格拒绝不变、独立事件候选不自动批准、分楼与三楼严格汇总、raw和forecast字节保真及重复发布保护。`test_hvac_building_extension_assets` 独立回读真实扩展产物、缺口来源和已批准事件范围。

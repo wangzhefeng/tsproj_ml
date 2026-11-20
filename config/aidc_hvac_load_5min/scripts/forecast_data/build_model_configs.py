@@ -54,7 +54,7 @@ def build_documents():
     for group in GROUPS:
         train_days = 150
         for devices in VERSIONS:
-            target_path = DATA / 'forecast_data' / devices / 'A1_all/data_dr_adjusted.csv'
+            target_path = DATA / 'forecast_data' / devices / 'route_AB/A1/data_dr_adjusted.csv'
             _, times = read_frame(target_path, 'time', cache)
             if not times.equals(grid):
                 raise ValueError(f'v3 目标偏离固定窗口: {target_path}')

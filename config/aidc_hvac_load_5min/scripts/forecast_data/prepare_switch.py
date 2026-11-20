@@ -53,8 +53,8 @@ def namespace_roots():
 
 
 def target_pairs():
-    return [(Path('forecast_data') / d / 'A1_all' / p,
-             Path('forecast_data') / d / 'A1_all' / p.replace('.csv', '_switch.csv'))
+    return [(Path('forecast_data') / d / 'route_AB' / 'A1' / p,
+             Path('forecast_data') / d / 'route_AB' / 'A1' / p.replace('.csv', '_switch.csv'))
             for d in DEVICES for p in PARENTS]
 
 

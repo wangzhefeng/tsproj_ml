@@ -59,7 +59,7 @@ class FlowTempTest(unittest.TestCase):
                 frame.to_csv(path)
                 paths.append(path)
             for devices in ('hvac_all_devices', 'hvac_remove_devices'):
-                directory = root / 'forecast_data' / devices / 'A1_all'
+                directory = root / 'forecast_data' / devices / 'route_AB' / 'A1'
                 directory.mkdir(parents=True)
                 for name, value in [('data.csv', 31.125), ('data_dr_adjusted.csv', 29.625)]:
                     path = directory / name
@@ -83,8 +83,8 @@ class FlowTempTest(unittest.TestCase):
             self.assertFalse(features.isna().to_numpy().any())
             for path in paths:
                 self.assertEqual(sha256(path), recipe['input_sha256'][str(path.relative_to(root))])
-            original = pd.read_csv(root / 'forecast_data/hvac_all_devices/A1_all/data_with_flow_temp.csv')
-            adjusted = pd.read_csv(root / 'forecast_data/hvac_all_devices/A1_all/data_dr_adjusted_with_flow_temp.csv')
+            original = pd.read_csv(root / 'forecast_data/hvac_all_devices/route_AB/A1/data_with_flow_temp.csv')
+            adjusted = pd.read_csv(root / 'forecast_data/hvac_all_devices/route_AB/A1/data_dr_adjusted_with_flow_temp.csv')
             np.testing.assert_array_equal(original.hvac_total_load_AB, 31.125)
             np.testing.assert_array_equal(adjusted.hvac_total_load_AB, 29.625)
             pd.testing.assert_frame_equal(original[features.columns], adjusted[features.columns])

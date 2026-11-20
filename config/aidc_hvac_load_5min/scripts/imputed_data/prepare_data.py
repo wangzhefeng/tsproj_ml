@@ -171,7 +171,7 @@ def prepare(root, recipe):
             lineage['hvac_total_load_AB_eligibility_known_at'] = np.maximum(
                 masks[keys['hvac_total_load_A']].eligibility_known_at.to_numpy(),
                 masks[keys['hvac_total_load_B']].eligibility_known_at.to_numpy())
-            relative = Path('forecast_data') / devices / 'A1_all/data.csv'
+            relative = Path('forecast_data') / devices / 'route_AB/A1/data.csv'
             write_csv(target, stage / relative)
             write_csv(lineage, stage / 'analysis/forecast_windows' / devices / 'A1_all/mask.csv')
             report['targets'].append({'path': str(relative), 'sha256': sha256_file(stage / relative),
